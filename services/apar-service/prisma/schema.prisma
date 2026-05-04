@@ -1,0 +1,60 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/apar-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model AREntry {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  dealerRef String   @map("dealer_ref")
+  type      String   // WARRANTY, FLOORPLAN, RECEIVABLE
+  amount    Float
+  dueDate   DateTime @map("due_date")
+  status    String   @default("OPEN")
+  oemSource String?  @map("oem_source")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("ar_entries")
+  @@index([tenantId])
+  @@index([tenantId, status])
+}
+
+model APEntry {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  vendorName  String   @map("vendor_name")
+  invoiceRef  String   @map("invoice_ref")
+  amount      Float
+  dueDate     DateTime @map("due_date")
+  status      String   @default("OPEN")
+  glAccountId String?  @map("gl_account_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("ap_entries")
+  @@index([tenantId])
+  @@index([tenantId, status])
+}
+
+/// Outbox pattern for reliable event publishing from apar-service.
+/// Written inside $transaction alongside state changes — never via direct publish.
+model OutboxEvent {
+  id            String    @id @default(uuid())
+  eventType     String    @map("event_type")
+  tenantId      String    @map("tenant_id")
+  payload       Json
+  correlationId String?   @map("correlation_id")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  publishedAt   DateTime? @map("published_at")
+  retryCount    Int       @default(0) @map("retry_count")
+  lastError     String?   @map("last_error")
+
+  @@map("outbox_events")
+  @@index([publishedAt, retryCount])
+  @@index([createdAt])
+}

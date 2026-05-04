@@ -1,0 +1,31 @@
+openapi: '3.1.0'
+info:
+  title: AMACC Approval Service API
+  version: '1.0.0'
+  description: Agent action approval workflow
+servers:
+  - url: http://localhost:3033
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+paths:
+  /api/v1/approvals/request:
+    post:
+      summary: Request approval for agent action
+      responses: { '201': { description: Created } }
+  /api/v1/approvals/pending:
+    get:
+      summary: Get pending approvals
+      responses: { '200': { description: OK } }
+  /api/v1/approvals/{id}/approve:
+    post:
+      summary: Approve an action
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Approved } }
+  /api/v1/approvals/{id}/reject:
+    post:
+      summary: Reject an action
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Rejected } }

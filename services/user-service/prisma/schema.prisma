@@ -1,0 +1,27 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/user-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model UserPreferences {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  userId          String   @map("user_id")
+  role            String   @default("CONTROLLER")
+  dashboardLayout Json     @default("{}") @map("dashboard_layout")
+  defaultFilters  Json     @default("{}") @map("default_filters")
+  notifications   Json     @default("{}") @map("notifications")
+  timezone        String   @default("America/Chicago")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, userId])
+  @@map("user_preferences")
+  @@index([tenantId])
+}

@@ -1,0 +1,39 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/audit-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// IMMUTABLE — database trigger prevents UPDATE and DELETE (SOC 2 / SOX compliance).
+/// Records are append-only by design. See migration: make_auditlog_immutable.sql
+model AuditLog {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  eventType     String   @map("event_type")
+  entityType    String   @map("entity_type")
+  entityId      String   @map("entity_id")
+  actorType     String   @map("actor_type")
+  actorId       String   @map("actor_id")
+  actorName     String   @map("actor_name")
+  action        String
+  previousState Json?    @map("previous_state")
+  newState      Json?    @map("new_state")
+  reason        String?
+  confidence    Float?
+  metadata      Json?
+  occurredAt    DateTime @map("occurred_at")
+  ipAddress     String?  @map("ip_address")
+  sessionId     String?  @map("session_id")
+
+  @@map("audit_logs")
+  @@index([tenantId])
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([occurredAt])
+  @@index([tenantId, eventType])
+}

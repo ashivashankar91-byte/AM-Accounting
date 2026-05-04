@@ -1,0 +1,38 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/query-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model SavedQuery {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  userId      String    @map("user_id")
+  name        String
+  question    String
+  prismaQuery Json      @map("prisma_query")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  lastRunAt   DateTime? @map("last_run_at")
+
+  @@index([tenantId, userId])
+  @@map("saved_queries")
+}
+
+model QueryHistory {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  userId      String   @map("user_id")
+  question    String
+  prismaQuery Json     @map("prisma_query")
+  rowCount    Int      @map("row_count")
+  durationMs  Int      @map("duration_ms")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, userId])
+  @@map("query_history")
+}

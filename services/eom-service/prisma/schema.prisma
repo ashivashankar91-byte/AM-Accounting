@@ -1,0 +1,87 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/eom-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model EOMClose {
+  id            String    @id @default(uuid())
+  tenantId      String    @map("tenant_id")
+  periodYear    Int       @map("period_year")
+  periodMonth   Int       @map("period_month")
+  // MONTHLY | YEAR_END | 13TH_MONTH
+  // @trace-cobol purge.cbl (MONTHLY) + yrend.cbl (YEAR_END)
+  closeType     String    @default("MONTHLY") @map("close_type")
+  status        String    @default("NOT_STARTED")
+  currentStep   String?   @map("current_step")
+  startedAt     DateTime  @default(now()) @map("started_at")
+  completedAt   DateTime? @map("completed_at")
+  blockedReason String?   @map("blocked_reason")
+  // Audit trail — COBOL had no user attribution
+  initiatedBy   String?   @map("initiated_by")
+
+  steps EOMStep[]
+
+  @@unique([tenantId, periodYear, periodMonth, closeType])
+  @@map("eom_closes")
+  @@index([tenantId])
+}
+
+model EOMStep {
+  id           String    @id @default(uuid())
+  eomCloseId   String    @map("eom_close_id")
+  stepCode     String    @map("step_code")
+  stepName     String    @map("step_name")
+  status       String    @default("PENDING")
+  startedAt    DateTime? @map("started_at")
+  completedAt  DateTime? @map("completed_at")
+  errorMessage String?   @map("error_message")
+  retryCount   Int       @default(0) @map("retry_count")
+
+  eomClose EOMClose @relation(fields: [eomCloseId], references: [id])
+
+  @@map("eom_steps")
+  @@index([eomCloseId])
+}
+
+// Idempotency token for year-end close.
+// Replaces the histtran key lookup in yrend.cbl (YE-INV-02):
+//   HISTTRAN key = source + date + "EOY{YEAR}" + DUPEREFNO=0 + LINENO=1
+// The DB-level unique constraint enforces the same invariant with simpler code.
+// @trace-cobol yrend.cbl YE-INV-02
+// @intelligence-additions Dedicated table vs. in-band histtran key check
+model YearEndRecord {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  fiscalYear  Int      @map("fiscal_year")
+  closedAt    DateTime @default(now()) @map("closed_at")
+  initiatedBy String   @map("initiated_by")
+
+  @@unique([tenantId, fiscalYear])
+  @@map("year_end_records")
+  @@index([tenantId])
+}
+
+/// Outbox pattern for reliable event publishing from eom-service.
+/// Written inside $transaction alongside state changes — never via direct publish.
+model OutboxEvent {
+  id            String    @id @default(uuid())
+  eventType     String    @map("event_type")
+  tenantId      String    @map("tenant_id")
+  payload       Json
+  correlationId String?   @map("correlation_id")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  publishedAt   DateTime? @map("published_at")
+  retryCount    Int       @default(0) @map("retry_count")
+  lastError     String?   @map("last_error")
+
+  @@map("outbox_events")
+  @@index([publishedAt, retryCount])
+  @@index([createdAt])
+  @@index([tenantId])
+}

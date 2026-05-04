@@ -1,0 +1,69 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/revenue-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model RevenueContract {
+  id                String   @id @default(uuid())
+  tenantId          String   @map("tenant_id")
+  dealNumber        String   @map("deal_number")
+  productType       String   @map("product_type")
+  customerName      String?  @map("customer_name")
+  totalValue        Float    @map("total_value")
+  transactionPrice  Float?   @map("transaction_price")
+  variableConsideration Float? @default(0) @map("variable_consideration")
+  startDate         DateTime @map("start_date")
+  endDate           DateTime @map("end_date")
+  status            String   @default("ACTIVE")
+  recognitionMethod String   @default("STRAIGHT_LINE") @map("recognition_method")
+  asc606Step        String   @default("STEP1_IDENTIFIED") @map("asc606_step")
+  modificationType  String?  @map("modification_type")
+  originalContractId String? @map("original_contract_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  scheduleLines  RevenueScheduleLine[]
+  obligations    PerformanceObligation[]
+
+  @@index([tenantId])
+  @@map("revenue_contracts")
+}
+
+model RevenueScheduleLine {
+  id              String  @id @default(uuid())
+  contractId      String  @map("contract_id")
+  period          String
+  scheduledAmount Float   @map("scheduled_amount")
+  recognisedAmount Float  @default(0) @map("recognised_amount")
+  journalEntryId  String? @map("journal_entry_id")
+  status          String  @default("PENDING")
+
+  contract RevenueContract @relation(fields: [contractId], references: [id])
+
+  @@index([contractId])
+  @@map("revenue_schedule_lines")
+}
+
+/// ASC 606 Step 2: Performance obligations identified within a contract
+model PerformanceObligation {
+  id                     String    @id @default(uuid())
+  contractId             String    @map("contract_id")
+  description            String
+  obligationType         String    @default("OVER_TIME") @map("obligation_type") // OVER_TIME | POINT_IN_TIME
+  standaloneSellingPrice Float     @map("standalone_selling_price") // SSP for allocation
+  allocatedPrice         Float     @default(0) @map("allocated_price") // Step 4: allocated transaction price
+  satisfactionMethod     String    @default("STRAIGHT_LINE") @map("satisfaction_method") // STRAIGHT_LINE | OUTPUT | INPUT
+  satisfiedAt            DateTime? @map("satisfied_at")
+  status                 String    @default("UNSATISFIED") // UNSATISFIED | PARTIALLY_SATISFIED | SATISFIED
+  createdAt              DateTime  @default(now()) @map("created_at")
+
+  contract RevenueContract @relation(fields: [contractId], references: [id])
+
+  @@index([contractId])
+  @@map("performance_obligations")
+}

@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: amacc-config
+  namespace: amacc
+data:
+  DATABASE_URL: "postgresql://amacc:amacc_dev@postgres:5432/amacc"
+  RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672"
+  REDIS_URL: "redis://redis:6379"
+  NODE_ENV: "development"
+  JWT_ISSUER: "amacc"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: amacc-secrets
+  namespace: amacc
+type: Opaque
+stringData:
+  JWT_SECRET: "dev-jwt-secret-change-in-production-min16"
+  ADMIN_API_KEY: "amacc-admin-dev-key"
+  ANTHROPIC_API_KEY: "sk-ant-placeholder"
+  POSTGRES_PASSWORD: "amacc_dev"

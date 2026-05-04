@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: amacc
+resources:
+  - 00-namespace.yaml
+  - 01-config.yaml
+  - 02-infrastructure.yaml
+  - 03-core-services.yaml
+  - 04-agent-services.yaml
+  - 05-platform-services.yaml
+  - 06-extended-services.yaml
+  - 07-gateway-frontend.yaml
+commonLabels:
+  app.kubernetes.io/part-of: amacc
+  app.kubernetes.io/managed-by: kustomize

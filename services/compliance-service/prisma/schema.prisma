@@ -1,0 +1,38 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/compliance-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model ComplianceRule {
+  id            String  @id @default(uuid())
+  tenantId      String  @map("tenant_id")
+  ruleCode      String  @map("rule_code")
+  description   String
+  isActive      Boolean @default(true) @map("is_active")
+  configuration Json    @default("{}")
+
+  @@unique([tenantId, ruleCode])
+  @@map("compliance_rules")
+}
+
+model ComplianceAlert {
+  id         String    @id @default(uuid())
+  tenantId   String    @map("tenant_id")
+  ruleCode   String    @map("rule_code")
+  entityType String    @map("entity_type")
+  entityId   String    @map("entity_id")
+  severity   String    @default("WARNING")
+  message    String
+  resolvedAt DateTime? @map("resolved_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([tenantId])
+  @@index([tenantId, resolvedAt])
+  @@map("compliance_alerts")
+}

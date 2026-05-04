@@ -1,0 +1,44 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/recon-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model BankRecon {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  accountName String    @map("account_name")
+  reconDate   DateTime  @map("recon_date")
+  glBalance   Float     @map("gl_balance")
+  bankBalance Float     @map("bank_balance")
+  variance    Float     @default(0)
+  status      String    @default("OPEN")
+  lockedBy    String?   @map("locked_by")
+  lockedAt    DateTime? @map("locked_at")
+
+  transactions BankTransaction[]
+
+  @@map("bank_recons")
+  @@index([tenantId])
+}
+
+model BankTransaction {
+  id                   String  @id @default(uuid())
+  bankReconId          String  @map("bank_recon_id")
+  transactionDate      DateTime @map("transaction_date")
+  description          String
+  amount               Float
+  matchedJournalLineId String? @map("matched_journal_line_id")
+  status               String  @default("UNMATCHED")
+
+  bankRecon BankRecon @relation(fields: [bankReconId], references: [id])
+
+  @@map("bank_transactions")
+  @@index([bankReconId])
+  @@index([bankReconId, status])
+}

@@ -1,0 +1,112 @@
+openapi: '3.1.0'
+info:
+  title: AMACC Connector Service API v2
+  version: '2.0.0'
+  description: DMS data ingestion — 12 line-level detail endpoints
+servers:
+  - url: http://localhost:3032
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+paths:
+  /api/v1/connector/ingest/service-ro:
+    post:
+      summary: Ingest service repair order with line-level detail
+      tags: [Ingest v2]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [roNumber, tenantId, technicianId, laborLines, totalLabor, totalParts]
+              properties:
+                roNumber: { type: string }
+                tenantId: { type: string }
+                technicianId: { type: string }
+                laborLines: { type: array, items: { type: object, properties: { lineNumber: { type: integer }, laborType: { type: string }, hours: { type: number }, rate: { type: number }, amount: { type: number }, technicianId: { type: string } } } }
+                partsLines: { type: array, items: { type: object, properties: { partNumber: { type: string }, quantity: { type: number }, cost: { type: number }, salePrice: { type: number } } } }
+                subletLines: { type: array, items: { type: object, properties: { description: { type: string }, amount: { type: number }, vendor: { type: string } } } }
+                totalLabor: { type: number }
+                totalParts: { type: number }
+      responses:
+        '201': { description: Created }
+        '200': { description: Duplicate (idempotent) }
+  /api/v1/connector/ingest/parts-invoice:
+    post:
+      summary: Ingest parts counter sale
+      tags: [Ingest v2]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [invoiceNumber, tenantId, partLines]
+              properties:
+                invoiceNumber: { type: string }
+                tenantId: { type: string }
+                partLines: { type: array, items: { type: object, properties: { partNumber: { type: string }, quantity: { type: number }, cost: { type: number }, salePrice: { type: number }, departmentCode: { type: string } } } }
+      responses:
+        '201': { description: Created }
+  /api/v1/connector/ingest/payroll:
+    post:
+      summary: Ingest payroll with line-level detail
+      tags: [Ingest v2]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [batchRef, tenantId, periodStart, periodEnd, lines]
+              properties:
+                batchRef: { type: string }
+                tenantId: { type: string }
+                periodStart: { type: string }
+                periodEnd: { type: string }
+                lines: { type: array, items: { type: object, properties: { employeeId: { type: string }, employeeName: { type: string }, departmentCode: { type: string }, earningCode: { type: string }, hours: { type: number, nullable: true }, rate: { type: number, nullable: true }, amount: { type: number } } } }
+      responses:
+        '201': { description: Created }
+  /api/v1/connector/ingest/deal:
+    post:
+      summary: Ingest deal with F&I product detail
+      tags: [Ingest v2]
+      responses: { '201': { description: Created } }
+  /api/v1/connector/ingest/vehicle-purchase:
+    post:
+      summary: Ingest vehicle purchase
+      tags: [Ingest v2]
+      responses: { '201': { description: Created } }
+  /api/v1/connector/ingest/vehicle-transfer:
+    post:
+      summary: Ingest vehicle transfer between locations
+      tags: [Ingest v2]
+      responses: { '201': { description: Created } }
+  /api/v1/connector/ingest/cash-receipts:
+    post:
+      summary: Ingest cash receipts
+      tags: [Ingest v2]
+      responses: { '201': { description: Created } }
+  /api/v1/connector/ingest/finance-charges:
+    post:
+      summary: Ingest finance charges
+      tags: [Ingest v2]
+      responses: { '201': { description: Created } }
+  /api/v1/connector/ingest/credit-card:
+    post:
+      summary: Ingest credit card settlement batch
+      tags: [Ingest v2]
+      responses: { '201': { description: Created } }
+  /api/v1/connector/ingest/year-end:
+    post:
+      summary: Ingest year-end closing entries
+      tags: [Ingest v2]
+      responses: { '201': { description: Created } }
+  /api/v1/connector/ingest/amdb-dropmate:
+    post:
+      summary: Ingest AMDB Dropmate transactions
+      tags: [Ingest v2]
+      responses: { '201': { description: Created } }

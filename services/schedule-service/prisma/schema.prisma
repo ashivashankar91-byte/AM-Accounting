@@ -1,0 +1,135 @@
+// @trace-cobol schedup.cbl (schedule master), komdetail.cbl (detail CRUD),
+//              schedsec.cbl (permissions), schedmgr.cbl (GL linkage)
+// @wave Wave 3 — Schedule Sub-System
+
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/schedule-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// @trace-cobol sched.rec — SCHEDULE-REC (60 bytes)
+// SD-SCHDNO(2), SD-TITLE(29), SD-RPT-SEQ(1), SD-TYPE(1),
+// SD-GLACCTNO[5](25), SD-EOM-PURGE(1), SD-CONT-NAMES(1)
+model Schedule {
+  id                 String   @id @default(cuid())
+  tenantId           String   @map("tenant_id")
+  // SD-SCHDNO: 2-digit right-justified numeric string e.g. "01", "99"
+  scheduleNumber     String   @db.Char(2) @map("schedule_number")
+  // SD-TITLE: up to 29 chars
+  title              String   @db.VarChar(29)
+  // SD-RPT-SEQ: C=control#, N=name, A=age
+  reportSequence     String   @default("C") @db.Char(1) @map("report_sequence")
+  // SD-TYPE: 1–5 — drives key structure of detail records
+  scheduleType       Int      @map("schedule_type")
+  // SD-GLACCTNO[1..5]: up to 5 GL account numbers (5-char each)
+  // Types 2,4,5 allow only ONE account; types 1,3 allow up to 5
+  glAccountNumbers   String[] @map("gl_account_numbers")
+  // SD-EOM-PURGE: 1–7 — EOM purge algorithm code
+  eomPurgeType       Int      @map("eom_purge_type")
+  // SD-CONT-NAMES: Y/2/D/V/blank — control name display flag
+  controlNameDisplay String   @default(" ") @db.Char(1) @map("control_name_display")
+
+  details     ScheduleDetail[]
+  permissions SchedulePermission[]
+
+  @@unique([tenantId, scheduleNumber])
+  @@map("schedules")
+  @@index([tenantId])
+}
+
+// @trace-cobol detail.fc/fd — DETAIL-MF ISAM file
+// Primary key: DE-KEY (type-dependent composite)
+// Alternate key: DE-CONTNO (with duplicates)
+// Data: DE-AMOUNT(S9(9)V99 COMP-3), DE-REFNO, DE-SOURCE, DE-DATE1, DE-ACCTNO, DE-DESC
+// Balance-forward variant: DE-BAL-CUR/OVR30/OVR60/OVR90
+model ScheduleDetail {
+  id             String    @id @default(cuid())
+  tenantId       String    @map("tenant_id")
+  // DE-SCHDNO: FK to Schedule
+  scheduleNumber String    @db.Char(2) @map("schedule_number")
+  // DE-CONTNO: 10-char control number (alternate key in ISAM)
+  controlNumber  String    @db.VarChar(10) @map("control_number")
+  // DE-AMOUNT: S9(9)V99 COMP-3 — monetary
+  amount         Decimal   @db.Decimal(15, 2)
+  // DE-REFNO: PIC X(12)
+  referenceNumber String?  @db.VarChar(12) @map("reference_number")
+  // DE-SOURCE: PIC XX — 2-char journal source code
+  journalSource  String?   @db.Char(2) @map("journal_source")
+  // DE-DATE1: YYYYMMDD
+  transactionDate DateTime? @map("transaction_date")
+  // DE-ACCTNO: PIC X(20) — which of the schedule's GLs this line belongs to
+  glAccountNumber String?  @db.VarChar(20) @map("gl_account_number")
+  // DE-DESC: PIC X(35)
+  description    String?   @db.VarChar(35)
+
+  // Balance-forward fields (DE-BAL-CUR/OVR30/OVR60/OVR90)
+  // Present only when isBalanceForward = true
+  // @trace-cobol komdetail.cbl INSERT logic — bal-fwd detected by numeric aging fields
+  isBalanceForward Boolean  @default(false) @map("is_balance_forward")
+  balanceCurrent   Decimal? @db.Decimal(15, 2) @map("balance_current")
+  balanceOver30    Decimal? @db.Decimal(15, 2) @map("balance_over_30")
+  balanceOver60    Decimal? @db.Decimal(15, 2) @map("balance_over_60")
+  balanceOver90    Decimal? @db.Decimal(15, 2) @map("balance_over_90")
+
+  // Type 5 fields: DE-APPLYNO(X12), DE-APPLY-CD(X)
+  // apply-cd: '#' = regular detail, '!' = balance-forward
+  applyNumber    String?   @db.VarChar(12) @map("apply_number")
+  applyCd        String?   @db.Char(1) @map("apply_cd")
+
+  // Source journal entry (populated from JOURNAL_ENTRY_POSTED event)
+  journalEntryId String?   @map("journal_entry_id")
+
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  schedule Schedule @relation(fields: [tenantId, scheduleNumber], references: [tenantId, scheduleNumber])
+
+  @@map("schedule_details")
+  @@index([tenantId, scheduleNumber])
+  @@index([tenantId, scheduleNumber, controlNumber])
+  @@index([tenantId, scheduleNumber, glAccountNumber])
+  @@index([tenantId, journalEntryId])
+}
+
+// @trace-cobol schedsec.cbl — per-user, per-schedule access control
+// COBOL: TABLES-FILE key "SS" + "##" + LOGIN-ID(14) + SEQNO(1)
+// COBOL: TB-SS-ACCESS array of 970 entries (index = schedule#, value = Y/N)
+// Normalized here: one row per (tenantId, userId, scheduleNumber)
+model SchedulePermission {
+  id             String  @id @default(cuid())
+  tenantId       String  @map("tenant_id")
+  userId         String  @map("user_id")
+  // 2-digit schedule number, matching Schedule.scheduleNumber
+  scheduleNumber String  @db.Char(2) @map("schedule_number")
+  canAccess      Boolean @default(false) @map("can_access")
+
+  schedule Schedule @relation(fields: [tenantId, scheduleNumber], references: [tenantId, scheduleNumber])
+
+  @@unique([tenantId, userId, scheduleNumber])
+  @@map("schedule_permissions")
+  @@index([tenantId, userId])
+  @@index([tenantId, scheduleNumber])
+}
+
+/// Outbox pattern for reliable event publishing from schedule-service.
+/// Written inside $transaction alongside state changes — never via direct publish.
+model OutboxEvent {
+  id            String    @id @default(cuid())
+  eventType     String    @map("event_type")
+  tenantId      String    @map("tenant_id")
+  payload       Json
+  correlationId String?   @map("correlation_id")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  publishedAt   DateTime? @map("published_at")
+  retryCount    Int       @default(0) @map("retry_count")
+  lastError     String?   @map("last_error")
+
+  @@map("outbox_events")
+  @@index([publishedAt, retryCount])
+  @@index([createdAt])
+}

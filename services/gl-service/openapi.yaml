@@ -1,0 +1,175 @@
+openapi: '3.1.0'
+info:
+  title: AMACC GL Service API
+  version: '1.0.0'
+  description: General Ledger service — accounts, journal entries, trial balance
+servers:
+  - url: http://localhost:3010
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    GLAccount:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        tenantId: { type: string }
+        code: { type: string }
+        name: { type: string }
+        type: { type: string, enum: [ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE, COST_OF_SALES] }
+        parentId: { type: string, nullable: true }
+        isActive: { type: boolean }
+    JournalLine:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        journalEntryId: { type: string }
+        glAccountId: { type: string }
+        debit: { type: number }
+        credit: { type: number }
+        memo: { type: string, nullable: true }
+        departmentCode: { type: string, nullable: true }
+        technicianId: { type: string, nullable: true }
+        roNumber: { type: string, nullable: true }
+        roLineNumber: { type: integer, nullable: true }
+        flatRateHours: { type: number, nullable: true }
+        clockHours: { type: number, nullable: true }
+        partNumber: { type: string, nullable: true }
+        partQuantity: { type: number, nullable: true }
+        earningCode: { type: string, nullable: true }
+        dealProductCode: { type: string, nullable: true }
+        dealNumber: { type: string, nullable: true }
+        vehicleVin: { type: string, nullable: true }
+        moduleSource: { type: string, nullable: true }
+        laborType: { type: string, nullable: true }
+        costType: { type: string, nullable: true }
+    JournalEntry:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        tenantId: { type: string }
+        entryDate: { type: string, format: date-time }
+        description: { type: string }
+        source: { type: string }
+        sourceRef: { type: string, nullable: true }
+        status: { type: string, enum: [DRAFT, PENDING_REVIEW, POSTED, HELD, REVERSED] }
+        agentReviewed: { type: boolean }
+        lines: { type: array, items: { $ref: '#/components/schemas/JournalLine' } }
+    TrialBalance:
+      type: object
+      properties:
+        period: { type: object, properties: { year: { type: integer }, month: { type: integer } } }
+        accounts: { type: array, items: { type: object, properties: { accountCode: { type: string }, accountName: { type: string }, accountType: { type: string }, debit: { type: number }, credit: { type: number } } } }
+        totalDebits: { type: number }
+        totalCredits: { type: number }
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+paths:
+  /api/v1/gl/accounts:
+    post:
+      summary: Create GL account
+      tags: [Accounts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, name, type]
+              properties:
+                code: { type: string, minLength: 1, maxLength: 20 }
+                name: { type: string, minLength: 1, maxLength: 200 }
+                type: { type: string, enum: [ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE, COST_OF_SALES] }
+                parentId: { type: string, format: uuid, nullable: true }
+                isActive: { type: boolean, default: true }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/GLAccount' } } } }
+        '400': { description: Validation error, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { description: Unauthorized }
+    get:
+      summary: List chart of accounts
+      tags: [Accounts]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/GLAccount' } } } } }
+        '401': { description: Unauthorized }
+  /api/v1/gl/journal-entries:
+    post:
+      summary: Create journal entry (DRAFT)
+      tags: [Journal Entries]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entryDate, description, source, lines]
+              properties:
+                entryDate: { type: string, format: date }
+                description: { type: string }
+                source: { type: string }
+                sourceRef: { type: string }
+                lines:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [glAccountId, debit, credit]
+                    properties:
+                      glAccountId: { type: string, format: uuid }
+                      debit: { type: number, minimum: 0 }
+                      credit: { type: number, minimum: 0 }
+                      memo: { type: string }
+                      departmentCode: { type: string }
+                      technicianId: { type: string }
+                      roNumber: { type: string }
+                      partNumber: { type: string }
+                      moduleSource: { type: string }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/JournalEntry' } } } }
+        '400': { description: Validation error }
+        '401': { description: Unauthorized }
+    get:
+      summary: List journal entries with filters
+      tags: [Journal Entries]
+      parameters:
+        - { name: dateFrom, in: query, schema: { type: string, format: date } }
+        - { name: dateTo, in: query, schema: { type: string, format: date } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: source, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 100, maximum: 500 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/JournalEntry' } } } } }
+  /api/v1/gl/journal-entries/{id}/post:
+    post:
+      summary: Post journal entry to ledger
+      tags: [Journal Entries]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Posted, content: { application/json: { schema: { $ref: '#/components/schemas/JournalEntry' } } } }
+        '404': { description: Not found }
+  /api/v1/gl/journal-entries/{id}/approve:
+    post:
+      summary: Agent approves entry after review
+      tags: [Journal Entries]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Approved and posted }
+  /api/v1/gl/trial-balance:
+    get:
+      summary: Get trial balance for period
+      tags: [Reports]
+      parameters:
+        - { name: year, in: query, required: true, schema: { type: integer } }
+        - { name: month, in: query, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/TrialBalance' } } } }

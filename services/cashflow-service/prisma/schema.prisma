@@ -1,0 +1,35 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/cashflow-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model CashFlowForecast {
+  id               String   @id @default(uuid())
+  tenantId         String   @map("tenant_id")
+  generatedAt      DateTime @default(now()) @map("generated_at")
+  forecastDate     DateTime @map("forecast_date")
+  predictedBalance Float    @map("predicted_balance")
+  confidence       Float
+  breakdown        Json
+
+  @@map("cashflow_forecasts")
+  @@index([tenantId])
+  @@index([tenantId, forecastDate])
+}
+
+model DailyCashActual {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  date      DateTime
+  balance   Float
+
+  @@unique([tenantId, date])
+  @@map("daily_cash_actuals")
+  @@index([tenantId])
+}

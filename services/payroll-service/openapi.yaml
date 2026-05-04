@@ -1,0 +1,83 @@
+openapi: '3.1.0'
+info:
+  title: AMACC Payroll Service API
+  version: '1.0.0'
+  description: Payroll batch management — submit, validate, post, hold
+servers:
+  - url: http://localhost:3012
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  schemas:
+    PayrollBatch:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        tenantId: { type: string }
+        batchRef: { type: string }
+        periodStart: { type: string, format: date-time }
+        periodEnd: { type: string, format: date-time }
+        totalAmount: { type: number }
+        status: { type: string, enum: [PENDING, VALIDATED, POSTED, HELD, REJECTED] }
+        idempotencyKey: { type: string }
+        submittedAt: { type: string, format: date-time }
+        postedAt: { type: string, format: date-time, nullable: true }
+        heldReason: { type: string, nullable: true }
+paths:
+  /api/v1/payroll/batches:
+    post:
+      summary: Submit new payroll batch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [batchRef, periodStart, periodEnd, totalAmount, idempotencyKey]
+              properties:
+                batchRef: { type: string }
+                periodStart: { type: string, format: date }
+                periodEnd: { type: string, format: date }
+                totalAmount: { type: number, minimum: 0 }
+                idempotencyKey: { type: string }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/PayrollBatch' } } } }
+        '409': { description: Duplicate (idempotent return) }
+    get:
+      summary: List payroll batches
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/PayrollBatch' } } } } }
+  /api/v1/payroll/batches/{id}:
+    get:
+      summary: Get batch by ID
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: OK }
+        '404': { description: Not found }
+  /api/v1/payroll/batches/{id}/validate:
+    post:
+      summary: Validate batch
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Validated } }
+  /api/v1/payroll/batches/{id}/post:
+    post:
+      summary: Post batch to GL
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Posted } }
+  /api/v1/payroll/batches/{id}/hold:
+    post:
+      summary: Hold batch for review
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [reason], properties: { reason: { type: string } } }
+      responses: { '200': { description: Held } }
+  /api/v1/payroll/batches/{id}/release:
+    post:
+      summary: Release held batch
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Released } }

@@ -1,0 +1,25 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/tenant-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id           String   @id @default(uuid())
+  name         String
+  dmsType      String   @map("dms_type")
+  dmsApiKey    String   @map("dms_api_key")
+  schemaName   String   @unique @map("schema_name")
+  status       String   @default("PROVISIONING")
+  rooftopCount Int      @default(1) @map("rooftop_count")
+  webhookUrl   String?  @map("webhook_url")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("tenants")
+}

@@ -1,0 +1,28 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/orchestrator-client"
+}
+
+model OrchestrationTask {
+  id            String   @id @default(uuid())
+  tenantId      String
+  workflowType  String   // EOM_CLOSE, PAYROLL_REVIEW, YEAR_END_CLOSE
+  status        String   @default("PENDING") // PENDING, RUNNING, PAUSED, COMPLETED, FAILED
+  currentStep   Int      @default(0)
+  totalSteps    Int
+  steps         Json     // [{name,status,startedAt,completedAt,error}]
+  startedAt     DateTime?
+  completedAt   DateTime?
+  startedBy     String?
+  metadata      Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([tenantId, workflowType])
+  @@index([status])
+}

@@ -1,0 +1,55 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/analytics-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model AggMonthlyPL {
+  id             String @id @default(uuid())
+  tenantId       String @map("tenant_id")
+  period         String
+  departmentCode String @map("department_code")
+  revenue        Float  @default(0)
+  costOfSales    Float  @default(0) @map("cost_of_sales")
+  grossProfit    Float  @default(0) @map("gross_profit")
+  expenses       Float  @default(0)
+  netIncome      Float  @default(0) @map("net_income")
+
+  @@unique([tenantId, period, departmentCode])
+  @@map("agg_monthly_pl")
+}
+
+model AggTechProductivity {
+  id                String @id @default(uuid())
+  tenantId          String @map("tenant_id")
+  period            String
+  technicianId      String @map("technician_id")
+  totalFlatRate     Float  @default(0) @map("total_flat_rate")
+  totalClock        Float  @default(0) @map("total_clock")
+  efficiency        Float  @default(0)
+  totalLabourRevenue Float @default(0) @map("total_labour_revenue")
+  roCount           Int    @default(0) @map("ro_count")
+
+  @@unique([tenantId, period, technicianId])
+  @@map("agg_tech_productivity")
+}
+
+model AggPartsMargin {
+  id             String @id @default(uuid())
+  tenantId       String @map("tenant_id")
+  period         String
+  partNumber     String @map("part_number")
+  totalSold      Int    @default(0) @map("total_sold")
+  totalRevenue   Float  @default(0) @map("total_revenue")
+  totalCost      Float  @default(0) @map("total_cost")
+  grossMargin    Float  @default(0) @map("gross_margin")
+  grossMarginPct Float  @default(0) @map("gross_margin_pct")
+
+  @@unique([tenantId, period, partNumber])
+  @@map("agg_parts_margin")
+}

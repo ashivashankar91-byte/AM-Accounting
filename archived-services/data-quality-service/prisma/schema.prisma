@@ -1,0 +1,25 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/dq-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model DataQualityReport {
+  id               String   @id @default(uuid())
+  tenantId         String   @map("tenant_id")
+  period           String
+  overallScore     Float    @map("overall_score")
+  journalLineScore Float    @map("journal_line_score")
+  payrollLineScore Float    @map("payroll_line_score")
+  dealProductScore Float    @map("deal_product_score")
+  issues           Json     @default("[]")
+  generatedAt      DateTime @default(now()) @map("generated_at")
+
+  @@index([tenantId, period])
+  @@map("data_quality_reports")
+}

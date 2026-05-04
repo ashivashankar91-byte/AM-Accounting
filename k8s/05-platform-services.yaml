@@ -1,0 +1,654 @@
+# ============================================================================
+# AMACC Platform Services (10 services)
+# ============================================================================
+
+# --- auth-service :3001 ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: amacc
+  labels:
+    app: auth-service
+    tier: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: auth-service
+  template:
+    metadata:
+      labels:
+        app: auth-service
+        tier: platform
+    spec:
+      initContainers:
+        - name: wait-postgres
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z postgres 5432; do sleep 2; done']
+      containers:
+        - name: auth-service
+          image: amacc/auth-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3001
+          env:
+            - name: PORT
+              value: "3001"
+          envFrom:
+            - configMapRef:
+                name: amacc-config
+            - secretRef:
+                name: amacc-secrets
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  namespace: amacc
+spec:
+  selector:
+    app: auth-service
+  ports:
+    - port: 3001
+      targetPort: 3001
+
+# --- tenant-service :3002 ---
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tenant-service
+  namespace: amacc
+  labels:
+    app: tenant-service
+    tier: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tenant-service
+  template:
+    metadata:
+      labels:
+        app: tenant-service
+        tier: platform
+    spec:
+      initContainers:
+        - name: wait-postgres
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z postgres 5432; do sleep 2; done']
+      containers:
+        - name: tenant-service
+          image: amacc/tenant-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3002
+          env:
+            - name: PORT
+              value: "3002"
+          envFrom:
+            - configMapRef:
+                name: amacc-config
+            - secretRef:
+                name: amacc-secrets
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3002
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tenant-service
+  namespace: amacc
+spec:
+  selector:
+    app: tenant-service
+  ports:
+    - port: 3002
+      targetPort: 3002
+
+# --- notification-service :3030 ---
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+  namespace: amacc
+  labels:
+    app: notification-service
+    tier: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notification-service
+  template:
+    metadata:
+      labels:
+        app: notification-service
+        tier: platform
+    spec:
+      initContainers:
+        - name: wait-rabbitmq
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z rabbitmq 5672; do sleep 2; done']
+      containers:
+        - name: notification-service
+          image: amacc/notification-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3030
+          env:
+            - name: PORT
+              value: "3030"
+          envFrom:
+            - configMapRef:
+                name: amacc-config
+            - secretRef:
+                name: amacc-secrets
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3030
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-service
+  namespace: amacc
+spec:
+  selector:
+    app: notification-service
+  ports:
+    - port: 3030
+      targetPort: 3030
+
+# --- audit-service :3031 ---
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-service
+  namespace: amacc
+  labels:
+    app: audit-service
+    tier: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: audit-service
+  template:
+    metadata:
+      labels:
+        app: audit-service
+        tier: platform
+    spec:
+      initContainers:
+        - name: wait-postgres
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z postgres 5432; do sleep 2; done']
+      containers:
+        - name: audit-service
+          image: amacc/audit-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3031
+          env:
+            - name: PORT
+              value: "3031"
+          envFrom:
+            - configMapRef:
+                name: amacc-config
+            - secretRef:
+                name: amacc-secrets
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3031
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: audit-service
+  namespace: amacc
+spec:
+  selector:
+    app: audit-service
+  ports:
+    - port: 3031
+      targetPort: 3031
+
+# --- connector-service :3032 ---
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: connector-service
+  namespace: amacc
+  labels:
+    app: connector-service
+    tier: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: connector-service
+  template:
+    metadata:
+      labels:
+        app: connector-service
+        tier: platform
+    spec:
+      initContainers:
+        - name: wait-rabbitmq
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z rabbitmq 5672; do sleep 2; done']
+      containers:
+        - name: connector-service
+          image: amacc/connector-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3032
+          env:
+            - name: PORT
+              value: "3032"
+          envFrom:
+            - configMapRef:
+                name: amacc-config
+            - secretRef:
+                name: amacc-secrets
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3032
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: connector-service
+  namespace: amacc
+spec:
+  selector:
+    app: connector-service
+  ports:
+    - port: 3032
+      targetPort: 3032
+
+# --- approval-service :3033 ---
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: approval-service
+  namespace: amacc
+  labels:
+    app: approval-service
+    tier: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: approval-service
+  template:
+    metadata:
+      labels:
+        app: approval-service
+        tier: platform
+    spec:
+      initContainers:
+        - name: wait-rabbitmq
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z rabbitmq 5672; do sleep 2; done']
+      containers:
+        - name: approval-service
+          image: amacc/approval-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3033
+          env:
+            - name: PORT
+              value: "3033"
+          envFrom:
+            - configMapRef:
+                name: amacc-config
+            - secretRef:
+                name: amacc-secrets
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3033
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: approval-service
+  namespace: amacc
+spec:
+  selector:
+    app: approval-service
+  ports:
+    - port: 3033
+      targetPort: 3033
+
+# --- onboarding-service :3035 ---
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: onboarding-service
+  namespace: amacc
+  labels:
+    app: onboarding-service
+    tier: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: onboarding-service
+  template:
+    metadata:
+      labels:
+        app: onboarding-service
+        tier: platform
+    spec:
+      initContainers:
+        - name: wait-postgres
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z postgres 5432; do sleep 2; done']
+      containers:
+        - name: onboarding-service
+          image: amacc/onboarding-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3035
+          env:
+            - name: PORT
+              value: "3035"
+          envFrom:
+            - configMapRef:
+                name: amacc-config
+            - secretRef:
+                name: amacc-secrets
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3035
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: onboarding-service
+  namespace: amacc
+spec:
+  selector:
+    app: onboarding-service
+  ports:
+    - port: 3035
+      targetPort: 3035
+
+# --- webhook-service :3036 ---
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webhook-service
+  namespace: amacc
+  labels:
+    app: webhook-service
+    tier: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: webhook-service
+  template:
+    metadata:
+      labels:
+        app: webhook-service
+        tier: platform
+    spec:
+      initContainers:
+        - name: wait-postgres
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z postgres 5432; do sleep 2; done']
+      containers:
+        - name: webhook-service
+          image: amacc/webhook-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3036
+          env:
+            - name: PORT
+              value: "3036"
+          envFrom:
+            - configMapRef:
+                name: amacc-config
+            - secretRef:
+                name: amacc-secrets
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3036
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webhook-service
+  namespace: amacc
+spec:
+  selector:
+    app: webhook-service
+  ports:
+    - port: 3036
+      targetPort: 3036
+
+# --- document-service :3038 ---
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: document-service
+  namespace: amacc
+  labels:
+    app: document-service
+    tier: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: document-service
+  template:
+    metadata:
+      labels:
+        app: document-service
+        tier: platform
+    spec:
+      initContainers:
+        - name: wait-postgres
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z postgres 5432; do sleep 2; done']
+      containers:
+        - name: document-service
+          image: amacc/document-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3038
+          env:
+            - name: PORT
+              value: "3038"
+          envFrom:
+            - configMapRef:
+                name: amacc-config
+            - secretRef:
+                name: amacc-secrets
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3038
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: document-service
+  namespace: amacc
+spec:
+  selector:
+    app: document-service
+  ports:
+    - port: 3038
+      targetPort: 3038
+
+# --- group-service :3039 ---
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: group-service
+  namespace: amacc
+  labels:
+    app: group-service
+    tier: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: group-service
+  template:
+    metadata:
+      labels:
+        app: group-service
+        tier: platform
+    spec:
+      initContainers:
+        - name: wait-postgres
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z postgres 5432; do sleep 2; done']
+      containers:
+        - name: group-service
+          image: amacc/group-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3039
+          env:
+            - name: PORT
+              value: "3039"
+            - name: GL_SERVICE_URL
+              value: "http://gl-service:3010"
+          envFrom:
+            - configMapRef:
+                name: amacc-config
+            - secretRef:
+                name: amacc-secrets
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3039
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: group-service
+  namespace: amacc
+spec:
+  selector:
+    app: group-service
+  ports:
+    - port: 3039
+      targetPort: 3039

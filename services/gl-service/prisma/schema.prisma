@@ -1,0 +1,259 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/gl-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// @cobol-origin gl.rec — GL-REC master account definition
+model GLAccount {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  code          String
+  name          String
+  type          String   // ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE, COST_OF_SALES
+  subType       String?  @map("sub_type")       // e.g. CURRENT_ASSET, FIXED_ASSET, LONG_TERM_LIABILITY
+  normalBalance String   @default("DEBIT") @map("normal_balance") // DEBIT or CREDIT
+  allowPosting  Boolean  @default(true) @map("allow_posting")     // false = header/group account
+  scheduleCode  String?  @map("schedule_code")  // OEM financial statement line mapping
+  glGroup       String?  @map("gl_group")       // department grouping: PARTS, SERVICE, NEW, USED, BODY, ADMIN
+  parentId      String?  @map("parent_id")
+  isActive      Boolean  @default(true) @map("is_active")
+  updatedAt     DateTime? @updatedAt @map("updated_at")
+  /// @cobol-origin gl.rec GL-COS-ACCT — chained cost-of-sale account
+  cosAccountId  String?  @map("cos_account_id")
+  /// @cobol-origin gl.rec GL-INV-ACCT — chained inventory account
+  invAccountId  String?  @map("inv_account_id")
+  /// @cobol-origin gl.rec GL-ADDUNITS — track unit count postings
+  trackUnits    Boolean  @default(false) @map("track_units")
+  /// @cobol-origin gl.rec GL-OPEN-BAL — opening balance carried forward from prior period
+  openingBalance  Decimal  @default(0) @map("opening_balance") @db.Decimal(15, 2)
+  /// @cobol-origin gl.rec GL-OPEN-CNT — opening unit count carried forward from prior period
+  openingUnitCount Int      @default(0) @map("opening_unit_count")
+
+  lines              JournalLine[]
+  periodBalances     GLAccountPeriodBalance[]
+  historyTransactions HistoryTransaction[]
+  // scheduleDetails removed — schedule-service owns detail records via JOURNAL_ENTRY_POSTED event
+  // See wave-3-schedule-subsystem.md for architecture decision
+
+  @@unique([tenantId, code])
+  @@map("gl_accounts")
+  @@index([tenantId])
+}
+
+model JournalEntry {
+  id            String    @id @default(uuid())
+  tenantId      String    @map("tenant_id")
+  entryDate     DateTime  @map("entry_date")
+  description   String
+  source        String
+  sourceRef     String?   @map("source_ref")
+  postedBy      String?   @map("posted_by")
+  postedAt      DateTime? @map("posted_at")
+  status        String    @default("DRAFT")
+  agentReviewed    Boolean   @default(false) @map("agent_reviewed")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  createdByUserId  String?   @map("created_by_user_id")
+  approvedByUserId String?   @map("approved_by_user_id")
+  approvedAt       DateTime? @map("approved_at")
+  priorPeriodAdjustment Boolean @default(false) @map("prior_period_adjustment")
+  adjustmentReason      String? @map("adjustment_reason")
+
+  lines            JournalLine[]
+  dealProductLines DealProductLine[]
+
+  @@map("journal_entries")
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, sourceRef])
+}
+
+model JournalLine {
+  id             String  @id @default(uuid())
+  journalEntryId String  @map("journal_entry_id")
+  glAccountId    String  @map("gl_account_id")
+  debit          Float   @default(0)
+  credit         Float   @default(0)
+  memo            String?
+  departmentCode  String?  @map("department_code")
+  technicianId    String?  @map("technician_id")
+  roNumber        String?  @map("ro_number")
+  roLineNumber    Int?     @map("ro_line_number")
+  flatRateHours   Float?   @map("flat_rate_hours")
+  clockHours      Float?   @map("clock_hours")
+  partNumber      String?  @map("part_number")
+  partQuantity    Float?   @map("part_quantity")
+  earningCode     String?  @map("earning_code")
+  dealProductCode String?  @map("deal_product_code")
+  dealNumber      String?  @map("deal_number")
+  vehicleVin      String?  @map("vehicle_vin")
+  moduleSource    String?  @map("module_source")
+  laborType       String?  @map("labor_type")
+  costType        String?  @map("cost_type")
+  agentConfidence Float?   @map("agent_confidence")
+  /// @cobol-origin tran.fd TR-COST — separate cost amount for COS/INV chain posting
+  costAmount      Float?   @map("cost_amount")
+  /// @cobol-origin tran.fd TR-APPLY-CD — "#" = use apply number not cost
+  applyCd         String?  @map("apply_cd")
+  /// @cobol-origin tran.fd TR-REV-ADJ — "R"=reversal, "A"=adjustment
+  revAdjFlag      String?  @map("rev_adj_flag")
+
+  journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id])
+  glAccount    GLAccount    @relation(fields: [glAccountId], references: [id])
+
+  @@map("journal_lines")
+  @@index([journalEntryId])
+  @@index([departmentCode])
+  @@index([technicianId])
+  @@index([partNumber])
+  @@index([moduleSource])
+  @@index([dealNumber])
+  @@index([roNumber])
+}
+
+model DealProductLine {
+  id              String  @id @default(uuid())
+  journalEntryId  String  @map("journal_entry_id")
+  dealNumber      String  @map("deal_number")
+  productType     String  @map("product_type")
+  productName     String  @map("product_name")
+  salePrice       Float   @map("sale_price")
+  dealerCost      Float   @map("dealer_cost")
+  grossProfit     Float   @map("gross_profit")
+  providerName    String? @map("provider_name")
+
+  journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id])
+
+  @@map("deal_product_lines")
+  @@index([journalEntryId])
+  @@index([dealNumber])
+}
+
+model OutboxEvent {
+  id            String    @id @default(uuid())
+  eventType     String    @map("event_type")
+  tenantId      String    @map("tenant_id")
+  payload       Json
+  correlationId String?   @map("correlation_id")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  publishedAt   DateTime? @map("published_at")
+  retryCount    Int       @default(0) @map("retry_count")
+  lastError     String?   @map("last_error")
+
+  @@map("outbox_events")
+  @@index([publishedAt, retryCount])
+  @@index([createdAt])
+}
+
+/// @cobol-origin jrn.fd — JR-BALANCE running balance per account/period/source
+/// @trace-cobol UPDATE-JOURNAL paragraph in tranpost.cbl
+/// Replaces JOURNAL-MF ISAM file. Eliminates risk of JRN balance overflow (INV-03).
+model GLAccountPeriodBalance {
+  id             String  @id @default(uuid())
+  tenantId       String  @map("tenant_id")
+  glAccountId    String  @map("gl_account_id")
+  periodYear     Int     @map("period_year")
+  periodMonth    Int     @map("period_month")
+  journalSource  String  @map("journal_source")
+  /// @cobol-origin JR-BALANCE — running MTD balance for this account/period/source
+  runningBalance Decimal @default(0) @map("running_balance") @db.Decimal(15, 2)
+  /// @cobol-origin JR-COUNT — running unit count for this account/period/source
+  unitCount      Int     @default(0) @map("unit_count")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  glAccount GLAccount @relation(fields: [glAccountId], references: [id])
+
+  @@unique([tenantId, glAccountId, periodYear, periodMonth, journalSource])
+  @@map("gl_account_period_balances")
+  @@index([tenantId])
+  @@index([tenantId, glAccountId, periodYear, periodMonth])
+}
+
+/// @cobol-origin histtran.fd + histtran.rec — full audit trail, one record per line posted
+/// @trace-cobol UPDATE-HISTTRAN + WR-HISTTRAN paragraphs in tranpost.cbl
+/// Replaces HISTTRAN-FILE ISAM file. Eliminates DUPEREFNO overflow (INV-06) via DB sequences.
+model HistoryTransaction {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  /// @cobol-origin HI-SOURCE
+  journalSource   String   @map("journal_source")
+  /// @cobol-origin HI-DATE
+  transactionDate DateTime @map("transaction_date")
+  /// @cobol-origin HI-REFNO — reference number, 12 chars since ACC-2744
+  referenceNumber String   @map("reference_number")
+  /// @cobol-origin HI-DUPEREFNO — overflow sequence when same refno used 100+ times
+  dupeSequence    Int      @default(0) @map("dupe_sequence")
+  /// @cobol-origin HI-LINENO — line number within ref, 1..9999, sequential per refno
+  lineNumber      Int      @map("line_number")
+  /// @cobol-origin HI-TYPE — " "=normal, "C"=cost-of-sale, "I"=inventory
+  postType        String   @default(" ") @map("post_type")
+  glAccountId     String   @map("gl_account_id")
+  /// @cobol-origin HI-AMOUNT
+  amount          Decimal  @db.Decimal(15, 2)
+  /// @cobol-origin HI-COST — non-zero only when HI-TYPE = "C"
+  costAmount      Decimal  @default(0) @map("cost_amount") @db.Decimal(15, 2)
+  /// @cobol-origin HI-APPLYNO — apply-to reference number
+  applyNumber     String?  @map("apply_number")
+  /// @cobol-origin HI-CONTNO — control number (customer/stock)
+  controlNumber   String?  @map("control_number")
+  /// @cobol-origin HI-CONTNA — description / name field
+  description     String?
+  /// @cobol-origin HI-COUNT — unit count for this line
+  unitCount       Int      @default(0) @map("unit_count")
+  /// @cobol-origin HI-CLEAR-CODE — always " " on initial post; set by bank recon
+  clearCode       String   @default(" ") @map("clear_code")
+  /// @cobol-origin HI-REV-ADJ — "R"=reversal, "A"=adjustment
+  revAdjFlag      String   @default(" ") @map("rev_adj_flag")
+  /// @cobol-origin HI-AUTO-POST — "Y" if system-generated
+  autoPostFlag    String   @default(" ") @map("auto_post_flag")
+  /// @cobol-origin HI-FROM-PROG — source program code
+  fromProgram     String?  @map("from_program")
+  /// @cobol-origin HI-TRAN-DATE — date entry was entered
+  enteredAt       DateTime? @map("entered_at")
+  /// @cobol-origin HI-POST-DATE / HI-POSTED-DATE — date and time of posting
+  postedAt        DateTime @default(now()) @map("posted_at")
+  postedByUserId  String?  @map("posted_by_user_id")
+  journalEntryId  String   @map("journal_entry_id")
+  /// @cobol-origin transumm.cbl Choice 1 — marks record as included in a prior-date autopost summary
+  /// Set instead of physical deletion (transumm deletes COBOL tran records after printing Choice 1)
+  autopostSummarizedAt DateTime? @map("autopost_summarized_at")
+
+  glAccount GLAccount @relation(fields: [glAccountId], references: [id])
+
+  @@unique([tenantId, journalSource, transactionDate, referenceNumber, dupeSequence, lineNumber, postType])
+  @@map("history_transactions")
+  @@index([tenantId])
+  @@index([tenantId, glAccountId])
+  @@index([tenantId, journalSource, transactionDate])
+  @@index([journalEntryId])
+}
+
+// ScheduleDetail model REMOVED — moved to schedule-service
+// Architecture: gl-service publishes JOURNAL_ENTRY_POSTED event;
+// schedule-service subscribes and writes its own ScheduleDetail records.
+// See amacc/docs/gap-analysis/wave-3-schedule-subsystem.md
+
+/// Intercompany entry for tracking and elimination during consolidation
+model IntercompanyEntry {
+  id                        String    @id @default(uuid())
+  tenantId                  String    @map("tenant_id")
+  counterpartyTenantId      String    @map("counterparty_tenant_id")
+  journalEntryId            String?   @map("journal_entry_id")
+  counterpartyJournalEntryId String?  @map("counterparty_journal_entry_id")
+  entryType                 String    @default("VEHICLE_TRANSFER") @map("entry_type")
+  amount                    Float
+  description               String
+  status                    String    @default("PENDING") // PENDING | MATCHED | ELIMINATED
+  eliminationEntryId        String?   @map("elimination_entry_id")
+  createdAt                 DateTime  @default(now()) @map("created_at")
+
+  @@map("intercompany_entries")
+  @@index([tenantId])
+  @@index([counterpartyTenantId])
+  @@index([status])
+}

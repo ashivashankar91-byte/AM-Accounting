@@ -1,0 +1,327 @@
+# ============================================================================
+# AMACC AI Agent Services (5 services)
+# ============================================================================
+
+# --- agent-gl :3020 ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-gl
+  namespace: amacc
+  labels:
+    app: agent-gl
+    tier: agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-gl
+  template:
+    metadata:
+      labels:
+        app: agent-gl
+        tier: agent
+    spec:
+      initContainers:
+        - name: wait-rabbitmq
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z rabbitmq 5672; do sleep 2; done']
+      containers:
+        - name: agent-gl
+          image: amacc/agent-gl:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3020
+          env:
+            - name: PORT
+              value: "3020"
+          envFrom:
+            - configMapRef:
+                name: amacc-config
+            - secretRef:
+                name: amacc-secrets
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3020
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-gl
+  namespace: amacc
+spec:
+  selector:
+    app: agent-gl
+  ports:
+    - port: 3020
+      targetPort: 3020
+
+# --- agent-eom :3021 ---
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-eom
+  namespace: amacc
+  labels:
+    app: agent-eom
+    tier: agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-eom
+  template:
+    metadata:
+      labels:
+        app: agent-eom
+        tier: agent
+    spec:
+      initContainers:
+        - name: wait-rabbitmq
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z rabbitmq 5672; do sleep 2; done']
+      containers:
+        - name: agent-eom
+          image: amacc/agent-eom:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3021
+          env:
+            - name: PORT
+              value: "3021"
+          envFrom:
+            - configMapRef:
+                name: amacc-config
+            - secretRef:
+                name: amacc-secrets
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3021
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-eom
+  namespace: amacc
+spec:
+  selector:
+    app: agent-eom
+  ports:
+    - port: 3021
+      targetPort: 3021
+
+# --- agent-payroll :3022 ---
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-payroll
+  namespace: amacc
+  labels:
+    app: agent-payroll
+    tier: agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-payroll
+  template:
+    metadata:
+      labels:
+        app: agent-payroll
+        tier: agent
+    spec:
+      initContainers:
+        - name: wait-rabbitmq
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z rabbitmq 5672; do sleep 2; done']
+      containers:
+        - name: agent-payroll
+          image: amacc/agent-payroll:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3022
+          env:
+            - name: PORT
+              value: "3022"
+          envFrom:
+            - configMapRef:
+                name: amacc-config
+            - secretRef:
+                name: amacc-secrets
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3022
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-payroll
+  namespace: amacc
+spec:
+  selector:
+    app: agent-payroll
+  ports:
+    - port: 3022
+      targetPort: 3022
+
+# --- agent-apar :3023 ---
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-apar
+  namespace: amacc
+  labels:
+    app: agent-apar
+    tier: agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-apar
+  template:
+    metadata:
+      labels:
+        app: agent-apar
+        tier: agent
+    spec:
+      initContainers:
+        - name: wait-rabbitmq
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z rabbitmq 5672; do sleep 2; done']
+      containers:
+        - name: agent-apar
+          image: amacc/agent-apar:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3023
+          env:
+            - name: PORT
+              value: "3023"
+          envFrom:
+            - configMapRef:
+                name: amacc-config
+            - secretRef:
+                name: amacc-secrets
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3023
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-apar
+  namespace: amacc
+spec:
+  selector:
+    app: agent-apar
+  ports:
+    - port: 3023
+      targetPort: 3023
+
+# --- agent-t1 :3024 (SSE streaming copilot) ---
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-t1
+  namespace: amacc
+  labels:
+    app: agent-t1
+    tier: agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-t1
+  template:
+    metadata:
+      labels:
+        app: agent-t1
+        tier: agent
+    spec:
+      initContainers:
+        - name: wait-rabbitmq
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z rabbitmq 5672; do sleep 2; done']
+      containers:
+        - name: agent-t1
+          image: amacc/agent-t1:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3024
+          env:
+            - name: PORT
+              value: "3024"
+          envFrom:
+            - configMapRef:
+                name: amacc-config
+            - secretRef:
+                name: amacc-secrets
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3024
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-t1
+  namespace: amacc
+spec:
+  selector:
+    app: agent-t1
+  ports:
+    - port: 3024
+      targetPort: 3024

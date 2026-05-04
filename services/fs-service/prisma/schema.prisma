@@ -1,0 +1,132 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/fs-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Stream 4 — Financial Statement Generation
+
+model OEMProfile {
+  id               String   @id @default(cuid())
+  tenantId         String   @map("tenant_id")
+  oemCode          String   @map("oem_code")
+  oemName          String   @map("oem_name")
+  dealerCode       String   @map("dealer_code")
+  reportFormat     String   @default("STANDARD") @map("report_format")
+  submissionMethod String   @default("API")      @map("submission_method")
+  submissionUrl    String?  @map("submission_url")
+  isActive         Boolean  @default(true)       @map("is_active")
+  createdAt        DateTime @default(now())      @map("created_at")
+  updatedAt        DateTime @updatedAt           @map("updated_at")
+
+  mappings   OEMAccountMapping[]
+  statements FinancialStatement[]
+
+  @@unique([tenantId, oemCode])
+  @@map("oem_profiles")
+  @@index([tenantId, isActive])
+}
+
+model OEMAccountMapping {
+  id              String     @id @default(cuid())
+  tenantId        String     @map("tenant_id")
+  oemProfileId    String     @map("oem_profile_id")
+  oemProfile      OEMProfile @relation(fields: [oemProfileId], references: [id])
+  oemLineNumber   String     @map("oem_line_number")
+  oemLineLabel    String     @map("oem_line_label")
+  oemSection      String     @map("oem_section")
+  glAccountCodes  String[]   @map("gl_account_codes")
+  calculationType String     @default("SUM") @map("calculation_type")
+  formula         String?
+  displayOrder    Int        @map("display_order")
+  isSubtotal      Boolean    @default(false) @map("is_subtotal")
+  isTotal         Boolean    @default(false) @map("is_total")
+
+  @@unique([tenantId, oemProfileId, oemLineNumber])
+  @@map("oem_account_mappings")
+  @@index([tenantId, oemProfileId, displayOrder])
+}
+
+model FinancialStatement {
+  id              String     @id @default(cuid())
+  tenantId        String     @map("tenant_id")
+  oemProfileId    String     @map("oem_profile_id")
+  oemProfile      OEMProfile @relation(fields: [oemProfileId], references: [id])
+  periodYear      Int        @map("period_year")
+  periodMonth     Int        @map("period_month")
+  statementType   String     @default("MONTHLY") @map("statement_type")
+  status          String     @default("DRAFT")
+  generatedAt     DateTime?  @map("generated_at")
+  reviewedBy      String?    @map("reviewed_by")
+  reviewedAt      DateTime?  @map("reviewed_at")
+  submittedAt     DateTime?  @map("submitted_at")
+  submittedBy     String?    @map("submitted_by")
+  responseCode    String?    @map("response_code")
+  responseMessage String?    @map("response_message")
+  rejectionReason String?    @map("rejection_reason")
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt      @map("updated_at")
+
+  lineItems   FSLineItem[]
+  comparisons FSComparison[]
+
+  @@unique([tenantId, oemProfileId, periodYear, periodMonth, statementType])
+  @@map("financial_statements")
+  @@index([tenantId, status])
+}
+
+model FSLineItem {
+  id            String             @id @default(cuid())
+  tenantId      String             @map("tenant_id")
+  statementId   String             @map("statement_id")
+  statement     FinancialStatement @relation(fields: [statementId], references: [id])
+  oemLineNumber String             @map("oem_line_number")
+  oemLineLabel  String             @map("oem_line_label")
+  oemSection    String             @map("oem_section")
+  currentMonth  Decimal            @default(0) @map("current_month") @db.Decimal(15, 2)
+  yearToDate    Decimal            @default(0) @map("year_to_date")  @db.Decimal(15, 2)
+  priorMonth    Decimal?           @map("prior_month")               @db.Decimal(15, 2)
+  priorYear     Decimal?           @map("prior_year")                @db.Decimal(15, 2)
+  variance      Decimal?           @db.Decimal(15, 2)
+  variancePct   Decimal?           @map("variance_pct")              @db.Decimal(8, 4)
+  displayOrder  Int                @map("display_order")
+  isSubtotal    Boolean            @default(false) @map("is_subtotal")
+  isTotal       Boolean            @default(false) @map("is_total")
+  glAccountCodes String[]          @map("gl_account_codes")
+
+  @@map("fs_line_items")
+  @@index([tenantId, statementId, displayOrder])
+}
+
+model FSComparison {
+  id              String             @id @default(cuid())
+  tenantId        String             @map("tenant_id")
+  statementId     String             @map("statement_id")
+  statement       FinancialStatement @relation(fields: [statementId], references: [id])
+  comparisonType  String             @map("comparison_type")
+  comparisonYear  Int                @map("comparison_year")
+  comparisonMonth Int                @map("comparison_month")
+
+  @@unique([tenantId, statementId, comparisonType])
+  @@map("fs_comparisons")
+}
+
+model FSSupplementalData {
+  id          String @id @default(cuid())
+  tenantId    String @map("tenant_id")
+  oemCode     String @map("oem_code")
+  periodYear  Int    @map("period_year")
+  periodMonth Int    @map("period_month")
+  fieldName   String @map("field_name")
+  fieldValue  String @map("field_value")
+  fieldType   String @default("STRING") @map("field_type")
+
+  @@unique([tenantId, oemCode, periodYear, periodMonth, fieldName])
+  @@map("fs_supplemental_data")
+  @@index([tenantId, oemCode, periodYear, periodMonth])
+}

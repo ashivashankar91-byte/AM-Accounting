@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 50">
+  <!-- Solera icon: 4 horizontal lines with decreasing width -->
+  <g transform="translate(0,8)">
+    <line x1="0" y1="0" x2="22" y2="0" stroke="#4B3F72" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="0" y1="8" x2="28" y2="8" stroke="#5A4E8A" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="0" y1="16" x2="34" y2="16" stroke="#6B5EA0" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="0" y1="24" x2="40" y2="24" stroke="#7B6EB5" stroke-width="3.5" stroke-linecap="round"/>
+  </g>
+  <!-- SOLERA text -->
+  <text x="48" y="28" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="22" font-weight="600" letter-spacing="4" fill="#4B3F72">SOLERA</text>
+  <!-- Vehicle Solutions subtitle -->
+  <text x="48" y="42" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="8.5" fill="#8E8E8E" letter-spacing="0.5">Vehicle Solutions</text>
+  <!-- Divider line -->
+  <line x1="183" y1="8" x2="183" y2="42" stroke="#CCCCCC" stroke-width="1"/>
+  <!-- Auto/Mate text -->
+  <text x="195" y="28" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="22" font-weight="600" letter-spacing="1" fill="#4B3F72">Auto/Mate</text>
+  <!-- by DealerSocket subtitle -->
+  <text x="195" y="42" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="8.5" fill="#8E8E8E" letter-spacing="0.5">by DealerSocket</text>
+</svg>

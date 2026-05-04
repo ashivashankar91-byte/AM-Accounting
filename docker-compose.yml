@@ -1,0 +1,525 @@
+﻿x-service-env: &service-env
+  DATABASE_URL: postgresql://amacc:amacc_dev@postgres:5432/amacc
+  RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+  REDIS_URL: redis://redis:6379
+  NODE_ENV: development
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-sk-ant-placeholder}
+  # AMACC_JWT_SECRET must be set in .env â€” no default allowed in production
+  AMACC_JWT_SECRET: ${AMACC_JWT_SECRET:?AMACC_JWT_SECRET is required}
+  # auth-service uses JWT_SECRET (its own issuer)
+  JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+  JWT_ISSUER: amacc
+  ADMIN_API_KEY: ${ADMIN_API_KEY:?ADMIN_API_KEY is required}
+  AMACC_INTERNAL_TOKEN: ${AMACC_INTERNAL_TOKEN:-amacc-internal-dev}
+
+x-healthcheck: &healthcheck
+  interval: 10s
+  timeout: 5s
+  retries: 5
+
+services:
+  # --- Infrastructure ---
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: amacc
+      POSTGRES_PASSWORD: amacc_dev
+      POSTGRES_DB: amacc
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U amacc"]
+      <<: *healthcheck
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      <<: *healthcheck
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
+      <<: *healthcheck
+
+  # --- Core Services ---
+  auth-service:
+    build:
+      context: .
+      dockerfile: services/auth-service/Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      <<: *service-env
+      PORT: 3001
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  tenant-service:
+    build:
+      context: .
+      dockerfile: services/tenant-service/Dockerfile
+    ports:
+      - "3002:3002"
+    environment:
+      <<: *service-env
+      PORT: 3002
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  # --- Domain Services ---
+  gl-service:
+    build:
+      context: .
+      dockerfile: services/gl-service/Dockerfile
+    ports:
+      - "3010:3010"
+    environment:
+      <<: *service-env
+      PORT: 3010
+      EOM_SERVICE_URL: http://eom-service:3011
+      SCHEDULE_SERVICE_URL: http://schedule-service:3030
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  eom-service:
+    build:
+      context: .
+      dockerfile: services/eom-service/Dockerfile
+    ports:
+      - "3011:3011"
+    environment:
+      <<: *service-env
+      PORT: 3011
+      GL_SERVICE_URL: http://gl-service:3010
+      SCHEDULE_SERVICE_URL: http://schedule-service:3030
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  payroll-service:
+    build:
+      context: .
+      dockerfile: services/payroll-service/Dockerfile
+    ports:
+      - "3012:3012"
+    environment:
+      <<: *service-env
+      PORT: 3012
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  apar-service:
+    build:
+      context: .
+      dockerfile: services/apar-service/Dockerfile
+    ports:
+      - "3013:3013"
+    environment:
+      <<: *service-env
+      PORT: 3013
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  recon-service:
+    build:
+      context: .
+      dockerfile: services/recon-service/Dockerfile
+    ports:
+      - "3014:3014"
+    environment:
+      <<: *service-env
+      PORT: 3014
+
+  schedule-service:
+    build:
+      context: .
+      dockerfile: services/schedule-service/Dockerfile
+    ports:
+      - "3030:3030"
+    environment:
+      <<: *service-env
+      PORT: 3030
+      GL_SERVICE_URL: http://gl-service:3010
+      EOM_SERVICE_URL: http://eom-service:3011
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  # --- Agent Services ---
+  agent-gl:
+    build:
+      context: .
+      dockerfile: services/agent-gl/Dockerfile
+    ports:
+      - "3020:3020"
+    environment:
+      <<: *service-env
+      PORT: 3020
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is required}
+      GL_SERVICE_URL: http://gl-service:3010
+      APPROVAL_SERVICE_URL: http://approval-service:3054
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  agent-eom:
+    build:
+      context: .
+      dockerfile: services/agent-eom/Dockerfile
+    ports:
+      - "3021:3021"
+    environment:
+      <<: *service-env
+      PORT: 3021
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is required}
+      EOM_SERVICE_URL: http://eom-service:3011
+      GL_SERVICE_URL: http://gl-service:3010
+      SCHEDULE_SERVICE_URL: http://schedule-service:3030
+      APPROVAL_SERVICE_URL: http://approval-service:3054
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  agent-payroll:
+    build:
+      context: .
+      dockerfile: services/agent-payroll/Dockerfile
+    ports:
+      - "3022:3022"
+    environment:
+      <<: *service-env
+      PORT: 3022
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is required}
+      GL_SERVICE_URL: http://gl-service:3010
+      PAYROLL_SERVICE_URL: http://payroll-service:3012
+      APPROVAL_SERVICE_URL: http://approval-service:3054
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  agent-apar:
+    build:
+      context: .
+      dockerfile: services/agent-apar/Dockerfile
+    ports:
+      - "3023:3023"
+    environment:
+      <<: *service-env
+      PORT: 3023
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is required}
+      GL_SERVICE_URL: http://gl-service:3010
+      APAR_SERVICE_URL: http://apar-service:3013
+      SCHEDULE_SERVICE_URL: http://schedule-service:3030
+      APPROVAL_SERVICE_URL: http://approval-service:3054
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  agent-t1:
+    build:
+      context: .
+      dockerfile: services/agent-t1/Dockerfile
+    ports:
+      - "3024:3024"
+    environment:
+      <<: *service-env
+      PORT: 3024
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is required}
+      GL_SERVICE_URL: http://gl-service:3010
+      EOM_SERVICE_URL: http://eom-service:3011
+      PAYROLL_SERVICE_URL: http://payroll-service:3012
+      APAR_SERVICE_URL: http://apar-service:3013
+      SCHEDULE_SERVICE_URL: http://schedule-service:3030
+      FS_SERVICE_URL: http://fs-service:3045
+      APPROVAL_SERVICE_URL: http://approval-service:3054
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  # --- Integration Services ---
+  notification-service:
+    build:
+      context: .
+      dockerfile: services/notification-service/Dockerfile
+    ports:
+      - "3030:3030"
+    environment:
+      <<: *service-env
+      PORT: 3030
+    depends_on:
+      rabbitmq: { condition: service_healthy }
+
+  audit-service:
+    build:
+      context: .
+      dockerfile: services/audit-service/Dockerfile
+    ports:
+      - "3031:3031"
+    environment:
+      <<: *service-env
+      PORT: 3031
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  connector-service:
+    build:
+      context: .
+      dockerfile: services/connector-service/Dockerfile
+    ports:
+      - "3032:3032"
+    environment:
+      <<: *service-env
+      PORT: 3032
+    depends_on:
+      rabbitmq: { condition: service_healthy }
+
+  # --- New Services ---
+  approval-service:
+    build:
+      context: .
+      dockerfile: services/approval-service/Dockerfile
+    ports:
+      - "3033:3033"
+    environment:
+      <<: *service-env
+      PORT: 3033
+    depends_on:
+      rabbitmq: { condition: service_healthy }
+
+  coa-service:
+    build:
+      context: .
+      dockerfile: services/coa-service/Dockerfile
+    ports:
+      - "3016:3016"
+    environment:
+      <<: *service-env
+      PORT: 3016
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  fs-service:
+    build:
+      context: .
+      dockerfile: services/fs-service/Dockerfile
+    ports:
+      - "3015:3015"
+    environment:
+      <<: *service-env
+      PORT: 3015
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  onboarding-service:
+    build:
+      context: .
+      dockerfile: services/onboarding-service/Dockerfile
+    ports:
+      - "3035:3035"
+    environment:
+      <<: *service-env
+      PORT: 3035
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  webhook-service:
+    build:
+      context: .
+      dockerfile: services/webhook-service/Dockerfile
+    ports:
+      - "3036:3036"
+    environment:
+      <<: *service-env
+      PORT: 3036
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  cashflow-service:
+    build:
+      context: .
+      dockerfile: services/cashflow-service/Dockerfile
+    ports:
+      - "3037:3037"
+    environment:
+      <<: *service-env
+      PORT: 3037
+      GL_SERVICE_URL: http://gl-service:3010
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  document-service:
+    build:
+      context: .
+      dockerfile: services/document-service/Dockerfile
+    ports:
+      - "3038:3038"
+    environment:
+      <<: *service-env
+      PORT: 3038
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  group-service:
+    build:
+      context: .
+      dockerfile: services/group-service/Dockerfile
+    ports:
+      - "3039:3039"
+    environment:
+      <<: *service-env
+      PORT: 3039
+      GL_SERVICE_URL: http://gl-service:3010
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  # --- Gap-Filling Services ---
+  user-service:
+    build:
+      context: .
+      dockerfile: services/user-service/Dockerfile
+    ports:
+      - "3040:3040"
+    environment:
+      <<: *service-env
+      PORT: 3040
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  # data-quality-service: ARCHIVED (Wave 5) â€” absorbed into compliance-service
+  # esg-service:          ARCHIVED (Wave 5) â€” not in Phase 1 scope
+  # revenue-service:      ARCHIVED (Wave 5) â€” covered by gl-service income statement
+  # ml-service:           ARCHIVED (Wave 5) â€” replaced by agent-* services via Claude API
+
+  compliance-service:
+    build:
+      context: .
+      dockerfile: services/compliance-service/Dockerfile
+    ports:
+      - "3043:3043"
+    environment:
+      <<: *service-env
+      PORT: 3043
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  query-service:
+    build:
+      context: .
+      dockerfile: services/query-service/Dockerfile
+    ports:
+      - "3045:3045"
+    environment:
+      <<: *service-env
+      PORT: 3045
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  analytics-service:
+    build:
+      context: .
+      dockerfile: services/analytics-service/Dockerfile
+    ports:
+      - "3046:3046"
+    environment:
+      <<: *service-env
+      PORT: 3046
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  orchestrator-service:
+    build:
+      context: .
+      dockerfile: services/orchestrator-service/Dockerfile
+    ports:
+      - "3048:3048"
+    environment:
+      <<: *service-env
+      PORT: 3048
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  # --- API Gateway (Fastify reverse proxy) ---
+  api-gateway:
+    build:
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      <<: *service-env
+      PORT: 3000
+      AUTH_SERVICE_URL: http://auth-service:3001
+      GL_SERVICE_URL: http://gl-service:3010
+      EOM_SERVICE_URL: http://eom-service:3011
+      SCHEDULE_SERVICE_URL: http://schedule-service:3030
+      GROUP_SERVICE_URL: http://group-service:3039
+    depends_on:
+      - auth-service
+      - gl-service
+      - eom-service
+      - payroll-service
+      - apar-service
+      - recon-service
+      - schedule-service
+      - agent-gl
+      - agent-eom
+      - agent-payroll
+      - agent-apar
+      - agent-t1
+      - notification-service
+      - audit-service
+      - connector-service
+      - approval-service
+      - coa-service
+      - fs-service
+      - onboarding-service
+      - webhook-service
+      - cashflow-service
+      - document-service
+      - group-service
+      - compliance-service
+      - query-service
+      - analytics-service
+      - orchestrator-service
+
+  # --- Web Frontend ---
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "5174:5174"
+    environment:
+      VITE_API_URL:
+    depends_on:
+      - api-gateway
+    volumes:
+      - ./apps/web/src:/app/src
+    command: npx vite --host
+
+volumes:
+  pgdata:

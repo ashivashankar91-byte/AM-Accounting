@@ -1,0 +1,531 @@
+# ============================================================================
+# AMACC Core Accounting Services (8 services)
+# ============================================================================
+# Each service: Deployment (1 replica) + ClusterIP Service
+# All share amacc-config ConfigMap and amacc-secrets Secret
+# ============================================================================
+
+# --- gl-service :3010 ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gl-service
+  namespace: amacc
+  labels:
+    app: gl-service
+    tier: core
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gl-service
+  template:
+    metadata:
+      labels:
+        app: gl-service
+        tier: core
+    spec:
+      initContainers:
+        - name: wait-postgres
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z postgres 5432; do sleep 2; done']
+      containers:
+        - name: gl-service
+          image: amacc/gl-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3010
+          env:
+            - name: PORT
+              value: "3010"
+          envFrom:
+            - configMapRef:
+                name: amacc-config
+            - secretRef:
+                name: amacc-secrets
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3010
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3010
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gl-service
+  namespace: amacc
+spec:
+  selector:
+    app: gl-service
+  ports:
+    - port: 3010
+      targetPort: 3010
+
+# --- eom-service :3011 ---
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eom-service
+  namespace: amacc
+  labels:
+    app: eom-service
+    tier: core
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: eom-service
+  template:
+    metadata:
+      labels:
+        app: eom-service
+        tier: core
+    spec:
+      initContainers:
+        - name: wait-postgres
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z postgres 5432; do sleep 2; done']
+      containers:
+        - name: eom-service
+          image: amacc/eom-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3011
+          env:
+            - name: PORT
+              value: "3011"
+          envFrom:
+            - configMapRef:
+                name: amacc-config
+            - secretRef:
+                name: amacc-secrets
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3011
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: eom-service
+  namespace: amacc
+spec:
+  selector:
+    app: eom-service
+  ports:
+    - port: 3011
+      targetPort: 3011
+
+# --- payroll-service :3012 ---
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payroll-service
+  namespace: amacc
+  labels:
+    app: payroll-service
+    tier: core
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payroll-service
+  template:
+    metadata:
+      labels:
+        app: payroll-service
+        tier: core
+    spec:
+      initContainers:
+        - name: wait-postgres
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z postgres 5432; do sleep 2; done']
+      containers:
+        - name: payroll-service
+          image: amacc/payroll-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3012
+          env:
+            - name: PORT
+              value: "3012"
+          envFrom:
+            - configMapRef:
+                name: amacc-config
+            - secretRef:
+                name: amacc-secrets
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3012
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payroll-service
+  namespace: amacc
+spec:
+  selector:
+    app: payroll-service
+  ports:
+    - port: 3012
+      targetPort: 3012
+
+# --- apar-service :3013 ---
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: apar-service
+  namespace: amacc
+  labels:
+    app: apar-service
+    tier: core
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: apar-service
+  template:
+    metadata:
+      labels:
+        app: apar-service
+        tier: core
+    spec:
+      initContainers:
+        - name: wait-postgres
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z postgres 5432; do sleep 2; done']
+      containers:
+        - name: apar-service
+          image: amacc/apar-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3013
+          env:
+            - name: PORT
+              value: "3013"
+          envFrom:
+            - configMapRef:
+                name: amacc-config
+            - secretRef:
+                name: amacc-secrets
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3013
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: apar-service
+  namespace: amacc
+spec:
+  selector:
+    app: apar-service
+  ports:
+    - port: 3013
+      targetPort: 3013
+
+# --- recon-service :3014 ---
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recon-service
+  namespace: amacc
+  labels:
+    app: recon-service
+    tier: core
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: recon-service
+  template:
+    metadata:
+      labels:
+        app: recon-service
+        tier: core
+    spec:
+      initContainers:
+        - name: wait-postgres
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z postgres 5432; do sleep 2; done']
+      containers:
+        - name: recon-service
+          image: amacc/recon-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3014
+          env:
+            - name: PORT
+              value: "3014"
+          envFrom:
+            - configMapRef:
+                name: amacc-config
+            - secretRef:
+                name: amacc-secrets
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3014
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: recon-service
+  namespace: amacc
+spec:
+  selector:
+    app: recon-service
+  ports:
+    - port: 3014
+      targetPort: 3014
+
+# --- fs-service :3015 ---
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fs-service
+  namespace: amacc
+  labels:
+    app: fs-service
+    tier: core
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fs-service
+  template:
+    metadata:
+      labels:
+        app: fs-service
+        tier: core
+    spec:
+      initContainers:
+        - name: wait-postgres
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z postgres 5432; do sleep 2; done']
+      containers:
+        - name: fs-service
+          image: amacc/fs-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3015
+          env:
+            - name: PORT
+              value: "3015"
+          envFrom:
+            - configMapRef:
+                name: amacc-config
+            - secretRef:
+                name: amacc-secrets
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3015
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fs-service
+  namespace: amacc
+spec:
+  selector:
+    app: fs-service
+  ports:
+    - port: 3015
+      targetPort: 3015
+
+# --- coa-service :3016 ---
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coa-service
+  namespace: amacc
+  labels:
+    app: coa-service
+    tier: core
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coa-service
+  template:
+    metadata:
+      labels:
+        app: coa-service
+        tier: core
+    spec:
+      initContainers:
+        - name: wait-postgres
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z postgres 5432; do sleep 2; done']
+      containers:
+        - name: coa-service
+          image: amacc/coa-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3016
+          env:
+            - name: PORT
+              value: "3016"
+          envFrom:
+            - configMapRef:
+                name: amacc-config
+            - secretRef:
+                name: amacc-secrets
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3016
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: coa-service
+  namespace: amacc
+spec:
+  selector:
+    app: coa-service
+  ports:
+    - port: 3016
+      targetPort: 3016
+
+# --- cashflow-service :3037 ---
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cashflow-service
+  namespace: amacc
+  labels:
+    app: cashflow-service
+    tier: core
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cashflow-service
+  template:
+    metadata:
+      labels:
+        app: cashflow-service
+        tier: core
+    spec:
+      initContainers:
+        - name: wait-postgres
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z postgres 5432; do sleep 2; done']
+      containers:
+        - name: cashflow-service
+          image: amacc/cashflow-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3037
+          env:
+            - name: PORT
+              value: "3037"
+          envFrom:
+            - configMapRef:
+                name: amacc-config
+            - secretRef:
+                name: amacc-secrets
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3037
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cashflow-service
+  namespace: amacc
+spec:
+  selector:
+    app: cashflow-service
+  ports:
+    - port: 3037
+      targetPort: 3037

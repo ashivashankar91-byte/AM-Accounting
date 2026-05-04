@@ -1,0 +1,30 @@
+{
+  "name": "amacc",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AMACC — AutoMate Accounting Cloud (Microservices)",
+  "workspaces": [
+    "packages/*",
+    "services/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "powershell -ExecutionPolicy Bypass -File ./start-local.ps1",
+    "dev:docker": "docker compose up --build",
+    "dev:infra": "docker compose up -d postgres redis rabbitmq",
+    "dev:stop": "powershell -Command \"Get-Job | Stop-Job; Get-Job | Remove-Job; Write-Host 'All services stopped'\"",
+    "build:shared": "npm -w packages/shared-kernel run build",
+    "build:all": "npm run build:shared && npm run build:services && npm -w apps/web run build",
+    "build:services": "npm run build:shared && node scripts/build-services.js",
+    "lint": "eslint . --ext .ts,.tsx",
+    "test": "vitest run",
+    "seed": "npx tsx scripts/seed.ts"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.20.0",
+    "pg": "^8.20.0"
+  }
+}

@@ -1,0 +1,41 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/ml-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model MLModel {
+  id         String   @id @default(uuid())
+  tenantId   String   @map("tenant_id")
+  modelType  String   @map("model_type")
+  version    String   @default("1.0")
+  trainedAt  DateTime @default(now()) @map("trained_at")
+  accuracy   Float    @default(0)
+  parameters Json     @default("{}")
+  isActive   Boolean  @default(true) @map("is_active")
+
+  @@index([tenantId, modelType])
+  @@map("ml_models")
+}
+
+model MLPrediction {
+  id             String    @id @default(uuid())
+  modelId        String    @map("model_id")
+  tenantId       String    @map("tenant_id")
+  entityType     String    @map("entity_type")
+  entityId       String    @map("entity_id")
+  prediction     Json
+  confidence     Float
+  actualOutcome  String?   @map("actual_outcome")
+  wasCorrect     Boolean?  @map("was_correct")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@index([tenantId])
+  @@index([modelId])
+  @@map("ml_predictions")
+}

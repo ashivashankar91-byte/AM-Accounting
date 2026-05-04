@@ -1,0 +1,76 @@
+openapi: '3.1.0'
+info:
+  title: AMACC Audit Service API
+  version: '1.0.0'
+  description: Append-only audit log
+servers:
+  - url: http://localhost:3031
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  schemas:
+    AuditLog:
+      type: object
+      properties:
+        id: { type: string }
+        tenantId: { type: string }
+        eventType: { type: string }
+        entityType: { type: string }
+        entityId: { type: string }
+        actorType: { type: string }
+        actorId: { type: string }
+        actorName: { type: string }
+        action: { type: string }
+        previousState: { type: object, nullable: true }
+        newState: { type: object, nullable: true }
+        reason: { type: string, nullable: true }
+        confidence: { type: number, nullable: true }
+        metadata: { type: object, nullable: true }
+        occurredAt: { type: string, format: date-time }
+paths:
+  /api/v1/audit/log:
+    post:
+      summary: Append audit record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenantId, eventType, entityType, entityId, actorType, actorId, actorName, action]
+              properties:
+                tenantId: { type: string }
+                eventType: { type: string }
+                entityType: { type: string }
+                entityId: { type: string }
+                actorType: { type: string }
+                actorId: { type: string }
+                actorName: { type: string }
+                action: { type: string }
+      responses:
+        '201': { description: Created }
+  /api/v1/audit/entity/{entityType}/{entityId}:
+    get:
+      summary: History of an entity
+      parameters:
+        - { name: entityType, in: path, required: true, schema: { type: string } }
+        - { name: entityId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+  /api/v1/audit/actor/{actorId}:
+    get:
+      summary: All actions by an actor
+      parameters:
+        - { name: actorId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+  /api/v1/audit/period/{from}/{to}:
+    get:
+      summary: Actions in a date range
+      parameters:
+        - { name: from, in: path, required: true, schema: { type: string, format: date } }
+        - { name: to, in: path, required: true, schema: { type: string, format: date } }
+      responses:
+        '200': { description: OK }

@@ -1,0 +1,39 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/esg-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model EsgMetric {
+  id         String   @id @default(uuid())
+  tenantId   String   @map("tenant_id")
+  period     String
+  metricType String   @map("metric_type")
+  value      Float
+  unit       String
+  source     String   @default("MANUAL")
+  recordedAt DateTime @default(now()) @map("recorded_at")
+
+  @@index([tenantId, period])
+  @@map("esg_metrics")
+}
+
+model EsgReport {
+  id                  String   @id @default(uuid())
+  tenantId            String   @map("tenant_id")
+  period              String
+  totalCarbonTons     Float    @map("total_carbon_tons")
+  evRevenuePct        Float    @map("ev_revenue_pct")
+  iceRevenuePct       Float    @map("ice_revenue_pct")
+  energyKwh           Float    @map("energy_kwh")
+  sustainabilityScore Float    @map("sustainability_score")
+  generatedAt         DateTime @default(now()) @map("generated_at")
+
+  @@index([tenantId, period])
+  @@map("esg_reports")
+}

@@ -1,0 +1,47 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/webhook-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model WebhookRegistration {
+  id            String    @id @default(uuid())
+  tenantId      String    @map("tenant_id")
+  name          String
+  targetUrl     String    @map("target_url")
+  events        String[]
+  secret        String
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  lastCalledAt  DateTime? @map("last_called_at")
+  failureCount  Int       @default(0) @map("failure_count")
+
+  deliveries WebhookDelivery[]
+
+  @@map("webhook_registrations")
+  @@index([tenantId])
+  @@index([isActive])
+}
+
+model WebhookDelivery {
+  id                      String    @id @default(uuid())
+  webhookRegistrationId   String    @map("webhook_registration_id")
+  eventType               String    @map("event_type")
+  payload                 Json
+  responseStatus          Int?      @map("response_status")
+  responseBody            String?   @map("response_body")
+  attemptCount            Int       @default(1) @map("attempt_count")
+  deliveredAt             DateTime? @map("delivered_at")
+  failedAt                DateTime? @map("failed_at")
+
+  webhookRegistration WebhookRegistration @relation(fields: [webhookRegistrationId], references: [id])
+
+  @@map("webhook_deliveries")
+  @@index([webhookRegistrationId])
+  @@index([eventType])
+}

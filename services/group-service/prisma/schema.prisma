@@ -1,0 +1,95 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/group-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model DealerGroup {
+  id      String                @id @default(uuid())
+  name    String
+  tenants DealerGroupTenant[]
+
+  @@map("dealer_groups")
+}
+
+model DealerGroupTenant {
+  id            String      @id @default(uuid())
+  dealerGroupId String      @map("dealer_group_id")
+  tenantId      String      @map("tenant_id")
+  rooftopName   String      @map("rooftop_name")
+
+  dealerGroup DealerGroup @relation(fields: [dealerGroupId], references: [id])
+
+  @@unique([dealerGroupId, tenantId])
+  @@map("dealer_group_tenants")
+  @@index([dealerGroupId])
+}
+
+/// @cobol-origin consolgl.cbl — /acct/prog/consolgl.opts2 configuration
+/// Replaces the line-sequential config file that listed consolidated company numbers.
+model ConsolidatedGlConfig {
+  id                   String    @id @default(uuid())
+  groupId              String    @map("group_id")
+  /// The "consolidated company" tenant — receives merged GL/journal data
+  consolidatedTenantId String    @map("consolidated_tenant_id")
+  /// Source tenants whose GL data is merged in (up to 40 per consolgl.cbl)
+  sourceTenantIds      String[]  @map("source_tenant_ids")
+  /// @cobol-origin WS-LSTCLOS-DATE in consolgl.cbl — overrides last-closed-date for consolidated FS
+  lastClosedDate       String?   @map("last_closed_date") // YYYYMMDD
+  lastImportedAt       DateTime? @map("last_imported_at")
+  isValid              Boolean   @default(false) @map("is_valid")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  mappings ConsolidationMapping[]
+
+  @@unique([groupId, consolidatedTenantId])
+  @@map("consolidated_gl_configs")
+  @@index([groupId])
+}
+
+/// @cobol-origin consolexpgl.cbl — consolmap ISAM file
+/// Maps source-company account codes to assigned consolidated account IDs.
+/// COBOL format: originalAcctno(12) → newAcctId(a0001..z9999), up to 99 source companies.
+/// TypeScript: unlimited rows, one per (consolidatedTenantId, originalAccountCode, sourceTenantId).
+model ConsolidationMapping {
+  id                    String   @id @default(uuid())
+  configId              String   @map("config_id")
+  consolidatedTenantId  String   @map("consolidated_tenant_id")
+  sourceTenantId        String   @map("source_tenant_id")
+  originalAccountCode   String   @map("original_account_code")
+  /// @cobol-origin CONSOL-MAP-NEW-ACCTID — lowercase letter + 4-digit counter: a0001..z9999
+  consolidatedAccountId String   @map("consolidated_account_id")
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  config ConsolidatedGlConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  @@unique([consolidatedTenantId, originalAccountCode, sourceTenantId])
+  @@map("consolidation_mappings")
+  @@index([consolidatedTenantId])
+  @@index([configId])
+}
+
+/// Outbox pattern for reliable event publishing from group-service.
+/// Written inside $transaction alongside state changes — never via direct publish.
+model OutboxEvent {
+  id            String    @id @default(uuid())
+  eventType     String    @map("event_type")
+  tenantId      String    @map("tenant_id")
+  payload       Json
+  correlationId String?   @map("correlation_id")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  publishedAt   DateTime? @map("published_at")
+  retryCount    Int       @default(0) @map("retry_count")
+  lastError     String?   @map("last_error")
+
+  @@map("outbox_events")
+  @@index([publishedAt, retryCount])
+  @@index([createdAt])
+}
+

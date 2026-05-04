@@ -1,0 +1,179 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/payroll-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Stream 3 — Full Payroll Module
+
+model Employee {
+  id                  String        @id @default(cuid())
+  tenantId            String        @map("tenant_id")
+  employeeCode        String        @map("employee_code")
+  firstName           String        @map("first_name")
+  lastName            String        @map("last_name")
+  department          String
+  payType             String        @map("pay_type")
+  payRate             Decimal?      @map("pay_rate")        @db.Decimal(15, 4)
+  commissionRate      Decimal?      @map("commission_rate") @db.Decimal(5, 4)
+  payFrequency        String        @default("BI_WEEKLY")   @map("pay_frequency")
+  federalFilingStatus String        @default("SINGLE")      @map("federal_filing_status")
+  stateCode           String?       @map("state_code")
+  federalAllowances   Int           @default(0)             @map("federal_allowances")
+  stateAllowances     Int           @default(0)             @map("state_allowances")
+  isActive            Boolean       @default(true)          @map("is_active")
+  hireDate            DateTime      @map("hire_date")
+  terminationDate     DateTime?     @map("termination_date")
+  defaultGlDept       String?       @map("default_gl_dept")
+  createdAt           DateTime      @default(now())         @map("created_at")
+  updatedAt           DateTime      @updatedAt              @map("updated_at")
+
+  payItems   PayrollItem[]
+  ytdRecords EmployeeYTD[]
+
+  @@unique([tenantId, employeeCode])
+  @@map("employees")
+  @@index([tenantId, department, isActive])
+}
+
+model PayrollBatch {
+  id               String    @id @default(cuid())
+  tenantId         String    @map("tenant_id")
+  batchNumber      String    @map("batch_number")
+  payPeriodStart   DateTime  @map("pay_period_start")
+  payPeriodEnd     DateTime  @map("pay_period_end")
+  payDate          DateTime  @map("pay_date")
+  payFrequency     String    @map("pay_frequency")
+  status           String    @default("DRAFT")
+  totalGrossPay    Decimal   @default(0) @map("total_gross_pay")    @db.Decimal(15, 2)
+  totalDeductions  Decimal   @default(0) @map("total_deductions")   @db.Decimal(15, 2)
+  totalNetPay      Decimal   @default(0) @map("total_net_pay")      @db.Decimal(15, 2)
+  totalEmployerTax Decimal   @default(0) @map("total_employer_tax") @db.Decimal(15, 2)
+  employeeCount    Int       @default(0) @map("employee_count")
+  journalEntryId   String?   @map("journal_entry_id")
+  approvedBy       String?   @map("approved_by")
+  approvedAt       DateTime? @map("approved_at")
+  postedAt         DateTime? @map("posted_at")
+  voidedAt         DateTime? @map("voided_at")
+  voidReason       String?   @map("void_reason")
+  createdBy        String    @map("created_by")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt      @map("updated_at")
+
+  items PayrollItem[]
+
+  @@unique([tenantId, batchNumber])
+  @@map("payroll_batches")
+  @@index([tenantId, status])
+  @@index([tenantId, payDate])
+}
+
+model PayrollItem {
+  id               String   @id @default(cuid())
+  tenantId         String   @map("tenant_id")
+  batchId          String   @map("batch_id")
+  batch            PayrollBatch @relation(fields: [batchId], references: [id])
+  employeeId       String   @map("employee_id")
+  employee         Employee @relation(fields: [employeeId], references: [id])
+  department       String
+
+  regularHours     Decimal? @map("regular_hours")  @db.Decimal(8, 2)
+  overtimeHours    Decimal? @map("overtime_hours") @db.Decimal(8, 2)
+  regularPay       Decimal  @default(0) @map("regular_pay")    @db.Decimal(15, 2)
+  overtimePay      Decimal  @default(0) @map("overtime_pay")   @db.Decimal(15, 2)
+  commissionPay    Decimal  @default(0) @map("commission_pay") @db.Decimal(15, 2)
+  bonusPay         Decimal  @default(0) @map("bonus_pay")      @db.Decimal(15, 2)
+  otherPay         Decimal  @default(0) @map("other_pay")      @db.Decimal(15, 2)
+  grossPay         Decimal  @default(0) @map("gross_pay")      @db.Decimal(15, 2)
+
+  federalTax       Decimal  @default(0) @map("federal_tax")      @db.Decimal(15, 2)
+  stateTax         Decimal  @default(0) @map("state_tax")        @db.Decimal(15, 2)
+  socialSecurity   Decimal  @default(0) @map("social_security")  @db.Decimal(15, 2)
+  medicare         Decimal  @default(0) @map("medicare")         @db.Decimal(15, 2)
+  otherDeductions  Decimal  @default(0) @map("other_deductions") @db.Decimal(15, 2)
+  totalDeductions  Decimal  @default(0) @map("total_deductions") @db.Decimal(15, 2)
+  netPay           Decimal  @default(0) @map("net_pay")          @db.Decimal(15, 2)
+
+  employerFICA     Decimal  @default(0) @map("employer_fica")     @db.Decimal(15, 2)
+  employerMedicare Decimal  @default(0) @map("employer_medicare") @db.Decimal(15, 2)
+  employerFUTA     Decimal  @default(0) @map("employer_futa")     @db.Decimal(15, 2)
+  employerSUTA     Decimal  @default(0) @map("employer_suta")     @db.Decimal(15, 2)
+  totalEmployerTax Decimal  @default(0) @map("total_employer_tax") @db.Decimal(15, 2)
+
+  glAccountCode    String?  @map("gl_account_code")
+  glDepartment     String?  @map("gl_department")
+
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@map("payroll_items")
+  @@index([tenantId, batchId])
+  @@index([tenantId, employeeId])
+}
+
+model PayrollGLMapping {
+  id            String  @id @default(cuid())
+  tenantId      String  @map("tenant_id")
+  department    String
+  payComponent  String  @map("pay_component")
+  glAccountCode String  @map("gl_account_code")
+  isDebit       Boolean @map("is_debit")
+
+  @@unique([tenantId, department, payComponent])
+  @@map("payroll_gl_mappings")
+  @@index([tenantId])
+}
+
+model PayrollTaxRate {
+  id            String   @id @default(cuid())
+  tenantId      String   @map("tenant_id")
+  taxType       String   @map("tax_type")
+  rate          Decimal  @db.Decimal(7, 6)
+  wageBase      Decimal? @map("wage_base") @db.Decimal(15, 2)
+  effectiveYear Int      @map("effective_year")
+  isEmployer    Boolean  @default(false) @map("is_employer")
+
+  @@unique([tenantId, taxType, effectiveYear, isEmployer])
+  @@map("payroll_tax_rates")
+  @@index([tenantId, effectiveYear])
+}
+
+model EmployeeYTD {
+  id              String   @id @default(cuid())
+  tenantId        String   @map("tenant_id")
+  employeeId      String   @map("employee_id")
+  employee        Employee @relation(fields: [employeeId], references: [id])
+  year            Int
+  grossPay        Decimal  @default(0) @map("gross_pay")        @db.Decimal(15, 2)
+  federalTax      Decimal  @default(0) @map("federal_tax")      @db.Decimal(15, 2)
+  stateTax        Decimal  @default(0) @map("state_tax")        @db.Decimal(15, 2)
+  socialSecurity  Decimal  @default(0) @map("social_security")  @db.Decimal(15, 2)
+  medicare        Decimal  @default(0) @map("medicare")         @db.Decimal(15, 2)
+  ficaWages       Decimal  @default(0) @map("fica_wages")       @db.Decimal(15, 2)
+  otherDeductions Decimal  @default(0) @map("other_deductions") @db.Decimal(15, 2)
+  netPay          Decimal  @default(0) @map("net_pay")          @db.Decimal(15, 2)
+
+  @@unique([tenantId, employeeId, year])
+  @@map("employee_ytd")
+  @@index([tenantId, year])
+}
+
+model OutboxEvent {
+  id            String    @id @default(uuid())
+  eventType     String    @map("event_type")
+  tenantId      String    @map("tenant_id")
+  payload       Json
+  correlationId String?   @map("correlation_id")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  publishedAt   DateTime? @map("published_at")
+  retryCount    Int       @default(0) @map("retry_count")
+  lastError     String?   @map("last_error")
+
+  @@map("outbox_events")
+  @@index([publishedAt, retryCount])
+  @@index([createdAt])
+}
