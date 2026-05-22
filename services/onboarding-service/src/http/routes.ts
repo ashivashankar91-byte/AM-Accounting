@@ -92,5 +92,23 @@ export function onboardingRoutes(service: InMemoryOnboardingService) {
       const template = COA_TEMPLATES[oem.toUpperCase()] ?? COA_TEMPLATES['DEFAULT'];
       return reply.send(template);
     });
+
+    // GET /onboarding/status — overall onboarding status across all sessions
+    app.get('/status', async (_request, reply) => {
+      const sessions = await service.listSessions();
+      const total = sessions.length;
+      const completed = sessions.filter((s: any) => s.status === 'COMPLETED').length;
+      const inProgress = sessions.filter((s: any) => s.status === 'IN_PROGRESS').length;
+      const failed = sessions.filter((s: any) => s.status === 'FAILED').length;
+      return reply.send({
+        total,
+        completed,
+        inProgress,
+        failed,
+        completionRate: total > 0 ? Math.round((completed / total) * 100) : 0,
+        status: inProgress > 0 ? 'IN_PROGRESS' : completed === total && total > 0 ? 'ALL_COMPLETE' : 'IDLE',
+        updatedAt: new Date().toISOString(),
+      });
+    });
   };
 }

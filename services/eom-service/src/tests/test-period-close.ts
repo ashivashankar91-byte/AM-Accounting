@@ -160,6 +160,20 @@ function makeMocks() {
     create: vi.fn().mockResolvedValue({ id: 'ye-record-001' }),
   };
 
+  // Minimal PrismaClient mock — only the methods used by advanceStep
+  const prisma = {
+    eOMStep: {
+      findFirst: vi.fn().mockResolvedValue(null),
+      findUnique: vi.fn().mockResolvedValue(null),
+      update: vi.fn().mockResolvedValue(undefined),
+    },
+    eOMClose: {
+      findFirst: vi.fn(),
+      update: vi.fn().mockResolvedValue(undefined),
+    },
+    $transaction: vi.fn().mockImplementation(async (fn: any) => fn(prisma)),
+  };
+
   const svc = new EOMService(
     closeRepo as any,
     stepRepo as any,
@@ -167,9 +181,10 @@ function makeMocks() {
     orchestrator as any,
     glClient,
     yearEndRepo,
+    prisma as any,
   );
 
-  return { closeRepo, stepRepo, eventPublisher, orchestrator, glClient, yearEndRepo, svc };
+  return { closeRepo, stepRepo, eventPublisher, orchestrator, glClient, yearEndRepo, prisma, svc };
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

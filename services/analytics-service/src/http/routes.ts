@@ -53,5 +53,14 @@ export function analyticsRoutes(prisma: any): FastifyPluginAsync {
       if (data.length > 0) return reply.send(data);
       return reply.send({ data: [], dataAvailable: false });
     });
+    app.get('/kpis', async (request, reply) => {
+      const tenantId = request.headers['x-tenant-id'] as string | undefined;
+      if (!tenantId) return reply.status(401).send({ error: 'x-tenant-id header is required' });
+      const now = new Date();
+      const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const plData = await prisma.aggMonthlyPL.findMany({ where: { tenantId, period } }).catch(() => []);
+      return reply.send({ period, kpis: plData, dataAvailable: plData.length > 0 });
+    });
+
   };
 }

@@ -136,8 +136,8 @@ export default function AccountingCommandCenter() {
               </div>
             )}
             {alerts.map((alert: any) => {
-              const bgColor = alert.priority === 'critical' ? 'bg-red-50' : alert.priority === 'review' ? 'bg-amber-50' : 'bg-blue-50';
-              const borderColor = alert.priority === 'critical' ? 'border-red-200' : alert.priority === 'review' ? 'border-amber-200' : 'border-blue-200';
+              const bgColor = alert.priority === 'critical' ? 'bg-red-50' : alert.priority === 'review' ? 'bg-amber-50' : 'bg-brand-light';
+              const borderColor = alert.priority === 'critical' ? 'border-red-200' : alert.priority === 'review' ? 'border-amber-200' : 'border-brand-border';
               const iconColor = alert.priority === 'critical' ? 'text-red-500' : alert.priority === 'review' ? 'text-amber-500' : 'text-blue-500';
               return (
                 <div key={alert.id} className={`${bgColor} rounded-xl border ${borderColor} p-3 cursor-pointer hover:shadow-sm transition-shadow`}>
@@ -158,7 +158,7 @@ export default function AccountingCommandCenter() {
                         <button className={`text-[9px] font-semibold px-2.5 py-1 rounded-lg transition-colors ${
                           alert.actionType === 'approve'
                             ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                            : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                            : 'bg-brand-light text-brand hover:bg-blue-200'
                         }`}>
                           {alert.action} →
                         </button>
@@ -177,7 +177,7 @@ export default function AccountingCommandCenter() {
             {([['gl', 'GL Account Monitor'], ['charts', 'Revenue & Expenses'], ['kpis', 'Dept Performance']] as const).map(([key, label]) => (
               <button key={key} onClick={() => setCenterTab(key)}
                 className={`flex-1 py-1.5 text-[10px] font-bold uppercase tracking-wider border-b-2 transition-colors ${
-                  centerTab === key ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-400 hover:text-gray-600'
+                  centerTab === key ? 'border-blue-600 text-brand' : 'border-transparent text-gray-400 hover:text-gray-600'
                 }`}>
                 {label}
               </button>
@@ -215,17 +215,17 @@ export default function AccountingCommandCenter() {
                   <tbody>
                     {accounts.map((a: any) => {
                       const statusDot = a.status === 'high-activity' ? 'bg-amber-400'
-                        : a.status === 'large-balance' ? 'bg-blue-500'
+                        : a.status === 'large-balance' ? 'bg-brand-light0'
                         : a.todayPostings > 0 ? 'bg-green-400' : 'bg-gray-300';
                       return (
-                        <tr key={a.id} className="border-b border-gray-50 hover:bg-blue-50/30">
+                        <tr key={a.id} className="border-b border-gray-50 hover:bg-brand-light/30">
                           <td className="px-2 py-1.5"><span className={`inline-block w-2 h-2 rounded-full ${statusDot}`} /></td>
                           <td className="px-2 py-1.5 font-mono text-gray-600">{a.code}</td>
                           <td className="px-2 py-1.5 font-medium text-gray-800">{a.name}</td>
                           <td className="px-2 py-1.5 text-gray-500 text-[9px]">{a.type}</td>
                           <td className="px-2 py-1.5 text-right font-mono tabular-nums">{a.debitTotal > 0 ? fmt$(a.debitTotal) : ''}</td>
                           <td className="px-2 py-1.5 text-right font-mono tabular-nums">{a.creditTotal > 0 ? fmt$(a.creditTotal) : ''}</td>
-                          <td className={`px-2 py-1.5 text-right font-mono font-semibold tabular-nums ${a.balance < 0 ? 'text-blue-700' : 'text-gray-900'}`}>
+                          <td className={`px-2 py-1.5 text-right font-mono font-semibold tabular-nums ${a.balance < 0 ? 'text-brand' : 'text-gray-900'}`}>
                             {a.balance < 0 ? `(${fmt$(Math.abs(a.balance))})` : fmt$(a.balance)}
                           </td>
                           <td className="px-2 py-1.5 text-right text-gray-500">
@@ -458,7 +458,7 @@ export default function AccountingCommandCenter() {
                 return Object.entries(byType).map(([type, bal]) => (
                   <div key={type} className="flex justify-between py-0.5 text-xs">
                     <span className="text-gray-600">{type}</span>
-                    <span className={`font-medium tabular-nums ${bal < 0 ? 'text-blue-700' : 'text-gray-900'}`}>
+                    <span className={`font-medium tabular-nums ${bal < 0 ? 'text-brand' : 'text-gray-900'}`}>
                       {bal < 0 ? `(${fmt$(Math.abs(bal))})` : fmt$(bal)}
                     </span>
                   </div>
@@ -485,7 +485,7 @@ export default function AccountingCommandCenter() {
             {ashleyMessages.map((msg, i) => (
               <div key={i} className={`px-3 py-1.5 rounded-lg text-xs max-w-[85%] ${
                 msg.role === 'user'
-                  ? 'ml-auto bg-blue-50 text-blue-800 text-right'
+                  ? 'ml-auto bg-brand-light text-blue-800 text-right'
                   : 'bg-gray-50 text-gray-700 border-l-3 border-l-4 border-purple-400'
               }`}>
                 {msg.role === 'ashley' && <span className="block text-[8px] text-purple-600 font-bold mb-0.5">Ashley AI (Live Data)</span>}
@@ -509,7 +509,7 @@ export default function AccountingCommandCenter() {
             className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-300"
           />
           <button onClick={handleAshley} disabled={ashleyLoading}
-            className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold hover:bg-blue-700 transition-colors disabled:opacity-50">
+            className="bg-brand text-white px-3 py-1.5 rounded-lg text-[10px] font-bold hover:bg-brand transition-colors disabled:opacity-50">
             {ashleyLoading ? '...' : 'Send'}
           </button>
         </div>

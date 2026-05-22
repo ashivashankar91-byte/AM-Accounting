@@ -29,8 +29,8 @@ export class PrismaAPEntryRepository implements IAPEntryRepository {
     return {
       id: row.id, tenantId: row.tenantId as TenantId,
       vendorName: row.vendorName, invoiceRef: row.invoiceRef,
-      amount: row.amount, dueDate: row.dueDate,
-      status: row.status, glAccountId: row.glAccountId,
+      amount: Number(row.amount), dueDate: row.dueDate,
+      status: row.status, glAccountId: row.glAccountId ?? null,
     };
   }
 }

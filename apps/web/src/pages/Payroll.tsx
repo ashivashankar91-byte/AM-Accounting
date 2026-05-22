@@ -5,6 +5,7 @@ import PageError from '../components/PageError';
 import StatusBadge from '../components/StatusBadge';
 import { SkeletonTable } from '../components/Skeleton';
 import AIInsight from '../components/AIInsight';
+import CommissionTracking from '../components/CommissionTracking';
 
 function todayString() {
   return new Date().toISOString().split('T')[0];
@@ -18,6 +19,7 @@ export default function Payroll() {
   const queryClient = useQueryClient();
   const { data: batches, isLoading, error, refetch } = useQuery({ queryKey: ['payroll-batches'], queryFn: payrollApi.getBatches, retry: false });
 
+  const [activeTab, setActiveTab] = useState<'batches' | 'commissions'>('batches');
   const [showForm, setShowForm] = useState(false);
   const [batchRef, setBatchRef] = useState(`PAY-${todayString()}`);
   const [periodStart, setPeriodStart] = useState('');
@@ -110,15 +112,57 @@ export default function Payroll() {
         </div>
       )}
 
-      {/* Submit button */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: '2px solid var(--border)' }}>
         <button
-          onClick={() => setShowForm(!showForm)}
-          style={{ padding: '10px 20px', fontSize: 13, fontWeight: 600, borderRadius: 8, border: 'none', cursor: 'pointer', background: 'var(--primary)', color: 'white' }}
+          onClick={() => setActiveTab('batches')}
+          style={{
+            padding: '12px 16px',
+            fontSize: 13,
+            fontWeight: 600,
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: activeTab === 'batches' ? 'var(--primary)' : 'var(--text-muted)',
+            borderBottom: activeTab === 'batches' ? '3px solid var(--primary)' : 'none',
+            marginBottom: '-2px',
+          }}
         >
-          {showForm ? 'Cancel' : 'Submit New Batch'}
+          Payroll Batches
+        </button>
+        <button
+          onClick={() => setActiveTab('commissions')}
+          style={{
+            padding: '12px 16px',
+            fontSize: 13,
+            fontWeight: 600,
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: activeTab === 'commissions' ? 'var(--primary)' : 'var(--text-muted)',
+            borderBottom: activeTab === 'commissions' ? '3px solid var(--primary)' : 'none',
+            marginBottom: '-2px',
+          }}
+        >
+          Commission Tracking
         </button>
       </div>
+
+      {/* Submit button */}
+      {activeTab === 'batches' && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
+          <button
+            onClick={() => setShowForm(!showForm)}
+            style={{ padding: '10px 20px', fontSize: 13, fontWeight: 600, borderRadius: 8, border: 'none', cursor: 'pointer', background: 'var(--primary)', color: 'white' }}
+          >
+            {showForm ? 'Cancel' : 'Submit New Batch'}
+          </button>
+        </div>
+      )}
+
+      {/* Batches Tab Content */}
+      {activeTab === 'batches' && (
+        <>
 
       {/* Submit Form */}
       {showForm && (
@@ -251,9 +295,9 @@ export default function Payroll() {
                 <tr key={b.id} style={{ borderBottom: '1px solid #F1F5F9' }}
                   onMouseEnter={(ev) => ev.currentTarget.style.background = '#F8FAFC'}
                   onMouseLeave={(ev) => ev.currentTarget.style.background = ''}>
-                  <td style={{ padding: '12px 16px', fontSize: 13, fontFamily: 'monospace', fontWeight: 600, color: 'var(--primary)' }}>{b.batchRef}</td>
+                  <td style={{ padding: '12px 16px', fontSize: 13, fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, color: 'var(--primary)' }}>{b.batchRef}</td>
                   <td style={{ padding: '12px 16px', fontSize: 13 }}>{formatDate(b.periodStart)} — {formatDate(b.periodEnd)}</td>
-                  <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: 'monospace', fontSize: 13, fontWeight: 600 }}>${b.totalAmount.toLocaleString()}</td>
+                  <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600 }}>${b.totalAmount.toLocaleString()}</td>
                   <td style={{ padding: '12px 16px' }}><StatusBadge status={b.status} /></td>
                   <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text-muted)' }}>{new Date(b.submittedAt).toLocaleDateString()}</td>
                   <td style={{ padding: '12px 16px', display: 'flex', gap: 8 }}>
@@ -277,6 +321,13 @@ export default function Payroll() {
       )}
 
       <AIInsight pageType="payroll" context="Payroll" data={{ batches: batches?.slice(0, 20) }} />
+        </>
+      )}
+
+      {/* Commission Tracking Tab Content */}
+      {activeTab === 'commissions' && (
+        <CommissionTracking />
+      )}
     </div>
   );
 }

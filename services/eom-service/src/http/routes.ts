@@ -197,6 +197,31 @@ export async function eomRoutes(app: FastifyInstance) {
     }
   });
 
+  /**
+   * Restore GL state from backup (BUILD-012).
+   * Only available if close status is BLOCKED.
+   * Restores gl_accounts.opening_balance and gl_account_period_balances from ACCT_010 snapshot.
+   * Used for manual recovery by support staff after failed ACCT_200 destructive steps.
+   */
+  app.post('/:id/restore-backup', async (request, reply) => {
+    const id = requireTenantId(request, reply);
+    if (!id) return;
+    const tenantId = asTenantId(id);
+    const { id: closeId } = request.params as { id: string };
+    try {
+      const result = await svc.restoreBackup(closeId, tenantId);
+      return reply.send(result);
+    } catch (err) {
+      if ((err as any).message.includes('not found')) {
+        reply.status(404).send({ error: (err as Error).message });
+      } else if ((err as any).message.includes('not BLOCKED')) {
+        reply.status(409).send({ error: (err as Error).message });
+      } else {
+        throw err;
+      }
+    }
+  });
+
   // ── Year-End Close ─────────────────────────────────────
 
   /**

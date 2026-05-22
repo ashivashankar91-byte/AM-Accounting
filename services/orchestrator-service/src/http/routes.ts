@@ -104,6 +104,13 @@ export function orchestratorRoutes(prisma: PrismaClient, jwtSecret: string) {
       return reply.send(await prisma.orchestrationTask.update({ where: { id: task.id }, data: { status: 'RUNNING', steps } }));
     });
 
+    app.get('/api/v1/orchestrator/status', async (req, reply) => {
+      const tenantId = req.headers['x-tenant-id'] as string | undefined;
+      if (!tenantId) return reply.status(401).send({ error: 'x-tenant-id header is required' });
+      const running = await prisma.orchestrationTask.findMany({ where: { tenantId, status: 'RUNNING' } }).catch(() => []);
+      return reply.send({ status: 'operational', activeTasks: running.length, workflows: Object.keys(WORKFLOWS) });
+    });
+
     app.get('/api/v1/orchestrator/tasks', async (req, reply) => {
       const tenantId = req.headers['x-tenant-id'] as string | undefined;
       if (!tenantId) return reply.status(401).send({ error: 'x-tenant-id header is required' });

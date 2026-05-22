@@ -92,15 +92,15 @@ export default function AIInsight({ context, data, pageType }: AIInsightProps) {
       )}
 
       {narrative && (
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200 p-4 space-y-3">
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-brand-border p-4 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-blue-700">AI Insight</span>
+              <span className="text-sm font-semibold text-brand">AI Insight</span>
               <span className="text-[10px] text-gray-400">{timestamp}</span>
             </div>
             <div className="flex gap-2">
-              <button onClick={share} className="text-xs text-blue-600 hover:underline">Share</button>
-              <button onClick={generate} disabled={loading} className="text-xs text-blue-600 hover:underline">
+              <button onClick={share} className="text-xs text-brand hover:underline">Share</button>
+              <button onClick={generate} disabled={loading} className="text-xs text-brand hover:underline">
                 {loading ? 'Regenerating...' : 'Regenerate'}
               </button>
             </div>

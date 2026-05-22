@@ -208,8 +208,8 @@ export class InquiryRepository {
       const existing = map.get(key) ?? { count: 0, debits: 0, credits: 0 };
       existing.count += 1;
       for (const line of entry.lines) {
-        existing.debits += line.debit;
-        existing.credits += line.credit;
+        existing.debits += Number(line.debit);
+        existing.credits += Number(line.credit);
       }
       map.set(key, existing);
     }
@@ -263,8 +263,8 @@ export class InquiryRepository {
           controlNumber: (line as any).dealNumber ?? null,
           accountCode: line.glAccount.code,
           accountName: line.glAccount.name,
-          debit: line.debit,
-          credit: line.credit,
+          debit: Number(line.debit),
+          credit: Number(line.credit),
           applyNumber: (line as any).roNumber ?? null,
         });
       });
@@ -296,8 +296,8 @@ export class InquiryRepository {
     let totalCredits = 0;
     for (const entry of entries) {
       for (const line of entry.lines) {
-        totalDebits += line.debit;
-        totalCredits += line.credit;
+        totalDebits += Number(line.debit);
+        totalCredits += Number(line.credit);
       }
     }
 

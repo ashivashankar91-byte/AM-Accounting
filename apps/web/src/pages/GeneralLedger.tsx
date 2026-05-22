@@ -7,7 +7,7 @@ import { SkeletonTable } from '../components/Skeleton';
 import AIInsight from '../components/AIInsight';
 
 const SOURCE_LABELS: Record<string, { label: string; color: string }> = {
-  AUTOMATE_DMS: { label: 'AutoMate DMS', color: 'bg-blue-100 text-blue-700' },
+  AUTOMATE_DMS: { label: 'AutoMate DMS', color: 'bg-brand-light text-brand' },
   EXTERNAL_DMS: { label: 'External DMS', color: 'bg-purple-100 text-purple-700' },
   CONNECTOR_CDK: { label: 'CDK Drive', color: 'bg-indigo-100 text-indigo-700' },
   MANUAL: { label: 'Manual', color: 'bg-gray-100 text-gray-600' },
@@ -77,7 +77,7 @@ export default function GeneralLedger() {
                 <tr key={a.id} style={{ borderBottom: '1px solid #F1F5F9' }}
                   onMouseEnter={(ev) => ev.currentTarget.style.background = '#F8FAFC'}
                   onMouseLeave={(ev) => ev.currentTarget.style.background = ''}>
-                  <td style={{ padding: '12px 16px', fontFamily: 'monospace', fontSize: 13, fontWeight: 600, color: 'var(--primary)' }}>{a.code}</td>
+                  <td style={{ padding: '12px 16px', fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, color: 'var(--primary)' }}>{a.code}</td>
                   <td style={{ padding: '12px 16px', fontSize: 13 }}>{a.name}</td>
                   <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text-muted)' }}>{a.type}</td>
                   <td style={{ padding: '12px 16px', fontSize: 13 }}>{a.isActive ? '✓' : '✗'}</td>
@@ -127,11 +127,11 @@ export default function GeneralLedger() {
                       onMouseLeave={(ev) => { if (!isOpen) ev.currentTarget.style.background = ''; }}>
                       <td style={{ padding: '12px 16px', textAlign: 'center', color: 'var(--text-subtle)', fontSize: 12 }}>{isOpen ? '▼' : '▶'}</td>
                       <td style={{ padding: '12px 16px', fontSize: 13, whiteSpace: 'nowrap' }}>{new Date(e.entryDate).toLocaleDateString()}</td>
-                      <td style={{ padding: '12px 16px', fontFamily: 'monospace', fontSize: 12, fontWeight: 600, color: 'var(--primary)' }}>{e.sourceRef || '-'}</td>
+                      <td style={{ padding: '12px 16px', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: 600, color: 'var(--primary)' }}>{e.sourceRef || '-'}</td>
                       <td style={{ padding: '12px 16px', fontSize: 13 }}>{e.description}</td>
-                      <td style={{ padding: '12px 16px', fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)' }}>{uniqueAccounts.length > 0 ? uniqueAccounts.slice(0, 3).join(', ') + (uniqueAccounts.length > 3 ? ` +${uniqueAccounts.length - 3}` : '') : '-'}</td>
-                      <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: 'monospace', fontSize: 13, fontWeight: 600, color: 'var(--debit-color)' }}>${fmt(totalDebit)}</td>
-                      <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: 'monospace', fontSize: 13, fontWeight: 600, color: 'var(--credit-color)' }}>${fmt(totalCredit)}</td>
+                      <td style={{ padding: '12px 16px', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: 'var(--text-muted)' }}>{uniqueAccounts.length > 0 ? uniqueAccounts.slice(0, 3).join(', ') + (uniqueAccounts.length > 3 ? ` +${uniqueAccounts.length - 3}` : '') : '-'}</td>
+                      <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, color: 'var(--debit-color)' }}>${fmt(totalDebit)}</td>
+                      <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, color: 'var(--credit-color)' }}>${fmt(totalCredit)}</td>
                       <td style={{ padding: '12px 16px' }}><StatusBadge status={e.source} /></td>
                       <td style={{ padding: '12px 16px' }}><StatusBadge status={e.status} /></td>
                       <td style={{ padding: '12px 16px' }} onClick={(ev) => ev.stopPropagation()}>
@@ -160,7 +160,7 @@ export default function GeneralLedger() {
                               <tbody>
                                 {lines.map((l: any) => (
                                   <tr key={l.id} className="border-b border-gray-100">
-                                    <td className="py-1.5 px-3 font-mono font-semibold text-blue-700">{l.accountCode || '—'}</td>
+                                    <td className="py-1.5 px-3 font-mono font-semibold text-brand">{l.accountCode || '—'}</td>
                                     <td className="py-1.5 px-3">{l.accountName || '—'}</td>
                                     <td className="py-1.5 px-3 text-right font-mono">{l.debit > 0 ? `$${fmt(l.debit)}` : ''}</td>
                                     <td className="py-1.5 px-3 text-right font-mono">{l.credit > 0 ? `$${fmt(l.credit)}` : ''}</td>
@@ -289,7 +289,7 @@ function SourceDocumentModal({ entry, onClose }: { entry: any; onClose: () => vo
           </div>
 
           {/* Source System Details */}
-          <div className="border border-gray-200 rounded p-4 bg-blue-50/50">
+          <div className="border border-gray-200 rounded p-4 bg-brand-light/50">
             <div className="text-sm font-semibold text-gray-700 mb-2">Source System Details</div>
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div><span className="text-gray-400">System:</span> <span className="font-medium">{sourceSystem}</span></div>
@@ -300,7 +300,7 @@ function SourceDocumentModal({ entry, onClose }: { entry: any; onClose: () => vo
               {entry.postedAt && <div><span className="text-gray-400">Posted At:</span> <span className="font-medium">{new Date(entry.postedAt).toLocaleString()}</span></div>}
             </div>
             {src === 'AUTOMATE_DMS' && (
-              <div className="mt-3 pt-3 border-t border-blue-200 text-xs text-blue-600">
+              <div className="mt-3 pt-3 border-t border-brand-border text-xs text-brand">
                 <span className="font-medium">AutoMate DMS Integration:</span> This document was automatically imported from AutoMate DMS via the connector service. The original {docType.toLowerCase()} can be viewed in AutoMate under {isRO ? 'Service → Repair Orders' : isVehicleSale ? 'Sales → Deals' : 'Accounting → Transactions'} → {ref}.
               </div>
             )}

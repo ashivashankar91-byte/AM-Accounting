@@ -3,9 +3,11 @@ import { z } from 'zod';
 import { container } from 'tsyringe';
 import { PayrollService } from '../application/payroll-service';
 import { asTenantId, authMiddleware } from '@amacc/shared-kernel';
+import { commissionRoutes } from './commission-routes';
 
 function getTenantId(request: any) {
-  const id = (request.headers['x-tenant-id'] as string) || 'tenant-kunes';
+  const id = request.headers['x-tenant-id'] as string;
+  if (!id || id.trim() === '') { const e: any = new Error('x-tenant-id header is required'); e.statusCode = 400; throw e; }
   return asTenantId(id);
 }
 
@@ -330,6 +332,58 @@ export async function payrollRoutes(app: FastifyInstance) {
       const tenantId = getTenantId(request);
       const body = TaxRateSchema.parse(request.body);
       return reply.send(await svc.upsertTaxRate(tenantId, body));
+    } catch (err) { return handleError(reply, err); }
+  });
+
+  // ===== Phase 1: Commission Tracking & Reporting (NEW FEATURE) =====
+  const prisma = container.resolve('PrismaClient');
+  await commissionRoutes(app, prisma);
+
+  // ── Payroll Runs (alias for batches, supporting frontend payroll/runs API) ──
+
+  app.get('/runs/in-process', async (request, reply) => {
+    try {
+      const tenantId = getTenantId(request);
+      return reply.send(await svc.listBatches(tenantId, { status: 'IN_PROGRESS' }).catch(() => []));
+    } catch (err) { return handleError(reply, err); }
+  });
+
+  app.get('/runs', async (request, reply) => {
+    try {
+      const tenantId = getTenantId(request);
+      const query = request.query as { status?: string };
+      return reply.send(await svc.listBatches(tenantId, query.status ? { status: query.status } : {}).catch(() => []));
+    } catch (err) { return handleError(reply, err); }
+  });
+
+  app.get('/runs/:id', async (request, reply) => {
+    try {
+      const tenantId = getTenantId(request);
+      const { id } = request.params as { id: string };
+      return reply.send(await svc.getBatch(tenantId, id).catch(() => null) ?? reply.status(404).send({ error: 'Not found' }));
+    } catch (err) { return handleError(reply, err); }
+  });
+
+  app.get('/runs/:id/summary', async (request, reply) => {
+    try {
+      const tenantId = getTenantId(request);
+      const { id } = request.params as { id: string };
+      const batch = await svc.getBatch(tenantId, id).catch(() => null);
+      return reply.send(batch ?? reply.status(404).send({ error: 'Not found' }));
+    } catch (err) { return handleError(reply, err); }
+  });
+
+  app.get('/runs/:id/checks', async (request, reply) => {
+    try {
+      getTenantId(request);
+      return reply.send([]);
+    } catch (err) { return handleError(reply, err); }
+  });
+
+  app.get('/runs/:id/wage-bases', async (request, reply) => {
+    try {
+      getTenantId(request);
+      return reply.send([]);
     } catch (err) { return handleError(reply, err); }
   });
 }

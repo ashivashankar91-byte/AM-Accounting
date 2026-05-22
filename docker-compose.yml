@@ -44,8 +44,8 @@ services:
   rabbitmq:
     image: rabbitmq:3-management-alpine
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "5673:5672"
+      - "15673:15672"
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "check_running"]
       <<: *healthcheck
@@ -88,7 +88,7 @@ services:
       <<: *service-env
       PORT: 3010
       EOM_SERVICE_URL: http://eom-service:3011
-      SCHEDULE_SERVICE_URL: http://schedule-service:3030
+      SCHEDULE_SERVICE_URL: http://schedule-service:3018
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
@@ -103,7 +103,7 @@ services:
       <<: *service-env
       PORT: 3011
       GL_SERVICE_URL: http://gl-service:3010
-      SCHEDULE_SERVICE_URL: http://schedule-service:3030
+      SCHEDULE_SERVICE_URL: http://schedule-service:3018
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
@@ -149,10 +149,10 @@ services:
       context: .
       dockerfile: services/schedule-service/Dockerfile
     ports:
-      - "3030:3030"
+      - "3018:3018"
     environment:
       <<: *service-env
-      PORT: 3030
+      PORT: 3018
       GL_SERVICE_URL: http://gl-service:3010
       EOM_SERVICE_URL: http://eom-service:3011
     depends_on:
@@ -188,7 +188,7 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is required}
       EOM_SERVICE_URL: http://eom-service:3011
       GL_SERVICE_URL: http://gl-service:3010
-      SCHEDULE_SERVICE_URL: http://schedule-service:3030
+      SCHEDULE_SERVICE_URL: http://schedule-service:3018
       APPROVAL_SERVICE_URL: http://approval-service:3054
     depends_on:
       postgres: { condition: service_healthy }
@@ -223,7 +223,7 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is required}
       GL_SERVICE_URL: http://gl-service:3010
       APAR_SERVICE_URL: http://apar-service:3013
-      SCHEDULE_SERVICE_URL: http://schedule-service:3030
+      SCHEDULE_SERVICE_URL: http://schedule-service:3018
       APPROVAL_SERVICE_URL: http://approval-service:3054
     depends_on:
       postgres: { condition: service_healthy }
@@ -243,7 +243,7 @@ services:
       EOM_SERVICE_URL: http://eom-service:3011
       PAYROLL_SERVICE_URL: http://payroll-service:3012
       APAR_SERVICE_URL: http://apar-service:3013
-      SCHEDULE_SERVICE_URL: http://schedule-service:3030
+      SCHEDULE_SERVICE_URL: http://schedule-service:3018
       FS_SERVICE_URL: http://fs-service:3045
       APPROVAL_SERVICE_URL: http://approval-service:3054
     depends_on:
@@ -468,14 +468,14 @@ services:
       context: .
       dockerfile: services/api-gateway/Dockerfile
     ports:
-      - "3000:3000"
+      - "3100:3000"
     environment:
       <<: *service-env
       PORT: 3000
       AUTH_SERVICE_URL: http://auth-service:3001
       GL_SERVICE_URL: http://gl-service:3010
       EOM_SERVICE_URL: http://eom-service:3011
-      SCHEDULE_SERVICE_URL: http://schedule-service:3030
+      SCHEDULE_SERVICE_URL: http://schedule-service:3018
       GROUP_SERVICE_URL: http://group-service:3039
     depends_on:
       - auth-service

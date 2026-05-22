@@ -66,9 +66,9 @@ export default function QueryExplorer() {
         <input type="text" value={question} onChange={e => setQuestion(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && question && runQuery(question)}
           placeholder="Ask anything about your financials..."
-          className="flex-1 border rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          className="flex-1 border rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand" />
         <button onClick={() => question && runQuery(question)} disabled={!question || loading}
-          className="px-6 py-3 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+          className="px-6 py-3 bg-brand text-white rounded-lg text-sm font-medium hover:bg-brand disabled:opacity-50">
           {loading ? 'Running...' : 'Ask'}
         </button>
       </div>

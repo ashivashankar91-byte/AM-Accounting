@@ -14,11 +14,11 @@ model AggMonthlyPL {
   tenantId       String @map("tenant_id")
   period         String
   departmentCode String @map("department_code")
-  revenue        Float  @default(0)
-  costOfSales    Float  @default(0) @map("cost_of_sales")
-  grossProfit    Float  @default(0) @map("gross_profit")
-  expenses       Float  @default(0)
-  netIncome      Float  @default(0) @map("net_income")
+  revenue        Decimal  @default(0) @map("revenue")        @db.Decimal(15, 2)
+  costOfSales    Decimal  @default(0) @map("cost_of_sales")  @db.Decimal(15, 2)
+  grossProfit    Decimal  @default(0) @map("gross_profit")   @db.Decimal(15, 2)
+  expenses       Decimal  @default(0) @map("expenses")       @db.Decimal(15, 2)
+  netIncome      Decimal  @default(0) @map("net_income")     @db.Decimal(15, 2)
 
   @@unique([tenantId, period, departmentCode])
   @@map("agg_monthly_pl")
@@ -32,7 +32,7 @@ model AggTechProductivity {
   totalFlatRate     Float  @default(0) @map("total_flat_rate")
   totalClock        Float  @default(0) @map("total_clock")
   efficiency        Float  @default(0)
-  totalLabourRevenue Float @default(0) @map("total_labour_revenue")
+  totalLabourRevenue Decimal  @default(0) @map("total_labour_revenue") @db.Decimal(15, 2)
   roCount           Int    @default(0) @map("ro_count")
 
   @@unique([tenantId, period, technicianId])
@@ -45,9 +45,9 @@ model AggPartsMargin {
   period         String
   partNumber     String @map("part_number")
   totalSold      Int    @default(0) @map("total_sold")
-  totalRevenue   Float  @default(0) @map("total_revenue")
-  totalCost      Float  @default(0) @map("total_cost")
-  grossMargin    Float  @default(0) @map("gross_margin")
+  totalRevenue   Decimal  @default(0) @map("total_revenue") @db.Decimal(15, 2)
+  totalCost      Decimal  @default(0) @map("total_cost")    @db.Decimal(15, 2)
+  grossMargin    Decimal  @default(0) @map("gross_margin")  @db.Decimal(15, 2)
   grossMarginPct Float  @default(0) @map("gross_margin_pct")
 
   @@unique([tenantId, period, partNumber])

@@ -27,6 +27,13 @@ export function auditRoutes(auditService: AuditService) {
     const JWT_SECRET = process.env['AMACC_JWT_SECRET'] ?? 'amacc-dev-secret-change-in-production';
     app.addHook('preHandler', authMiddleware(JWT_SECRET));
 
+    // GET /api/v1/audit/log — List recent audit events for a tenant
+    app.get('/log', async (request, reply) => {
+      const tenantId = (request.headers['x-tenant-id'] as string) || '';
+      const logs = await auditService.getByTenant(tenantId).catch(() => []);
+      return reply.send(logs);
+    });
+
     // POST /api/v1/audit/log — Append one audit record
     app.post('/log', async (request, reply) => {
       const body = CreateAuditSchema.parse(request.body);

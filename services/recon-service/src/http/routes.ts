@@ -5,7 +5,8 @@ import { ReconService } from '../application/recon-service';
 import { asTenantId, BankTransactionStatus, ReconStatus, authMiddleware } from '@amacc/shared-kernel';
 
 function getTenantId(request: any) {
-  const id = request.headers['x-tenant-id'] as string || 'tenant-kunes';
+  const id = request.headers['x-tenant-id'] as string;
+  if (!id || id.trim() === '') { const e: any = new Error('x-tenant-id header is required'); e.statusCode = 400; throw e; }
   return asTenantId(id);
 }
 

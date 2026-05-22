@@ -31,8 +31,8 @@ export class PrismaAREntryRepository implements IAREntryRepository {
     return {
       id: row.id, tenantId: row.tenantId as TenantId,
       dealerRef: row.dealerRef, type: row.type as AREntryType,
-      amount: row.amount, dueDate: row.dueDate,
-      status: row.status, oemSource: row.oemSource,
+      amount: Number(row.amount), dueDate: row.dueDate,
+      status: row.status, oemSource: row.oemSource ?? null,
     };
   }
 }

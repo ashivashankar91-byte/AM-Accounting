@@ -58,7 +58,7 @@ export default function YearEnd() {
       {tab === 'checklist' && (
         <div className="bg-white rounded-lg shadow p-4 space-y-1">
           {YE_STEPS.map(step => (
-            <div key={step.id} className={`flex items-center gap-3 p-3 rounded ${step.status === 'current' ? 'bg-blue-50 border border-blue-200' : ''}`}>
+            <div key={step.id} className={`flex items-center gap-3 p-3 rounded ${step.status === 'current' ? 'bg-brand-light border border-brand-border' : ''}`}>
               <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
                 step.status === 'done' ? 'bg-green-100 text-green-700' : step.status === 'current' ? 'bg-amacc-100 text-amacc-700' : 'bg-gray-100 text-gray-400'}`}>
                 {step.status === 'done' ? '✓' : step.id}
@@ -141,7 +141,7 @@ export default function YearEnd() {
                   <td className="py-2 text-right font-mono">${(y.rev / 1000000).toFixed(2)}M</td>
                   <td className="py-2 text-right font-mono text-red-600">${(y.exp / 1000000).toFixed(2)}M</td>
                   <td className="py-2 text-right font-mono font-bold text-green-600">${((y.rev - y.exp) / 1000).toFixed(0)}K</td>
-                  <td className="py-2"><button className="text-xs text-blue-600 hover:underline">View Details</button></td>
+                  <td className="py-2"><button className="text-xs text-brand hover:underline">View Details</button></td>
                 </tr>
               ))}
             </tbody>

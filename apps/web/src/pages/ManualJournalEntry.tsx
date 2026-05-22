@@ -78,12 +78,12 @@ export default function ManualJournalEntry() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Entry Date</label>
             <input type="date" value={date} onChange={e => setDate(e.target.value)}
-              className="w-full border rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+              className="w-full border rounded px-3 py-2 text-sm focus:ring-2 focus:ring-brand focus:outline-none" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Source</label>
             <select value={source} onChange={e => setSource(e.target.value)}
-              className="w-full border rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+              className="w-full border rounded px-3 py-2 text-sm focus:ring-2 focus:ring-brand focus:outline-none">
               <option value="MANUAL">Manual (GJ)</option>
               <option value="ADJUSTING">Adjusting Entry</option>
               <option value="REVERSING">Reversing Entry</option>
@@ -93,7 +93,7 @@ export default function ManualJournalEntry() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
             <input value={description} onChange={e => setDescription(e.target.value)}
               placeholder="Describe this journal entry..."
-              className="w-full border rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+              className="w-full border rounded px-3 py-2 text-sm focus:ring-2 focus:ring-brand focus:outline-none" />
           </div>
         </div>
 
@@ -170,7 +170,7 @@ export default function ManualJournalEntry() {
           <button
             onClick={() => createMut.mutate()}
             disabled={!balanced || !hasLines || !description || !date || createMut.isPending}
-            className="bg-blue-600 text-white px-6 py-2.5 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed">
+            className="bg-brand text-white px-6 py-2.5 rounded-lg text-sm font-medium hover:bg-brand disabled:opacity-40 disabled:cursor-not-allowed">
             {createMut.isPending ? 'Submitting...' : 'Create Journal Entry (DRAFT)'}
           </button>
         </div>

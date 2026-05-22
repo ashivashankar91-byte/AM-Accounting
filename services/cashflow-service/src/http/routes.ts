@@ -38,5 +38,24 @@ export function cashflowRoutes(cashflowService: CashFlowService) {
       const forecasts = await cashflowService.getLatestForecasts(tenantId);
       return reply.send(forecasts);
     });
+
+    // GET /api/v1/cashflow/receipts — recent cash inflows summary
+    app.get('/receipts', async (request, reply) => {
+      const tenantId = request.headers['x-tenant-id'] as string | undefined;
+      if (!tenantId) return reply.status(401).send({ error: 'x-tenant-id header is required' });
+      try {
+        const actuals = await cashflowService.getActuals(tenantId);
+        const receipts = {
+          tenantId,
+          period: new Date().toISOString().slice(0, 7),
+          inflows: actuals.filter((a: any) => (a.amount ?? a.net ?? 0) > 0),
+          total: actuals.filter((a: any) => (a.amount ?? a.net ?? 0) > 0).reduce((s: number, a: any) => s + (a.amount ?? a.net ?? 0), 0),
+          updatedAt: new Date().toISOString(),
+        };
+        return reply.send(receipts);
+      } catch {
+        return reply.send({ tenantId, period: new Date().toISOString().slice(0, 7), inflows: [], total: 0, updatedAt: new Date().toISOString() });
+      }
+    });
   };
 }

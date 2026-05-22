@@ -1166,4 +1166,4 @@ The vision: **Any dealership group, running any DMS, selling any OEM brand, can 
 
 ---
 
-*Document generated from source code analysis of `C:\Projects\jira-bulk-export\amacc\` — 19 microservices, 26 frontend pages, 14 database tables, 5 AI agents, 48 event types, 65+ API endpoints.*
+*Document generated from source code analysis of `<workspace>/amacc` — 19 microservices, 26 frontend pages, 14 database tables, 5 AI agents, 48 event types, 65+ API endpoints.*

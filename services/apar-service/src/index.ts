@@ -21,6 +21,8 @@ async function bootstrap() {
   const eventPublisher = new RabbitMQEventPublisher({ url: process.env['RABBITMQ_URL'] ?? 'amqp://localhost:5672' });
   await eventPublisher.connect();
 
+  app.decorate('prisma', prisma);
+
   container.registerInstance('PrismaClient', prisma);
   container.registerInstance<IEventPublisher>('IEventPublisher', eventPublisher);
   container.register<IAREntryRepository>('IAREntryRepository', { useClass: PrismaAREntryRepository });

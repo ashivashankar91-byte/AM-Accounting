@@ -31,10 +31,6 @@ async function bootstrap() {
   await app.register(consolidationRoutes(consolidationService), { prefix: '/api/v1/groups' });
   app.get('/health', async () => ({ status: 'ok', service: 'group-service' }));
 
-  const port = parseInt(process.env['PORT'] ?? '3039', 10);
-  await app.listen({ port, host: '0.0.0.0' });
-  logger.info(`group-service listening on :${port}`);
-
   const outboxProcessor = new OutboxProcessor(
     eventPublisher,
     async () => {
@@ -64,11 +60,15 @@ async function bootstrap() {
       });
     },
   );
-  outboxProcessor.startPolling(5000);
 
   app.addHook('onClose', async () => {
     outboxProcessor.stop();
   });
+
+  const port = parseInt(process.env['PORT'] ?? '3039', 10);
+  await app.listen({ port, host: '0.0.0.0' });
+  logger.info(`group-service listening on :${port}`);
+  outboxProcessor.startPolling(5000);
 }
 
 bootstrap().catch((err) => {

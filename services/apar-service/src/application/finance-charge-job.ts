@@ -14,6 +14,8 @@
  *   No direct Prisma — apar-service does not own GL or schedule data.
  */
 
+import { Decimal } from '@prisma/client/runtime/library';
+
 export interface FinanceChargeConfig {
   /** Annual percentage rate, e.g. 18.0 for 18% APR */
   annualRatePercent: number;
@@ -93,7 +95,7 @@ export class FinanceChargeJob {
 
     // Step 2: For each schedule, fetch eligible detail records
     // @cobol-origin finchg.cbl: eligible = applyCd = ' ' (uncharged), amount > 0, age > gracePeriod
-    const chargesByControlNumber = new Map<string, { totalAmount: number; scheduleNumber: string }>();
+    const chargesByControlNumber = new Map<string, { totalAmount: Decimal; scheduleNumber: string }>();
 
     let schedulesProcessed = 0;
 
@@ -118,8 +120,8 @@ export class FinanceChargeJob {
       for (const detail of details) {
         // Filter: only uncharged (applyCd blank/null), positive amount, over grace period
         if (detail.applyCd && detail.applyCd.trim() !== '') continue;
-        const amount = parseFloat(detail.amount);
-        if (amount <= config.minimumBalance) continue;
+        const amount = new Decimal(detail.amount);
+        if (amount.lessThanOrEqualTo(new Decimal(config.minimumBalance))) continue;
         if (detail.transactionDate) {
           const ageDays = Math.floor(
             (asOfDate.getTime() - new Date(detail.transactionDate).getTime()) / 86_400_000,
@@ -130,7 +132,7 @@ export class FinanceChargeJob {
         // Accumulate by controlNumber for journal entry aggregation
         const existing = chargesByControlNumber.get(detail.controlNumber);
         if (existing) {
-          existing.totalAmount += amount;
+          existing.totalAmount = existing.totalAmount.plus(amount);
         } else {
           chargesByControlNumber.set(detail.controlNumber, {
             totalAmount: amount,
@@ -151,25 +153,25 @@ export class FinanceChargeJob {
 
     // Step 3: Calculate finance charges
     // @cobol-origin finchg.cbl: FC-AMT = BALANCE * (ANNUAL-RATE / 1200)  (monthly rate)
-    const monthlyRate = config.annualRatePercent / 1200;
-    const journalLines: Array<{ accountCode: string; debit: number; credit: number; memo: string }> = [];
-    let totalFinanceCharge = 0;
+    const monthlyRate = new Decimal(config.annualRatePercent).dividedBy(1200);
+    const journalLines: Array<{ accountCode: string; debit: string; credit: string; memo: string }> = [];
+    let totalFinanceCharge = new Decimal(0);
 
     for (const [controlNumber, data] of chargesByControlNumber) {
-      const fcAmount = Math.round(data.totalAmount * monthlyRate * 100) / 100;
-      if (fcAmount < 0.01) continue; // below minimum charge
+      const fcAmount = data.totalAmount.times(monthlyRate).toDecimalPlaces(2);
+      if (fcAmount.lessThan(new Decimal('0.01'))) continue; // below minimum charge
 
-      totalFinanceCharge += fcAmount;
+      totalFinanceCharge = totalFinanceCharge.plus(fcAmount);
       journalLines.push({
         accountCode: config.chargeReceivableCode,
-        debit: fcAmount,
-        credit: 0,
+        debit: fcAmount.toFixed(2),
+        credit: '0.00',
         memo: `Finance charge — control ${controlNumber}`,
       });
       journalLines.push({
         accountCode: config.chargeRevenueCode,
-        debit: 0,
-        credit: fcAmount,
+        debit: '0.00',
+        credit: fcAmount.toFixed(2),
         memo: `Finance charge revenue — control ${controlNumber}`,
       });
     }
@@ -178,7 +180,7 @@ export class FinanceChargeJob {
       return {
         tenantId, runDate, schedulesProcessed,
         controlNumbersCharged: chargesByControlNumber.size,
-        totalFinanceCharge, journalEntryId: null, errors,
+        totalFinanceCharge: totalFinanceCharge.toNumber(), journalEntryId: null, errors,
       };
     }
 
@@ -202,7 +204,7 @@ export class FinanceChargeJob {
       return {
         tenantId, runDate, schedulesProcessed,
         controlNumbersCharged: chargesByControlNumber.size,
-        totalFinanceCharge, journalEntryId: null, errors,
+        totalFinanceCharge: totalFinanceCharge.toNumber(), journalEntryId: null, errors,
       };
     }
 
@@ -211,7 +213,7 @@ export class FinanceChargeJob {
     return {
       tenantId, runDate, schedulesProcessed,
       controlNumbersCharged: chargesByControlNumber.size,
-      totalFinanceCharge, journalEntryId: je.id, errors,
+      totalFinanceCharge: totalFinanceCharge.toNumber(), journalEntryId: je.id, errors,
     };
   }
 }

@@ -152,9 +152,9 @@ export default function Transactions() {
                         </Link>
                       )}
                     </td>
-                    <td style={{ padding: '12px 16px', fontSize: 11, fontFamily: 'monospace', color: 'var(--text-muted)' }}>{e.source}</td>
+                    <td style={{ padding: '12px 16px', fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-muted)' }}>{e.source}</td>
                     <td style={{ padding: '12px 16px' }}><StatusBadge status="DRAFT" /></td>
-                    <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: 'monospace', fontSize: 13, fontWeight: 600, color: '#059669' }}>${entryTotal(e).toFixed(2)}</td>
+                    <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, color: '#059669' }}>${entryTotal(e).toFixed(2)}</td>
                     <td style={{ padding: '12px 16px', display: 'flex', gap: 8 }}>
                       <button
                         onClick={() => { setPostingId(e.id); postMutation.mutate(e.id, { onSettled: () => setPostingId(null) }); }}
@@ -201,9 +201,9 @@ export default function Transactions() {
                   onMouseLeave={(ev) => ev.currentTarget.style.background = ''}>
                   <td style={{ padding: '12px 16px', fontSize: 13 }}>{new Date(e.entryDate).toLocaleDateString()}</td>
                   <td style={{ padding: '12px 16px', fontSize: 13 }}>{e.description}</td>
-                  <td style={{ padding: '12px 16px', fontSize: 11, fontFamily: 'monospace', color: 'var(--text-muted)' }}>{e.source}</td>
+                  <td style={{ padding: '12px 16px', fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-muted)' }}>{e.source}</td>
                   <td style={{ padding: '12px 16px' }}><StatusBadge status={e.status} /></td>
-                  <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: 'monospace', fontSize: 13, fontWeight: 600 }}>${entryTotal(e).toFixed(2)}</td>
+                  <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600 }}>${entryTotal(e).toFixed(2)}</td>
                   <td style={{ padding: '12px 16px' }}>
                     {e.status === 'POSTED' && <button style={{ fontSize: 12, color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Reverse</button>}
                   </td>
@@ -268,10 +268,10 @@ export default function Transactions() {
             <tfoot>
               <tr className="font-bold border-t-2">
                 <td colSpan={2} className="pt-2">
-                  <button onClick={addLine} className="text-xs text-blue-600 hover:underline">+ Add Line</button>
+                  <button onClick={addLine} className="text-xs text-brand hover:underline">+ Add Line</button>
                 </td>
-                <td className={`text-right pt-2 ${balanced ? '' : 'text-red-600'}`}>${totalDebit.toFixed(2)}</td>
-                <td className={`text-right pt-2 ${balanced ? '' : 'text-red-600'}`}>${totalCredit.toFixed(2)}</td>
+                <td className={`text-right pt-2 font-mono tabular-nums ${balanced ? '' : 'text-red-600'}`}>${totalDebit.toFixed(2)}</td>
+                <td className={`text-right pt-2 font-mono tabular-nums ${balanced ? '' : 'text-red-600'}`}>${totalCredit.toFixed(2)}</td>
                 <td></td>
               </tr>
             </tfoot>

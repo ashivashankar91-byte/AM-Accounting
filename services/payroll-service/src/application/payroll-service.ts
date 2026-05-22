@@ -122,8 +122,24 @@ async function postGLJournal(tenantId: string, payload: object): Promise<string>
     const text = await resp.text().catch(() => '');
     throw new Error(`GL journal post failed ${resp.status}: ${text}`);
   }
-  const data = (await resp.json()) as { id?: string; journalEntryId?: string };
+  const data = (await resp.json()) as { id?: string; journalEntryId?: string; status?: string };
   return data.id ?? data.journalEntryId ?? 'unknown';
+}
+
+async function resolveAccountCode(tenantId: string, accountCode: string): Promise<string | null> {
+  const url = `${GL_SERVICE_URL}/api/v1/gl/accounts`;
+  const resp = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-tenant-id': tenantId,
+      Authorization: `Bearer ${INTERNAL_TOKEN}`,
+    },
+  });
+  if (!resp.ok) return null;
+  const accounts = (await resp.json()) as Array<{ id: string; code: string }>;
+  const account = accounts.find((a: any) => a.code === accountCode);
+  return account?.id ?? null;
 }
 
 // ── Service ──────────────────────────────────────────────────────────────────
@@ -518,12 +534,34 @@ export class PayrollService {
       );
     }
 
+    // Resolve account codes to glAccountIds
+    const glLines: Array<{ glAccountId: string; debit: number; credit: number; memo: string }> = [];
+    for (const line of journalLines) {
+      const glAccountId = await resolveAccountCode(tenantId, line.glAccountCode);
+      if (!glAccountId) {
+        logger.warn({ accountCode: line.glAccountCode }, `GL account code not found`);
+        glLines.push({
+          glAccountId: '00000000-0000-0000-0000-000000000000', // Placeholder for unmapped accounts
+          debit: line.debit,
+          credit: line.credit,
+          memo: line.description,
+        });
+      } else {
+        glLines.push({
+          glAccountId,
+          debit: line.debit,
+          credit: line.credit,
+          memo: line.description,
+        });
+      }
+    }
+
     const journalEntryId = await postGLJournal(tenantId, {
+      entryDate: batch.payDate,
       description: `Payroll batch ${batch.batchNumber as string} — ${(batch.payPeriodStart as Date).toISOString().slice(0, 10)} to ${(batch.payPeriodEnd as Date).toISOString().slice(0, 10)}`,
-      postingDate: batch.payDate,
-      sourceType: 'PAYROLL',
-      sourceId: batchId,
-      lines: journalLines,
+      source: 'PR',
+      sourceRef: batch.batchNumber as string,
+      lines: glLines,
     });
 
     await this.batchRepo.updateStatus(tenantId, batchId, 'POSTED', { postedAt: new Date() });

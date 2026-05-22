@@ -1,0 +1,856 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "export_date": "2026-05-09",
+    "project": "AMACC",
+    "project_name": "AutoMate 2.0 Accounting Module",
+    "total_stories": 68,
+    "phases": {
+      "PHASE_1": 20,
+      "PHASE_2": 16,
+      "REDESIGN": 12,
+      "PLATFORM": 8,
+      "DROP": 4
+    }
+  },
+  "epics": [
+    {
+      "id": "EPIC-TAX",
+      "key": "AMACC-EPIC-TAX",
+      "title": "Sales Tax Accrual by Jurisdiction",
+      "description": "Automate sales tax tracking across multiple jurisdictions (state, county, city) with GL integration",
+      "phase": "PHASE_1",
+      "priority": "HIGH",
+      "stories": ["US-TAX-001", "US-TAX-002", "US-TAX-003", "US-TAX-004", "US-TAX-005", "US-TAX-006"]
+    },
+    {
+      "id": "EPIC-1099",
+      "key": "AMACC-EPIC-1099",
+      "title": "1099 Contractor Report Generator",
+      "description": "Generate IRS Form 1099-MISC and 1099-NEC reports for contractor payments with FIRE export",
+      "phase": "PHASE_1",
+      "priority": "HIGH",
+      "stories": ["US-1099-001", "US-1099-002", "US-1099-003", "US-1099-004", "US-1099-005", "US-1099-006", "US-1099-007", "US-1099-008"]
+    },
+    {
+      "id": "EPIC-COMM",
+      "key": "AMACC-EPIC-COMM",
+      "title": "Commission Tracking & Reporting",
+      "description": "Track and report employee commissions across sales, F&I, and service departments",
+      "phase": "PHASE_1",
+      "priority": "HIGH",
+      "stories": ["US-COMM-001", "US-COMM-002", "US-COMM-003", "US-COMM-004", "US-COMM-005", "US-COMM-006", "US-COMM-007", "US-COMM-008"]
+    },
+    {
+      "id": "EPIC-FP",
+      "key": "AMACC-EPIC-FP",
+      "title": "Floor Plan Financing Module",
+      "description": "Track floored inventory with daily interest accrual and automated payoff",
+      "phase": "PHASE_1",
+      "priority": "HIGH",
+      "stories": ["US-FP-001", "US-FP-002", "US-FP-003", "US-FP-004", "US-FP-005", "US-FP-006", "US-FP-007", "US-FP-008"]
+    }
+  ],
+  "user_stories": [
+    {
+      "id": "US-TAX-001",
+      "key": "AMACC-TAX-001",
+      "title": "Tax jurisdiction configuration with GL account mapping",
+      "type": "Story",
+      "epic": "EPIC-TAX",
+      "phase": "PHASE_1",
+      "priority": "HIGH",
+      "story": "Given a controller configures tax jurisdiction rates in the system, When they set state=CA, county=ALAMEDA, city=OAKLAND with 8.625% rate and effective date, Then the system stores the rate with the GL payable and receivable account mappings",
+      "acceptance_criteria": [
+        "Tax jurisdiction code is unique per tenant and effective date",
+        "GL account IDs are validated (must exist and be active)",
+        "Effective date can be in the past or future",
+        "Historical rates are preserved for audit trail",
+        "Rate changes do NOT retroactively recalculate historical entries"
+      ],
+      "story_points": 5,
+      "labels": ["accounting", "tax", "gl-integration"],
+      "related_apis": ["POST /api/v1/gl/tax/configure"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    },
+    {
+      "id": "US-TAX-002",
+      "key": "AMACC-TAX-002",
+      "title": "Automatic tax accrual on deal posting",
+      "type": "Story",
+      "epic": "EPIC-TAX",
+      "phase": "PHASE_1",
+      "priority": "HIGH",
+      "story": "Given a deal with taxable service ($1,000) and parts ($2,000) is posted, When the deal posts to GL, Then the system automatically creates a journal entry debiting tax receivable and crediting tax payable based on jurisdiction tax rate",
+      "acceptance_criteria": [
+        "Tax accrual entry is created atomically with deal posting",
+        "Entry flows through GL Integrity Agent for validation",
+        "Tax amount is calculated per jurisdiction effective rate",
+        "Entry is reversible if deal is chargebacked",
+        "Audit trail records journal entry ID and accrual date"
+      ],
+      "story_points": 8,
+      "labels": ["accounting", "tax", "automation"],
+      "related_apis": ["POST /api/v1/gl/tax/accrue"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    },
+    {
+      "id": "US-TAX-003",
+      "key": "AMACC-TAX-003",
+      "title": "Tax-exempt customer management",
+      "type": "Story",
+      "epic": "EPIC-TAX",
+      "phase": "PHASE_1",
+      "priority": "MEDIUM",
+      "story": "Given a customer has a valid resale certificate, When the certificate is uploaded and stored in the system with expiration date, Then all subsequent deals are flagged as tax-exempt and no tax accrual entry is created",
+      "acceptance_criteria": [
+        "Certificate can be uploaded as PDF/image",
+        "Certificate document URL is stored with customer record",
+        "System checks certificate expiration on each deal posting",
+        "Expired certificates require re-upload before next tax-exempt deal",
+        "Audit trail records who uploaded certificate and when"
+      ],
+      "story_points": 5,
+      "labels": ["accounting", "tax", "compliance"],
+      "related_apis": ["PUT /api/v1/ap/customers/:id/tax-exempt"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    },
+    {
+      "id": "US-TAX-004",
+      "key": "AMACC-TAX-004",
+      "title": "Monthly tax liability report for EOM",
+      "type": "Story",
+      "epic": "EPIC-TAX",
+      "phase": "PHASE_1",
+      "priority": "HIGH",
+      "story": "Given a controller initiates month-end close, When ACCT_062 (Sales Tax Report Generation) executes, Then the system generates a Sales Tax Liability Report grouped by jurisdiction with amounts due",
+      "acceptance_criteria": [
+        "Report shows month accruals vs. total due (month + prior unpaid)",
+        "Report groups by state, county, city, district",
+        "Report matches state filing portal format requirements (CA, TX, FL, NY)",
+        "GL trial balance snapshot is appended for audit",
+        "Report is exportable to CSV and email-deliverable"
+      ],
+      "story_points": 8,
+      "labels": ["accounting", "tax", "reporting", "eom"],
+      "related_apis": ["GET /api/v1/gl/tax/liability-report"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    },
+    {
+      "id": "US-TAX-005",
+      "key": "AMACC-TAX-005",
+      "title": "Multi-tenant tax isolation",
+      "type": "Story",
+      "epic": "EPIC-TAX",
+      "phase": "PHASE_1",
+      "priority": "HIGH",
+      "story": "Given a dealer group with 5 rooftops (5 separate tenants), When tax accrual runs, Then each tenant's tax is calculated independently and isolated by tenant_id",
+      "acceptance_criteria": [
+        "All tax_jurisdictions queries include WHERE tenant_id = X",
+        "Tax accrual calculations use tenant-specific GL accounts",
+        "Consolidated group report shows tax by rooftop",
+        "No cross-tenant data leakage in any query"
+      ],
+      "story_points": 3,
+      "labels": ["multi-tenancy", "data-isolation", "security"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    },
+    {
+      "id": "US-TAX-006",
+      "key": "AMACC-TAX-006",
+      "title": "Tax rate changes with effective dates",
+      "type": "Story",
+      "epic": "EPIC-TAX",
+      "phase": "PHASE_1",
+      "priority": "MEDIUM",
+      "story": "Given tax rates change on a future date (e.g., CA raises sales tax on 2026-07-01), When the controller updates the rate in the system with effective_date=2026-07-01, Then deals posted before that date use the old rate and deals posted on/after use the new rate",
+      "acceptance_criteria": [
+        "System maintains rate history with effective dates",
+        "Rate lookup queries use deal posting date to find applicable rate",
+        "No retroactive recalculation of prior deals",
+        "Audit log shows when rate was changed and by whom",
+        "Multiple rates can exist for same jurisdiction at different effective dates"
+      ],
+      "story_points": 5,
+      "labels": ["accounting", "tax"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    },
+    {
+      "id": "US-1099-001",
+      "key": "AMACC-1099-001",
+      "title": "Vendor 1099 eligibility flag",
+      "type": "Story",
+      "epic": "EPIC-1099",
+      "phase": "PHASE_1",
+      "priority": "HIGH",
+      "story": "Given a vendor record with a tax ID (TIN) and '1099-eligible' flag checked, When the controller reviews vendor master, Then the system marks them as eligible for 1099 generation",
+      "acceptance_criteria": [
+        "Vendor master includes 1099-eligible boolean flag",
+        "TIN field is required for 1099-eligible vendors",
+        "Flag can be toggled on/off without deleting vendor",
+        "Audit trail records when flag was changed"
+      ],
+      "story_points": 3,
+      "labels": ["accounting", "1099", "ap"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    },
+    {
+      "id": "US-1099-002",
+      "key": "AMACC-1099-002",
+      "title": "Automatic 1099 generation for tax year",
+      "type": "Story",
+      "epic": "EPIC-1099",
+      "phase": "PHASE_1",
+      "priority": "HIGH",
+      "story": "Given it is January 2027, When the controller clicks 'Generate 1099s for 2026', Then the system queries all 1099-eligible vendors with TIN, sums AP check payments, and generates 1099-MISC/1099-NEC forms for vendors with $600+",
+      "acceptance_criteria": [
+        "System queries vendor_1099_records and sums AP payments by vendor TIN",
+        "Only vendors with $600+ in total payments are included",
+        "1099-MISC is generated for rent/royalty vendors",
+        "1099-NEC is generated for non-employee compensation vendors",
+        "Initial status is DRAFT (not FILED)",
+        "Generation is idempotent (running twice doesn't create duplicates)"
+      ],
+      "story_points": 8,
+      "labels": ["accounting", "1099", "ap", "automation"],
+      "related_apis": ["POST /api/v1/ap/1099/generate"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    },
+    {
+      "id": "US-1099-003",
+      "key": "AMACC-1099-003",
+      "title": "Vendor consolidation across rooftops by TIN",
+      "type": "Story",
+      "epic": "EPIC-1099",
+      "phase": "PHASE_1",
+      "priority": "MEDIUM",
+      "story": "Given a vendor has payments from rooftop A ($800) and rooftop B ($400) in 2026, When 1099 generation runs, Then all payments are summed by vendor TIN across all tenants in the dealer group",
+      "acceptance_criteria": [
+        "System groups vendors by TIN (not by individual vendor_id per tenant)",
+        "Payments from all tenants with same TIN are aggregated",
+        "Single 1099 is generated for $1,200 total",
+        "Rooftop attribution is tracked but not displayed on 1099"
+      ],
+      "story_points": 5,
+      "labels": ["multi-tenancy", "1099", "group-consolidation"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    },
+    {
+      "id": "US-1099-004",
+      "key": "AMACC-1099-004",
+      "title": "1099-MISC vs 1099-NEC classification",
+      "type": "Story",
+      "epic": "EPIC-1099",
+      "phase": "PHASE_1",
+      "priority": "MEDIUM",
+      "story": "Given a vendor is classified as 'rents' in the system, When 1099 generation runs, Then a 1099-MISC is generated; given a vendor classified as 'subcontractor labor', When 1099 generation runs, Then a 1099-NEC is generated",
+      "acceptance_criteria": [
+        "Vendor master includes form_type field (1099-MISC or 1099-NEC)",
+        "System populates correct form type based on vendor classification",
+        "Controller can override form_type in draft mode",
+        "Box amounts are populated per IRS form specifications"
+      ],
+      "story_points": 5,
+      "labels": ["accounting", "1099"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    },
+    {
+      "id": "US-1099-005",
+      "key": "AMACC-1099-005",
+      "title": "1099 review and adjustment workflow",
+      "type": "Story",
+      "epic": "EPIC-1099",
+      "phase": "PHASE_1",
+      "priority": "HIGH",
+      "story": "Given 1099s have been generated in DRAFT status, When the controller opens the 1099 review page, Then they see vendor name, TIN, amount, and can adjust amounts with audit trail",
+      "acceptance_criteria": [
+        "Review page lists all DRAFT 1099s with sortable columns",
+        "Controller can edit total_payments and box_amounts",
+        "Edits are logged with user ID and timestamp",
+        "Can save as DRAFT and return later",
+        "Can mark as REVIEWED when satisfied"
+      ],
+      "story_points": 5,
+      "labels": ["accounting", "1099", "workflow"],
+      "related_apis": ["PATCH /api/v1/ap/1099/:id", "GET /api/v1/ap/1099/review"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    },
+    {
+      "id": "US-1099-006",
+      "key": "AMACC-1099-006",
+      "title": "IRS FIRE format export",
+      "type": "Story",
+      "epic": "EPIC-1099",
+      "phase": "PHASE_1",
+      "priority": "HIGH",
+      "story": "Given 1099s are in REVIEWED or FILED status, When the controller clicks 'Export to FIRE', Then the system produces an IRS FIRE-format electronic filing file (.txt) ready for upload to IRS e-Services",
+      "acceptance_criteria": [
+        "Export file follows IRS 1099 FIRE format specifications",
+        "Includes transmitter, vendor, and amount records",
+        "File is validated against IRS schema before download",
+        "Error messages if validation fails",
+        "Status updated to FILED with filing timestamp"
+      ],
+      "story_points": 8,
+      "labels": ["accounting", "1099", "compliance"],
+      "related_apis": ["POST /api/v1/ap/1099/export"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    },
+    {
+      "id": "US-1099-007",
+      "key": "AMACC-1099-007",
+      "title": "PDF generation and printing",
+      "type": "Story",
+      "epic": "EPIC-1099",
+      "phase": "PHASE_1",
+      "priority": "MEDIUM",
+      "story": "Given a 1099-NEC has been finalized, When the controller clicks 'Download PDF', Then a PDF is generated with official IRS 1099-NEC form layout including all copies (1, 2, B, C)",
+      "acceptance_criteria": [
+        "PDF matches official IRS 1099-NEC form layout",
+        "All 4 copies are included in PDF",
+        "QR codes are not required",
+        "File is downloadable and print-ready",
+        "Font sizes and spacing match IRS specifications"
+      ],
+      "story_points": 5,
+      "labels": ["accounting", "1099", "reporting"],
+      "related_apis": ["GET /api/v1/ap/1099/:id/pdf"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    },
+    {
+      "id": "US-1099-008",
+      "key": "AMACC-1099-008",
+      "title": "Amended 1099 / correction workflow",
+      "type": "Story",
+      "epic": "EPIC-1099",
+      "phase": "PHASE_1",
+      "priority": "MEDIUM",
+      "story": "Given a 1099 was filed but an error is discovered, When the controller marks it as 'CORRECTED', Then a new 1099-X (corrected form) can be generated with reference to the original",
+      "acceptance_criteria": [
+        "Original 1099 is marked as VOID",
+        "1099-X is generated with corrected amounts",
+        "1099-X references original TIN and amount",
+        "Audit trail shows correction date and reason",
+        "Both VOID and 1099-X are available for filing"
+      ],
+      "story_points": 5,
+      "labels": ["accounting", "1099", "compliance"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    },
+    {
+      "id": "US-COMM-001",
+      "key": "AMACC-COMM-001",
+      "title": "Commission plan configuration per employee",
+      "type": "Story",
+      "epic": "EPIC-COMM",
+      "phase": "PHASE_1",
+      "priority": "HIGH",
+      "story": "Given a sales manager wants to set commission for a new employee, When they create a commission plan with employee, plan type (flat/percentage/tiered), rate, and effective date, Then the system stores the plan and applies it to all deals posted after the effective date",
+      "acceptance_criteria": [
+        "Plans can be FLAT (fixed amount), PERCENTAGE (of gross profit), or TIERED (by profit ranges)",
+        "Effective date can be past or future",
+        "Multiple plans can exist for same employee at different dates",
+        "Plan is applied based on deal posting date",
+        "Manager can update/deactivate plans"
+      ],
+      "story_points": 5,
+      "labels": ["accounting", "payroll", "commission"],
+      "related_apis": ["POST /api/v1/payroll/commission-plans"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    },
+    {
+      "id": "US-COMM-002",
+      "key": "AMACC-COMM-002",
+      "title": "Automatic commission accrual on deal posting",
+      "type": "Story",
+      "epic": "EPIC-COMM",
+      "phase": "PHASE_1",
+      "priority": "HIGH",
+      "story": "Given a vehicle sale deal with gross profit of $5,000 is posted for employee John Smith (PERCENTAGE 2%), When the deal posts to GL, Then commission amount ($100) is automatically calculated and a GL journal entry is created",
+      "acceptance_criteria": [
+        "Commission = gross_profit × commission_rate",
+        "GL entry: DR Commission Expense, CR Commission Payable",
+        "Entry flows through GL Integrity Agent validation",
+        "Commission record status = ACCRUED",
+        "Audit trail records deal_id, employee_id, commission_amount"
+      ],
+      "story_points": 8,
+      "labels": ["accounting", "payroll", "commission", "gl-integration"],
+      "related_apis": ["POST /api/v1/payroll/commissions/calculate"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    },
+    {
+      "id": "US-COMM-003",
+      "key": "AMACC-COMM-003",
+      "title": "Multi-department commission support",
+      "type": "Story",
+      "epic": "EPIC-COMM",
+      "phase": "PHASE_1",
+      "priority": "HIGH",
+      "story": "Given a used vehicle sale includes F&I products sold by F&I Manager, When the deal posts, Then sales commission accrues for the vehicle to Sales Rep and F&I commission accrues separately for F&I products to F&I Manager",
+      "acceptance_criteria": [
+        "Commission plans can be department-specific (SALES, F&I, SERVICE)",
+        "Each department has its own commission payable GL account",
+        "Multi-department deals create multiple commission records (one per dept)",
+        "GL entries are isolated by department"
+      ],
+      "story_points": 5,
+      "labels": ["accounting", "payroll", "commission"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    },
+    {
+      "id": "US-COMM-004",
+      "key": "AMACC-COMM-004",
+      "title": "Commission payout during payroll",
+      "type": "Story",
+      "epic": "EPIC-COMM",
+      "phase": "PHASE_1",
+      "priority": "HIGH",
+      "story": "Given bi-weekly payroll is processed for a commission-based employee, When the payroll batch is validated, Then accrued commissions for the pay period are retrieved and included in the payroll",
+      "acceptance_criteria": [
+        "Payroll batch automatically includes commission line items",
+        "Taxes (FICA, MEDICARE, FUTA, SUTA) are calculated on commission",
+        "Accrued commission GL account is reversed when payout is posted",
+        "GL entry: DR Commission Payable, CR Cash",
+        "Audit trail links commission records to payroll batch"
+      ],
+      "story_points": 8,
+      "labels": ["accounting", "payroll", "commission"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    },
+    {
+      "id": "US-COMM-005",
+      "key": "AMACC-COMM-005",
+      "title": "Commission dashboard and reporting",
+      "type": "Story",
+      "epic": "EPIC-COMM",
+      "phase": "PHASE_1",
+      "priority": "MEDIUM",
+      "story": "Given a sales manager opens the commission dashboard, When they select period and employee, Then they see YTD commissions, monthly breakdown, top deals, and commission plan details",
+      "acceptance_criteria": [
+        "Dashboard shows YTD, monthly, and deal-level data",
+        "Filters by employee, department, vehicle type, period",
+        "Top 3 deals by commission amount displayed",
+        "Plan rate and effective date visible",
+        "Data refreshes real-time as deals are posted"
+      ],
+      "story_points": 5,
+      "labels": ["accounting", "payroll", "commission", "reporting"],
+      "related_apis": ["GET /api/v1/payroll/commissions"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    },
+    {
+      "id": "US-COMM-006",
+      "key": "AMACC-COMM-006",
+      "title": "Commission adjustment and dispute resolution",
+      "type": "Story",
+      "epic": "EPIC-COMM",
+      "phase": "PHASE_1",
+      "priority": "MEDIUM",
+      "story": "Given a sales rep disputes their commission amount, When the controller reviews and agrees and creates an adjustment with reason, Then a GL journal entry is created and the adjustment is logged with audit trail",
+      "acceptance_criteria": [
+        "Controller can manually adjust commission amounts",
+        "Adjustment creates new GL entry (debit payable, credit adjustment account)",
+        "Reason is logged with timestamp and user ID",
+        "Original commission record is marked ADJUSTED",
+        "Email notification sent to employee explaining adjustment"
+      ],
+      "story_points": 5,
+      "labels": ["accounting", "payroll", "commission", "workflow"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    },
+    {
+      "id": "US-COMM-007",
+      "key": "AMACC-COMM-007",
+      "title": "Chargeback management and commission reversal",
+      "type": "Story",
+      "epic": "EPIC-COMM",
+      "phase": "PHASE_1",
+      "priority": "HIGH",
+      "story": "Given a vehicle sale deal (with $5,000 commission accrued) is chargebacked, When the deal status changes to CHARGEBACKED, Then the system automatically creates a reversal GL entry and commission record status is set to CHARGED_BACK",
+      "acceptance_criteria": [
+        "System detects deal chargeback event",
+        "Queries and reverses commission record for that deal",
+        "GL entry: DR Commission Payable, CR Commission Expense (reversal)",
+        "Commission record status = CHARGED_BACK",
+        "If commission was already paid, creates receivable entry"
+      ],
+      "story_points": 5,
+      "labels": ["accounting", "payroll", "commission", "automation"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    },
+    {
+      "id": "US-COMM-008",
+      "key": "AMACC-COMM-008",
+      "title": "Monthly commission summary report",
+      "type": "Story",
+      "epic": "EPIC-COMM",
+      "phase": "PHASE_1",
+      "priority": "MEDIUM",
+      "story": "Given it is month-end, When the controller runs the Commission Summary Report, Then a report is generated grouped by Employee and Department with YTD, monthly, and comparison data",
+      "acceptance_criteria": [
+        "Report columns: Employee, Deal Count, Gross Profit, Commission Accrued, Paid, YTD, Plan Rate",
+        "Grouped by department with subtotals",
+        "Grand total across all employees",
+        "Prior month comparison",
+        "Exportable to CSV and email-deliverable"
+      ],
+      "story_points": 5,
+      "labels": ["accounting", "payroll", "commission", "reporting"],
+      "related_apis": ["GET /api/v1/payroll/commissions/report"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    },
+    {
+      "id": "US-FP-001",
+      "key": "AMACC-FP-001",
+      "title": "Floor plan unit registration",
+      "type": "Story",
+      "epic": "EPIC-FP",
+      "phase": "PHASE_1",
+      "priority": "HIGH",
+      "story": "Given a new vehicle arrives on lot and is floored with a lender, When the office manager enters VIN, lender, advance amount, interest rate, and floor date, Then the system creates a floor plan unit record with status=ACTIVE",
+      "acceptance_criteria": [
+        "Unit record includes all required fields (VIN, lender, advance, rate, date)",
+        "VIN must be unique per tenant",
+        "GL accounts are mapped for liability and interest",
+        "Status defaults to ACTIVE",
+        "Curtailment schedule can be configured"
+      ],
+      "story_points": 5,
+      "labels": ["accounting", "floor-plan"],
+      "related_apis": ["POST /api/v1/gl/floor-plan/units"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    },
+    {
+      "id": "US-FP-002",
+      "key": "AMACC-FP-002",
+      "title": "Daily interest accrual batch job",
+      "type": "Story",
+      "epic": "EPIC-FP",
+      "phase": "PHASE_1",
+      "priority": "HIGH",
+      "story": "Given 50 vehicles are on floor, When the scheduled daily interest accrual job runs at 6 AM, Then interest is calculated for each unit and a GL journal entry posts accrual to interest expense",
+      "acceptance_criteria": [
+        "Job runs daily at 6 AM (configurable)",
+        "Interest = (current_balance × annual_rate / 365)",
+        "Compound interest supported (configurable by lender)",
+        "GL entry: DR Floor Plan Interest Expense, CR Floor Plan Payable",
+        "Entry flows through GL Integrity Agent",
+        "Job logs all calculations and success/failure"
+      ],
+      "story_points": 8,
+      "labels": ["accounting", "floor-plan", "automation"],
+      "related_apis": ["POST /api/v1/gl/floor-plan/accrue-interest"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    },
+    {
+      "id": "US-FP-003",
+      "key": "AMACC-FP-003",
+      "title": "Interest calculation methodology",
+      "type": "Story",
+      "epic": "EPIC-FP",
+      "phase": "PHASE_1",
+      "priority": "MEDIUM",
+      "story": "Given a unit floored with advance $25,000 and rate 6.5%, When daily accrual runs, Then interest compounds correctly per lender configuration (daily or monthly)",
+      "acceptance_criteria": [
+        "Daily interest = (balance × rate / 365)",
+        "System supports daily and monthly compounding",
+        "Lender config specifies compounding method",
+        "Accrued_interest field increments correctly",
+        "No rounding errors (use NUMERIC(15,2))"
+      ],
+      "story_points": 3,
+      "labels": ["accounting", "floor-plan", "math"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    },
+    {
+      "id": "US-FP-004",
+      "key": "AMACC-FP-004",
+      "title": "Automatic payoff on vehicle sale",
+      "type": "Story",
+      "epic": "EPIC-FP",
+      "phase": "PHASE_1",
+      "priority": "HIGH",
+      "story": "Given a floored vehicle is sold, When the sale deal posts to GL, Then the floor plan liability is reversed and a payoff check is scheduled to the lender",
+      "acceptance_criteria": [
+        "System matches vehicle VIN to floor plan unit",
+        "Payoff amount = original advance + accrued interest",
+        "GL entry: DR Floor Plan Payable, CR Cash",
+        "Unit status changed to PAID_OFF",
+        "AP check scheduled for lender payoff",
+        "Audit trail records payoff date and sale deal ID"
+      ],
+      "story_points": 8,
+      "labels": ["accounting", "floor-plan", "automation"],
+      "related_apis": ["POST /api/v1/gl/floor-plan/payoff/:unitId"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    },
+    {
+      "id": "US-FP-005",
+      "key": "AMACC-FP-005",
+      "title": "Curtailment tracking and payment scheduling",
+      "type": "Story",
+      "epic": "EPIC-FP",
+      "phase": "PHASE_1",
+      "priority": "MEDIUM",
+      "story": "Given a floor plan lender requires monthly curtailment, When the unit is registered with curtailment schedule, Then the system creates recurring AP reminders and automatically processes payments",
+      "acceptance_criteria": [
+        "Curtailment schedule stored as {monthly: $500} or {date: $X}",
+        "Reminders created for each curtailment due date",
+        "Payment reduces floor plan liability and posts GL entry",
+        "GL entry: DR Floor Plan Payable, CR Cash",
+        "Audit trail records each curtailment payment"
+      ],
+      "story_points": 5,
+      "labels": ["accounting", "floor-plan", "workflow"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    },
+    {
+      "id": "US-FP-006",
+      "key": "AMACC-FP-006",
+      "title": "Floor plan aging report",
+      "type": "Story",
+      "epic": "EPIC-FP",
+      "phase": "PHASE_1",
+      "priority": "HIGH",
+      "story": "Given it is month-end, When the controller runs the Floor Plan Aging Report, Then all ACTIVE units are shown grouped by lender with aging buckets",
+      "acceptance_criteria": [
+        "Report shows: VIN, Vehicle Make/Model, Advance, Accrued Interest, Days on Lot",
+        "Grouped by lender with subtotals",
+        "Vehicles sorted by Days on Floor (oldest first)",
+        "Flags vehicles on floor >180 days (aged)",
+        "Emailed to Finance Director"
+      ],
+      "story_points": 5,
+      "labels": ["accounting", "floor-plan", "reporting"],
+      "related_apis": ["GET /api/v1/gl/floor-plan/aging-report"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    },
+    {
+      "id": "US-FP-007",
+      "key": "AMACC-FP-007",
+      "title": "Multi-lender support with account isolation",
+      "type": "Story",
+      "epic": "EPIC-FP",
+      "phase": "PHASE_1",
+      "priority": "MEDIUM",
+      "story": "Given the dealership has floor plans with 3 different lenders, When units are registered, Then each lender's transactions post to their respective GL accounts",
+      "acceptance_criteria": [
+        "Lender config includes: name, GL payable account, GL interest account, interest calc method, curtailment terms",
+        "Each lender has isolated GL accounts (no commingling)",
+        "Aging report and payoff amounts group by lender",
+        "Transactions are tagged with lender_id for audit"
+      ],
+      "story_points": 3,
+      "labels": ["accounting", "floor-plan", "multi-lender"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    },
+    {
+      "id": "US-FP-008",
+      "key": "AMACC-FP-008",
+      "title": "Floor plan loss mitigation (damage/total loss)",
+      "type": "Story",
+      "epic": "EPIC-FP",
+      "phase": "PHASE_1",
+      "priority": "MEDIUM",
+      "story": "Given a floored vehicle is damaged or totaled, When the office manager marks the unit status as DAMAGED, Then a GL loss write-off entry is created and status changes to PAID_OFF",
+      "acceptance_criteria": [
+        "Unit status can be marked DAMAGED or TOTAL_LOSS",
+        "GL entry: DR Floor Plan Loss (GL 6000), CR Floor Plan Payable",
+        "Loss amount = current balance (advance + accrued interest)",
+        "Status changed to PAID_OFF",
+        "Insurance claim workflow triggered if insured"
+      ],
+      "story_points": 5,
+      "labels": ["accounting", "floor-plan", "risk"],
+      "cobol_origin": "Net-new",
+      "assignee": "Unassigned",
+      "status": "TODO"
+    }
+  ],
+  "phase_2_stories": [
+    {
+      "id": "US-INV-001",
+      "key": "AMACC-INV-001",
+      "title": "FIFO inventory layer tracking",
+      "phase": "PHASE_2",
+      "description": "Track inventory purchases as layers; FIFO pops oldest layer on sales"
+    },
+    {
+      "id": "US-INV-002",
+      "key": "AMACC-INV-002",
+      "title": "Weighted-average inventory valuation",
+      "phase": "PHASE_2",
+      "description": "Calculate inventory COGS using weighted-average cost method"
+    },
+    {
+      "id": "US-FA-001",
+      "key": "AMACC-FA-001",
+      "title": "Fixed asset registration and depreciation",
+      "phase": "PHASE_2",
+      "description": "Register fixed assets with useful life and calculate monthly depreciation"
+    },
+    {
+      "id": "US-FA-002",
+      "key": "AMACC-FA-002",
+      "title": "Asset disposal and gain/loss recognition",
+      "phase": "PHASE_2",
+      "description": "Record asset disposal and calculate gain/loss on sale"
+    },
+    {
+      "id": "US-WA-001",
+      "key": "AMACC-WA-001",
+      "title": "Warranty reserve accrual on sales",
+      "phase": "PHASE_2",
+      "description": "Automatically accrue warranty liability based on historical claims ratio"
+    },
+    {
+      "id": "US-WA-002",
+      "key": "AMACC-WA-002",
+      "title": "Warranty claims against reserve",
+      "phase": "PHASE_2",
+      "description": "Record warranty claims and reduce reserve balance"
+    },
+    {
+      "id": "US-OEM-001",
+      "key": "AMACC-OEM-001",
+      "title": "OEM claim feed ingestion",
+      "phase": "PHASE_2",
+      "description": "Ingest daily OEM warranty claim feeds from GM, Ford, etc."
+    },
+    {
+      "id": "US-OEM-002",
+      "key": "AMACC-OEM-002",
+      "title": "Auto-matching AR to OEM claims",
+      "phase": "PHASE_2",
+      "description": "Match warranty AR entries to OEM claims by claim number and amount"
+    }
+  ],
+  "redesign_stories": [
+    {
+      "id": "US-RD-GLEXC-001",
+      "key": "AMACC-RD-GLEXC-001",
+      "title": "GL Exception Detection Agent",
+      "phase": "REDESIGN",
+      "description": "Deploy Claude agent to detect GL exceptions (anomalies, miscodings) in real-time with context-aware severity"
+    },
+    {
+      "id": "US-RD-DEALPL-001",
+      "key": "AMACC-RD-DEALPL-001",
+      "title": "Deal Profitability via T1 Copilot",
+      "phase": "REDESIGN",
+      "description": "Enable T1 Copilot to query GL for deal-level profitability analysis in natural language"
+    },
+    {
+      "id": "US-RD-BANKREC-001",
+      "key": "AMACC-RD-BANKREC-001",
+      "title": "Bank Reconciliation AI Auto-Match",
+      "phase": "REDESIGN",
+      "description": "AI agent auto-matches bank transactions to GL with confidence scoring; human reviews only low-confidence items"
+    }
+  ],
+  "platform_stories": [
+    {
+      "id": "US-PLAT-FXCUR-001",
+      "key": "AMACC-PLAT-FXCUR-001",
+      "title": "Multi-Currency Support (Solera Integration)",
+      "phase": "PLATFORM",
+      "description": "AMACC posts multi-currency transactions; Solera handles FX revaluation and consolidation"
+    },
+    {
+      "id": "US-PLAT-GRPREPORT-001",
+      "key": "AMACC-PLAT-GRPREPORT-001",
+      "title": "Consolidated Group Reporting (Solera Integration)",
+      "phase": "PLATFORM",
+      "description": "AMACC publishes per-tenant GL; Solera aggregates and consolidates across dealer group"
+    },
+    {
+      "id": "US-PLAT-BUDGET-001",
+      "key": "AMACC-PLAT-BUDGET-001",
+      "title": "Budgeting & Forecasting (Solera Integration)",
+      "phase": "PLATFORM",
+      "description": "AMACC records actuals; Solera manages master budget, variance analysis, rolling forecast"
+    },
+    {
+      "id": "US-PLAT-COMPLIANCE-001",
+      "key": "AMACC-PLAT-COMPLIANCE-001",
+      "title": "Advanced Compliance Reporting (Solera Integration)",
+      "phase": "PLATFORM",
+      "description": "AMACC publishes audit trail; Solera applies compliance rules and generates regulatory reports"
+    }
+  ],
+  "drop_stories": [
+    {
+      "id": "US-DROP-ICBILLING-001",
+      "key": "AMACC-DROP-ICBILLING-001",
+      "title": "Intercompany Billing Rules Engine",
+      "phase": "DROP",
+      "justification": "Low adoption, complex configuration. Manual IC journal entries sufficient."
+    },
+    {
+      "id": "US-DROP-CUSTOMAGING-001",
+      "key": "AMACC-DROP-CUSTOMAGING-001",
+      "title": "Custom Aging Report Buckets",
+      "phase": "DROP",
+      "justification": "Standard 30/60/90 buckets address 95% of use cases. Excel export for custom analysis."
+    }
+  ]
+}

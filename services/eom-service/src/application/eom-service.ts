@@ -1,5 +1,5 @@
 import { inject, injectable } from 'tsyringe';
-import { Prisma } from '.prisma/eom-client';
+import { Prisma, PrismaClient } from '.prisma/eom-client';
 import {
   IEOMCloseRepository,
   IEOMStepRepository,
@@ -14,8 +14,10 @@ import {
   standardPeriod,
   GLAccountType,
   createEvent,
+  createServiceToken,
 } from '@amacc/shared-kernel';
 import { EOMOrchestrator } from '../domain/orchestrator';
+import { computeEOMLockKey } from '../domain/eom-lock';
 
 // ── Accounting EOM step sequence from purge.cbl (ACSYS-TRACK-EOM values)
 // Prefixed 'ACCT_' to avoid collision with Service Module step codes
@@ -222,6 +224,7 @@ export class EOMService {
     @inject('EOMOrchestrator') private readonly orchestrator: EOMOrchestrator,
     @inject('IGLClient') private readonly glClient: IGLClient,
     @inject('IYearEndRecordRepository') private readonly yearEndRepo: IYearEndRecordRepository,
+    @inject('PrismaClient') private readonly prisma: PrismaClient,
   ) {}
 
   // ── Precondition checks ────────────────────────────────
@@ -353,13 +356,79 @@ export class EOMService {
   }
 
   async advanceStep(closeId: string, tenantId: TenantId): Promise<StepResult> {
-    const close = await this.closeRepo.findById(closeId, tenantId);
-    if (!close) throw new Error('EOM close not found');
+    // ── Hung step detection ────────────────────────────────────────────────────
+    // Must run BEFORE Phase 1 so that a hung step is reset before we try to find
+    // a PENDING/BLOCKED step to run.  If startedAt is recent (<10 min), another
+    // replica is actively working — skip.  If startedAt is stale, the pod died
+    // mid-execution; reset the step to PENDING so we can take over.
+    // @cobol-ancestry purge.cbl ACSYS-TRACK-EOM=5 sentinel (single-server guard)
+    const hungStep = await this.prisma.eOMStep.findFirst({
+      where: { eomCloseId: closeId, status: EOMStepStatus.RUNNING },
+    });
+    if (hungStep?.startedAt) {
+      const ageMs = Date.now() - hungStep.startedAt.getTime();
+      if (ageMs < 10 * 60 * 1000) {
+        // Another replica is actively executing — do not proceed
+        throw new Error(`Step ${hungStep.stepCode} is already RUNNING on another replica`);
+      }
+      // Hung: pod died while holding the step in RUNNING state — reset to PENDING
+      await this.prisma.eOMStep.update({
+        where: { id: hungStep.id },
+        data: { status: EOMStepStatus.PENDING, startedAt: null },
+      });
+    }
 
+    // ── Phase 1: acquire advisory lock + mark step RUNNING atomically ──────────
+    // Prevents two replicas from simultaneously entering the same step.
+    // pg_advisory_xact_lock holds until the transaction commits or rolls back.
+    const phase1 = await this.prisma.$transaction(async (tx) => {
+      // Load close inside transaction
+      const close = await tx.eOMClose.findFirst({ where: { id: closeId, tenantId } });
+      if (!close) throw new Error(`EOM close ${closeId} not found`);
+      if (close.status !== EOMCloseStatus.IN_PROGRESS) {
+        throw new Error(`EOM close is ${close.status}, not IN_PROGRESS — cannot advance`);
+      }
+
+      // Acquire advisory lock — blocks if another replica holds it for this period
+      const lockKey = computeEOMLockKey(close.tenantId, close.periodYear, close.periodMonth);
+      await (tx as any).$executeRaw`SELECT pg_advisory_xact_lock(${lockKey}::bigint)`;
+
+      // Re-verify status inside the lock (another replica may have changed it)
+      const lockedClose = await tx.eOMClose.findFirst({ where: { id: closeId, tenantId } });
+      if (!lockedClose || lockedClose.status !== EOMCloseStatus.IN_PROGRESS) {
+        throw new Error(`EOM close changed state while acquiring advisory lock`);
+      }
+
+      // Find the current step record in PENDING or BLOCKED state
+      const currentStepRecord = await tx.eOMStep.findFirst({
+        where: {
+          eomCloseId: closeId,
+          stepCode: lockedClose.currentStep ?? '',
+          status: { in: [EOMStepStatus.PENDING, EOMStepStatus.BLOCKED] },
+        },
+      });
+      if (!currentStepRecord) {
+        throw new Error(
+          `No PENDING/BLOCKED step found for ${lockedClose.currentStep} in close ${closeId}`,
+        );
+      }
+
+      // Mark step RUNNING inside the lock — visible to other replicas immediately on commit
+      await tx.eOMStep.update({
+        where: { id: currentStepRecord.id },
+        data: { status: EOMStepStatus.RUNNING, startedAt: new Date() },
+      });
+
+      return { close: lockedClose, stepId: currentStepRecord.id, stepCode: currentStepRecord.stepCode };
+    });
+
+    const { close: lockedClose, stepId, stepCode } = phase1;
+
+    // ── Phase 2: execute step handler OUTSIDE the transaction ─────────────────
+    // Step handlers may call external HTTP services (gl-service, etc.).
+    // We must NOT hold a DB transaction (and therefore the advisory lock) during
+    // long-running HTTP calls — that would block the connection pool.
     const steps = await this.stepRepo.findByCloseId(closeId);
-    const currentStep = steps.find((s) => s.stepCode === close.currentStep);
-    if (!currentStep) throw new Error('Current step not found');
-
     const stepResults = new Map<string, StepResult>();
     for (const s of steps) {
       if (s.status === EOMStepStatus.DONE) {
@@ -367,48 +436,84 @@ export class EOMService {
       }
     }
 
-    const periodEnd = new Date(close.periodYear, close.periodMonth, 0)
+    const periodEnd = new Date(lockedClose.periodYear, lockedClose.periodMonth, 0)
       .toISOString()
       .split('T')[0];
+
+    const currentStepDomain = steps.find((s) => s.id === stepId);
+    if (!currentStepDomain) throw new Error(`Step ${stepId} disappeared after Phase 1`);
 
     const context: IEOMStepContext = {
       closeId,
       tenantId,
-      period: standardPeriod(close.periodYear, close.periodMonth),
-      closeType: close.closeType ?? ('MONTHLY' as EOMCloseType),
+      period: standardPeriod(lockedClose.periodYear, lockedClose.periodMonth),
+      closeType: (lockedClose.closeType as EOMCloseType) ?? ('MONTHLY' as EOMCloseType),
       periodEnd,
-      currentStep,
-      getPreviousStepResult(stepCode: string): StepResult | null {
-        return stepResults.get(stepCode) ?? null;
+      currentStep: currentStepDomain,
+      getPreviousStepResult(code: string): StepResult | null {
+        return stepResults.get(code) ?? null;
       },
     };
 
-    await this.stepRepo.updateStatus(currentStep.id, EOMStepStatus.RUNNING);
     const result = await this.orchestrator.advance(context);
 
-    if (result.success) {
-      await this.stepRepo.updateStatus(currentStep.id, EOMStepStatus.DONE);
-      if (result.nextStepCode) {
-        await this.closeRepo.updateStatus(closeId, EOMCloseStatus.IN_PROGRESS, tenantId);
-      } else {
-        await this.closeRepo.updateStatus(closeId, EOMCloseStatus.COMPLETED, tenantId);
-        await this.eventPublisher.publish(
-          createEvent('EOM_CLOSE_COMPLETED', tenantId, {
-            closeId,
-            periodYear: close.periodYear,
-            periodMonth: close.periodMonth,
-          }),
-        );
+    // ── Phase 3: re-acquire lock and commit result atomically ─────────────────
+    await this.prisma.$transaction(async (tx) => {
+      const lockKey = computeEOMLockKey(lockedClose.tenantId, lockedClose.periodYear, lockedClose.periodMonth);
+      await (tx as any).$executeRaw`SELECT pg_advisory_xact_lock(${lockKey}::bigint)`;
+
+      // Verify the step is still RUNNING (admin reset or another process may have changed it)
+      const step = await tx.eOMStep.findUnique({ where: { id: stepId } });
+      if (!step || step.status !== EOMStepStatus.RUNNING) {
+        throw new Error(`Step ${stepCode} is no longer RUNNING — result discarded`);
       }
-    } else {
-      await this.stepRepo.updateStatus(currentStep.id, EOMStepStatus.BLOCKED, result.message);
-      await this.closeRepo.updateStatus(closeId, EOMCloseStatus.BLOCKED, tenantId);
+
+      const now = new Date();
+      if (result.success) {
+        await tx.eOMStep.update({
+          where: { id: stepId },
+          data: { status: EOMStepStatus.DONE, completedAt: now },
+        });
+
+        if (result.nextStepCode) {
+          await tx.eOMClose.update({
+            where: { id: closeId },
+            data: { currentStep: result.nextStepCode, status: EOMCloseStatus.IN_PROGRESS },
+          });
+        } else {
+          // No next step — close is fully complete
+          await tx.eOMClose.update({
+            where: { id: closeId },
+            data: { status: EOMCloseStatus.COMPLETED, completedAt: now },
+          });
+        }
+      } else {
+        await tx.eOMStep.update({
+          where: { id: stepId },
+          data: { status: EOMStepStatus.BLOCKED, errorMessage: result.message ?? 'Step failed' },
+        });
+        await tx.eOMClose.update({
+          where: { id: closeId },
+          data: { status: EOMCloseStatus.BLOCKED },
+        });
+      }
+    });
+
+    // ── Post-commit events ────────────────────────────────────────────────────
+    if (result.success && !result.nextStepCode) {
+      await this.eventPublisher.publish(
+        createEvent('EOM_CLOSE_COMPLETED', tenantId, {
+          closeId,
+          periodYear: lockedClose.periodYear,
+          periodMonth: lockedClose.periodMonth,
+        }),
+      );
     }
 
     await this.eventPublisher.publish(
       createEvent('EOM_STEP_CHANGED', tenantId, {
         closeId,
-        stepCode: currentStep.stepCode,
+        stepCode,
         result,
       }),
     );
@@ -443,17 +548,98 @@ export class EOMService {
       throw new Error('Only BLOCKED closes can be reset');
     }
 
-    const stepCode = parseInt(close.currentStep ?? '0', 10);
-    if (stepCode >= 100) {
+    const DESTRUCTIVE_STEP_CODES = new Set([
+      'ACCT_100',  // Schedule detail purge — permanently deletes detail records
+      'ACCT_200',  // GL period carry-forward — permanently modifies opening_balance
+      'ACCT_300',  // Missing document purge — permanently deletes records
+    ]);
+
+    // Also handle legacy numeric codes (for Service Module close type)
+    function isDestructiveStep(stepCode: string): boolean {
+      if (DESTRUCTIVE_STEP_CODES.has(stepCode)) return true;
+      // Legacy numeric: treat >= 100 as destructive for SERVICE_MODULE close type
+      const numeric = parseInt(stepCode, 10);
+      return !isNaN(numeric) && numeric >= 100;
+    }
+
+    if (isDestructiveStep(close.currentStep ?? '')) {
       throw new Error(
-        `Cannot auto-reset: close failed at step ${close.currentStep} (≥100). ` +
+        `Cannot auto-reset: close failed at step ${close.currentStep} (destructive step). ` +
           'Data may be partially purged — manual recovery required.',
+      );
+    }
+
+    // Check if any destructive step has already completed for this close
+    const allSteps = await this.stepRepo.findByCloseId(closeId);
+    const completedDestructive = allSteps.find(
+      (s) => DESTRUCTIVE_STEP_CODES.has(s.stepCode) && s.status === EOMStepStatus.DONE,
+    );
+
+    if (completedDestructive) {
+      throw new Error(
+        `Cannot reset EOM close: destructive step '${completedDestructive.stepCode}' has already completed. ` +
+        `GL opening balances or schedule details have been permanently modified. ` +
+        `Contact support for recovery assistance.`,
       );
     }
 
     await this.closeRepo.updateStatus(closeId, EOMCloseStatus.NOT_STARTED, tenantId);
     const updated = await this.closeRepo.findById(closeId, tenantId);
     return updated!;
+  }
+
+  /**
+   * Restore GL state from ACCT_010 backup (BUILD-012).
+   * Only available for BLOCKED closes that haven't yet executed destructive steps.
+   * Reads eom_backups and calls GL service to restore opening_balance and period_balances.
+   * Used for manual disaster recovery by support staff.
+   */
+  async restoreBackup(closeId: string, tenantId: TenantId): Promise<{ message: string; restored: number }> {
+    const close = await this.closeRepo.findById(closeId, tenantId);
+    if (!close) throw new Error('EOM close not found');
+    if (close.status !== EOMCloseStatus.BLOCKED) {
+      throw new Error(`Close must be in BLOCKED status to restore backup; current status: ${close.status}`);
+    }
+
+    const jwtSecret = process.env['AMACC_JWT_SECRET'] ?? 'amacc-dev-secret-change-in-production';
+    const serviceToken = createServiceToken('eom-service', jwtSecret);
+    const glServiceUrl = process.env['GL_SERVICE_URL'] ?? 'http://gl-service:3010';
+
+    // Fetch GL_ACCOUNTS snapshot from backup
+    const accountsBackup = await this.prisma.eOmBackup.findFirst({
+      where: { eomCloseId: closeId, backupType: 'GL_ACCOUNTS' },
+    });
+    if (!accountsBackup) throw new Error('No GL_ACCOUNTS backup found for this close');
+
+    const accounts = accountsBackup.backupData as any;
+
+    // Call GL service to restore each account's opening_balance and opening_unit_count
+    let restored = 0;
+    for (const account of accounts) {
+      try {
+        await fetch(`${glServiceUrl}/api/v1/gl/accounts/${account.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-tenant-id': tenantId,
+            'Authorization': `Bearer ${serviceToken}`,
+          },
+          body: JSON.stringify({
+            openingBalance: account.openingBalance,
+            openingUnitCount: account.openingUnitCount,
+          }),
+        });
+        restored++;
+      } catch (err) {
+        // Log but continue with other accounts
+        console.error(`[restoreBackup] Failed to restore account ${account.id}: ${err}`);
+      }
+    }
+
+    return {
+      message: `Backup restored: ${restored} accounts' opening balances recovered`,
+      restored,
+    };
   }
 
   // ── Year-End Close ─────────────────────────────────────

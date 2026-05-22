@@ -1,8 +1,8 @@
 {
-  "name": "amacc",
+  "name": "am-accounting",
   "version": "0.1.0",
   "private": true,
-  "description": "AMACC — AutoMate Accounting Cloud (Microservices)",
+  "description": "AM-Accounting — AutoMate Accounting Cloud (Microservices)",
   "workspaces": [
     "packages/*",
     "services/*",

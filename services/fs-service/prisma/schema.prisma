@@ -1,7 +1,7 @@
 generator client {
   provider      = "prisma-client-js"
   output        = "../node_modules/.prisma/fs-client"
-  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "linux-musl-arm64-openssl-3.0.x", "darwin-arm64"]
 }
 
 datasource db {
@@ -129,4 +129,49 @@ model FSSupplementalData {
   @@unique([tenantId, oemCode, periodYear, periodMonth, fieldName])
   @@map("fs_supplemental_data")
   @@index([tenantId, oemCode, periodYear, periodMonth])
+}
+
+model FormatCode {
+  id          String @id @default(cuid())
+  tenantId    String @map("tenant_id")
+  mfgCode     String @map("mfg_code")
+  formatName  String @map("format_name")
+  description String?
+  isActive    Boolean @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, mfgCode])
+  @@map("format_codes")
+  @@index([tenantId, isActive])
+}
+
+model FSTemplate {
+  id          String @id @default(cuid())
+  tenantId    String @map("tenant_id")
+  mfgCode     String @map("mfg_code")
+  year        Int
+  parameters  Json   @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, mfgCode, year])
+  @@map("fs_templates")
+  @@index([tenantId, mfgCode])
+}
+
+model FSSetup {
+  id               String @id @default(cuid())
+  tenantId         String @map("tenant_id")
+  mfgCode          String @map("mfg_code")
+  year             Int
+  calendarOrFiscal String @default("FISCAL") @map("calendar_or_fiscal")
+  statementOption  String? @map("statement_option")
+  transmissionGroup String? @map("transmission_group")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, mfgCode, year])
+  @@map("fs_setup")
+  @@index([tenantId, mfgCode])
 }

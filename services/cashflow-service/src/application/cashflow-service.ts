@@ -80,15 +80,16 @@ export class CashFlowService {
       if (b.status === 'PENDING' || b.status === 'VALIDATED') {
         const periodEnd = new Date(b.periodEnd);
         const daysUntil = Math.floor((periodEnd.getTime() - nowMs) / 86400000);
-        if (daysUntil <= 30) payroll30 += b.totalAmount;
-        if (daysUntil <= 90) payroll90 += b.totalAmount;
+        const batchTotal = b.totalAmount ?? b.totalGrossPay ?? b.total_gross_pay ?? 0;
+        if (daysUntil <= 30) payroll30 += batchTotal;
+        if (daysUntil <= 90) payroll90 += batchTotal;
       }
     }
     // Estimate recurring payroll if no pending batches
     if (payroll30 === 0) {
       const postedBatches = (batches ?? []).filter((b: any) => b.status === 'POSTED');
       if (postedBatches.length > 0) {
-        const avgPayroll = postedBatches.reduce((s: number, b: any) => s + b.totalAmount, 0) / postedBatches.length;
+        const avgPayroll = postedBatches.reduce((s: number, b: any) => s + (b.totalAmount ?? b.totalGrossPay ?? b.total_gross_pay ?? 0), 0) / postedBatches.length;
         payroll30 = avgPayroll; // One cycle within 30 days
         payroll90 = avgPayroll * 3; // ~3 cycles in 90 days
       }
@@ -112,7 +113,7 @@ export class CashFlowService {
         data: {
           tenantId,
           forecastDate,
-          predictedBalance: f.predicted,
+          predictedBalance: isNaN(f.predicted) || !isFinite(f.predicted) ? 0 : Math.min(Math.max(f.predicted, -9999999999999), 9999999999999),
           confidence: f.confidence,
           breakdown: {
             startingCash: currentCash,

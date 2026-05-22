@@ -27,7 +27,7 @@ export default function PurchaseOrders() {
       </div>
 
       <div className="grid grid-cols-3 gap-4">
-        <div className="bg-white rounded-lg shadow p-4"><p className="text-sm text-gray-500">Open POs</p><p className="text-2xl font-bold text-blue-600">{stats.open}</p></div>
+        <div className="bg-white rounded-lg shadow p-4"><p className="text-sm text-gray-500">Open POs</p><p className="text-2xl font-bold text-brand">{stats.open}</p></div>
         <div className="bg-white rounded-lg shadow p-4"><p className="text-sm text-gray-500">Partially Received</p><p className="text-2xl font-bold text-amber-600">{stats.partial}</p></div>
         <div className="bg-white rounded-lg shadow p-4"><p className="text-sm text-gray-500">Outstanding Value</p><p className="text-2xl font-bold text-amacc-700">${stats.total.toLocaleString()}</p></div>
       </div>
@@ -66,10 +66,10 @@ export default function PurchaseOrders() {
                     <td className="py-2 text-right font-mono">${po.total.toLocaleString()}</td>
                     <td className="py-2 font-mono text-xs">{po.dept}</td>
                     <td className="py-2"><span className={`px-2 py-0.5 rounded text-xs ${
-                      po.status === 'Open' ? 'bg-blue-100 text-blue-700' : po.status === 'Partial' ? 'bg-amber-100 text-amber-700'
+                      po.status === 'Open' ? 'bg-brand-light text-brand' : po.status === 'Partial' ? 'bg-amber-100 text-amber-700'
                       : po.status === 'Received' ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-500'}`}>{po.status}</span></td>
                     <td className="py-2 flex gap-2">
-                      <button className="text-xs text-blue-600 hover:underline">View</button>
+                      <button className="text-xs text-brand hover:underline">View</button>
                       {po.status !== 'Closed' && <button className="text-xs text-green-600 hover:underline">Receive</button>}
                     </td>
                   </tr>

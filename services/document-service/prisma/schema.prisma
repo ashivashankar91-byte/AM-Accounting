@@ -21,7 +21,7 @@ model Document {
   vendorName      String?   @map("vendor_name")
   invoiceNumber   String?   @map("invoice_number")
   invoiceDate     DateTime? @map("invoice_date")
-  totalAmount     Float?    @map("total_amount")
+  totalAmount     Decimal?  @map("total_amount") @db.Decimal(15, 2)
   approvedBy      String?   @map("approved_by")
   approvedAt      DateTime? @map("approved_at")
   journalEntryId  String?   @map("journal_entry_id")

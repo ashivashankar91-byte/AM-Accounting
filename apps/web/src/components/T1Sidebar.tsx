@@ -59,14 +59,14 @@ export default function T1Sidebar() {
     <>
       {/* Toggle button */}
       <button onClick={() => setOpen((o) => !o)}
-        className="fixed bottom-4 right-4 z-50 bg-blue-600 text-white w-12 h-12 rounded-full shadow-lg flex items-center justify-center text-xl hover:bg-blue-700">
+        className="fixed bottom-4 right-4 z-50 bg-brand text-white w-12 h-12 rounded-full shadow-lg flex items-center justify-center text-xl hover:bg-brand">
         {open ? '\u2715' : '\uD83E\uDD16'}
       </button>
 
       {/* Panel */}
       {open && (
         <div className="fixed bottom-20 right-4 z-50 w-96 h-[500px] bg-white rounded-lg shadow-2xl flex flex-col border">
-          <div className="bg-blue-600 text-white px-4 py-3 rounded-t-lg text-sm font-semibold">
+          <div className="bg-brand text-white px-4 py-3 rounded-t-lg text-sm font-semibold">
             T1 Accounting Copilot
           </div>
           <div className="flex-1 overflow-y-auto p-3 space-y-2">
@@ -88,7 +88,7 @@ export default function T1Sidebar() {
               className="flex-1 border rounded px-3 py-2 text-sm"
               placeholder="Ask T1..." disabled={streaming} />
             <button onClick={send} disabled={streaming}
-              className="bg-blue-600 text-white px-3 py-2 rounded text-sm hover:bg-blue-700 disabled:opacity-50">
+              className="bg-brand text-white px-3 py-2 rounded text-sm hover:bg-brand disabled:opacity-50">
               Send
             </button>
           </div>

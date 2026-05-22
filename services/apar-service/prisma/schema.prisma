@@ -1,7 +1,7 @@
 generator client {
   provider      = "prisma-client-js"
   output        = "../node_modules/.prisma/apar-client"
-  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "darwin-arm64"]
 }
 
 datasource db {
@@ -14,31 +14,85 @@ model AREntry {
   tenantId  String   @map("tenant_id")
   dealerRef String   @map("dealer_ref")
   type      String   // WARRANTY, FLOORPLAN, RECEIVABLE
-  amount    Float
+  amount    Decimal  @db.Decimal(15, 2)
   dueDate   DateTime @map("due_date")
-  status    String   @default("OPEN")
+  status    String   @default("OPEN") // OPEN | POSTED | VOIDED | PENDING_MANUAL
   oemSource String?  @map("oem_source")
   createdAt DateTime @default(now()) @map("created_at")
+
+  /// S4-04: journal source code (30=service, 32=parts, 56=manual)
+  journalSource        String?   @map("journal_source") @db.VarChar(2)
+  /// S4-04: RO or INVOICE or MANUAL
+  sourceDocumentType   String?   @map("source_document_type") @db.VarChar(20)
+  /// S4-04: the RO# or Invoice# that generated this receipt
+  sourceDocumentNumber String?   @map("source_document_number") @db.VarChar(20)
+  /// S4-04: who ran the cash register
+  cashierUserId        String?   @map("cashier_user_id")
+  /// S4-04: when cashiering happened
+  cashierDateTime      DateTime? @map("cashier_date_time")
+  /// S4-04: customer's portion when split payment
+  customerPayPortion   Decimal?  @map("customer_pay_portion") @db.Decimal(15, 2)
+  /// S4-04: name printed on the check (may differ from customer)
+  checkName            String?   @map("check_name") @db.VarChar(50)
+  /// S4-04: free text notes
+  remarks              String?
+  /// S6-10: IRS Form 8300 — number of $100 bills received (required when cash >= $10,000)
+  cash100BillCount     Int?      @default(0) @map("cash_100_bill_count")
 
   @@map("ar_entries")
   @@index([tenantId])
   @@index([tenantId, status])
+  @@index([tenantId, journalSource])
 }
 
 model APEntry {
-  id          String   @id @default(uuid())
-  tenantId    String   @map("tenant_id")
-  vendorName  String   @map("vendor_name")
-  invoiceRef  String   @map("invoice_ref")
-  amount      Float
-  dueDate     DateTime @map("due_date")
-  status      String   @default("OPEN")
-  glAccountId String?  @map("gl_account_id")
-  createdAt   DateTime @default(now()) @map("created_at")
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  vendorName  String    @map("vendor_name")
+  invoiceRef  String    @map("invoice_ref")
+  amount      Decimal   @db.Decimal(15, 2)
+  dueDate     DateTime  @map("due_date")
+  /// S2-06: status values — OPEN | PARTIAL | PAID | VOID (plus legacy OPEN)
+  status      String    @default("OPEN")
+  glAccountId String?   @map("gl_account_id")
+  /// S2-07: check fields populated when payment is issued
+  checkNumber String?   @db.VarChar(20) @map("check_number")
+  checkDate   DateTime? @map("check_date")
+  paidDate    DateTime? @map("paid_date")
+  /// S2-07: purchase order reference
+  poNumber    String?   @db.VarChar(20) @map("po_number")
+  /// S2-07: hold flag — prevents payment when true
+  holdFlag    Boolean   @default(false) @map("hold_flag")
+  /// S2-07: free-form note visible in approval queue
+  note        String?
+  createdAt   DateTime  @default(now()) @map("created_at")
 
   @@map("ap_entries")
   @@index([tenantId])
   @@index([tenantId, status])
+}
+
+/// S2-08: AP payment cleared fields for bank reconciliation
+model APPayment {
+  id            String    @id @default(uuid())
+  tenantId      String    @map("tenant_id")
+  apEntryId     String    @map("ap_entry_id")
+  paymentDate   DateTime  @map("payment_date")
+  amount        Decimal   @db.Decimal(15, 2)
+  checkNumber   String?   @db.VarChar(20) @map("check_number")
+  /// S2-08: bank reconciliation cleared flag
+  clearedFlag   Boolean   @default(false) @map("cleared_flag")
+  /// S2-08: date the check cleared the bank
+  clearedDate   DateTime? @map("cleared_date")
+  /// S3-08: voided check fields
+  voidedAt      DateTime? @map("voided_at")
+  voidReason    String?   @map("void_reason")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@map("ap_payments")
+  @@index([tenantId])
+  @@index([tenantId, clearedFlag])
+  @@index([apEntryId])
 }
 
 /// Outbox pattern for reliable event publishing from apar-service.
@@ -57,4 +111,187 @@ model OutboxEvent {
   @@map("outbox_events")
   @@index([publishedAt, retryCount])
   @@index([createdAt])
+}
+
+/// S5-01: Customer master — NAME_DATABASE CUSTOMER records
+model Customer {
+  id                    String    @id @default(uuid())
+  tenantId              String    @map("tenant_id")
+  customerNumber        String    @db.VarChar(20) @map("customer_number")
+  customerName          String    @map("customer_name")
+  customerType          String    @default("Individual") @map("customer_type") // Individual | Business | Government | Fleet
+  salespersonCode       String?   @db.VarChar(10) @map("salesperson_code")
+  arAccountOverride     String?   @map("ar_account_override") // GL account UUID
+  companyNumber         String?   @db.VarChar(4) @map("company_number")
+  taxId                 String?   @map("tax_id")
+  taxExemptStatus       Boolean   @default(false) @map("tax_exempt_status")
+  taxExemptCertNumber   String?   @map("tax_exempt_cert_number")
+  taxExemptExpiration   DateTime? @map("tax_exempt_expiration")
+  creditLimit           Decimal   @default(0) @db.Decimal(15, 2) @map("credit_limit")
+  creditTerms           String    @default("Net30") @map("credit_terms")
+  customerSince         DateTime  @default(now()) @map("customer_since")
+  preferredContactMethod String   @default("Phone") @map("preferred_contact_method")
+  doNotSolicit          Boolean   @default(false) @map("do_not_solicit")
+  doNotMail             Boolean   @default(false) @map("do_not_mail")
+  // Primary address
+  address1              String?
+  address2              String?
+  city                  String?
+  state                 String?   @db.VarChar(2)
+  zip                   String?   @db.VarChar(10)
+  country               String?   @default("US")
+  phone                 String?
+  phone2                String?
+  fax                   String?
+  email                 String?
+  // Secondary / alternate address
+  secondaryStreet       String?   @map("secondary_street")
+  secondaryCity         String?   @map("secondary_city")
+  secondaryState        String?   @db.VarChar(2) @map("secondary_state")
+  secondaryZip          String?   @db.VarChar(10) @map("secondary_zip")
+  secondaryCountry      String?   @map("secondary_country")
+  addressLabel          String?   @map("address_label") // "Billing", "Shipping", etc.
+  // Module flags (Name Database AVPSFE pattern)
+  flagAR                Boolean   @default(false) @map("flag_ar")   // A = AR
+  flagVehicle           Boolean   @default(false) @map("flag_vehicle") // V = Vehicle
+  flagParts             Boolean   @default(false) @map("flag_parts")  // P = Parts
+  flagService           Boolean   @default(false) @map("flag_service") // S = Service
+  flagFI                Boolean   @default(false) @map("flag_fi")    // F = F&I
+  employeeFlag          Boolean   @default(false) @map("employee_flag") // E = Employee
+  // Notes (append-only JSON array of { timestamp, user, text })
+  notes                 Json?
+  isActive              Boolean   @default(true) @map("is_active")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  @@unique([tenantId, customerNumber])
+  @@map("customers")
+  @@index([tenantId])
+  @@index([tenantId, isActive])
+  @@index([tenantId, customerName])
+}
+
+/// S3-07: Vendor master — AP_VENDOR legacy equivalent
+model Vendor {
+  id                   String    @id @default(uuid())
+  tenantId             String    @map("tenant_id")
+  vendorNumber         String    @db.VarChar(20) @map("vendor_number")
+  vendorName           String    @map("vendor_name")
+  dba                  String?
+  contactName          String?   @map("contact_name")
+  phone                String?
+  fax                  String?
+  email                String?
+  address1             String?   @map("address1")
+  address2             String?   @map("address2")
+  city                 String?
+  state                String?   @db.VarChar(2)
+  zip                  String?   @db.VarChar(10)
+  taxId                String?   @map("tax_id")
+  is1099Misc           Boolean   @default(false) @map("is_1099_misc")
+  is1099Nec            Boolean   @default(false) @map("is_1099_nec")
+  income1099Type       String?   @map("income_1099_type")
+  w9OnFile             Boolean   @default(false) @map("w9_on_file")
+  w9ReceivedDate       DateTime? @map("w9_received_date")
+  paymentTerms         String    @default("Net30") @map("payment_terms")
+  defaultGlAccount     String?   @map("default_gl_account")
+  paymentMethod        String    @default("Check") @map("payment_method")
+  discountPercent      Decimal   @default(0) @db.Decimal(5, 2) @map("discount_percent")
+  discountDays         Int       @default(0) @map("discount_days")
+  bankName             String?   @map("bank_name")
+  bankRoutingNumber    String?   @db.VarChar(9) @map("bank_routing_number")
+  bankAccountNumber    String?   @map("bank_account_number")
+  bankAccountType      String?   @map("bank_account_type")
+  separateCheck        Boolean   @default(false) @map("separate_check")
+  holdPayments         Boolean   @default(false) @map("hold_payments")
+  defaultExpenseAccount String?  @map("default_expense_account")
+  notes                String?
+  isActive             Boolean   @default(true) @map("is_active")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  @@unique([tenantId, vendorNumber])
+  @@map("vendors")
+  @@index([tenantId])
+  @@index([tenantId, isActive])
+}
+
+/// S6-01/02/03: Purchase Order master — PO state machine with Cancel vs Void separation
+/// CANCEL: DRAFT only, no PO# consumed. VOID: SUBMITTED/APPROVED, PO# consumed, audit record.
+model PurchaseOrder {
+  id              String    @id @default(uuid())
+  tenantId        String    @map("tenant_id")
+  poNumber        String?   @db.VarChar(20) @map("po_number")          // NULL = DRAFT (no PO# assigned)
+  poType          String    @default("GENERAL") @map("po_type")         // GENERAL | SUBLET | VEHICLE
+  vendorId        String?   @map("vendor_id")
+  vendorName      String?   @map("vendor_name")
+  department      String?   @db.VarChar(50)
+  requestedBy     String?   @map("requested_by")
+  shipTo          String?   @map("ship_to")
+  poDate          DateTime  @default(now()) @map("po_date") @db.Date
+  requiredDate    DateTime? @map("required_date") @db.Date
+  notes           String?
+  status          String    @default("DRAFT") @map("status")
+  // status values: DRAFT | SUBMITTED | APPROVED | PARTIALLY_RECEIVED | RECEIVED | CLOSED | CANCELLED | VOIDED
+  approvalLevel   Int       @default(0) @map("approval_level")
+  approvedBy      String?   @map("approved_by")
+  approvedAt      DateTime? @map("approved_at")
+  lineTotal       Decimal   @default(0) @db.Decimal(15, 2) @map("line_total")
+  freight         Decimal   @default(0) @db.Decimal(15, 2)
+  tax             Decimal   @default(0) @db.Decimal(15, 2)
+  total           Decimal   @default(0) @db.Decimal(15, 2)
+  /// S6-02: Sublet PO link to Repair Order
+  roNumber        String?   @db.VarChar(20) @map("ro_number")
+  /// S6-01: Void metadata
+  voidedAt        DateTime? @map("voided_at")
+  voidReason      String?   @map("void_reason")
+  voidedBy        String?   @map("voided_by")
+  /// S6-02: Cancelled metadata (DRAFT only)
+  cancelledAt     DateTime? @map("cancelled_at")
+  cancelReason    String?   @map("cancel_reason")
+  isActive        Boolean   @default(true) @map("is_active")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  lines           POLine[]
+
+  @@map("purchase_orders")
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, poNumber])
+}
+
+/// S6-01: Purchase Order line items
+model POLine {
+  id          String   @id @default(uuid())
+  poId        String   @map("po_id")
+  lineNumber  Int      @map("line_number")
+  description String
+  qty         Decimal  @db.Decimal(10, 2)
+  unitCost    Decimal  @db.Decimal(15, 2) @map("unit_cost")
+  extCost     Decimal  @db.Decimal(15, 2) @map("ext_cost")
+  glAccountId String?  @map("gl_account_id")
+  controlNumber String? @db.VarChar(20) @map("control_number")
+
+  po          PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+
+  @@map("po_lines")
+  @@index([poId])
+}
+
+/// S3-09: AP bank account with sequential check number sequence
+model APBankAccount {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  bankName        String   @map("bank_name")
+  accountNumber   String   @map("account_number")
+  routingNumber   String   @map("routing_number")
+  nextCheckNumber Int      @default(1001) @map("next_check_number")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, accountNumber])
+  @@map("ap_bank_accounts")
+  @@index([tenantId])
 }

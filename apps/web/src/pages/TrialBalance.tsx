@@ -81,7 +81,7 @@ export default function TrialBalance() {
             <tbody>
               {rows.map((r: any, i: number) => (
                 <tr key={r.accountCode ?? i} className="border-b border-gray-50 hover:bg-gray-50">
-                  <td className="px-4 py-2 font-mono text-xs font-semibold text-blue-700">{r.accountCode ?? r.code ?? '—'}</td>
+                  <td className="px-4 py-2 font-mono text-xs font-semibold text-brand">{r.accountCode ?? r.code ?? '—'}</td>
                   <td className="px-4 py-2">{r.accountName ?? r.name ?? '—'}</td>
                   <td className="px-4 py-2 text-xs text-gray-500">{r.accountType ?? r.type ?? '—'}</td>
                   <td className="px-4 py-2 text-right font-mono">{(r.debit ?? r.totalDebit ?? 0) > 0 ? `$${fmt(r.debit ?? r.totalDebit ?? 0)}` : ''}</td>

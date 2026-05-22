@@ -13,7 +13,7 @@ type TypeFilter = 'all' | '1' | '2' | '3' | '4' | '5';
 
 const RISK_COLORS = { low: 'bg-green-100 text-green-800', medium: 'bg-amber-100 text-amber-800', high: 'bg-red-100 text-red-800' };
 const TYPE_CHIP_COLORS: Record<number, string> = {
-  1: 'bg-gray-100 text-gray-700', 2: 'bg-blue-100 text-blue-700',
+  1: 'bg-gray-100 text-gray-700', 2: 'bg-brand-light text-brand',
   3: 'bg-red-100 text-red-700', 4: 'bg-amber-100 text-amber-700', 5: 'bg-purple-100 text-purple-700',
 };
 
@@ -173,7 +173,7 @@ export default function Schedules() {
                     <div key={i} className="flex items-center gap-3 bg-gray-50 rounded px-3 py-2">
                       <span className="font-mono font-bold text-amacc-700">{gl.glAccount}</span>
                       {gl.controlSuffix && (
-                        <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                        <span className="bg-brand-light text-brand px-1.5 py-0.5 rounded text-[10px] font-bold">
                           {gl.controlSuffix === 'L' ? 'Lookup' : gl.controlSuffix === 'S' ? 'Stock#' : gl.controlSuffix === 'D' ? 'Detail' : gl.controlSuffix === 'A' ? 'Apply-To' : gl.controlSuffix}
                         </span>
                       )}
@@ -215,7 +215,7 @@ export default function Schedules() {
         <div className="bg-white rounded-lg shadow p-6 space-y-4">
           <div className="flex items-center gap-3 mb-2">
             <h3 className="font-semibold text-lg">Schedule Cross-Check Validation</h3>
-            <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">Replaces legacy F7</span>
+            <span className="bg-brand-light text-brand px-2 py-0.5 rounded text-xs">Replaces legacy F7</span>
           </div>
           <p className="text-sm text-gray-600">
             Validates that each schedule's subsidiary ledger balances match the corresponding GL account balances.

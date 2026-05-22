@@ -22,6 +22,7 @@ const COLORS: Record<string, { bg: string; text: string }> = {
 const DEFAULT = { bg: '#F1F5F9', text: '#64748B' };
 
 export default function StatusBadge({ status }: { status: Status }) {
+  if (!status) return null;
   const c = COLORS[status] ?? DEFAULT;
   return (
     <span

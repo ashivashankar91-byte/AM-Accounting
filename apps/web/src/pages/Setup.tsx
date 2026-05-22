@@ -90,10 +90,10 @@ export default function Setup() {
                     <td className="py-2">
                       {i < 2 ? <span className="px-2 py-0.5 rounded text-xs bg-gray-200 text-gray-600">Closed</span>
                         : i === 2 ? <span className="px-2 py-0.5 rounded text-xs bg-green-100 text-green-700">Current</span>
-                        : <span className="px-2 py-0.5 rounded text-xs bg-blue-50 text-blue-600">Future</span>}
+                        : <span className="px-2 py-0.5 rounded text-xs bg-brand-light text-brand">Future</span>}
                     </td>
                     <td className="py-2">
-                      {i >= 2 && <button className="text-xs text-blue-600 hover:underline">Edit</button>}
+                      {i >= 2 && <button className="text-xs text-brand hover:underline">Edit</button>}
                     </td>
                   </tr>
                 );
@@ -132,7 +132,7 @@ export default function Setup() {
                   <td className="py-2 font-mono text-xs">{d.range}</td>
                   <td className="py-2 text-gray-500">—</td>
                   <td className="py-2"><span className="px-2 py-0.5 rounded text-xs bg-green-100 text-green-700">Active</span></td>
-                  <td className="py-2"><button className="text-xs text-blue-600 hover:underline">Edit</button></td>
+                  <td className="py-2"><button className="text-xs text-brand hover:underline">Edit</button></td>
                 </tr>
               ))}
             </tbody>

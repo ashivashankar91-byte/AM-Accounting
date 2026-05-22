@@ -177,3 +177,52 @@ model OutboxEvent {
   @@index([publishedAt, retryCount])
   @@index([createdAt])
 }
+
+/// @net-new Phase 1: Commission plans for employees
+model CommissionPlan {
+  id               String   @id @default(cuid())
+  tenantId         String   @map("tenant_id")
+  employeeId       String   @map("employee_id")
+  planType         String   @db.VarChar(20) @map("plan_type")
+  department       String?
+  flatAmount       Decimal? @db.Decimal(15, 2) @map("flat_amount")
+  percentageRate   Decimal? @db.Decimal(5, 2) @map("percentage_rate")
+  tiers            Json?
+  effectiveDate    DateTime @db.Date @map("effective_date")
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  records          CommissionRecord[]
+
+  @@map("commission_plans")
+  @@index([tenantId])
+  @@index([tenantId, employeeId])
+  @@index([tenantId, isActive])
+}
+
+/// @net-new Phase 1: Commission records per deal
+model CommissionRecord {
+  id              String   @id @default(cuid())
+  tenantId        String   @map("tenant_id")
+  employeeId      String   @map("employee_id")
+  dealId          String?  @map("deal_id")
+  dealType        String?  @db.VarChar(20) @map("deal_type")
+  grossProfit     Decimal  @db.Decimal(15, 2) @map("gross_profit")
+  commissionAmount Decimal  @db.Decimal(15, 2) @map("commission_amount")
+  planId          String?  @map("plan_id")
+  status          String   @default("ACCRUED")
+  journalEntryId  String?  @map("journal_entry_id")
+  periodYear      Int?     @map("period_year")
+  periodMonth     Int?     @map("period_month")
+  createdAt       DateTime @default(now()) @map("created_at")
+  createdBy       String?  @map("created_by")
+
+  plan            CommissionPlan? @relation(fields: [planId], references: [id])
+
+  @@map("commission_records")
+  @@index([tenantId])
+  @@index([tenantId, employeeId])
+  @@index([tenantId, periodYear, periodMonth])
+  @@index([tenantId, status])
+}

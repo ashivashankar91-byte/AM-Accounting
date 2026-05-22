@@ -81,6 +81,7 @@ export enum GLAccountType {
   REVENUE = 'REVENUE',
   EXPENSE = 'EXPENSE',
   COST_OF_SALES = 'COST_OF_SALES',
+  DISTRIBUTION = 'DISTRIBUTION', // @cobol-origin GL-TYPE='%' — splits amount across sub-accounts by percentage
 }
 
 export type FSCategory =

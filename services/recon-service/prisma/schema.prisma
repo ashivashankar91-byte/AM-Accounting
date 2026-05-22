@@ -14,9 +14,9 @@ model BankRecon {
   tenantId    String    @map("tenant_id")
   accountName String    @map("account_name")
   reconDate   DateTime  @map("recon_date")
-  glBalance   Float     @map("gl_balance")
-  bankBalance Float     @map("bank_balance")
-  variance    Float     @default(0)
+  glBalance   Decimal   @map("gl_balance")   @db.Decimal(15, 2)
+  bankBalance Decimal   @map("bank_balance") @db.Decimal(15, 2)
+  variance    Decimal   @default(0)          @db.Decimal(15, 2)
   status      String    @default("OPEN")
   lockedBy    String?   @map("locked_by")
   lockedAt    DateTime? @map("locked_at")
@@ -32,7 +32,7 @@ model BankTransaction {
   bankReconId          String  @map("bank_recon_id")
   transactionDate      DateTime @map("transaction_date")
   description          String
-  amount               Float
+  amount               Decimal  @db.Decimal(15, 2)
   matchedJournalLineId String? @map("matched_journal_line_id")
   status               String  @default("UNMATCHED")
 

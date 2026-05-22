@@ -20,7 +20,7 @@ export default class ErrorBoundary extends React.Component<Props, State> {
             <p className="text-gray-600 mb-6">{this.state.error?.message || 'An unexpected error occurred'}</p>
             <button
               onClick={() => window.location.reload()}
-              className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+              className="bg-brand text-white px-6 py-2 rounded-lg hover:bg-brand transition-colors"
             >
               Reload Application
             </button>

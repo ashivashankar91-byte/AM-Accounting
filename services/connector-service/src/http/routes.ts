@@ -52,7 +52,8 @@ export function connectorRoutes(registry: DMSAdapterRegistry) {
     // POST /api/v1/connector/ingest — Ingest DMS data and auto-create GL journal entry
     app.post('/ingest', async (request, reply) => {
       const { dmsType, payload, autoPost, transactionType } = IngestSchema.parse(request.body);
-      const tenantId = (request.headers['x-tenant-id'] as string) || 'tenant-kunes';
+      const tenantId = request.headers['x-tenant-id'] as string;
+      if (!tenantId) return reply.status(400).send({ error: 'x-tenant-id header is required' });
 
       // 1. Normalize via DMS adapter
       const adapter = registry.get(dmsType);

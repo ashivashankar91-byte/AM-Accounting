@@ -126,7 +126,7 @@ function ReadinessPanel({ conditions }: { conditions: ReadinessCondition[] }) {
 
 const STEP_STATUS_CONFIG = {
   PENDING: { bg: 'bg-gray-50', border: 'border-gray-200', dot: 'bg-gray-300', text: 'text-gray-500', pulse: false },
-  RUNNING: { bg: 'bg-blue-50', border: 'border-blue-300', dot: 'bg-blue-500', text: 'text-blue-700', pulse: true },
+  RUNNING: { bg: 'bg-brand-light', border: 'border-blue-300', dot: 'bg-brand-light0', text: 'text-brand', pulse: true },
   DONE: { bg: 'bg-green-50', border: 'border-green-300', dot: 'bg-green-500', text: 'text-green-700', pulse: false },
   BLOCKED: { bg: 'bg-red-50', border: 'border-red-300', dot: 'bg-red-500', text: 'text-red-700', pulse: false },
   SKIPPED: { bg: 'bg-gray-50', border: 'border-gray-200', dot: 'bg-gray-200', text: 'text-gray-400', pulse: false },
@@ -171,7 +171,7 @@ function ProgressBar({ steps }: { steps: CloseStep[] }) {
       </div>
       <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
         <div
-          className="h-full bg-blue-500 rounded-full transition-all duration-500"
+          className="h-full bg-brand-light0 rounded-full transition-all duration-500"
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -207,7 +207,7 @@ function LiveCloseMonitor({ closeId }: { closeId: string }) {
 
   const statusConfig = {
     NOT_STARTED: { color: 'text-gray-600', bg: 'bg-gray-100', label: 'Not Started' },
-    IN_PROGRESS: { color: 'text-blue-700', bg: 'bg-blue-100', label: 'In Progress' },
+    IN_PROGRESS: { color: 'text-brand', bg: 'bg-brand-light', label: 'In Progress' },
     COMPLETED: { color: 'text-green-700', bg: 'bg-green-100', label: 'Completed' },
     BLOCKED: { color: 'text-red-700', bg: 'bg-red-100', label: 'Blocked' },
   }[close.status] ?? { color: 'text-gray-600', bg: 'bg-gray-100', label: close.status };
@@ -216,7 +216,7 @@ function LiveCloseMonitor({ closeId }: { closeId: string }) {
     <div className="space-y-4">
       <div className="flex items-center gap-3">
         <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-semibold ${statusConfig.bg} ${statusConfig.color}`}>
-          {close.status === 'IN_PROGRESS' && <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />}
+          {close.status === 'IN_PROGRESS' && <span className="w-2 h-2 bg-brand-light0 rounded-full animate-pulse" />}
           {statusConfig.label}
         </span>
         <span className="text-sm text-gray-500">{periodLabel(close.periodYear, close.periodMonth)}</span>
@@ -225,11 +225,11 @@ function LiveCloseMonitor({ closeId }: { closeId: string }) {
         )}
       </div>
 
-      {close.steps.length > 0 && (
+      {(close.steps ?? []).length > 0 && (
         <>
-          <ProgressBar steps={close.steps} />
+          <ProgressBar steps={close.steps ?? []} />
           <div className="flex gap-2 overflow-x-auto pb-1">
-            {close.steps.map((step, i) => <StepCard key={step.stepCode} step={step} idx={i} />)}
+            {(close.steps ?? []).map((step, i) => <StepCard key={step.stepCode} step={step} idx={i} />)}
           </div>
         </>
       )}
@@ -365,11 +365,11 @@ export default function EOMCloseDashboard() {
             <label className="block text-xs font-semibold text-gray-600 mb-1.5">Period</label>
             <div className="flex items-center gap-2">
               <select value={month} onChange={e => setMonth(Number(e.target.value))}
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
                 {MONTHS.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
               </select>
               <select value={year} onChange={e => setYear(Number(e.target.value))}
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
                 {[now.getFullYear() - 1, now.getFullYear()].map(y => <option key={y} value={y}>{y}</option>)}
               </select>
             </div>
@@ -388,7 +388,7 @@ export default function EOMCloseDashboard() {
               className={`px-6 py-2.5 text-sm font-semibold rounded-lg flex items-center gap-2 transition-colors ${
                 hasBlocking
                   ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50'
+                  : 'bg-brand text-white hover:bg-brand disabled:opacity-50'
               }`}
             >
               {closeMut.isPending && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
@@ -454,8 +454,8 @@ export default function EOMCloseDashboard() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4 space-y-5">
             <div className="flex items-start gap-3">
-              <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="w-10 h-10 bg-brand-light rounded-full flex items-center justify-center flex-shrink-0">
+                <svg className="w-5 h-5 text-brand" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
               </div>
@@ -482,7 +482,7 @@ export default function EOMCloseDashboard() {
                 Cancel
               </button>
               <button onClick={() => closeMut.mutate()} disabled={closeMut.isPending}
-                className="px-5 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2">
+                className="px-5 py-2 text-sm bg-brand text-white rounded-lg hover:bg-brand disabled:opacity-50 flex items-center gap-2">
                 {closeMut.isPending && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
                 Confirm & Initiate
               </button>

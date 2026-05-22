@@ -14,14 +14,24 @@ export default function PageLoader({ page, service, port }: Props) {
   }, []);
 
   return (
-    <div className="flex items-center justify-center min-h-[400px]">
-      <div className="text-center">
-        <div className="inline-block w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-4" />
-        <p className="text-gray-600 font-medium">Loading {page}…</p>
+    <div className="flex items-center justify-center min-h-[400px] p-8">
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-10 flex flex-col items-center gap-4 max-w-xs w-full">
+        <div
+          className="w-10 h-10 rounded-full border-4 border-slate-100 border-t-brand animate-spin"
+          style={{ animationDuration: '0.7s' }}
+        />
+        <p className="text-sm font-semibold text-slate-700 text-center">Loading {page}…</p>
         {slow && service && (
-          <p className="text-amber-600 text-sm mt-3 max-w-xs mx-auto">
-            Taking longer than expected. Check that <span className="font-mono font-semibold">{service}</span>
-            {port ? <> is running on port <span className="font-mono font-semibold">{port}</span></> : null}.
+          <p className="text-amber-600 text-xs text-center mt-1 max-w-[220px]">
+            Taking longer than expected. Check that{' '}
+            <span className="font-mono font-semibold">{service}</span>
+            {port ? (
+              <>
+                {' '}is running on port{' '}
+                <span className="font-mono font-semibold">{port}</span>
+              </>
+            ) : null}
+            .
           </p>
         )}
       </div>

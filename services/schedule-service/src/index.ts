@@ -48,7 +48,7 @@ async function bootstrap() {
 
   app.get('/health', async () => ({ status: 'ok', service: 'schedule-service' }));
 
-  const port = parseInt(process.env['PORT'] ?? '3012', 10);
+  const port = parseInt(process.env['PORT'] ?? '3018', 10);
   const host = process.env['HOST'] ?? '0.0.0.0';
 
   await app.listen({ port, host });

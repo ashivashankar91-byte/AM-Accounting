@@ -1,7 +1,7 @@
 generator client {
   provider      = "prisma-client-js"
   output        = "../node_modules/.prisma/gl-client"
-  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "darwin-arm64"]
 }
 
 datasource db {
@@ -15,7 +15,7 @@ model GLAccount {
   tenantId      String   @map("tenant_id")
   code          String
   name          String
-  type          String   // ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE, COST_OF_SALES
+  type          String   // ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE, COST_OF_SALES, DISTRIBUTION
   subType       String?  @map("sub_type")       // e.g. CURRENT_ASSET, FIXED_ASSET, LONG_TERM_LIABILITY
   normalBalance String   @default("DEBIT") @map("normal_balance") // DEBIT or CREDIT
   allowPosting  Boolean  @default(true) @map("allow_posting")     // false = header/group account
@@ -28,22 +28,57 @@ model GLAccount {
   cosAccountId  String?  @map("cos_account_id")
   /// @cobol-origin gl.rec GL-INV-ACCT — chained inventory account
   invAccountId  String?  @map("inv_account_id")
+  /// @cobol-origin gl.rec GLBYID-SORTNO — display ordering key for Chart of Accounts
+  sortKey       String?  @db.VarChar(20) @map("sort_key")
   /// @cobol-origin gl.rec GL-ADDUNITS — track unit count postings
   trackUnits    Boolean  @default(false) @map("track_units")
   /// @cobol-origin gl.rec GL-OPEN-BAL — opening balance carried forward from prior period
   openingBalance  Decimal  @default(0) @map("opening_balance") @db.Decimal(15, 2)
   /// @cobol-origin gl.rec GL-OPEN-CNT — opening unit count carried forward from prior period
   openingUnitCount Int      @default(0) @map("opening_unit_count")
+  /// BUILD-008: Cash clearing account flag for bank reconciliation
+  isCashClearing   Boolean  @default(false) @map("is_cash_clearing")
+  /// BUILD-008: Deposit clearing account flag for bank reconciliation
+  isDepositClearing Boolean @default(false) @map("is_deposit_clearing")
+  /// BUILD-014: Subtotal grouping codes for financial statement aggregation
+  subtotalGroup1    String? @db.Char(1) @map("subtotal_group_1")
+  subtotalGroup2    String? @db.Char(1) @map("subtotal_group_2")
+  subtotalGroup3    String? @db.Char(1) @map("subtotal_group_3")
+  /// BUILD-015: Control number requirement flag (applies to posting lines)
+  reqControlNumber  String? @db.Char(1) @map("req_control_number")
+  /// BUILD-015: Print code for financial statements (D=Detailed, S=Summary)
+  printCode         String @db.Char(1) @default("D") @map("print_code")
+  /// S7-05: Marks account as intercompany offset — excluded from consolidated statements
+  isIntercompany    Boolean @default(false) @map("is_intercompany")
 
   lines              JournalLine[]
   periodBalances     GLAccountPeriodBalance[]
   historyTransactions HistoryTransaction[]
+  idMappings         GLAccountIdMap[]
   // scheduleDetails removed — schedule-service owns detail records via JOURNAL_ENTRY_POSTED event
   // See wave-3-schedule-subsystem.md for architecture decision
+  distributionsAsSource  GlDistribution[] @relation("DistributionSource")
+  distributionsAsTarget  GlDistribution[] @relation("DistributionTarget")
 
   @@unique([tenantId, code])
   @@map("gl_accounts")
   @@index([tenantId])
+}
+
+/// @cobol-origin GLBYID-FILE — external account ID to GL number mapping
+/// BUILD-007: Maps dealer group external IDs to internal GL account UUIDs
+model GLAccountIdMap {
+  id                  String   @id @default(uuid())
+  tenantId            String   @map("tenant_id")
+  externalAccountId   String   @db.VarChar(5) @map("external_account_id")
+  glAccountId         String   @map("gl_account_id")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  glAccount GLAccount @relation(fields: [glAccountId], references: [id])
+
+  @@unique([tenantId, externalAccountId])
+  @@map("gl_account_id_map")
+  @@index([tenantId, glAccountId])
 }
 
 model JournalEntry {
@@ -63,6 +98,16 @@ model JournalEntry {
   approvedAt       DateTime? @map("approved_at")
   priorPeriodAdjustment Boolean @default(false) @map("prior_period_adjustment")
   adjustmentReason      String? @map("adjustment_reason")
+  /// @cobol-origin tran.fd TR-REV-ADJ='R' — marks this entry as a reversal
+  revAdjFlag            String? @map("rev_adj_flag")
+  /// BUILD-006: Links to the original entry being reversed
+  reversalOfId          String? @map("reversal_of_id")
+  /// BUILD-006: Links to the reversal entry created from this entry
+  reversedById          String? @map("reversed_by_id")
+  /// S1-03: Prevents voiding cash receipts that have been bank-reconciled
+  isReconciled          Boolean @default(false) @map("is_reconciled")
+  /// S7-04: Links to auto-created IC counterpart entry in the other company
+  icCounterpartEntryId  String? @map("ic_counterpart_entry_id")
 
   lines            JournalLine[]
   dealProductLines DealProductLine[]
@@ -77,8 +122,8 @@ model JournalLine {
   id             String  @id @default(uuid())
   journalEntryId String  @map("journal_entry_id")
   glAccountId    String  @map("gl_account_id")
-  debit          Float   @default(0)
-  credit         Float   @default(0)
+  debit          Decimal  @default(0) @db.Decimal(15, 2)
+  credit         Decimal  @default(0) @db.Decimal(15, 2)
   memo            String?
   departmentCode  String?  @map("department_code")
   technicianId    String?  @map("technician_id")
@@ -97,11 +142,19 @@ model JournalLine {
   costType        String?  @map("cost_type")
   agentConfidence Float?   @map("agent_confidence")
   /// @cobol-origin tran.fd TR-COST — separate cost amount for COS/INV chain posting
-  costAmount      Float?   @map("cost_amount")
+  costAmount      Decimal? @map("cost_amount") @db.Decimal(15, 2)
   /// @cobol-origin tran.fd TR-APPLY-CD — "#" = use apply number not cost
   applyCd         String?  @map("apply_cd")
   /// @cobol-origin tran.fd TR-REV-ADJ — "R"=reversal, "A"=adjustment
   revAdjFlag      String?  @map("rev_adj_flag")
+  /// S2-05: company code (2-char) for multi-company GL routing
+  companyCode     String?  @db.VarChar(2)  @map("company_code")
+  /// S2-05: control number for cross-referencing (max 20 chars)
+  controlNumber   String?  @db.VarChar(20) @map("control_number")
+  /// S2-05: apply-to-cost amount (NUMERIC(15,2)) for COS line pairing
+  applyToCost     Decimal? @db.Decimal(15, 2) @map("apply_to_cost")
+  /// S2-05: unit count for inventory quantity tracking
+  unitCount       Int?     @default(0) @map("unit_count")
 
   journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id])
   glAccount    GLAccount    @relation(fields: [glAccountId], references: [id])
@@ -122,9 +175,9 @@ model DealProductLine {
   dealNumber      String  @map("deal_number")
   productType     String  @map("product_type")
   productName     String  @map("product_name")
-  salePrice       Float   @map("sale_price")
-  dealerCost      Float   @map("dealer_cost")
-  grossProfit     Float   @map("gross_profit")
+  salePrice       Decimal  @map("sale_price")   @db.Decimal(15, 2)
+  dealerCost      Decimal  @map("dealer_cost")  @db.Decimal(15, 2)
+  grossProfit     Decimal  @map("gross_profit") @db.Decimal(15, 2)
   providerName    String? @map("provider_name")
 
   journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id])
@@ -233,10 +286,94 @@ model HistoryTransaction {
   @@index([journalEntryId])
 }
 
+/// @cobol-origin acsys.fd / ACSYS-REC — company-level accounting system configuration
+/// Replaces the COBOL ACSYS system file that held fiscal year start month,
+/// last close date, cutoff date, and other company-wide accounting settings.
+model GlSystemConfig {
+  id                      String    @id @default(cuid()) @map("id")
+  tenantId                String    @unique @map("tenant_id")
+  companyName             String?   @map("company_name")
+  accountingType          String?   @default(" ") @map("accounting_type") @db.Char(1)
+  fiscalYearStartMonth    Int       @default(1) @map("fiscal_year_start_month") @db.SmallInt
+  lastCloseDate           DateTime? @map("last_close_date") @db.Date
+  cutoffDate              DateTime? @map("cutoff_date") @db.Date
+  transactionHoldMonths   Int       @default(2) @map("transaction_hold_months") @db.SmallInt
+  enforceTransactionEdits Boolean   @default(false) @map("enforce_transaction_edits")
+  decimalEntryMode        String?   @default(" ") @map("decimal_entry_mode") @db.Char(1)
+  defaultPrintCode        String?   @default("D") @map("default_print_code") @db.Char(1)
+  maxFuturePostingMonths  Int       @default(2) @map("max_future_posting_months") @db.SmallInt
+  lifoMethod              String    @default("0") @map("lifo_method") @db.Char(1)
+  cashReceiptsGlAccounts  String[]  @default([]) @map("cash_receipts_gl_accounts")
+  ncm20Enabled            Boolean   @default(false) @map("ncm20_enabled")
+  defaultAreaCode         String    @default("") @map("default_area_code") @db.VarChar(3)
+  suppressZeroYtdTrial    Boolean   @default(false) @map("suppress_zero_ytd_trial")
+  /// S6-05: When true, reversal reason/note is required by system policy
+  forceReversalNotesRequired Boolean @default(false) @map("force_reversal_notes_required")
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
+
+  @@map("gl_system_config")
+}
+
 // ScheduleDetail model REMOVED — moved to schedule-service
 // Architecture: gl-service publishes JOURNAL_ENTRY_POSTED event;
 // schedule-service subscribes and writes its own ScheduleDetail records.
 // See amacc/docs/gap-analysis/wave-3-schedule-subsystem.md
+
+/// @cobol-origin komsrc.cbl SOURCE-FILE — journal source master
+/// @cobol-security joursec.cbl — source-level access control
+model GlSource {
+  id                   String    @id @default(cuid()) @map("id")
+  tenantId             String    @map("tenant_id")
+  sourceCode           String    @map("source_code") @db.VarChar(2)
+  name                 String    @map("name")
+  isClearingAccount    Boolean   @default(false) @map("is_clearing_account")
+  isYearEndReserved    Boolean   @default(false) @map("is_year_end_reserved")
+  is13thMonthReserved  Boolean   @default(false) @map("is_13th_month_reserved")
+  balanceMethod        String?   @default(" ") @map("balance_method") @db.Char(1)
+  autoPost             Boolean   @default(false) @map("auto_post")
+  addUnits             Boolean   @default(false) @map("add_units")
+  isActive             Boolean   @default(true) @map("is_active")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+  permissions          JournalSourcePermission[]
+
+  @@unique([tenantId, sourceCode])
+  @@map("gl_sources")
+}
+
+/// @cobol-origin joursec.cbl — per-user source access control
+model JournalSourcePermission {
+  id        String   @id @default(cuid()) @map("id")
+  tenantId  String   @map("tenant_id")
+  userId    String   @map("user_id")
+  sourceId  String   @map("source_id")
+  hasAccess Boolean  @default(false) @map("has_access")
+  createdAt DateTime @default(now()) @map("created_at")
+  source    GlSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId, sourceId])
+  @@map("journal_source_permissions")
+}
+
+/// @cobol-origin getgldistr.cbl — GL distribution: one source account → many target accounts by %
+/// COBOL GL-TYPE='%' equivalent. Supports up to 90 sub-accounts per distribution account.
+/// Distribution expansion happens at journal entry creation time, BEFORE posting.
+model GlDistribution {
+  id              String    @id @default(cuid()) @map("id")
+  tenantId        String    @map("tenant_id")
+  sourceAccountId String    @map("source_account_id")
+  targetAccountId String    @map("target_account_id")
+  percentage      Decimal   @db.Decimal(5, 2) @map("percentage")
+  sortOrder       Int       @default(0) @map("sort_order") @db.SmallInt
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  sourceAccount   GLAccount @relation("DistributionSource", fields: [sourceAccountId], references: [id])
+  targetAccount   GLAccount @relation("DistributionTarget", fields: [targetAccountId], references: [id])
+
+  @@unique([tenantId, sourceAccountId, targetAccountId])
+  @@map("gl_distributions")
+}
 
 /// Intercompany entry for tracking and elimination during consolidation
 model IntercompanyEntry {
@@ -246,7 +383,7 @@ model IntercompanyEntry {
   journalEntryId            String?   @map("journal_entry_id")
   counterpartyJournalEntryId String?  @map("counterparty_journal_entry_id")
   entryType                 String    @default("VEHICLE_TRANSFER") @map("entry_type")
-  amount                    Float
+  amount                    Decimal  @db.Decimal(15, 2)
   description               String
   status                    String    @default("PENDING") // PENDING | MATCHED | ELIMINATED
   eliminationEntryId        String?   @map("elimination_entry_id")
@@ -256,4 +393,281 @@ model IntercompanyEntry {
   @@index([tenantId])
   @@index([counterpartyTenantId])
   @@index([status])
+}
+
+/// BUILD-013: LIFO inventory valuation layers
+/// Tracks quantity and cost for each LIFO layer by year
+/// Used by LIFO-Engine for inventory valuation calculations
+model LIFOLayer {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  accountId String   @map("account_id")
+  layerYear Int      @map("layer_year")
+  quantity  Int
+  unitCost  Decimal  @db.Decimal(15, 4) @map("unit_cost")
+  totalCost Decimal  @db.Decimal(15, 2) @map("total_cost")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, accountId, layerYear])
+  @@map("lifo_layers")
+  @@index([tenantId, accountId])
+  @@index([tenantId, layerYear])
+}
+
+/// @net-new Phase 1: Sales Tax Accrual by Jurisdiction
+model TaxJurisdiction {
+  id                     String   @id @default(uuid())
+  tenantId               String   @map("tenant_id")
+  jurisdictionCode       String   @db.VarChar(50) @map("jurisdiction_code")
+  jurisdictionName       String   @map("jurisdiction_name")
+  jurisdictionLevel      String   @db.VarChar(20) @map("jurisdiction_level")
+  taxRate                Decimal  @db.Decimal(6, 4) @map("tax_rate")
+  glPayableAccountId     String   @map("gl_payable_account_id")
+  glReceivableAccountId  String   @map("gl_receivable_account_id")
+  isActive               Boolean  @default(true) @map("is_active")
+  effectiveDate          DateTime @db.Date @map("effective_date")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, jurisdictionCode, effectiveDate])
+  @@map("tax_jurisdictions")
+  @@index([tenantId])
+  @@index([tenantId, jurisdictionCode])
+}
+
+/// @net-new Phase 1: Tax Exemptions for customers
+model TaxExemption {
+  id                   String   @id @default(uuid())
+  tenantId             String   @map("tenant_id")
+  customerId           String   @map("customer_id")
+  jurisdictionCode     String?  @db.VarChar(50) @map("jurisdiction_code")
+  certificateNumber    String   @map("certificate_number")
+  certificateDocUrl    String?  @map("certificate_doc_url")
+  expirationDate       DateTime @db.Date @map("expiration_date")
+  isActive             Boolean  @default(true) @map("is_active")
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, customerId, jurisdictionCode])
+  @@map("tax_exemptions")
+  @@index([tenantId])
+  @@index([tenantId, customerId])
+}
+
+/// @net-new Phase 1: Tax Accrual entries per deal
+model TaxAccrualEntry {
+  id                 String   @id @default(uuid())
+  tenantId           String   @map("tenant_id")
+  dealId             String   @map("deal_id")
+  jurisdictionCode   String   @db.VarChar(50) @map("jurisdiction_code")
+  taxableAmount      Decimal  @db.Decimal(15, 2) @map("taxable_amount")
+  taxRate            Decimal  @db.Decimal(6, 4) @map("tax_rate")
+  taxAmount          Decimal  @db.Decimal(15, 2) @map("tax_amount")
+  journalEntryId     String?  @map("journal_entry_id")
+  accrualDate        DateTime @db.Date @map("accrual_date")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  @@map("tax_accrual_entries")
+  @@index([tenantId])
+  @@index([tenantId, dealId])
+  @@index([tenantId, accrualDate])
+}
+
+/// @net-new Phase 1: 1099 Contractor Report Records
+model Vendor1099Record {
+  id                String   @id @default(uuid())
+  tenantId          String   @map("tenant_id")
+  vendorId          String   @map("vendor_id")
+  taxYear           Int      @map("tax_year")
+  formType          String   @db.VarChar(10) @map("form_type")
+  tin               String
+  totalPayments     Decimal  @db.Decimal(15, 2) @map("total_payments")
+  boxAmounts        Json     @default("{}") @map("box_amounts")
+  status            String   @default("DRAFT")
+  filedDate         DateTime? @db.Date @map("filed_date")
+  adjustmentReason  String?  @map("adjustment_reason")
+  correctedFromId   String?  @map("corrected_from_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  createdBy         String?  @map("created_by")
+  updatedBy         String?  @map("updated_by")
+
+  @@unique([tenantId, vendorId, taxYear, formType])
+  @@map("vendor_1099_records")
+  @@index([tenantId])
+  @@index([tenantId, taxYear])
+  @@index([tenantId, status])
+}
+
+/// @net-new Phase 1: Floor Plan Financing units
+model FloorPlanUnit {
+  id                    String   @id @default(uuid())
+  tenantId              String   @map("tenant_id")
+  vin                   String   @db.VarChar(17)
+  /// S1-10: Stock number for dealer lot tracking alongside VIN
+  stockNumber           String?  @db.VarChar(20) @map("stock_number")
+  lenderId              String   @map("lender_id")
+  advanceAmount         Decimal  @db.Decimal(15, 2) @map("advance_amount")
+  currentBalance        Decimal  @db.Decimal(15, 2) @map("current_balance")
+  interestRate          Decimal  @db.Decimal(6, 4) @map("interest_rate")
+  floorDate             DateTime @db.Date @map("floor_date")
+  payoffDate            DateTime? @db.Date @map("payoff_date")
+  curtailmentSchedule   Json?    @map("curtailment_schedule")
+  status                String   @default("ACTIVE")
+  glLiabilityAccountId  String?  @map("gl_liability_account_id")
+  glInterestAccountId   String?  @map("gl_interest_account_id")
+  accruedInterest       Decimal  @default(0) @db.Decimal(15, 2) @map("accrued_interest")
+  // S5-06: Base vehicle classification
+  vehicleCondition      String?  @db.VarChar(10) @map("vehicle_condition") // NEW/USED/DEMO/CPO
+  vehicleType           String?  @db.VarChar(20) @map("vehicle_type")
+  acquisitionDate       DateTime? @db.Date @map("acquisition_date")
+  totalCost             Decimal? @db.Decimal(15, 2) @map("total_cost")
+  // S5-07: Cost components
+  invoiceCost                 Decimal? @db.Decimal(15, 2) @map("invoice_cost")
+  packAmount                  Decimal? @db.Decimal(15, 2) @map("pack_amount")
+  holdbackAmount              Decimal? @db.Decimal(15, 2) @map("holdback_amount")
+  factoryRebate               Decimal? @db.Decimal(15, 2) @map("factory_rebate")
+  freightAmount               Decimal? @db.Decimal(15, 2) @map("freight_amount")
+  prepCharges                 Decimal? @db.Decimal(15, 2) @map("prep_charges")
+  reconCosts                  Decimal? @db.Decimal(15, 2) @map("recon_costs")
+  accruedFloorPlanInterest    Decimal  @default(0) @db.Decimal(15, 2) @map("accrued_floor_plan_interest")
+  // S5-08: Vehicle identity
+  vehicleYear           Int?     @db.SmallInt @map("vehicle_year")
+  vehicleMake           String?  @db.VarChar(30) @map("vehicle_make")
+  vehicleModel          String?  @db.VarChar(30) @map("vehicle_model")
+  vehicleTrim           String?  @db.VarChar(30) @map("vehicle_trim")
+  vehicleStatus         String   @default("IN_STOCK") @map("vehicle_status") // IN_STOCK/SOLD/IN_TRANSIT/HOLD
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, vin])
+  @@map("floor_plan_units")
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, lenderId])
+}
+
+// ── S1-06: Journal Templates ──────────────────────────────────────────────
+/// Recurring journal entry templates — template_number is max 8 uppercase alphanumeric chars
+model JournalTemplate {
+  id               String   @id @default(uuid())
+  tenantId         String   @map("tenant_id")
+  /// @cobol-origin — template number matches legacy recurring entry key (max 8 chars)
+  templateNumber   String   @db.VarChar(8) @map("template_number")
+  /// S3-02: human-readable name for the template
+  name             String   @db.VarChar(100) @default("") @map("name")
+  sourceCode       String   @map("source_code")
+  companyNumber    String   @default("01") @map("company_number")
+  description      String?
+  isActive         Boolean  @default(true) @map("is_active")
+  createdByUserId  String?  @map("created_by_user_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  lines JournalTemplateLine[]
+
+  @@unique([tenantId, templateNumber])
+  @@map("journal_templates")
+  @@index([tenantId])
+  @@index([tenantId, isActive])
+}
+
+model JournalTemplateLine {
+  id           String   @id @default(uuid())
+  templateId   String   @map("template_id")
+  lineOrder    Int      @map("line_order")
+  glAccountId  String?  @map("gl_account_id")
+  accountCode  String?  @map("account_code")
+  isCredit     Boolean  @default(false) @map("is_credit")
+  amount       Decimal? @db.Decimal(15, 2)
+  memo         String?
+  departmentCode String? @map("department_code")
+
+  template JournalTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@map("journal_template_lines")
+  @@index([templateId])
+}
+
+/// S6-04: Named groups of GL accounts for inquiry / filtering purposes
+/// Lets controllers create views like "Cash Accounts", "Revenue Accounts", etc.
+model GLAccountSet {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  setName     String   @db.VarChar(50) @map("set_name")
+  description String?
+  createdBy   String?  @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  members     GLAccountSetMember[]
+
+  @@unique([tenantId, setName])
+  @@map("gl_account_sets")
+  @@index([tenantId])
+}
+
+/// S6-04: GL account set membership — one row per account in a set
+model GLAccountSetMember {
+  id          String  @id @default(uuid())
+  setId       String  @map("set_id")
+  glAccountId String  @map("gl_account_id")
+  sortOrder   Int     @default(0) @map("sort_order") @db.SmallInt
+
+  accountSet  GLAccountSet @relation(fields: [setId], references: [id], onDelete: Cascade)
+
+  @@unique([setId, glAccountId])
+  @@map("gl_account_set_members")
+  @@index([setId])
+}
+
+/// S7-01: Vehicle Transfer — moves a vehicle between rooftops with IC GL entries
+/// @net-new AMACC 2.0 — multi-rooftop IC accounting
+model VehicleTransfer {
+  id                       String   @id @default(uuid())
+  tenantId                 String   @map("tenant_id")
+  fromCompanyCode          String   @db.VarChar(2)  @map("from_company_code")
+  toCompanyCode            String   @db.VarChar(2)  @map("to_company_code")
+  vin                      String   @db.VarChar(17)
+  stockNumber              String?  @db.VarChar(20) @map("stock_number")
+  vehicleYear              Int?     @db.SmallInt    @map("vehicle_year")
+  vehicleMake              String?  @db.VarChar(30) @map("vehicle_make")
+  vehicleModel             String?  @db.VarChar(30) @map("vehicle_model")
+  totalCost                Decimal  @db.Decimal(15, 2) @map("total_cost")
+  transferDate             DateTime @db.Date @map("transfer_date")
+  fromInventoryGlAccountId String   @map("from_inventory_gl_account_id")
+  toInventoryGlAccountId   String   @map("to_inventory_gl_account_id")
+  fromIcOffsetGlAccountId  String   @map("from_ic_offset_gl_account_id")
+  toIcOffsetGlAccountId    String   @map("to_ic_offset_gl_account_id")
+  status                   String   @default("PENDING") @db.VarChar(20) // PENDING|COMPLETED|REVERSED
+  fromJournalEntryId       String?  @map("from_journal_entry_id")
+  toJournalEntryId         String?  @map("to_journal_entry_id")
+  initiatedBy              String?  @map("initiated_by")
+  createdAt                DateTime @default(now()) @map("created_at")
+
+  @@map("vehicle_transfers")
+  @@index([tenantId])
+  @@index([tenantId, vin])
+  @@index([tenantId, status])
+}
+
+/// S7-02: OEM Financial Statement line mapping — maps GL accounts to OEM report positions
+/// @net-new AMACC 2.0 — replaces manual OEM worksheet population
+model OemStatementMapping {
+  id                   String   @id @default(uuid())
+  tenantId             String   @map("tenant_id")
+  oemCode              String   @db.VarChar(10) @map("oem_code")
+  statementYear        Int      @map("statement_year")
+  lineNumber           String   @db.VarChar(10) @map("line_number")
+  lineDescription      String   @map("line_description")
+  glAccountId          String?  @map("gl_account_id")
+  glAccountRangeStart  String?  @db.VarChar(12) @map("gl_account_range_start")
+  glAccountRangeEnd    String?  @db.VarChar(12) @map("gl_account_range_end")
+  lineType             String?  @db.VarChar(20) @map("line_type") // DETAIL|SUBTOTAL|TOTAL|HEADER|BLANK
+  signConvention       String   @default("NORMAL") @db.VarChar(10) @map("sign_convention") // NORMAL|REVERSED
+  sortOrder            Int      @default(0) @map("sort_order")
+
+  @@unique([tenantId, oemCode, statementYear, lineNumber])
+  @@map("oem_statement_mappings")
+  @@index([tenantId])
+  @@index([tenantId, oemCode, statementYear])
 }

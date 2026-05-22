@@ -62,7 +62,7 @@ export default function Intercompany() {
                   <td className="py-2"><span className={`px-2 py-0.5 rounded text-xs ${t.status === 'Pending' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>{t.status}</span></td>
                   <td className="py-2">
                     {t.status === 'Pending' && <button className="text-xs text-green-600 hover:underline">Post</button>}
-                    {t.status === 'Posted' && <button className="text-xs text-blue-600 hover:underline">View</button>}
+                    {t.status === 'Posted' && <button className="text-xs text-brand hover:underline">View</button>}
                   </td>
                 </tr>
               ))}
@@ -106,7 +106,7 @@ export default function Intercompany() {
           </div>
           <div><label className="block text-sm font-medium text-gray-700">Description</label>
             <input className="w-full mt-1 border rounded px-3 py-2 text-sm" placeholder="Reason for transfer" /></div>
-          <div className="bg-blue-50 rounded-lg p-3 text-sm text-blue-700">
+          <div className="bg-brand-light rounded-lg p-3 text-sm text-brand">
             This will create matching debit/credit entries in both company ledgers. The intercompany clearing account will be used to balance the transaction.
           </div>
           <div className="flex justify-end gap-3">
@@ -132,7 +132,7 @@ export default function Intercompany() {
                 <p className="text-sm text-gray-500">ID: {c.id} · {c.franchise}</p>
                 <p className="text-xs text-gray-400 font-mono">{c.db}</p>
                 <div className="flex gap-2 pt-2">
-                  <button className="text-xs text-blue-600 hover:underline">View Balance</button>
+                  <button className="text-xs text-brand hover:underline">View Balance</button>
                   <button className="text-xs text-gray-500 hover:underline">Settings</button>
                 </div>
               </div>

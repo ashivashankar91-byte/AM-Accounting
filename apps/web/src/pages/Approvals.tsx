@@ -63,9 +63,9 @@ export default function Approvals() {
                   <div className="font-medium">{req.agentName} — {req.actionType}</div>
                   <div className="text-sm text-gray-600 mt-1">{req.reasoning}</div>
                   <div className="text-xs text-gray-400 mt-1">Entity: {req.entityRef}</div>
-                  {req.evidence?.length > 0 && (
+                  {(req.evidence ?? []).length > 0 && (
                     <ul className="text-xs text-gray-500 mt-1 list-disc list-inside">
-                      {req.evidence.map((e: string, i: number) => <li key={i}>{e}</li>)}
+                      {(req.evidence ?? []).map((e: string, i: number) => <li key={i}>{e}</li>)}
                     </ul>
                   )}
                   <div className="text-xs text-gray-400 mt-1">

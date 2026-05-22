@@ -1,4 +1,5 @@
 FROM node:20-alpine
+RUN apk add --no-cache openssl
 WORKDIR /app
 COPY package.json package-lock.json* tsconfig.base.json ./
 COPY packages/shared-kernel/package.json packages/shared-kernel/

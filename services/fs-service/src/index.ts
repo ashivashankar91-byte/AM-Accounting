@@ -8,6 +8,9 @@ import { OEMProfileRepository } from './infrastructure/oem-profile-repository';
 import { MappingRepository } from './infrastructure/mapping-repository';
 import { StatementRepository } from './infrastructure/statement-repository';
 import { SupplementalRepository } from './infrastructure/supplemental-repository';
+import { FormatCodeRepository } from './infrastructure/format-code-repository';
+import { FSTemplateRepository } from './infrastructure/fs-template-repository';
+import { FSSetupRepository } from './infrastructure/fs-setup-repository';
 import pino from 'pino';
 
 const logger = pino({ name: 'fs-service' });
@@ -24,8 +27,11 @@ async function bootstrap() {
   const mappingRepo = new MappingRepository(prisma);
   const statementRepo = new StatementRepository(prisma);
   const supplementalRepo = new SupplementalRepository(prisma);
+  const formatCodeRepo = new FormatCodeRepository(prisma);
+  const templateRepo = new FSTemplateRepository(prisma);
+  const setupRepo = new FSSetupRepository(prisma);
 
-  const fsService = new FSService(profileRepo, mappingRepo, statementRepo, supplementalRepo);
+  const fsService = new FSService(profileRepo, mappingRepo, statementRepo, supplementalRepo, formatCodeRepo, templateRepo, setupRepo);
 
   const app = Fastify({ logger: true });
   await app.register(cors, { origin: true });

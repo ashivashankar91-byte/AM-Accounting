@@ -40,7 +40,9 @@ import {
 import { createEvent } from '@amacc/shared-kernel';
 import { GLValidationEngine } from '../domain/validation-engine';
 import { computeUnitCount } from '../domain/unit-count';
+import { withSerializableRetry } from '../lib/serializable-retry';
 import { PrismaClient } from '.prisma/gl-client';
+import { Decimal } from '@prisma/client/runtime/library';
 
 // ── Typed error classes ───────────────────────────────────────────────────────
 // @trace-cobol tranpost.cbl ERROR-DATE, NOFIND-STATUS, GL-ERROR-DIALOG-POP* paragraphs
@@ -118,6 +120,15 @@ export class SegregationOfDutiesError extends Error {
   constructor() {
     super('The user who created this journal entry cannot approve it. A different user must approve.');
     this.name = 'SegregationOfDutiesError';
+  }
+}
+
+export class CutoffDateViolationError extends Error {
+  readonly statusCode = 422;
+  readonly code = 'BEFORE_CUTOFF_DATE';
+  constructor(entryDate: string, cutoffDate: string) {
+    super(`Transaction date ${entryDate} is before the accounting cutoff date ${cutoffDate}`);
+    this.name = 'CutoffDateViolationError';
   }
 }
 
@@ -209,55 +220,52 @@ export class GLService {
     periodBalancesDeleted: number;
     scheduleAssignmentsCleared: number;
   }> {
-    return (this.prisma as any).$transaction(
-      async (tx: any) => {
-        // glzero: zero all opening balances
-        const accountResult = await tx.gLAccount.updateMany({
-          where: { tenantId },
-          data: { openingBalance: 0, openingUnitCount: 0 },
+    return withSerializableRetry(this.prisma, async (tx: any) => {
+      // glzero: zero all opening balances
+      const accountResult = await tx.gLAccount.updateMany({
+        where: { tenantId },
+        data: { openingBalance: 0, openingUnitCount: 0 },
+      });
+
+      let scheduleResult = 0;
+      if (options.clearScheduleAssignments) {
+        // glzerosch: clear schedule assignments on all GL accounts
+        const r = await tx.gLAccount.updateMany({
+          where: { tenantId, scheduleCode: { not: null } },
+          data: { scheduleCode: null },
         });
+        scheduleResult = r.count;
+      }
 
-        let scheduleResult = 0;
-        if (options.clearScheduleAssignments) {
-          // glzerosch: clear schedule assignments on all GL accounts
-          const r = await tx.gLAccount.updateMany({
-            where: { tenantId, scheduleCode: { not: null } },
-            data: { scheduleCode: null },
-          });
-          scheduleResult = r.count;
-        }
+      let periodResult = 0;
+      if (options.clearPeriodBalances) {
+        // jrnzero: delete all period balance records
+        const r = await tx.gLAccountPeriodBalance.deleteMany({ where: { tenantId } });
+        periodResult = r.count;
+      }
 
-        let periodResult = 0;
-        if (options.clearPeriodBalances) {
-          // jrnzero: delete all period balance records
-          const r = await tx.gLAccountPeriodBalance.deleteMany({ where: { tenantId } });
-          periodResult = r.count;
-        }
-
-        await tx.outboxEvent.create({
-          data: {
-            eventType: 'OWNERSHIP_CHANGE_RESET',
-            tenantId,
-            payload: {
-              initiatedBy,
-              accountsReset: accountResult.count,
-              periodBalancesDeleted: periodResult,
-              scheduleAssignmentsCleared: scheduleResult,
-              options,
-              timestamp: new Date().toISOString(),
-            },
-            correlationId: crypto.randomUUID(),
+      await tx.outboxEvent.create({
+        data: {
+          eventType: 'OWNERSHIP_CHANGE_RESET',
+          tenantId,
+          payload: {
+            initiatedBy,
+            accountsReset: accountResult.count,
+            periodBalancesDeleted: periodResult,
+            scheduleAssignmentsCleared: scheduleResult,
+            options,
+            timestamp: new Date().toISOString(),
           },
-        });
+          correlationId: crypto.randomUUID(),
+        },
+      });
 
-        return {
-          accountsReset: accountResult.count,
-          periodBalancesDeleted: periodResult,
-          scheduleAssignmentsCleared: scheduleResult,
-        };
-      },
-      { isolationLevel: 'Serializable' },
-    );
+      return {
+        accountsReset: accountResult.count,
+        periodBalancesDeleted: periodResult,
+        scheduleAssignmentsCleared: scheduleResult,
+      };
+    });
   }
 
   // ── EOM ACCT_200 carry-forward ─────────────────────────────────────────────
@@ -281,52 +289,49 @@ export class GLService {
     historyRecordsPurged: number;
     periodBalancesConsolidated: number;
   }> {
-    return (this.prisma as any).$transaction(
-      async (tx: any) => {
-        // Step 1: For each GL account with period balances in this period,
-        // accumulate the running balance into the opening balance.
-        // @cobol-origin glzero.cbl CARRY-FWD: COMPUTE GL-OPEN-BAL = GL-OPEN-BAL + HI-BAL-AMT
-        const periodRows: { glAccountId: string; _sum: { runningBalance: any; unitCount: any } }[] =
-          await tx.gLAccountPeriodBalance.groupBy({
-            by: ['glAccountId'],
-            where: { tenantId, periodYear, periodMonth },
-            _sum: { runningBalance: true, unitCount: true },
-          });
-
-        let accountsUpdated = 0;
-        for (const row of periodRows) {
-          const netBalance = Number(row._sum.runningBalance ?? 0);
-          const netUnits = Number(row._sum.unitCount ?? 0);
-          if (netBalance === 0 && netUnits === 0) continue;
-          await tx.gLAccount.updateMany({
-            where: { id: row.glAccountId, tenantId },
-            data: {
-              openingBalance: { increment: netBalance },
-              openingUnitCount: { increment: netUnits },
-            },
-          });
-          accountsUpdated++;
-        }
-
-        // Step 2: Delete the now-consolidated period balance rows for this period
-        const { count: periodBalancesConsolidated } = await tx.gLAccountPeriodBalance.deleteMany({
+    return withSerializableRetry(this.prisma, async (tx: any) => {
+      // Step 1: For each GL account with period balances in this period,
+      // accumulate the running balance into the opening balance.
+      // @cobol-origin glzero.cbl CARRY-FWD: COMPUTE GL-OPEN-BAL = GL-OPEN-BAL + HI-BAL-AMT
+      const periodRows: { glAccountId: string; _sum: { runningBalance: any; unitCount: any } }[] =
+        await tx.gLAccountPeriodBalance.groupBy({
+          by: ['glAccountId'],
           where: { tenantId, periodYear, periodMonth },
+          _sum: { runningBalance: true, unitCount: true },
         });
 
-        // Step 3: Purge old history transaction records (if cutoff date provided)
-        // @cobol-origin histtran.cbl PURGE-HISTORY paragraph
-        let historyRecordsPurged = 0;
-        if (purgeHistoryBeforeDate) {
-          const r = await tx.historyTransaction.deleteMany({
-            where: { tenantId, transactionDate: { lt: purgeHistoryBeforeDate } },
-          });
-          historyRecordsPurged = r.count;
-        }
+      let accountsUpdated = 0;
+      for (const row of periodRows) {
+        const netBalance = Number(row._sum.runningBalance ?? 0);
+        const netUnits = Number(row._sum.unitCount ?? 0);
+        if (netBalance === 0 && netUnits === 0) continue;
+        await tx.gLAccount.updateMany({
+          where: { id: row.glAccountId, tenantId },
+          data: {
+            openingBalance: { increment: netBalance },
+            openingUnitCount: { increment: netUnits },
+          },
+        });
+        accountsUpdated++;
+      }
 
-        return { accountsUpdated, historyRecordsPurged, periodBalancesConsolidated };
-      },
-      { isolationLevel: 'Serializable' },
-    );
+      // Step 2: Delete the now-consolidated period balance rows for this period
+      const { count: periodBalancesConsolidated } = await tx.gLAccountPeriodBalance.deleteMany({
+        where: { tenantId, periodYear, periodMonth },
+      });
+
+      // Step 3: Purge old history transaction records (if cutoff date provided)
+      // @cobol-origin histtran.cbl PURGE-HISTORY paragraph
+      let historyRecordsPurged = 0;
+      if (purgeHistoryBeforeDate) {
+        const r = await tx.historyTransaction.deleteMany({
+          where: { tenantId, transactionDate: { lt: purgeHistoryBeforeDate } },
+        });
+        historyRecordsPurged = r.count;
+      }
+
+      return { accountsUpdated, historyRecordsPurged, periodBalancesConsolidated };
+    });
   }
 
   // ── Period status ─────────────────────────────────────────────────────────
@@ -400,7 +405,104 @@ export class GLService {
       }
     }
 
-    return this.journalRepo.create(dto, tenantId);
+    // Cutoff date enforcement
+    // @trace-cobol tranpost.cbl EDIT-DATE paragraph: KEY-DATE > ACSYS-CUTOFF-DATE check
+    const sysConfig = await this.prisma.glSystemConfig.findUnique({ where: { tenantId } });
+    if (sysConfig?.cutoffDate) {
+      if (entryDate < sysConfig.cutoffDate) {
+        throw new CutoffDateViolationError(
+          entryDate.toISOString().substring(0, 10),
+          sysConfig.cutoffDate.toISOString().substring(0, 10),
+        );
+      }
+    }
+
+    // Journal source validation (FIX-012)
+    // @cobol-origin komsrc.cbl SOURCE-FILE lookup + joursec.cbl reserved-source guards
+    // Only validates when the source is registered — fail open for backward compat (legacy entries).
+    if (dto.source) {
+      const glSource = await (this.prisma as any).glSource.findFirst({
+        where: { tenantId, sourceCode: dto.source, isActive: true },
+      });
+
+      if (glSource) {
+        // Year-end reserved source guard
+        // @trace-cobol joursec.cbl — source 09 is year-end reserved; only yrend.cbl may post with it
+        if (glSource.isYearEndReserved && !(dto as any).isYearEnd) {
+          throw new Error(`Source ${dto.source} is reserved for year-end entries only`);
+        }
+        // 13th-month reserved source guard
+        // @trace-cobol joursec.cbl — source 88 is 13th-month reserved; only 13th-month close may post
+        if (glSource.is13thMonthReserved && !(dto as any).is13thMonth) {
+          throw new Error(`Source ${dto.source} is reserved for 13th-month entries only`);
+        }
+      }
+      // If glSource is null: source not yet registered — allowed (backward compat for legacy sources).
+      // Once BUILD-002 is fully adopted, operators should register all sources and this path will narrow.
+    }
+    // Note: user-level permission check is intentionally skipped for service-to-service tokens
+    // (no userId available in current service context). Permission enforcement is at the
+    // API gateway / UI layer for user-initiated entries.
+
+    // Distribution account expansion (COBOL equivalent: getgldistr.cbl)
+    // Replace any DISTRIBUTION-type account lines with their expanded sub-lines BEFORE saving.
+    // This ensures the journal entry is always stored with concrete posting accounts only.
+    const inputLines = dto.lines as any[];
+    const expandedLines: typeof inputLines = [];
+
+    for (const line of inputLines) {
+      // Look up the GL account to check if it is a DISTRIBUTION type
+      const account = await (this.prisma as any).gLAccount.findFirst({
+        where: { id: line.glAccountId, tenantId },
+        select: { id: true, code: true, type: true },
+      });
+
+      if (!account || account.type !== 'DISTRIBUTION') {
+        expandedLines.push(line);
+        continue;
+      }
+
+      const dists = await (this.prisma as any).glDistribution.findMany({
+        where: { tenantId, sourceAccountId: account.id },
+        orderBy: { sortOrder: 'asc' },
+      });
+
+      if (dists.length < 2) {
+        throw new Error(
+          `Distribution account ${account.code} has no distribution table configured (minimum 2 targets required)`,
+        );
+      }
+
+      const originalDebit = new Decimal((line.debit ?? 0).toString());
+      const originalCredit = new Decimal((line.credit ?? 0).toString());
+
+      const subLines = dists.map((dist: any) => ({
+        ...line,
+        glAccountId: dist.targetAccountId,
+        debit: Number(originalDebit.mul(dist.percentage).div(100).toDecimalPlaces(2).toString()),
+        credit: Number(originalCredit.mul(dist.percentage).div(100).toDecimalPlaces(2).toString()),
+        memo: `${line.memo ?? ''} [Dist ${dist.percentage}%]`.trim(),
+      }));
+
+      // Rounding adjustment: last line absorbs any cent difference
+      const debitSum = subLines.reduce((s: Decimal, l: any) => s.plus(new Decimal(l.debit.toString())), new Decimal(0));
+      const debitDiff = originalDebit.minus(debitSum);
+      if (!debitDiff.isZero()) {
+        subLines[subLines.length - 1].debit = Number(new Decimal(subLines[subLines.length - 1].debit.toString()).plus(debitDiff).toFixed(2));
+      }
+
+      const creditSum = subLines.reduce((s: Decimal, l: any) => s.plus(new Decimal(l.credit.toString())), new Decimal(0));
+      const creditDiff = originalCredit.minus(creditSum);
+      if (!creditDiff.isZero()) {
+        subLines[subLines.length - 1].credit = Number(new Decimal(subLines[subLines.length - 1].credit.toString()).plus(creditDiff).toFixed(2));
+      }
+
+      expandedLines.push(...subLines);
+    }
+
+    // Use expandedLines for all further processing (balance check + save)
+    const expandedDto = { ...dto, lines: expandedLines };
+    return this.journalRepo.create(expandedDto, tenantId);
   }
 
   // ── Journal Entry — Submit for Review (DRAFT → PENDING_REVIEW) ───────────
@@ -498,8 +600,8 @@ export class GLService {
     // ATOMIC: ALL ledger writes + status update + outbox event in one SERIALIZABLE transaction.
     // @trace-cobol tranpost.cbl CONT1 + UPDATE-JOURNAL + UPDATE-DETAIL + WR-HISTTRAN
     // @trace-improvement This single change eliminates the entire OOB failure class from COBOL.
-    await this.prisma.$transaction(
-      async (tx: any) => {
+    // @fix-017: Use withSerializableRetry for resilience to concurrent transaction conflicts
+    await withSerializableRetry(this.prisma, async (tx: any) => {
         // 1. Mark entry POSTED
         await tx.journalEntry.update({
           where: { id: entryId },
@@ -593,9 +695,7 @@ export class GLService {
             correlationId,
           },
         });
-      },
-      { isolationLevel: 'Serializable' },
-    );
+    });
 
     try {
       await this.eventPublisher.publish(
@@ -609,7 +709,146 @@ export class GLService {
       // Outbox processor will retry
     }
 
+    // S7-04: IC auto-offset — if any line touches an IC account and no counterpart is set,
+    // create a counterpart entry in the same tenant with reversed debits/credits.
+    // This handles ad-hoc IC entries created outside of the vehicle-transfer workflow.
+    try {
+      const freshEntry = await (this.prisma as any).journalEntry.findUnique({
+        where: { id: entryId },
+        include: {
+          lines: {
+            include: { glAccount: { select: { id: true, isIntercompany: true, accountCode: true, name: true } } },
+          },
+        },
+      });
+
+      const icLines = (freshEntry?.lines ?? []).filter((l: any) => l.glAccount?.isIntercompany);
+      const alreadyLinked = !!(freshEntry?.icCounterpartEntryId);
+
+      if (icLines.length > 0 && !alreadyLinked) {
+        // Only auto-create if source is NOT 'VT' (vehicle transfer creates its own counterpart)
+        if (freshEntry?.source !== 'VT') {
+          const counterpart = await withSerializableRetry(this.prisma, async (tx: any) => {
+            const newEntry = await tx.journalEntry.create({
+              data: {
+                tenantId,
+                entryDate: freshEntry.entryDate,
+                description: `IC Counterpart: ${freshEntry.description}`,
+                source: freshEntry.source,
+                sourceRef: freshEntry.sourceRef,
+                status: 'POSTED',
+                postedBy: approverId ?? 'GL_AGENT',
+                postedAt: new Date(),
+                approvedByUserId: approverId ?? 'GL_AGENT',
+                approvedAt: new Date(),
+                icCounterpartEntryId: entryId,
+                createdByUserId: freshEntry.createdByUserId,
+                lines: {
+                  create: icLines.map((l: any) => ({
+                    glAccountId: l.glAccountId,
+                    debit: l.credit,    // reversed
+                    credit: l.debit,
+                    memo: `IC Offset: ${l.memo ?? ''}`,
+                    companyCode: l.companyCode,
+                    controlNumber: l.controlNumber,
+                  })),
+                },
+              },
+            });
+            // Link original to counterpart
+            await tx.journalEntry.update({
+              where: { id: entryId },
+              data: { icCounterpartEntryId: newEntry.id },
+            });
+            return newEntry;
+          });
+          // IC counterpart created — no error propagation needed
+          void counterpart;
+        }
+      }
+    } catch {
+      // IC auto-offset is best-effort — do not fail the original posting
+    }
+
     return this.journalRepo.findById(entryId, tenantId) as Promise<JournalEntry>;
+  }
+
+  // ── Journal Entry Reversal (BUILD-006) ─────────────────────────────────────
+
+  /**
+   * Reverse a POSTED journal entry by creating an offsetting entry with negated amounts.
+   * @cobol-origin revadjt.cbl, revtran.cbl — reversal entry creation and HISTTRAN updates
+   * @requires Original entry must be in POSTED status
+   * @produces New DRAFT reversal entry linked via reversalOfId/reversedById
+   * @side-effect Bulk-updates history_transactions.revAdjFlag='R' for original lines
+   */
+  async reverseJournalEntry(
+    entryId: string,
+    tenantId: TenantId,
+    reversalDate: Date,
+    reason: string,
+    reverserId: string,
+  ): Promise<JournalEntry> {
+    const original = await this.journalRepo.findById(entryId, tenantId);
+    if (!original) throw new JournalEntryNotFoundError(entryId);
+    if (original.status !== 'POSTED') {
+      throw new InvalidStatusTransitionError(original.status, 'POSTED');
+    }
+    // S1-03: Block reversal of reconciled cash receipts
+    if ((original as any).isReconciled) {
+      throw new Error('Cannot reverse a journal entry that has been included in bank reconciliation. Contact the controller to un-reconcile first.');
+    }
+
+    // Create reversal entry with negated amounts, applyCd='#' to suppress chain
+    const reversalLines = (original.lines as any[]).map((line: any) => ({
+      glAccountId: line.glAccountId,
+      debit: line.credit,    // Swap debit/credit
+      credit: line.debit,
+      memo: `REVERSAL: ${line.memo ?? ''}`,
+      departmentCode: line.departmentCode,
+      technicianId: line.technicianId,
+      roNumber: line.roNumber,
+      applyCd: '#',          // Suppress COS/INV chain on reversal
+    }));
+
+    const reversalEntry = await (this.prisma as any).$transaction(async (tx: any) => {
+      // Create reversal entry in DRAFT status
+      const newEntry = await tx.journalEntry.create({
+        data: {
+          tenantId,
+          entryDate: reversalDate,
+          description: `REVERSAL of ${original.sourceRef ?? entryId}: ${reason}`,
+          source: original.source,
+          sourceRef: `REV-${original.sourceRef ?? entryId}`,
+          status: 'DRAFT',
+          reversalOfId: entryId,
+          revAdjFlag: 'R',
+          lines: {
+            create: reversalLines,
+          },
+        },
+        include: { lines: true },
+      });
+
+      // Mark original as REVERSED with link to reversal entry
+      await tx.journalEntry.update({
+        where: { id: entryId },
+        data: {
+          status: 'REVERSED',
+          reversedById: newEntry.id,
+        },
+      });
+
+      // Bulk-update history transactions for original entry: set revAdjFlag='R'
+      await tx.historyTransaction.updateMany({
+        where: { journalEntryId: entryId, tenantId },
+        data: { revAdjFlag: 'R' },
+      });
+
+      return newEntry;
+    });
+
+    return this.journalRepo.findById(reversalEntry.id, tenantId) as Promise<JournalEntry>;
   }
 
   // ── Private posting helpers ───────────────────────────────────────────────
@@ -849,6 +1088,18 @@ export class GLService {
       status: JournalStatus.POSTED,
     });
 
+    // Fetch raw account rows so we can read openingBalance (not exposed on GLAccount domain type)
+    const rawAccounts: any[] = await (this.prisma as any).gLAccount.findMany({
+      where: { tenantId },
+      select: { id: true, openingBalance: true, type: true },
+    });
+    const openingBalanceMap = new Map<string, number>(
+      rawAccounts.map((a: any) => [a.id, Number(a.openingBalance ?? 0)]),
+    );
+    const accountTypeMap = new Map<string, string>(
+      rawAccounts.map((a: any) => [a.id, a.type]),
+    );
+
     const accountTotals = new Map<string, { debit: number; credit: number }>();
     for (const account of accounts) {
       accountTotals.set(account.id, { debit: 0, credit: 0 });
@@ -863,15 +1114,40 @@ export class GLService {
       }
     }
 
+    // Balance-sheet accounts (ASSET, LIABILITY, EQUITY) carry opening balances forward.
+    // Income-statement accounts (REVENUE, EXPENSE, COST_OF_SALES) start fresh each period.
+    const BALANCE_SHEET_TYPES = new Set(['ASSET', 'LIABILITY', 'EQUITY']);
+
     let totalDebits = 0;
     let totalCredits = 0;
     const rows = accounts
-      .filter((a) => { const t = accountTotals.get(a.id); return t && (t.debit > 0 || t.credit > 0); })
+      .filter((a) => {
+        const t = accountTotals.get(a.id);
+        const ob = openingBalanceMap.get(a.id) ?? 0;
+        return (t && (t.debit > 0 || t.credit > 0)) || ob !== 0;
+      })
       .map((a) => {
-        const t = accountTotals.get(a.id)!;
-        totalDebits += t.debit;
-        totalCredits += t.credit;
-        return { accountCode: a.code, accountName: a.name, accountType: a.type as GLAccountType, debit: t.debit, credit: t.credit };
+        const t = accountTotals.get(a.id) ?? { debit: 0, credit: 0 };
+        const openingBalance = openingBalanceMap.get(a.id) ?? 0;
+        const isBalanceSheet = BALANCE_SHEET_TYPES.has(accountTypeMap.get(a.id) ?? '');
+
+        // For balance-sheet accounts, opening balance is added to period debits (net DR convention).
+        // Represent opening balance as an additional debit so the TB still cross-foots DR = CR.
+        const effectiveDebit = t.debit + (isBalanceSheet && openingBalance > 0 ? openingBalance : 0);
+        const effectiveCredit = t.credit + (isBalanceSheet && openingBalance < 0 ? Math.abs(openingBalance) : 0);
+
+        totalDebits += effectiveDebit;
+        totalCredits += effectiveCredit;
+        return {
+          accountCode: a.code,
+          accountName: a.name,
+          accountType: a.type as GLAccountType,
+          debit: effectiveDebit,
+          credit: effectiveCredit,
+          openingBalance,
+          periodDebits: t.debit,
+          periodCredits: t.credit,
+        };
       });
 
     return { period, accounts: rows, totalDebits, totalCredits };
@@ -992,8 +1268,16 @@ export class GLService {
   // ── Balance computation helpers ───────────────────────────────────────────
 
   private computeAccountBalances(accounts: GLAccount[], entries: JournalEntry[]): Map<string, number> {
+    // Balance-sheet accounts (ASSET, LIABILITY, EQUITY) carry their opening balance forward.
+    // Income-statement accounts (REVENUE, EXPENSE, COST_OF_SALES) have no opening balance.
+    const BALANCE_SHEET_TYPES = new Set(['ASSET', 'LIABILITY', 'EQUITY']);
     const balances = new Map<string, number>();
-    for (const account of accounts) balances.set(account.id, 0);
+    for (const account of accounts) {
+      const openingBalance = BALANCE_SHEET_TYPES.has(account.type)
+        ? Number((account as any).openingBalance ?? 0)
+        : 0;
+      balances.set(account.id, openingBalance);
+    }
     for (const entry of entries) {
       for (const line of entry.lines) {
         balances.set(line.glAccountId, (balances.get(line.glAccountId) ?? 0) + line.debit - line.credit);

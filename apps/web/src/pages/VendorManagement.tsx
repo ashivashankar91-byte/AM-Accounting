@@ -72,7 +72,7 @@ export default function VendorManagement() {
                     <td className="py-2">{v.is1099 ? <span className="text-amber-600 font-bold text-xs">1099</span> : ''}</td>
                     <td className="py-2"><span className={`px-2 py-0.5 rounded text-xs ${v.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-500'}`}>{v.status}</span></td>
                     <td className="py-2 flex gap-2">
-                      <button className="text-xs text-blue-600 hover:underline" onClick={() => setTab('detail')}>Detail</button>
+                      <button className="text-xs text-brand hover:underline" onClick={() => setTab('detail')}>Detail</button>
                       <button className="text-xs text-gray-400 cursor-not-allowed" disabled title="Edit vendor — coming soon">Edit</button>
                     </td>
                   </tr>
@@ -90,7 +90,7 @@ export default function VendorManagement() {
               <h3 className="text-lg font-semibold">AutoParts Supply Co</h3>
               <p className="text-gray-500 text-sm">V001 · Active since Jan 2020</p>
             </div>
-            <button className="text-sm text-blue-600 hover:underline">Edit Vendor</button>
+            <button className="text-sm text-brand hover:underline">Edit Vendor</button>
           </div>
           <div className="grid grid-cols-3 gap-6">
             <div className="space-y-2 text-sm">
@@ -125,7 +125,7 @@ export default function VendorManagement() {
               ].map((t, i) => (
                 <tr key={i} className="border-b border-gray-50">
                   <td className="py-2 text-gray-500">{t.date}</td>
-                  <td className="py-2"><span className={`px-2 py-0.5 rounded text-xs ${t.type === 'Voucher' ? 'bg-blue-50 text-blue-700' : 'bg-green-50 text-green-700'}`}>{t.type}</span></td>
+                  <td className="py-2"><span className={`px-2 py-0.5 rounded text-xs ${t.type === 'Voucher' ? 'bg-brand-light text-brand' : 'bg-green-50 text-green-700'}`}>{t.type}</span></td>
                   <td className="py-2 font-mono text-xs">{t.ref}</td>
                   <td className="py-2">{t.desc}</td>
                   <td className={`py-2 text-right font-mono ${t.amt < 0 ? 'text-green-600' : ''}`}>{t.amt < 0 ? '-' : ''}${Math.abs(t.amt).toLocaleString()}</td>

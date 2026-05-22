@@ -45,7 +45,7 @@ export default function HelpButton({ help }: HelpButtonProps) {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200"
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-brand bg-brand-light hover:bg-blue-100 rounded-lg transition-colors border border-brand-border"
         title={`Help: ${help.title}`}
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

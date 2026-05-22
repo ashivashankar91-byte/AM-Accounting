@@ -81,7 +81,7 @@ function AccountSearch({ onSelect, initialCode }: { onSelect: (code: string) => 
             if (e.key === 'Escape') setOpen(false);
           }}
           placeholder="Search account code or name…"
-          className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand"
         />
         <svg className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
@@ -98,7 +98,7 @@ function AccountSearch({ onSelect, initialCode }: { onSelect: (code: string) => 
             <li
               key={acc.accountCode}
               onMouseDown={() => select(acc)}
-              className={`px-4 py-2.5 cursor-pointer text-sm ${idx === highlighted ? 'bg-blue-50 text-blue-800' : 'hover:bg-gray-50'}`}
+              className={`px-4 py-2.5 cursor-pointer text-sm ${idx === highlighted ? 'bg-brand-light text-blue-800' : 'hover:bg-gray-50'}`}
             >
               <span className="font-mono font-semibold">{acc.accountCode}</span>
               <span className="ml-2 text-gray-600">{acc.accountName}</span>
@@ -406,12 +406,12 @@ export default function GLAccountInquiry() {
         <div className="flex items-center gap-2">
           <label className="text-sm text-gray-600 whitespace-nowrap">From</label>
           <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand" />
         </div>
         <div className="flex items-center gap-2">
           <label className="text-sm text-gray-600 whitespace-nowrap">To</label>
           <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand" />
         </div>
         {(dateFrom || dateTo) && (
           <button onClick={() => { setDateFrom(''); setDateTo(''); }}
@@ -444,7 +444,7 @@ export default function GLAccountInquiry() {
               onClick={() => { setActiveTab(tab.id); setSort({ key: 'entryDate', dir: 'desc' }); }}
               className={`px-6 py-3.5 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === tab.id
-                  ? 'border-blue-600 text-blue-700 bg-blue-50/50'
+                  ? 'border-blue-600 text-brand bg-brand-light/50'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
               }`}
             >
@@ -476,7 +476,7 @@ export default function GLAccountInquiry() {
           ) : error ? (
             <div className="text-center py-12">
               <p className="text-red-600 text-sm font-medium">{(error as Error).message}</p>
-              <button onClick={() => refetch()} className="mt-3 text-sm text-blue-600 hover:underline">Retry</button>
+              <button onClick={() => refetch()} className="mt-3 text-sm text-brand hover:underline">Retry</button>
             </div>
           ) : (
             <TabContent data={inquiry} tab={activeTab} sort={sort} onSort={handleSort} />

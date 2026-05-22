@@ -23,7 +23,7 @@ function StatusPill({ label, color }: { label: string; color: string }) {
     green:  'bg-green-50 text-green-700 ring-green-600/20',
     amber:  'bg-amber-50 text-amber-700 ring-amber-600/20',
     red:    'bg-red-50 text-red-700 ring-red-600/20',
-    blue:   'bg-blue-50 text-blue-700 ring-blue-600/20',
+    blue:   'bg-brand-light text-brand ring-blue-600/20',
     gray:   'bg-gray-100 text-gray-600 ring-gray-500/20',
     purple: 'bg-purple-50 text-purple-700 ring-purple-600/20',
   };
@@ -65,7 +65,7 @@ function DetailPanel({ source, onClose, issues }: {
             <div key={i} className={`text-xs px-3 py-1.5 rounded ${
               issue.severity === 'error' ? 'bg-red-50 text-red-700' :
               issue.severity === 'warning' ? 'bg-amber-50 text-amber-700' :
-              'bg-blue-50 text-blue-700'
+              'bg-brand-light text-brand'
             }`}>
               ⚠ {issue.message}
             </div>
@@ -160,7 +160,7 @@ function DetailPanel({ source, onClose, issues }: {
       )}
 
       {pair && (
-        <div className="text-xs bg-blue-50 text-blue-700 rounded px-3 py-2">
+        <div className="text-xs bg-brand-light text-brand rounded px-3 py-2">
           <strong>OEM Brand Pair:</strong> Ford {pair.ford} ↔ Nissan {pair.nissan} ({pair.purpose})
         </div>
       )}
@@ -202,7 +202,7 @@ function DetailPanel({ source, onClose, issues }: {
       )}
 
       {source.autoPostAtEOM && (
-        <div className="text-xs bg-blue-50 text-blue-700 rounded px-3 py-2 border border-blue-200">
+        <div className="text-xs bg-brand-light text-brand rounded px-3 py-2 border border-brand-border">
           <strong>ℹ EOM Auto-Post:</strong> Entries under this source auto-post during End-of-Month Step 300
           (Final Close). Controller does not need to manually post recurring entries.
         </div>
@@ -223,7 +223,7 @@ function ValidationAlerts({ issues }: { issues: SourceValidationIssue[] }) {
           <div key={i} className={`flex items-start gap-2 text-xs px-2 py-1.5 rounded ${
             issue.severity === 'error' ? 'bg-red-50 text-red-700' :
             issue.severity === 'warning' ? 'bg-amber-50 text-amber-700' :
-            'bg-blue-50 text-blue-700'
+            'bg-brand-light text-brand'
           }`}>
             <span className="shrink-0">{issue.severity === 'error' ? '🔴' : issue.severity === 'warning' ? '🟡' : 'ℹ️'}</span>
             <span><strong>[{issue.code}]</strong> {issue.message}</span>
@@ -250,7 +250,7 @@ function SummaryBar({ sources }: { sources: JournalSource[] }) {
     <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
       {[
         { label: 'Total Sources', value: sources.length, color: '' },
-        { label: 'Ford', value: fordCount, color: 'text-blue-600' },
+        { label: 'Ford', value: fordCount, color: 'text-brand' },
         { label: 'Nissan', value: nissanCount, color: 'text-red-600' },
         { label: 'Shared', value: sharedCount, color: 'text-gray-600' },
         { label: 'Reserved', value: reservedCount, color: 'text-purple-600' },
@@ -487,7 +487,7 @@ export default function JournalSources() {
             <div key={pair.ford} className="bg-gray-50 rounded px-2.5 py-2 text-center text-xs">
               <div className="font-semibold text-gray-700">{pair.purpose}</div>
               <div className="mt-1 flex items-center justify-center gap-1">
-                <span className="font-mono text-blue-600">{pair.ford}</span>
+                <span className="font-mono text-brand">{pair.ford}</span>
                 <span className="text-gray-400">↔</span>
                 <span className="font-mono text-red-600">{pair.nissan}</span>
               </div>

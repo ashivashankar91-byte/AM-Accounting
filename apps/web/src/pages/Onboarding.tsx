@@ -56,7 +56,7 @@ export default function Onboarding() {
             </div>
           </div>
           <button onClick={() => startMut.mutate()} disabled={!form.dealerName || !form.slug || startMut.isPending}
-            className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:opacity-50">
+            className="w-full bg-brand text-white py-2 rounded hover:bg-brand disabled:opacity-50">
             {startMut.isPending ? 'Starting...' : 'Start Onboarding'}
           </button>
         </div>
@@ -78,7 +78,7 @@ export default function Onboarding() {
         {STEPS.map((s, i) => (
           <div key={s} className={`flex-1 h-2 rounded ${
             session.completedSteps?.includes(s) ? 'bg-green-500' :
-            s === session.currentStep ? 'bg-blue-500' : 'bg-gray-200'
+            s === session.currentStep ? 'bg-brand-light0' : 'bg-gray-200'
           }`} />
         ))}
       </div>
@@ -130,7 +130,7 @@ export default function Onboarding() {
           )}
 
           <button onClick={() => stepMut.mutate()} disabled={stepMut.isPending}
-            className="mt-6 bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 disabled:opacity-50">
+            className="mt-6 bg-brand text-white px-6 py-2 rounded hover:bg-brand disabled:opacity-50">
             {stepMut.isPending ? 'Processing...' : `Complete ${STEP_LABELS[session.currentStep]}`}
           </button>
         </div>

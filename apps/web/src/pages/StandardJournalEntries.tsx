@@ -171,7 +171,7 @@ export default function StandardJournalEntries() {
           <div className="grid grid-cols-2 gap-4">
             {/* Manual Panel */}
             <div className="bg-white rounded-lg shadow">
-              <div className="px-4 py-3 border-b flex items-center justify-between bg-blue-50">
+              <div className="px-4 py-3 border-b flex items-center justify-between bg-brand-light">
                 <div className="flex items-center gap-2">
                   <h3 className="font-semibold text-sm">Manual Entries (Source 58)</h3>
                   <span className="bg-blue-200 text-blue-800 px-1.5 py-0.5 rounded text-[10px] font-bold">Recurring</span>
@@ -236,7 +236,7 @@ export default function StandardJournalEntries() {
                 <div>
                   <div className="flex items-center gap-3">
                     <h3 className="text-xl font-bold">{selected.name}</h3>
-                    <span className={`px-2 py-0.5 rounded text-xs font-bold ${selected.entryType === SJEType.MANUAL ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
+                    <span className={`px-2 py-0.5 rounded text-xs font-bold ${selected.entryType === SJEType.MANUAL ? 'bg-brand-light text-brand' : 'bg-amber-100 text-amber-700'}`}>
                       {selected.entryType} — Source {selected.sourceCode}
                     </span>
                     {!isBalanced(selected.lines) && <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs font-bold">⚠ UNBALANCED</span>}

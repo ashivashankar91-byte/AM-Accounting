@@ -69,7 +69,7 @@ export default function WarrantyDCS() {
                 {filtered.map(c => (
                   <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
                     <td className="py-2 font-mono font-bold text-amacc-700">{c.id}</td>
-                    <td className="py-2"><span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-semibold">{c.oem}</span></td>
+                    <td className="py-2"><span className="px-2 py-0.5 bg-brand-light text-brand rounded text-xs font-semibold">{c.oem}</span></td>
                     <td className="py-2 font-mono text-xs">{c.ro}</td>
                     <td className="py-2 font-mono text-xs text-gray-500">{c.vin}</td>
                     <td className="py-2">{c.op}</td>
@@ -77,10 +77,10 @@ export default function WarrantyDCS() {
                     <td className="py-2 text-right font-mono">${c.parts}</td>
                     <td className="py-2 text-right font-mono font-bold">${c.total.toLocaleString()}</td>
                     <td className="py-2"><span className={`px-2 py-0.5 rounded text-xs ${
-                      c.status === 'Paid' ? 'bg-green-100 text-green-700' : c.status === 'Approved' ? 'bg-blue-100 text-blue-700'
+                      c.status === 'Paid' ? 'bg-green-100 text-green-700' : c.status === 'Approved' ? 'bg-brand-light text-brand'
                       : c.status === 'Rejected' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{c.status}</span></td>
                     <td className="py-2 flex gap-2">
-                      <button className="text-xs text-blue-600 hover:underline">Detail</button>
+                      <button className="text-xs text-brand hover:underline">Detail</button>
                       {c.status === 'Rejected' && <button className="text-xs text-amber-600 hover:underline">Resubmit</button>}
                     </td>
                   </tr>

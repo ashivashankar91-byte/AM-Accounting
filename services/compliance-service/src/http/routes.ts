@@ -42,5 +42,29 @@ export function complianceRoutes(prisma: any): FastifyPluginAsync {
       }).catch(() => []);
       return reply.send(rules);
     });
+    app.get('/checks', async (request, reply) => {
+      const tenantId = request.headers['x-tenant-id'] as string | undefined;
+      if (!tenantId) return reply.status(401).send({ error: 'x-tenant-id header is required' });
+      const rules = await prisma.complianceRule.findMany({ where: { tenantId } }).catch(() => []);
+      const alerts = await prisma.complianceAlert.findMany({ where: { tenantId, resolvedAt: null } }).catch(() => []);
+      return reply.send({ rules, openAlerts: alerts, checksRun: rules.length, alertCount: alerts.length });
+    });
+
+    app.get('/status', async (request, reply) => {
+      const tenantId = request.headers['x-tenant-id'] as string | undefined;
+      if (!tenantId) return reply.status(401).send({ error: 'x-tenant-id header is required' });
+      const rules = await prisma.complianceRule.findMany({ where: { tenantId } }).catch(() => []);
+      const openAlerts = await prisma.complianceAlert.findMany({ where: { tenantId, resolvedAt: null } }).catch(() => []);
+      const totalAlerts = await prisma.complianceAlert.count({ where: { tenantId } }).catch(() => 0);
+      const overallStatus = openAlerts.length === 0 ? 'COMPLIANT' : openAlerts.length <= 3 ? 'WARNING' : 'NON_COMPLIANT';
+      return reply.send({
+        tenantId,
+        status: overallStatus,
+        rulesActive: rules.length,
+        openAlerts: openAlerts.length,
+        totalAlerts,
+        lastChecked: new Date().toISOString(),
+      });
+    });
   };
 }

@@ -1,0 +1,18 @@
+# Local dev override:
+# 1. Remaps api-gateway to port 3100 (3000 is taken by automate-20-frontend)
+# 2. Stubs rabbitmq — automate-20-rabbitmq-1 is connected to this network with alias 'rabbitmq'
+services:
+  api-gateway:
+    ports:
+      - "3100:3000"
+
+  rabbitmq:
+    image: busybox
+    entrypoint: ["sh", "-c", "echo 'using external rabbitmq'; sleep infinity"]
+    ports: []
+    healthcheck:
+      test: ["CMD", "echo", "ok"]
+      interval: 5s
+      timeout: 3s
+      retries: 1
+      start_period: 2s

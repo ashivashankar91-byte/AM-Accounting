@@ -4,6 +4,9 @@ import { OEMProfileRepository, CreateOEMProfileDto, UpdateOEMProfileDto } from '
 import { MappingRepository, CreateMappingDto, UpdateMappingDto } from '../infrastructure/mapping-repository';
 import { StatementRepository } from '../infrastructure/statement-repository';
 import { SupplementalRepository, UpsertSupplementalDto } from '../infrastructure/supplemental-repository';
+import { FormatCodeRepository, CreateFormatCodeDto, UpdateFormatCodeDto } from '../infrastructure/format-code-repository';
+import { FSTemplateRepository, CreateFSTemplateDto } from '../infrastructure/fs-template-repository';
+import { FSSetupRepository, CreateFSSetupDto } from '../infrastructure/fs-setup-repository';
 import { generateLines, buildAccountMap, TrialBalanceAccount, MappingLine } from '../domain/fs-generator';
 import { validateStatement, ValidationResult } from '../domain/fs-validator';
 import type { MappingTemplate } from '../seed/oem-templates/types';
@@ -71,6 +74,9 @@ export class FSService {
     private readonly mappingRepo: MappingRepository,
     private readonly statementRepo: StatementRepository,
     private readonly supplementalRepo: SupplementalRepository,
+    private readonly formatCodeRepo: FormatCodeRepository,
+    private readonly templateRepo: FSTemplateRepository,
+    private readonly setupRepo: FSSetupRepository,
   ) {
     this.glServiceUrl = process.env['GL_SERVICE_URL'] ?? 'http://gl-service:3010';
   }
@@ -320,6 +326,73 @@ export class FSService {
 
   async upsertSupplementalData(dto: UpsertSupplementalDto) {
     return this.supplementalRepo.upsert(dto);
+  }
+
+  // ── Format Code Management (BUILD-011) ────────────────────────────────────
+
+  async createFormatCode(tenantId: string, dto: CreateFormatCodeDto) {
+    const existing = await this.formatCodeRepo.findByMfgCode(tenantId, dto.mfgCode);
+    if (existing) throw new Error(`Format code already exists: ${dto.mfgCode}`);
+    return this.formatCodeRepo.create(tenantId, dto);
+  }
+
+  async updateFormatCode(tenantId: string, id: string, dto: UpdateFormatCodeDto) {
+    const existing = await this.formatCodeRepo.findById(id);
+    if (!existing || existing.tenantId !== tenantId) throw new Error('Format code not found');
+    return this.formatCodeRepo.update(id, dto);
+  }
+
+  async getFormatCode(tenantId: string, id: string) {
+    const code = await this.formatCodeRepo.findById(id);
+    if (!code || code.tenantId !== tenantId) throw new Error('Format code not found');
+    return code;
+  }
+
+  async listFormatCodes(tenantId: string) {
+    return this.formatCodeRepo.findAll(tenantId);
+  }
+
+  async deleteFormatCode(tenantId: string, id: string) {
+    const existing = await this.formatCodeRepo.findById(id);
+    if (!existing || existing.tenantId !== tenantId) throw new Error('Format code not found');
+    await this.formatCodeRepo.delete(id);
+  }
+
+  // ── Template Management (BUILD-011) ────────────────────────────────────────
+
+  async importTemplate(tenantId: string, mfgCode: string, year: number, parameters: Record<string, any>) {
+    const formatCode = await this.formatCodeRepo.findByMfgCode(tenantId, mfgCode);
+    if (!formatCode) throw new Error(`Format code not found: ${mfgCode}`);
+    return this.templateRepo.upsert(tenantId, { mfgCode, year, parameters });
+  }
+
+  async getTemplate(tenantId: string, mfgCode: string, year: number) {
+    return this.templateRepo.findByMfgCodeAndYear(tenantId, mfgCode, year);
+  }
+
+  async listTemplates(tenantId: string, mfgCode: string) {
+    return this.templateRepo.findAll(tenantId, mfgCode);
+  }
+
+  // ── FS Period Setup (BUILD-011) ────────────────────────────────────────────
+
+  async setupFS(tenantId: string, dto: CreateFSSetupDto) {
+    const formatCode = await this.formatCodeRepo.findByMfgCode(tenantId, dto.mfgCode);
+    if (!formatCode) throw new Error(`Format code not found: ${dto.mfgCode}`);
+
+    const existing = await this.setupRepo.findByMfgCodeAndYear(tenantId, dto.mfgCode, dto.year);
+    if (existing) {
+      return this.setupRepo.update(tenantId, dto.mfgCode, dto.year, dto);
+    }
+    return this.setupRepo.create(tenantId, dto);
+  }
+
+  async getSetup(tenantId: string, mfgCode: string, year: number) {
+    return this.setupRepo.findByMfgCodeAndYear(tenantId, mfgCode, year);
+  }
+
+  async listSetups(tenantId: string, mfgCode?: string) {
+    return this.setupRepo.findAll(tenantId, mfgCode);
   }
 
   // ── Private: GL Integration ──────────────────────────────────────────────

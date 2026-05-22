@@ -71,9 +71,15 @@ async function bootstrap() {
     return authMiddleware(JWT_SECRET)(request, reply);
   });
 
+  // Resolve GLService once for all inline routes that need it
+  const glService = container.resolve<GLService>('GLService');
+
   // Dashboard summary — returns full data for controller dashboard
   app.get('/api/v1/dashboard/summary', async (request, reply) => {
-    const tenantId = request.headers['x-tenant-id'] as string || 'tenant-kunes';
+    const tenantId = request.headers['x-tenant-id'] as string | undefined;
+    if (!tenantId) {
+      return reply.status(400).send({ error: 'MISSING_TENANT_ID', message: 'x-tenant-id header is required' });
+    }
     const now = new Date();
     const year = now.getFullYear();
     const month = now.getMonth() + 1;
@@ -94,10 +100,13 @@ async function bootstrap() {
       }).catch(() => []),
     ]);
 
-    // Compute balances by account type from journal lines
+    // Compute balances by account type from journal lines + opening balance
+    const BALANCE_SHEET_TYPES_DS = new Set(['ASSET', 'LIABILITY', 'EQUITY']);
     const balanceByType: Record<string, number> = {};
     for (const acct of allAccounts) {
-      const bal = (acct.lines ?? []).reduce((s: number, l: any) => s + (l.debit - l.credit), 0);
+      const openingBal = BALANCE_SHEET_TYPES_DS.has(acct.type) ? Number((acct as any).openingBalance ?? 0) : 0;
+      const periodBal = (acct.lines ?? []).reduce((s: number, l: any) => s + (l.debit - l.credit), 0);
+      const bal = openingBal + periodBal;
       balanceByType[acct.type] = (balanceByType[acct.type] ?? 0) + bal;
     }
 
@@ -289,7 +298,10 @@ async function bootstrap() {
   // ─── 1. GET /api/v1/command-center/live-stats ───
   // 8 KPI cards — instant pulse check, all computed from GL
   app.get('/api/v1/command-center/live-stats', async (request, reply) => {
-    const tenantId = (request.headers['x-tenant-id'] as string) || 'tenant-kunes';
+    const tenantId = request.headers['x-tenant-id'] as string | undefined;
+    if (!tenantId) {
+      return reply.status(400).send({ error: 'MISSING_TENANT_ID', message: 'x-tenant-id header is required' });
+    }
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -329,8 +341,8 @@ async function bootstrap() {
     let totalDebits = 0, totalCredits = 0;
     for (const acct of allAccounts) {
       for (const line of (acct.lines ?? [])) {
-        totalDebits += line.debit;
-        totalCredits += line.credit;
+        totalDebits += Number(line.debit);
+        totalCredits += Number(line.credit);
       }
     }
     const glVariance = Math.round((totalDebits - totalCredits) * 100) / 100;
@@ -353,7 +365,10 @@ async function bootstrap() {
   // ─── 2. GET /api/v1/command-center/alerts ───
   // Computed alerts from live GL data — never stale
   app.get('/api/v1/command-center/alerts', async (request, reply) => {
-    const tenantId = (request.headers['x-tenant-id'] as string) || 'tenant-kunes';
+    const tenantId = request.headers['x-tenant-id'] as string | undefined;
+    if (!tenantId) {
+      return reply.status(400).send({ error: 'MISSING_TENANT_ID', message: 'x-tenant-id header is required' });
+    }
     const now = new Date();
     const alerts: any[] = [];
 
@@ -394,8 +409,8 @@ async function bootstrap() {
     let totalDebits = 0, totalCredits = 0;
     for (const acct of allAccounts) {
       for (const line of (acct.lines ?? [])) {
-        totalDebits += line.debit;
-        totalCredits += line.credit;
+        totalDebits += Number(line.debit);
+        totalCredits += Number(line.credit);
       }
     }
     const variance = Math.round((totalDebits - totalCredits) * 100) / 100;
@@ -516,7 +531,10 @@ async function bootstrap() {
   // ─── 3. GET /api/v1/command-center/gl-monitor ───
   // Full GL account list with balances, activity, status indicators
   app.get('/api/v1/command-center/gl-monitor', async (request, reply) => {
-    const tenantId = (request.headers['x-tenant-id'] as string) || 'tenant-kunes';
+    const tenantId = request.headers['x-tenant-id'] as string | undefined;
+    if (!tenantId) {
+      return reply.status(400).send({ error: 'MISSING_TENANT_ID', message: 'x-tenant-id header is required' });
+    }
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
@@ -594,7 +612,10 @@ async function bootstrap() {
   // ─── 4. GET /api/v1/command-center/kpi-trends ───
   // Sparkline data computed from GL — last 7 periods
   app.get('/api/v1/command-center/kpi-trends', async (request, reply) => {
-    const tenantId = (request.headers['x-tenant-id'] as string) || 'tenant-kunes';
+    const tenantId = request.headers['x-tenant-id'] as string | undefined;
+    if (!tenantId) {
+      return reply.status(400).send({ error: 'MISSING_TENANT_ID', message: 'x-tenant-id header is required' });
+    }
     const now = new Date();
 
     const allAccounts = await prisma.gLAccount.findMany({
@@ -624,8 +645,8 @@ async function bootstrap() {
           const ed = new Date(line.journalEntry?.entryDate ?? 0);
           if (ed >= d && ed < dEnd) {
             entries++;
-            debits += line.debit;
-            credits += line.credit;
+            debits += Number(line.debit);
+            credits += Number(line.credit);
           }
         }
       }
@@ -675,7 +696,10 @@ async function bootstrap() {
   // ─── 5. GET /api/v1/command-center/charts ───
   // Chart.js / Recharts datasets
   app.get('/api/v1/command-center/charts', async (request, reply) => {
-    const tenantId = (request.headers['x-tenant-id'] as string) || 'tenant-kunes';
+    const tenantId = request.headers['x-tenant-id'] as string | undefined;
+    if (!tenantId) {
+      return reply.status(400).send({ error: 'MISSING_TENANT_ID', message: 'x-tenant-id header is required' });
+    }
 
     const allAccounts = await prisma.gLAccount.findMany({
       where: { tenantId },
@@ -718,17 +742,43 @@ async function bootstrap() {
   // ─── 6. POST /api/v1/command-center/action ───
   // Execute alert action (post draft entries, etc.)
   app.post('/api/v1/command-center/action', async (request, reply) => {
-    const tenantId = (request.headers['x-tenant-id'] as string) || 'tenant-kunes';
+    const tenantId = request.headers['x-tenant-id'] as string | undefined;
+    if (!tenantId) {
+      return reply.status(400).send({ error: 'MISSING_TENANT_ID', message: 'x-tenant-id header is required' });
+    }
     const { alertId, actionType } = (request.body as any) ?? {};
 
     if (alertId === 'draft-entries' && actionType === 'post-all') {
-      const drafts = await prisma.journalEntry.findMany({ where: { tenantId, status: 'DRAFT' } });
-      let posted = 0;
-      for (const draft of drafts) {
-        await prisma.journalEntry.update({ where: { id: draft.id }, data: { status: 'POSTED', postedAt: new Date(), postedBy: 'command-center' } });
-        posted++;
+      const drafts = await prisma.journalEntry.findMany({
+        where: { tenantId, status: 'DRAFT' },
+        select: { id: true, description: true },
+      });
+
+      if (drafts.length === 0) {
+        return reply.send({ action: 'post-all', total: 0, posted: 0, failed: [] });
       }
-      return reply.send({ success: true, message: `Posted ${posted} draft entries.`, posted });
+
+      const results: Array<{ id: string; status: 'posted' | 'failed'; error?: string }> = [];
+
+      for (const entry of drafts) {
+        try {
+          // Route through the full posting pipeline:
+          // DRAFT → PENDING_REVIEW (postJournalEntry) → POSTED (approveJournalEntry)
+          await glService.postJournalEntry(entry.id, tenantId as any, 'command-center');
+          await glService.approveJournalEntry(entry.id, tenantId as any, 'command-center');
+          results.push({ id: entry.id, status: 'posted' });
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          results.push({ id: entry.id, status: 'failed', error: msg });
+        }
+      }
+
+      return reply.send({
+        action: 'post-all',
+        total: drafts.length,
+        posted: results.filter((r) => r.status === 'posted').length,
+        failed: results.filter((r) => r.status === 'failed'),
+      });
     }
 
     return reply.send({ success: true, message: 'Action acknowledged.', alertId, actionType });
@@ -737,7 +787,10 @@ async function bootstrap() {
   // ─── 7. POST /api/v1/command-center/ashley ───
   // AI Q&A with live DB context injected
   app.post('/api/v1/command-center/ashley', async (request, reply) => {
-    const tenantId = (request.headers['x-tenant-id'] as string) || 'tenant-kunes';
+    const tenantId = request.headers['x-tenant-id'] as string | undefined;
+    if (!tenantId) {
+      return reply.status(400).send({ error: 'MISSING_TENANT_ID', message: 'x-tenant-id header is required' });
+    }
     const { question } = (request.body as any) ?? {};
     const q = (question ?? '').toLowerCase();
 
@@ -764,7 +817,7 @@ async function bootstrap() {
     if (q.includes('gl') || q.includes('general ledger') || q.includes('balance')) {
       let totalDebits = 0, totalCredits = 0;
       for (const acct of allAccounts) {
-        for (const line of (acct.lines ?? [])) { totalDebits += line.debit; totalCredits += line.credit; }
+        for (const line of (acct.lines ?? [])) { totalDebits += Number(line.debit); totalCredits += Number(line.credit); }
       }
       const variance = Math.round((totalDebits - totalCredits) * 100) / 100;
       answer = `GL Status: ${variance === 0 ? 'BALANCED' : `OUT OF BALANCE by $${Math.abs(variance).toLocaleString()}`}. ${accountCount} accounts, ${postedCount} posted entries, ${draftCount} draft entries. Total debits: $${Math.round(totalDebits).toLocaleString()}, total credits: $${Math.round(totalCredits).toLocaleString()}.`;
@@ -794,14 +847,20 @@ async function bootstrap() {
   const eventStore = new EventStore(prisma);
 
   app.get('/api/v1/gl/journal-entries/:id/history', async (request, reply) => {
-    const tenantId = (request.headers['x-tenant-id'] as string) || 'tenant-kunes';
+    const tenantId = request.headers['x-tenant-id'] as string | undefined;
+    if (!tenantId) {
+      return reply.status(400).send({ error: 'MISSING_TENANT_ID', message: 'x-tenant-id header is required' });
+    }
     const { id } = request.params as { id: string };
     const history = await eventStore.getHistory(tenantId, id);
     return reply.send({ entityId: id, events: history, count: history.length });
   });
 
   app.get('/api/v1/gl/journal-entries/:id/reconstruct', async (request, reply) => {
-    const tenantId = (request.headers['x-tenant-id'] as string) || 'tenant-kunes';
+    const tenantId = request.headers['x-tenant-id'] as string | undefined;
+    if (!tenantId) {
+      return reply.status(400).send({ error: 'MISSING_TENANT_ID', message: 'x-tenant-id header is required' });
+    }
     const { id } = request.params as { id: string };
     const { asOf } = request.query as { asOf?: string };
     const state = await eventStore.reconstruct(tenantId, id, asOf ? new Date(asOf) : undefined);
@@ -839,6 +898,25 @@ async function bootstrap() {
       source: 'manual',
     });
     return reply.status(201).send({ ok: true });
+  });
+
+  // Bank deposits stub — cashflow module not yet implemented
+  app.get('/api/v1/gl/bank-deposits', async (request, reply) => {
+    const tenantId = request.headers['x-tenant-id'] as string | undefined;
+    if (!tenantId) return reply.status(400).send({ error: 'x-tenant-id header is required' });
+    return reply.send([]);
+  });
+
+  app.get('/api/v1/gl/bank-deposits/undeposited', async (request, reply) => {
+    const tenantId = request.headers['x-tenant-id'] as string | undefined;
+    if (!tenantId) return reply.status(400).send({ error: 'x-tenant-id header is required' });
+    return reply.send([]);
+  });
+
+  app.post('/api/v1/gl/bank-deposits', async (request, reply) => {
+    const tenantId = request.headers['x-tenant-id'] as string | undefined;
+    if (!tenantId) return reply.status(400).send({ error: 'x-tenant-id header is required' });
+    return reply.status(201).send({ id: `dep-${Date.now()}`, status: 'DRAFT', ...(request.body as object) });
   });
 
   app.get('/health', async () => ({ status: 'ok', service: 'gl-service' }));
@@ -883,8 +961,7 @@ async function bootstrap() {
   // If agent-gl does not review a PENDING_REVIEW entry within AGENT_REVIEW_TIMEOUT_SECONDS,
   // the entry is auto-approved with approvedByUserId = 'AUTO_TIMEOUT' via the full
   // GLService.approveJournalEntry path so period balances and outbox events are written.
-  const glSvcForTimeout = container.resolve<GLService>('GLService');
-  const timeoutJob = new AgentReviewTimeoutJob(prisma, glSvcForTimeout);
+  const timeoutJob = new AgentReviewTimeoutJob(prisma, glService);
   timeoutJob.startPolling(10_000);
 }
 

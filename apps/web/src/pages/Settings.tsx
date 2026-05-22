@@ -138,7 +138,7 @@ export default function Settings() {
 
       {/* Save */}
       <div className="flex items-center gap-3">
-        <button onClick={handleSave} className="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+        <button onClick={handleSave} className="px-6 py-2 bg-brand text-white rounded-lg text-sm font-medium hover:bg-brand">
           Save Settings
         </button>
         {saved && <span className="text-green-600 text-sm font-medium">Saved!</span>}

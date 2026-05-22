@@ -10,7 +10,7 @@ export default function AMACCSync() {
     { key: 'payroll', port: 3012, label: 'Payroll Service', path: '/api/v1/payroll/batches' },
     { key: 'apar', port: 3013, label: 'AP/AR Service', path: '/api/v1/apar/ar' },
     { key: 'recon', port: 3014, label: 'Recon Service', path: '/api/v1/recon' },
-    { key: 'fs', port: 3015, label: 'FS Service', path: '/api/v1/fs/status/test/2026-03/GM' },
+    { key: 'fs', port: 3015, label: 'FS Service', path: '/api/v1/fs/statements' },
     { key: 'coa', port: 3016, label: 'COA Service', path: '/api/v1/coa/standard' },
     { key: 'auth', port: 3001, label: 'Auth Service', path: '/api/v1/auth/health' },
     { key: 'tenant', port: 3002, label: 'Tenant Service', path: '/api/v1/tenants' },

@@ -24,6 +24,7 @@ import {
   FSSubmissionHandler,
   ThirteenthMonthSnapshotHandler,
   ThirteenthMonthFinalHandler,
+  AcctBackupHandler,
 } from './domain/step-handlers';
 import { IEventPublisher, IEOMCloseRepository, IEOMStepRepository, OutboxProcessor } from '@amacc/shared-kernel';
 import type { IGLClient } from './application/eom-service';
@@ -61,6 +62,7 @@ async function bootstrap() {
     new FSSubmissionHandler(),
     new ThirteenthMonthSnapshotHandler(),
     new ThirteenthMonthFinalHandler(),
+    new AcctBackupHandler(prisma),
   ]);
 
   container.registerInstance('PrismaClient', prisma);
@@ -78,13 +80,62 @@ async function bootstrap() {
   await app.register(thirteenthMonthRoutes, { prefix: '/api/v1/eom' });
 
   // Close readiness check
+  app.get('/api/v1/eom/status', async (request, reply) => {
+    const tenantId = request.headers['x-tenant-id'] as string;
+    if (!tenantId) return reply.status(400).send({ error: 'x-tenant-id header is required' });
+    const closes = await prisma.eOMClose.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: 'desc' },
+      take: 1,
+    }).catch(() => []);
+    const latest = closes[0] ?? null;
+    return reply.send({
+      tenantId,
+      hasActiveClose: !!latest,
+      currentClose: latest,
+      status: latest?.status ?? 'NO_CLOSE_IN_PROGRESS',
+    });
+  });
+
   app.get('/api/v1/eom/readiness', async (request, reply) => {
-    const tenantId = (request.headers['x-tenant-id'] as string) || 'tenant-kunes';
+    const tenantId = request.headers['x-tenant-id'] as string;
+    if (!tenantId) return reply.status(400).send({ error: 'x-tenant-id header is required' });
     const result = await closeMonitor.checkReadiness(tenantId);
     return reply.send(result);
   });
 
   app.get('/health', async () => ({ status: 'ok', service: 'eom-service' }));
+
+  // ── Service Day-End stubs (NS-004 / CF-001) ────────────────────────────────
+  // Service Program 6 day-end is a separate domain from accounting EOM close.
+  // These stubs satisfy the frontend until a dedicated service-day-end-service exists.
+  app.get('/api/v1/service/day-end/readiness', async (request, reply) => {
+    const tenantId = request.headers['x-tenant-id'] as string;
+    if (!tenantId) return reply.status(400).send({ error: 'x-tenant-id header is required' });
+    return reply.send({
+      tenantId,
+      ready: true,
+      checks: [
+        { name: 'Open ROs', passed: true, count: 0 },
+        { name: 'Unposted Cash', passed: true, count: 0 },
+        { name: 'Parts Inventory', passed: true, count: 0 },
+      ],
+      lastClose: null,
+      message: 'Service day-end service not yet deployed — stub response',
+    });
+  });
+
+  app.get('/api/v1/service/day-end/history', async (request, reply) => {
+    const tenantId = request.headers['x-tenant-id'] as string;
+    if (!tenantId) return reply.status(400).send({ error: 'x-tenant-id header is required' });
+    return reply.send({ data: [], total: 0, page: 1, limit: 10 });
+  });
+
+  app.post('/api/v1/service/day-end/close', async (request, reply) => {
+    const tenantId = request.headers['x-tenant-id'] as string;
+    if (!tenantId) return reply.status(400).send({ error: 'x-tenant-id header is required' });
+    return reply.status(503).send({ error: 'Service day-end service not yet deployed' });
+  });
 
   const outboxProcessor = new OutboxProcessor(
     eventPublisher,
@@ -125,8 +176,14 @@ async function bootstrap() {
   await app.listen({ port, host: '0.0.0.0' });
   logger.info(`eom-service listening on :${port}`);
 
-  closeMonitor.startScheduledMonitoring('tenant-kunes');
-  logger.info('Close monitor started');
+  // Scheduled monitoring tenant is configured via env var (no hardcoded tenant)
+  const monitorTenantId = process.env['MONITOR_TENANT_ID'];
+  if (monitorTenantId) {
+    closeMonitor.startScheduledMonitoring(monitorTenantId);
+    logger.info('Close monitor started');
+  } else {
+    logger.warn('MONITOR_TENANT_ID not set — scheduled close monitoring disabled');
+  }
 
   outboxProcessor.startPolling(5000);
 }

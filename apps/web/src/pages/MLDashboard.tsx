@@ -5,7 +5,7 @@ import PageError from '../components/PageError';
 import AIInsight from '../components/AIInsight';
 
 // ─── Mini bar chart (pure CSS, no library) ───
-function MiniBar({ value, max, color = 'bg-blue-500' }: { value: number; max: number; color?: string }) {
+function MiniBar({ value, max, color = 'bg-brand-light0' }: { value: number; max: number; color?: string }) {
   const pct = Math.min(Math.max((value / max) * 100, 0), 100);
   return (
     <div className="w-full bg-gray-100 rounded-full h-2.5">
@@ -21,7 +21,7 @@ function SeverityBadge({ level }: { level: string }) {
     MEDIUM: 'bg-yellow-100 text-yellow-700',
     WARNING: 'bg-yellow-100 text-yellow-700',
     LOW: 'bg-green-100 text-green-700',
-    INFO: 'bg-blue-100 text-blue-700',
+    INFO: 'bg-brand-light text-brand',
   };
   return <span className={`px-2 py-0.5 rounded text-xs font-semibold ${colors[level] ?? 'bg-gray-100 text-gray-600'}`}>{level}</span>;
 }
@@ -99,7 +99,7 @@ export default function MLDashboard() {
         </div>
         <div className="bg-white rounded-lg shadow p-4 border-l-4 border-blue-500">
           <div className="text-xs text-gray-500 font-medium">Overall Accuracy</div>
-          <div className="text-2xl font-bold text-blue-700">{Math.round((accuracy?.accuracy ?? 0) * 100)}%</div>
+          <div className="text-2xl font-bold text-brand">{Math.round((accuracy?.accuracy ?? 0) * 100)}%</div>
           <div className="text-xs text-gray-400 mt-1">{accuracy?.totalPredictions?.toLocaleString()} predictions</div>
         </div>
         <div className="bg-white rounded-lg shadow p-4 border-l-4 border-amber-500">
@@ -185,7 +185,7 @@ export default function MLDashboard() {
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-sm">Revenue Forecast — Double Exponential Smoothing</h3>
           <div className="flex items-center gap-3 text-xs text-gray-400">
-            <span>■ <span className="text-blue-600">Historical</span></span>
+            <span>■ <span className="text-brand">Historical</span></span>
             <span>■ <span className="text-purple-600">Forecast</span></span>
             <span className="text-gray-300">|</span>
             <span>Model Accuracy: {rv.model?.accuracy ? Math.round(rv.model.accuracy * 100) + '%' : '-'}</span>
@@ -194,7 +194,7 @@ export default function MLDashboard() {
         {/* Revenue chart as bars */}
         <div className="flex items-end gap-1 h-40 mb-2">
           {(rv.history ?? []).map((h: any) => {
-            const maxRev = Math.max(...[...rv.history, ...rv.forecast].map((d: any) => d.revenue || d.upper || 0));
+            const maxRev = Math.max(...[...(rv.history ?? []), ...(rv.forecast ?? [])].map((d: any) => d.revenue || d.upper || 0));
             return (
               <div key={h.period} className="flex-1 flex flex-col items-center justify-end">
                 <div className="w-full bg-blue-400 rounded-t transition-all" style={{ height: `${(h.revenue / maxRev) * 140}px` }} title={`$${h.revenue.toLocaleString()}`} />
@@ -202,7 +202,7 @@ export default function MLDashboard() {
             );
           })}
           {(rv.forecast ?? []).map((f: any) => {
-            const maxRev = Math.max(...[...rv.history, ...rv.forecast].map((d: any) => d.revenue || d.upper || 0));
+            const maxRev = Math.max(...[...(rv.history ?? []), ...(rv.forecast ?? [])].map((d: any) => d.revenue || d.upper || 0));
             return (
               <div key={f.period} className="flex-1 flex flex-col items-center justify-end">
                 <div className="w-full bg-purple-400/70 border-2 border-dashed border-purple-500 rounded-t transition-all" style={{ height: `${(f.revenue / maxRev) * 140}px` }} title={`$${f.revenue.toLocaleString()} (±${Math.round((1 - f.confidence) * 100)}%)`} />
@@ -217,7 +217,7 @@ export default function MLDashboard() {
         </div>
         {rv.summary && (
           <div className="grid grid-cols-4 gap-4 mt-4 pt-3 border-t">
-            <div className="text-center"><div className="text-xs text-gray-500">Avg Monthly</div><div className="font-bold text-blue-700">${(rv.summary.avgMonthlyRevenue ?? 0).toLocaleString()}</div></div>
+            <div className="text-center"><div className="text-xs text-gray-500">Avg Monthly</div><div className="font-bold text-brand">${(rv.summary.avgMonthlyRevenue ?? 0).toLocaleString()}</div></div>
             <div className="text-center"><div className="text-xs text-gray-500">Growth Rate</div><div className="font-bold text-green-700">{rv.summary.growthRate ?? 0}%</div></div>
             <div className="text-center"><div className="text-xs text-gray-500">Next Month Forecast</div><div className="font-bold text-purple-700">${(rv.summary.nextMonthForecast ?? 0).toLocaleString()}</div></div>
             <div className="text-center"><div className="text-xs text-gray-500">Quarter Forecast</div><div className="font-bold text-indigo-700">${(rv.summary.quarterForecast ?? 0).toLocaleString()}</div></div>
@@ -268,9 +268,9 @@ export default function MLDashboard() {
               <div className="text-lg font-bold text-green-700">${(dl.summary?.totalNetProfit ?? 0).toLocaleString()}</div>
               <div className="text-[10px] text-green-600">Total Net Profit</div>
             </div>
-            <div className="text-center bg-blue-50 rounded p-2">
-              <div className="text-lg font-bold text-blue-700">{dl.summary?.avgScore ?? 0}</div>
-              <div className="text-[10px] text-blue-600">Avg Score</div>
+            <div className="text-center bg-brand-light rounded p-2">
+              <div className="text-lg font-bold text-brand">{dl.summary?.avgScore ?? 0}</div>
+              <div className="text-[10px] text-brand">Avg Score</div>
             </div>
             <div className="text-center bg-red-50 rounded p-2">
               <div className="text-lg font-bold text-red-700">{dl.summary?.highRiskDeals ?? 0}</div>
@@ -300,7 +300,7 @@ export default function MLDashboard() {
         <div className="bg-white rounded-lg shadow p-5">
           <h3 className="font-semibold text-sm mb-3">Technician Productivity Prediction</h3>
           <div className="flex items-center gap-4 mb-3 text-center">
-            <div className="flex-1 bg-blue-50 rounded p-2"><div className="text-lg font-bold text-blue-700">{tc.summary?.avgEfficiency ?? 0}</div><div className="text-[10px] text-blue-600">Avg Efficiency</div></div>
+            <div className="flex-1 bg-brand-light rounded p-2"><div className="text-lg font-bold text-brand">{tc.summary?.avgEfficiency ?? 0}</div><div className="text-[10px] text-brand">Avg Efficiency</div></div>
             <div className="flex-1 bg-green-50 rounded p-2"><div className="text-lg font-bold text-green-700">${(tc.summary?.totalRevenue ?? 0).toLocaleString()}</div><div className="text-[10px] text-green-600">Total Revenue</div></div>
             <div className="flex-1 bg-purple-50 rounded p-2"><div className="text-lg font-bold text-purple-700">{tc.summary?.totalROs ?? 0}</div><div className="text-[10px] text-purple-600">Total ROs</div></div>
           </div>
@@ -434,7 +434,7 @@ export default function MLDashboard() {
                     <span className="text-xs font-medium text-gray-600">{type.replace(/_/g, ' ')}</span>
                     <span className="text-xs font-bold">{Math.round(stats.accuracy * 100)}%</span>
                   </div>
-                  <MiniBar value={stats.accuracy * 100} max={100} color={stats.accuracy >= 0.9 ? 'bg-green-500' : stats.accuracy >= 0.8 ? 'bg-blue-500' : 'bg-yellow-500'} />
+                  <MiniBar value={stats.accuracy * 100} max={100} color={stats.accuracy >= 0.9 ? 'bg-green-500' : stats.accuracy >= 0.8 ? 'bg-brand-light0' : 'bg-yellow-500'} />
                   <div className="text-[10px] text-gray-400 mt-0.5">{stats.correct}/{stats.total} correct</div>
                 </div>
               </div>

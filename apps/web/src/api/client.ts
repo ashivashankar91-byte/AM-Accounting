@@ -74,6 +74,75 @@ export const glApi = {
   getIncomeStatement: (year: number, month: number) => apiFetch<any>(`/api/v1/gl/income-statement?year=${year}&month=${month}`),
   getCashFlowStatement: (year: number, month: number) => apiFetch<any>(`/api/v1/gl/cash-flow-statement?year=${year}&month=${month}`),
   getPeriods: () => apiFetch<any[]>('/api/v1/gl/periods'),
+  // Sales Tax Accrual (Phase 1)
+  configureTaxJurisdiction: (data: any) => apiFetch<any>('/api/v1/gl/tax/configure', { method: 'POST', body: JSON.stringify(data) }),
+  listTaxRates: (params?: string) => apiFetch<any[]>(`/api/v1/gl/tax/rates${params ? `?${params}` : ''}`),
+  accrueTax: (data: any) => apiFetch<any>('/api/v1/gl/tax/accrue', { method: 'POST', body: JSON.stringify(data) }),
+  getTaxLiabilityReport: (params?: string) => apiFetch<any>(`/api/v1/gl/tax/liability-report${params ? `?${params}` : ''}`),
+  // 1099 Contractor Reports (Phase 1)
+  generate1099Forms: (data: any) => apiFetch<any>('/api/v1/ap/1099/generate', { method: 'POST', body: JSON.stringify(data) }),
+  list1099Records: (params?: string) => apiFetch<any[]>(`/api/v1/ap/1099/review${params ? `?${params}` : ''}`),
+  update1099Record: (id: string, data: any) => apiFetch<any>(`/api/v1/ap/1099/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  export1099Forms: (data: any) => apiFetch<any>('/api/v1/ap/1099/export', { method: 'POST', body: JSON.stringify(data) }),
+  get1099PDF: (id: string) => apiFetch<any>(`/api/v1/ap/1099/${id}/pdf`),
+  // Journal Sources
+  getSources: (params?: string) => apiFetch<any[]>(`/api/v1/gl/admin/journal-sources${params ? `?${params}` : ''}`),
+  getSourceByCode: (code: string) => apiFetch<any>(`/api/v1/gl/admin/journal-sources?sourceCode=${encodeURIComponent(code)}`),
+  // Journal Templates (S3-02/03)
+  getTemplates: (params?: string) => apiFetch<any[]>(`/api/v1/gl/admin/journal-templates${params ? `?${params}` : ''}`),
+  getTemplate: (id: string) => apiFetch<any>(`/api/v1/gl/admin/journal-templates/${id}`),
+  createTemplate: (data: any) => apiFetch<any>('/api/v1/gl/admin/journal-templates', { method: 'POST', body: JSON.stringify(data) }),
+  updateTemplate: (id: string, data: any) => apiFetch<any>(`/api/v1/gl/admin/journal-templates/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteTemplate: (id: string) => apiFetch<void>(`/api/v1/gl/admin/journal-templates/${id}`, { method: 'DELETE' }),
+  // Journal Entry Reverse
+  reverseEntry: (id: string, data: any) => apiFetch<any>(`/api/v1/gl/journal-entries/${id}/reverse`, { method: 'POST', body: JSON.stringify(data) }),
+  // Floor Plan Financing (Phase 1)
+  registerFloorPlanUnit: (data: any) => apiFetch<any>('/api/v1/gl/floor-plan/units', { method: 'POST', body: JSON.stringify(data) }),
+  listFloorPlanUnits: (params?: string) => apiFetch<any>(`/api/v1/gl/floor-plan/units${params ? `?${params}` : ''}`),
+  accrueFloorPlanInterest: (data: any) => apiFetch<any>('/api/v1/gl/floor-plan/accrue-interest', { method: 'POST', body: JSON.stringify(data) }),
+  payoffFloorPlanUnit: (unitId: string, data: any) => apiFetch<any>(`/api/v1/gl/floor-plan/payoff/${unitId}`, { method: 'POST', body: JSON.stringify(data) }),
+  getFloorPlanAgingReport: (params?: string) => apiFetch<any>(`/api/v1/gl/floor-plan/aging-report${params ? `?${params}` : ''}`),
+  // S7-01: Vehicle Transfers
+  listVehicleTransfers: (params?: string) => apiFetch<any[]>(`/api/v1/gl/vehicle-transfers${params ? `?${params}` : ''}`),
+  getVehicleTransfer: (id: string) => apiFetch<any>(`/api/v1/gl/vehicle-transfers/${id}`),
+  createVehicleTransfer: (data: any) => apiFetch<any>('/api/v1/gl/vehicle-transfers', { method: 'POST', body: JSON.stringify(data) }),
+  reverseVehicleTransfer: (id: string) => apiFetch<any>(`/api/v1/gl/vehicle-transfers/${id}/reverse`, { method: 'POST' }),
+  // S7-02: OEM Financial Statement
+  getOemMappings: (oem: string, year: number) => apiFetch<any[]>(`/api/v1/gl/fs/oem-mappings?oem=${oem}&year=${year}`),
+  bulkImportOemMappings: (data: any) => apiFetch<any>('/api/v1/gl/fs/oem-mappings/bulk', { method: 'POST', body: JSON.stringify(data) }),
+  updateOemMapping: (id: string, data: any) => apiFetch<any>(`/api/v1/gl/fs/oem-mappings/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  generateOemStatement: (data: any) => apiFetch<any>('/api/v1/gl/fs/oem-statement/generate', { method: 'POST', body: JSON.stringify(data) }),
+  // S7-05: Consolidated financial statements
+  getConsolidatedStatement: (params?: string) => apiFetch<any>(`/api/v1/gl/financial-statements/consolidated${params ? `?${params}` : ''}`),
+  // NS-005: FS Versions (up to 15 per tenant)
+  getFsVersions: () => apiFetch<any[]>('/api/v1/gl/fs/versions'),
+  createFsVersion: (data: any) => apiFetch<any>('/api/v1/gl/fs/versions', { method: 'POST', body: JSON.stringify(data) }),
+  updateFsVersion: (id: string, data: any) => apiFetch<any>(`/api/v1/gl/fs/versions/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  // NS-007: NCM20 upload (GM-specific, gated by ncm20_enabled in gl_system_config)
+  getNcm20Status: () => apiFetch<any>('/api/v1/gl/fs/ncm20/status'),
+  generateNcm20Upload: (period: string) => apiFetch<any>('/api/v1/gl/fs/ncm20/generate', { method: 'POST', body: JSON.stringify({ period }) }),
+  // NS-008: Archived FS Viewer — bypasses journal source security (BR-GL-006/DM-001)
+  getArchivedStatements: (params?: string) => apiFetch<any[]>(`/api/v1/gl/fs/archived${params ? `?${params}` : ''}`),
+  getArchivedStatement: (id: string) => apiFetch<any>(`/api/v1/gl/fs/archived/${id}`),
+  // NS-006: Fiscal year start config
+  getSystemConfig: () => apiFetch<any>('/api/v1/gl/admin/system-config'),
+  // Sprint B — GL Report endpoints (Programs 23, 24, 27, 28, 29)
+  // BR-GL-001/002: GL Trial Balance (Program 24) — 7-col CSV export: COMPNO,GL-ACCTN,GL-TYPE,TOT-PRIOR,TOT-CUR,TOT-YTD-I,CONTNO
+  getTrialBalanceDetail: (params?: string) => apiFetch<any>(`/api/v1/gl/reports/trial-balance${params ? `?${params}` : ''}`),
+  // BR-GL-009: Annual GL Summary (Program 27) — cleared after first-month close of new fiscal year
+  getAnnualGLSummary: (fiscalYear: number, company?: string, fromAccount?: string, toAccount?: string) =>
+    apiFetch<any>(`/api/v1/gl/reports/annual-summary?fiscalYear=${fiscalYear}${company ? `&company=${company}` : ''}${fromAccount ? `&fromAccount=${fromAccount}` : ''}${toAccount ? `&toAccount=${toAccount}` : ''}`),
+  // BR-GL-003: Detailed GL/P&L (Program 23) — journal source security: show *** ACCESS DENIED *** (not exclude)
+  getDetailedGL: (params?: string) => apiFetch<any[]>(`/api/v1/gl/reports/detailed${params ? `?${params}` : ''}`),
+  // BR-GL-007/008: Monthly Trans Journals (Program 28) — from/to must be same month; group by batch
+  getMonthlyTransJournals: (params?: string) => apiFetch<any[]>(`/api/v1/gl/reports/monthly-journals${params ? `?${params}` : ''}`),
+  // BR-GL-010: Autopost Report (Program 29 Option 1) — one-time print for prior dates
+  checkAutopostReportLog: (reportDate: string, company?: string) =>
+    apiFetch<{ printed: boolean; printedAt?: string; printedBy?: string }>(`/api/v1/gl/reports/autopost/check?date=${reportDate}${company ? `&company=${company}` : ''}`),
+  getAutopostReport: (reportDate: string, company?: string) =>
+    apiFetch<any[]>(`/api/v1/gl/reports/autopost?date=${reportDate}${company ? `&company=${company}` : ''}`),
+  // BR-GL-011: Cross Post Report (Program 29 Option 2) — same base account# on both debit+credit sides
+  getCrossPostReport: (params?: string) => apiFetch<any[]>(`/api/v1/gl/reports/cross-post${params ? `?${params}` : ''}`),
 };
 
 // Dashboard API
@@ -94,6 +163,8 @@ export const eomApi = {
   getPreview: () => apiFetch<any>('/api/v1/eom/preview'),
   close: (year: number, month: number) => apiFetch<any>('/api/v1/eom/close', { method: 'POST', body: JSON.stringify({ year, month }) }),
   getCloseById: (id: string) => apiFetch<any>(`/api/v1/eom/${id}`),
+  // NS-002: ACCT_065 archive progress — polls eom_archive_log every 2s while step is active
+  getArchiveLog: (closeId: string) => apiFetch<any[]>(`/api/v1/eom/${closeId}/archive-log`),
 };
 
 // Payroll API
@@ -105,6 +176,166 @@ export const payrollApi = {
   post: (id: string) => apiFetch<any>(`/api/v1/payroll/batches/${id}/post`, { method: 'POST' }),
   hold: (id: string, reason: string) => apiFetch<any>(`/api/v1/payroll/batches/${id}/hold`, { method: 'POST', body: JSON.stringify({ reason }) }),
   release: (id: string) => apiFetch<any>(`/api/v1/payroll/batches/${id}/release`, { method: 'POST' }),
+  // PAY-001: Start new run — backend enforces single-active-run-per-tenant (409 if IN_PROGRESS exists)
+  // PAY-002: check_date is immutable after creation
+  startRun: (data: { checkDate: string; payPeriodStart: string; payPeriodEnd: string; payFrequency: string }) =>
+    apiFetch<any>('/api/v1/payroll/runs', { method: 'POST', body: JSON.stringify(data) }),
+  // PAY-005: Load in-process run — returns locked_by/locked_at if another user holds the lock
+  loadInProcess: () => apiFetch<any>('/api/v1/payroll/runs/in-process'),
+  getRun: (runId: string) => apiFetch<any>(`/api/v1/payroll/runs/${runId}`),
+  listRuns: (params?: string) => apiFetch<any[]>(`/api/v1/payroll/runs${params ? `?${params}` : ''}`),
+  addChecks: (runId: string, data: any) => apiFetch<any>(`/api/v1/payroll/runs/${runId}/checks`, { method: 'POST', body: JSON.stringify(data) }),
+  importTime: (runId: string, data: any) => apiFetch<any>(`/api/v1/payroll/runs/${runId}/import-time`, { method: 'POST', body: JSON.stringify(data) }),
+  getCheckData: (runId: string, params?: string) => apiFetch<any[]>(`/api/v1/payroll/runs/${runId}/checks${params ? `?${params}` : ''}`),
+  updateCheck: (runId: string, checkId: string, data: any) => apiFetch<any>(`/api/v1/payroll/runs/${runId}/checks/${checkId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  validateRun: (runId: string) => apiFetch<any>(`/api/v1/payroll/runs/${runId}/validate`, { method: 'POST' }),
+  getSummary: (runId: string) => apiFetch<any>(`/api/v1/payroll/runs/${runId}/summary`),
+  // PAY-004: Finalize button gated on nacha_generated=true
+  generateNacha: (runId: string) => apiFetch<any>(`/api/v1/payroll/runs/${runId}/generate-nacha`, { method: 'POST' }),
+  finalizeRun: (runId: string, data?: any) => apiFetch<any>(`/api/v1/payroll/runs/${runId}/finalize`, { method: 'POST', body: JSON.stringify(data ?? {}) }),
+  // PAY-008/PAY-010: Wage bases breakdown (US_FEDERAL, EEFICA, EE_MEDICARE, STATE, FUTA, SUTA)
+  getWageBases: (runId: string) => apiFetch<any[]>(`/api/v1/payroll/runs/${runId}/wage-bases`),
+  exportReport: (runId: string, reportType: string) =>
+    apiFetch<any>(`/api/v1/payroll/runs/${runId}/export?type=${encodeURIComponent(reportType)}`, { method: 'POST' }),
+  // Commission Tracking (Phase 1)
+  listCommissionPlans: () => apiFetch<any[]>('/api/v1/payroll/commission-plans'),
+  createCommissionPlan: (data: any) => apiFetch<any>('/api/v1/payroll/commission-plans', { method: 'POST', body: JSON.stringify(data) }),
+  calculateCommission: (data: any) => apiFetch<any>('/api/v1/payroll/commissions/calculate', { method: 'POST', body: JSON.stringify(data) }),
+  listCommissions: (params?: string) => apiFetch<any[]>(`/api/v1/payroll/commissions${params ? `?${params}` : ''}`),
+  getCommissionReport: (params?: string) => apiFetch<any>(`/api/v1/payroll/commissions/report${params ? `?${params}` : ''}`),
+};
+
+// Payroll Reports API (Sprint B — NS-023 through NS-033)
+export const payrollReportApi = {
+  // NS-023: Workers Comp Report (BR-PAY-006 — up to 18 excludable earning code types)
+  getWorkersComp: (params?: string) => apiFetch<any>(`/api/v1/payroll/reports/workers-comp${params ? `?${params}` : ''}`),
+  getWorkersCompExclusions: () => apiFetch<any[]>('/api/v1/payroll/workers-comp-exclusions'),
+  // NS-024: Employee History
+  getEmployeeHistory: (employeeId: string, params?: string) =>
+    apiFetch<any[]>(`/api/v1/payroll/reports/employee-history/${employeeId}${params ? `?${params}` : ''}`),
+  // NS-025: Earnings/Deductions — BR-PAY-007: XOR (Earnings OR Deductions, not both)
+  getEarningsDeductions: (params?: string) => apiFetch<any>(`/api/v1/payroll/reports/earnings-deductions${params ? `?${params}` : ''}`),
+  // NS-026: Tax Summary
+  getTaxSummary: (runId: string) => apiFetch<any>(`/api/v1/payroll/reports/tax-summary/${runId}`),
+  // NS-027: 401k Report
+  get401k: (params?: string) => apiFetch<any[]>(`/api/v1/payroll/reports/401k${params ? `?${params}` : ''}`),
+  // NS-028: EMPOWER Export (retirement plan provider)
+  generateEmpowerExport: (runId: string) => apiFetch<any>(`/api/v1/payroll/reports/empower/${runId}`, { method: 'POST' }),
+  // NS-029: Employee/Wage Export (simple + advanced configurable columns)
+  getEmployeeWageExport: (runId: string, mode: 'SIMPLE' | 'ADVANCED', columns?: string[]) =>
+    apiFetch<any>(`/api/v1/payroll/reports/wage-export/${runId}`, {
+      method: 'POST',
+      body: JSON.stringify({ mode, columns }),
+    }),
+  // NS-030: Positive Pay (payroll version — BR-PAY-008: separate from AP Positive Pay)
+  generatePayrollPositivePay: (runId: string, bankAccount: string, format: string) =>
+    apiFetch<any>(`/api/v1/payroll/reports/positive-pay/${runId}`, {
+      method: 'POST',
+      body: JSON.stringify({ bankAccount, format }),
+    }),
+  // NS-031: NACHA Standalone (BR-PAY-008: separate from Step 7 NACHA; for finalized runs only)
+  regenerateNacha: (runId: string) => apiFetch<any>(`/api/v1/payroll/runs/${runId}/regenerate-nacha`, { method: 'POST' }),
+  // NS-032: Employee Info Report (BR-PAY-009: 3-layer security — permission + dept + SSN mask)
+  getEmployeeInfo: (params?: string) => apiFetch<any[]>(`/api/v1/payroll/reports/employee-info${params ? `?${params}` : ''}`),
+  // NS-033: Government Wage (Quarterly) Report — Form 941 + SUTA
+  getGovernmentWage: (quarter: number, year: number, params?: string) =>
+    apiFetch<any>(`/api/v1/payroll/reports/government-wage?quarter=${quarter}&year=${year}${params ? `&${params}` : ''}`),
+};
+
+// GL Inquiry API (Sprint C — Program 31: NS-046/047/048)
+export const glInquiryApi = {
+  // GL Inquiry: account transactions with date range, Open Month = accounting period not calendar
+  getGLInquiry: (account: string, params?: string) =>
+    apiFetch<any>(`/api/v1/gl/inquiry?account=${encodeURIComponent(account)}${params ? `&${params}` : ''}`),
+  // Multi-GL: fetch multiple accounts in one call
+  getMultiGLInquiry: (accounts: string[], params?: string) =>
+    apiFetch<any>(`/api/v1/gl/inquiry/multi?accounts=${accounts.map(encodeURIComponent).join(',')}${params ? `&${params}` : ''}`),
+  // User preferences for GL Inquiry (view mode, pref date, pref sort)
+  getInquiryPrefs: () => apiFetch<any>('/api/v1/user/preferences/gl-inquiry'),
+  saveInquiryPrefs: (prefs: any) => apiFetch<any>('/api/v1/user/preferences/gl-inquiry', { method: 'PUT', body: JSON.stringify(prefs) }),
+  // Schedule Inquiry (NS-046)
+  getScheduleInquiry: (scheduleId: string, params?: string) =>
+    apiFetch<any>(`/api/v1/gl/inquiry/schedules/${scheduleId}${params ? `?${params}` : ''}`),
+  getScheduleGLMapping: (scheduleId: string) =>
+    apiFetch<{ glAccounts: { accountNum: string; label: string }[] }>(`/api/v1/gl/inquiry/schedules/${scheduleId}/gl-mapping`),
+  getScheduleDetail: (scheduleId: string, controlNum: string, params?: string) =>
+    apiFetch<any[]>(`/api/v1/gl/inquiry/schedules/${scheduleId}/detail?controlNum=${controlNum}${params ? `&${params}` : ''}`),
+  // Transaction Inquiry (NS-047) — one row per transaction, Account col = ALL touched accounts CSV
+  getTransactionInquiry: (params?: string) =>
+    apiFetch<any[]>(`/api/v1/gl/inquiry/transactions${params ? `?${params}` : ''}`),
+  // Transaction Detail Popup (EU-008) — shared across GL/Schedule/Transaction inquiry
+  getTransactionDetail: (transactionId: string) =>
+    apiFetch<any>(`/api/v1/gl/inquiry/transactions/${transactionId}/detail`),
+};
+
+// DCS / MFG Communications API (NS-034 — Program 30)
+export const dcsApi = {
+  getStatus: (oem: string) => apiFetch<any>(`/api/v1/dcs/status?oem=${encodeURIComponent(oem)}`),
+  getHistory: (params?: string) => apiFetch<any[]>(`/api/v1/dcs/history${params ? `?${params}` : ''}`),
+  runCommunication: (oem: string, type: 'Import' | 'Export' | 'Status Check') =>
+    apiFetch<any>('/api/v1/dcs/run', { method: 'POST', body: JSON.stringify({ oem, type }) }),
+};
+
+// Parts GL Account Mappings API (NS-035 — BR-SGL-003: 15 sale types × franchise + 5 misc)
+export const partsGLApi = {
+  getMappings: (franchise: string) => apiFetch<any>(`/api/v1/gl/parts-gl-accounts?franchise=${encodeURIComponent(franchise)}`),
+  saveMappings: (franchise: string, data: any) =>
+    apiFetch<any>('/api/v1/gl/parts-gl-accounts', { method: 'PUT', body: JSON.stringify({ franchise, ...data }) }),
+};
+
+// Service GL Account Mappings API (NS-036 — BR-SGL-001/002: GL Group + VIN Prefix × 16 slots)
+export const serviceGLApi = {
+  getMappings: (glGroup: number, vinPrefix: string) =>
+    apiFetch<any>(`/api/v1/gl/service-gl-accounts?glGroup=${glGroup}&vinPrefix=${encodeURIComponent(vinPrefix)}`),
+  saveMappings: (glGroup: number, vinPrefix: string, data: any) =>
+    apiFetch<any>('/api/v1/gl/service-gl-accounts', { method: 'PUT', body: JSON.stringify({ glGroup, vinPrefix, ...data }) }),
+};
+
+// Technician / Service Advisor API (NS-037, NS-038 — Service Program 12)
+export const technicianApi = {
+  list: (roleType: 'TECH' | 'ADVISOR', params?: string) =>
+    apiFetch<any[]>(`/api/v1/service/technicians?role=${roleType}${params ? `&${params}` : ''}`),
+  getById: (id: string) => apiFetch<any>(`/api/v1/service/technicians/${id}`),
+  create: (data: any) => apiFetch<any>('/api/v1/service/technicians', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: any) => apiFetch<any>(`/api/v1/service/technicians/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deactivate: (id: string) => apiFetch<any>(`/api/v1/service/technicians/${id}/deactivate`, { method: 'PATCH' }),
+  getPayRates: (id: string) => apiFetch<any[]>(`/api/v1/service/technicians/${id}/pay-rates`),
+  getManufacturerIds: (id: string) => apiFetch<any[]>(`/api/v1/service/technicians/${id}/manufacturer-ids`),
+};
+
+// Service History API (NS-045 — Service Program 8)
+export const serviceHistoryApi = {
+  search: (params?: string) => apiFetch<any[]>(`/api/v1/service/history${params ? `?${params}` : ''}`),
+  getRO: (roNum: string) => apiFetch<any>(`/api/v1/service/history/${encodeURIComponent(roNum)}`),
+  getROLines: (roNum: string) => apiFetch<any[]>(`/api/v1/service/history/${encodeURIComponent(roNum)}/lines`),
+};
+
+// Report/Mate API (NS-039 through NS-043)
+export const reportMateApi = {
+  getSavedReports: () => apiFetch<any[]>('/api/v1/reports/custom'),
+  saveReport: (data: any) => apiFetch<any>('/api/v1/reports/custom', { method: 'POST', body: JSON.stringify(data) }),
+  updateReport: (id: string, data: any) => apiFetch<any>(`/api/v1/reports/custom/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteReport: (id: string) => apiFetch<void>(`/api/v1/reports/custom/${id}`, { method: 'DELETE' }),
+  runReport: (id: string, params: any) =>
+    apiFetch<any>(`/api/v1/reports/custom/${id}/run`, { method: 'POST', body: JSON.stringify(params) }),
+  scheduleReport: (id: string, schedule: any) =>
+    apiFetch<any>(`/api/v1/reports/custom/${id}/schedule`, { method: 'POST', body: JSON.stringify(schedule) }),
+  exportReport: (id: string, format: 'CSV' | 'XLSX') =>
+    apiFetch<any>(`/api/v1/reports/custom/${id}/export?format=${format}`),
+};
+
+// DOC/Mate API (NS-044 — BR-GL-005/006: journal source security BYPASSED for archived docs)
+export const docMateApi = {
+  search: (params?: string) => apiFetch<any[]>(`/api/v1/docmate/documents${params ? `?${params}` : ''}`),
+  getDocument: (id: string) => apiFetch<any>(`/api/v1/docmate/documents/${id}`),
+  downloadPdf: (id: string) => apiFetch<any>(`/api/v1/docmate/documents/${id}/pdf`),
+};
+
+// Service Day-End API (NS-004 / CF-001: day-end is Service Program 6, not Accounting EOM)
+export const serviceDayEndApi = {
+  getReadiness: () => apiFetch<any>('/api/v1/service/day-end/readiness'),
+  close: () => apiFetch<any>('/api/v1/service/day-end/close', { method: 'POST' }),
+  getHistory: (params?: string) => apiFetch<any[]>(`/api/v1/service/day-end/history${params ? `?${params}` : ''}`),
 };
 
 // Recon API
@@ -119,10 +350,35 @@ export const reconApi = {
 
 // APAR API
 export const aparApi = {
-  getAR: () => apiFetch<any[]>('/api/v1/apar/ar'),
+  getAR: (params?: string) => apiFetch<any[]>(`/api/v1/apar/ar${params ? `?${params}` : ''}`),
   createAR: (data: any) => apiFetch<any>('/api/v1/apar/ar', { method: 'POST', body: JSON.stringify(data) }),
+  voidReceipt: (id: string, data: any) => apiFetch<any>(`/api/v1/apar/ar/${id}/void`, { method: 'POST', body: JSON.stringify(data) }),
+  postReceipt: (id: string) => apiFetch<any>(`/api/v1/apar/ar/${id}/post`, { method: 'POST' }),
   getAP: () => apiFetch<any[]>('/api/v1/apar/ap'),
   createAP: (data: any) => apiFetch<any>('/api/v1/apar/ap', { method: 'POST', body: JSON.stringify(data) }),
+  // Vendor maintenance (S3-07)
+  getVendors: (params?: string) => apiFetch<any[]>(`/api/v1/apar/vendors${params ? `?${params}` : ''}`),
+  getVendor: (id: string) => apiFetch<any>(`/api/v1/apar/vendors/${id}`),
+  createVendor: (data: any) => apiFetch<any>('/api/v1/apar/vendors', { method: 'POST', body: JSON.stringify(data) }),
+  updateVendor: (id: string, data: any) => apiFetch<any>(`/api/v1/apar/vendors/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deactivateVendor: (id: string) => apiFetch<any>(`/api/v1/apar/vendors/${id}`, { method: 'PATCH', body: JSON.stringify({ isActive: false }) }),
+  // AP Payments (S3-08/09)
+  getPayments: (params?: string) => apiFetch<any[]>(`/api/v1/apar/ap-payments${params ? `?${params}` : ''}`),
+  voidPayment: (id: string, data: any) => apiFetch<any>(`/api/v1/apar/ap-payments/${id}/void`, { method: 'POST', body: JSON.stringify(data) }),
+  // Customer Master (S5-01)
+  getCustomers: (params?: string) => apiFetch<any[]>(`/api/v1/apar/customers${params ? `?${params}` : ''}`),
+  getCustomer: (id: string) => apiFetch<any>(`/api/v1/apar/customers/${id}`),
+  createCustomer: (data: any) => apiFetch<any>('/api/v1/apar/customers', { method: 'POST', body: JSON.stringify(data) }),
+  updateCustomer: (id: string, data: any) => apiFetch<any>(`/api/v1/apar/customers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deactivateCustomer: (id: string) => apiFetch<any>(`/api/v1/apar/customers/${id}/deactivate`, { method: 'PATCH' }),
+  // S6-12: AP invoice queries for reports
+  getInvoices: (params?: string) => apiFetch<any[]>(`/api/v1/apar/ap${params ? `?${params}` : ''}`),
+  // S7-03: ACH / NACHA generation
+  generateAch: (data: { bankAccountId: string; paymentIds: string[] }) => apiFetch<any>('/api/v1/ap/payments/generate-ach', { method: 'POST', body: JSON.stringify(data) }),
+  // S7-06: Vendor duplicate tax ID check
+  getVendorsByTaxId: (taxId: string) => apiFetch<any[]>(`/api/v1/apar/vendors?taxId=${encodeURIComponent(taxId)}`),
+  // S7-07: Vendor 1099 YTD payments
+  getVendorYtdPayments: (vendorId: string) => apiFetch<any>(`/api/v1/apar/vendors/${vendorId}/ytd-payments`),
 };
 
 // Agents API
@@ -210,10 +466,13 @@ export const apApi = {
 
 // Cash Receipts API
 export const cashReceiptApi = {
-  list: () => apiFetch<any[]>('/api/v1/cash-receipts'),
+  list: (params?: string) => apiFetch<any[]>(`/api/v1/cash-receipts${params ? `?${params}` : ''}`),
   create: (data: any) => apiFetch<any>('/api/v1/cash-receipts', { method: 'POST', body: JSON.stringify(data) }),
-  getDeposits: () => apiFetch<any[]>('/api/v1/cash-receipts/deposits'),
+  void: (id: string, data: any) => apiFetch<any>(`/api/v1/cash-receipts/${id}/void`, { method: 'POST', body: JSON.stringify(data) }),
+  getDeposits: (params?: string) => apiFetch<any[]>(`/api/v1/cash-receipts/deposits${params ? `?${params}` : ''}`),
   createDeposit: (data: any) => apiFetch<any>('/api/v1/cash-receipts/deposits', { method: 'POST', body: JSON.stringify(data) }),
+  addReceiptsToDeposit: (depositId: string, receiptIds: string[]) => apiFetch<any>(`/api/v1/cash-receipts/deposits/${depositId}/receipts`, { method: 'POST', body: JSON.stringify({ receiptIds }) }),
+  allocateDeposit: (depositId: string, glAccountId: string) => apiFetch<any>(`/api/v1/cash-receipts/deposits/${depositId}/allocate`, { method: 'POST', body: JSON.stringify({ glAccountId }) }),
 };
 
 // Reports API
@@ -251,9 +510,20 @@ export const setupApi = {
 
 // Purchase Orders API
 export const purchaseOrderApi = {
-  list: (params?: string) => apiFetch<any[]>(`/api/v1/purchase-orders${params ? `?${params}` : ''}`),
-  create: (data: any) => apiFetch<any>('/api/v1/purchase-orders', { method: 'POST', body: JSON.stringify(data) }),
+  list:    (params?: string) => apiFetch<any[]>(`/api/v1/purchase-orders${params ? `?${params}` : ''}`),
+  getById: (id: string) => apiFetch<any>(`/api/v1/purchase-orders/${id}`),
+  create:  (data: any) => apiFetch<any>('/api/v1/purchase-orders', { method: 'POST', body: JSON.stringify(data) }),
+  submit:  (id: string) => apiFetch<any>(`/api/v1/purchase-orders/${id}/submit`, { method: 'POST' }),
+  approve: (id: string, data?: any) => apiFetch<any>(`/api/v1/purchase-orders/${id}/approve`, { method: 'POST', body: JSON.stringify(data ?? {}) }),
+  close:   (id: string) => apiFetch<any>(`/api/v1/purchase-orders/${id}/close`, { method: 'POST' }),
+  // S6-01: Cancel (DRAFT only, no PO# consumed) vs Void (SUBMITTED/APPROVED, PO# consumed)
+  cancel:  (id: string, reason?: string) => apiFetch<any>(`/api/v1/purchase-orders/${id}/cancel`, { method: 'POST', body: JSON.stringify({ reason }) }),
+  void:    (id: string, reason?: string) => apiFetch<any>(`/api/v1/purchase-orders/${id}/void`,   { method: 'POST', body: JSON.stringify({ reason }) }),
   receive: (id: string, data: any) => apiFetch<any>(`/api/v1/purchase-orders/${id}/receive`, { method: 'POST', body: JSON.stringify(data) }),
+  // S6-08: 1099 IRS FIRE format export
+  export1099FIRE: (data: any) => apiFetch<any>('/api/v1/ap/1099/export-fire', { method: 'POST', body: JSON.stringify(data) }),
+  // S6-09: Positive Pay export
+  positivePayExport: (data: any) => apiFetch<any>('/api/v1/ap/payments/positive-pay-export', { method: 'POST', body: JSON.stringify(data) }),
 };
 
 // Vendor API

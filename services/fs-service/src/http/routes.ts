@@ -226,5 +226,103 @@ export function fsRoutes(svc: FSService) {
         return reply.send(await svc.upsertSupplementalData({ tenantId, ...body }));
       } catch (err) { return handleError(reply, err); }
     });
+
+    // ── Financial Statement Configuration (BUILD-011) ────────────────────────
+
+    const FormatCodeCreateSchema = z.object({
+      mfgCode: z.string().min(1).max(20),
+      formatName: z.string().min(1),
+      description: z.string().optional(),
+      isActive: z.boolean().default(true),
+    });
+
+    app.post<{ Body: z.infer<typeof FormatCodeCreateSchema> }>('/admin/format-codes', async (request, reply) => {
+      try {
+        const tenantId = getTenantId(request);
+        const body = FormatCodeCreateSchema.parse(request.body);
+        return reply.status(201).send(await svc.createFormatCode(tenantId, body));
+      } catch (err) { return handleError(reply, err); }
+    });
+
+    app.put<{ Params: { id: string } }>('/admin/format-codes/:id', async (request, reply) => {
+      try {
+        const tenantId = getTenantId(request);
+        const body = FormatCodeCreateSchema.partial().parse(request.body);
+        return reply.send(await svc.updateFormatCode(tenantId, request.params.id, body));
+      } catch (err) { return handleError(reply, err); }
+    });
+
+    app.get('/admin/format-codes', async (request, reply) => {
+      try {
+        const tenantId = getTenantId(request);
+        return reply.send(await svc.listFormatCodes(tenantId));
+      } catch (err) { return handleError(reply, err); }
+    });
+
+    const TemplateImportSchema = z.object({
+      mfgCode: z.string().min(1).max(20),
+      year: z.number().int().min(2000).max(2100),
+      parameters: z.array(z.record(z.any())),
+    });
+
+    app.post<{ Body: z.infer<typeof TemplateImportSchema> }>('/admin/templates/import', async (request, reply) => {
+      try {
+        const tenantId = getTenantId(request);
+        const body = TemplateImportSchema.parse(request.body);
+        return reply.status(201).send(await svc.importTemplate(tenantId, body.mfgCode, body.year, body.parameters));
+      } catch (err) { return handleError(reply, err); }
+    });
+
+    app.get<{ Params: { mfgCode: string; year: string } }>('/admin/templates/:mfgCode/:year', async (request, reply) => {
+      try {
+        const tenantId = getTenantId(request);
+        const { mfgCode, year } = request.params;
+        return reply.send(await svc.getTemplate(tenantId, mfgCode, parseInt(year)));
+      } catch (err) { return handleError(reply, err); }
+    });
+
+    const FSSetupSchema = z.object({
+      mfgCode: z.string().min(1).max(20),
+      year: z.number().int().min(2000).max(2100),
+      calendarOrFiscal: z.enum(['CALENDAR', 'FISCAL']).default('FISCAL'),
+      statementOption: z.string().optional(),
+      transmissionGroup: z.string().optional(),
+    });
+
+    app.post<{ Body: z.infer<typeof FSSetupSchema> }>('/admin/setup', async (request, reply) => {
+      try {
+        const tenantId = getTenantId(request);
+        const body = FSSetupSchema.parse(request.body);
+        return reply.status(201).send(await svc.setupFS(tenantId, body));
+      } catch (err) { return handleError(reply, err); }
+    });
+
+    // GET /status/:tenantId/:period/:oemCode — FS statement submission status
+    app.get<{ Params: { tenantId: string; period: string; oemCode: string } }>('/status/:tenantId/:period/:oemCode', async (request, reply) => {
+      try {
+        const { tenantId: paramTenant, period, oemCode } = request.params;
+        const tenantId = getTenantId(request);
+        const [yearStr, monthStr] = period.split('-');
+        const year = parseInt(yearStr ?? '2026');
+        const month = parseInt(monthStr ?? '1');
+        const statements = await svc.listStatements(paramTenant ?? tenantId);
+        const matching = statements.filter((s: any) =>
+          s.oemCode?.toUpperCase() === oemCode.toUpperCase() &&
+          s.periodYear === year &&
+          s.periodMonth === month
+        );
+        const latest = matching[0];
+        return reply.send({
+          tenantId: paramTenant ?? tenantId,
+          period,
+          oemCode: oemCode.toUpperCase(),
+          status: latest?.status ?? 'NOT_STARTED',
+          statementId: latest?.id ?? null,
+          submittedAt: latest?.submittedAt ?? null,
+          reviewedAt: latest?.reviewedAt ?? null,
+          updatedAt: latest?.updatedAt ?? new Date().toISOString(),
+        });
+      } catch (err) { return handleError(reply, err); }
+    });
   };
 }

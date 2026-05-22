@@ -61,7 +61,7 @@ export default function EOMClose() {
             </div>
             <div className="flex gap-2">
               {current.status !== 'COMPLETED' && (
-                <button onClick={() => advanceMut.mutate(current.id)} disabled={advanceMut.isPending || retryMut.isPending} className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed">{advanceMut.isPending ? 'Advancing\u2026' : 'Advance'}</button>
+                <button onClick={() => advanceMut.mutate(current.id)} disabled={advanceMut.isPending || retryMut.isPending} className="bg-brand text-white px-3 py-1.5 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed">{advanceMut.isPending ? 'Advancing\u2026' : 'Advance'}</button>
               )}
               {current.status === 'BLOCKED' && (
                 <button onClick={() => retryMut.mutate(current.id)} disabled={retryMut.isPending || advanceMut.isPending} className="bg-orange-600 text-white px-3 py-1.5 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed">{retryMut.isPending ? 'Retrying\u2026' : 'Retry'}</button>
@@ -73,7 +73,7 @@ export default function EOMClose() {
             {(current.steps ?? []).map((step: any) => (
               <div key={step.id} className={`flex-1 rounded-lg p-3 text-center ${
                 step.status === 'DONE' ? 'bg-green-50 border-2 border-green-300' :
-                step.status === 'RUNNING' ? 'bg-blue-50 border-2 border-blue-300 animate-pulse' :
+                step.status === 'RUNNING' ? 'bg-brand-light border-2 border-blue-300 animate-pulse' :
                 step.status === 'BLOCKED' ? 'bg-red-50 border-2 border-red-300' :
                 'bg-gray-50 border border-gray-200'
               }`}>
@@ -127,7 +127,7 @@ export default function EOMClose() {
 
 function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
-    NOT_STARTED: 'bg-gray-100 text-gray-700', IN_PROGRESS: 'bg-blue-100 text-blue-700',
+    NOT_STARTED: 'bg-gray-100 text-gray-700', IN_PROGRESS: 'bg-brand-light text-brand',
     COMPLETED: 'bg-green-100 text-green-700', BLOCKED: 'bg-red-100 text-red-700',
   };
   return <span className={`px-2 py-0.5 rounded text-xs font-medium ${colors[status] ?? 'bg-gray-100'}`}>{status}</span>;

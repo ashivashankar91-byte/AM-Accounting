@@ -35,7 +35,7 @@ function ageBg(age: number): string {
 const STATUS_COLORS: Record<VehicleStatus, string> = {
   [VehicleStatus.AVAILABLE]: 'bg-green-100 text-green-700',
   [VehicleStatus.SOLD]: 'bg-gray-200 text-gray-700',
-  [VehicleStatus.DEMO]: 'bg-blue-100 text-blue-700',
+  [VehicleStatus.DEMO]: 'bg-brand-light text-brand',
   [VehicleStatus.LOANER]: 'bg-purple-100 text-purple-700',
   [VehicleStatus.WHOLESALE]: 'bg-amber-100 text-amber-700',
   [VehicleStatus.TRANSIT]: 'bg-cyan-100 text-cyan-700',
@@ -329,7 +329,7 @@ export default function VehicleInventory() {
                       </dd>
                     </div>
                   </div>
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
+                  <div className="bg-brand-light border border-brand-border rounded-lg p-3 text-sm">
                     <p className="text-blue-800">
                       <strong>GL Derivation:</strong> The inventory GL account is derived from the vehicle's status and make.
                       Status transitions (e.g., Available → Sold) generate automatic GL reclassification entries via the deal posting process.

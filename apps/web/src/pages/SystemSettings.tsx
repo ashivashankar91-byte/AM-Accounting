@@ -98,7 +98,7 @@ export default function SystemSettings() {
           </div>
           <p className="text-sm text-gray-500 mt-1">
             Company {config.companyId} — {config.companyName} ·{' '}
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-brand-light text-brand">
               {ACCOUNT_TYPE_LABELS[config.accountTypeCode]} ({config.accountTypeCode})
             </span>
           </p>
@@ -118,7 +118,7 @@ export default function SystemSettings() {
             onClick={() => setActiveTab(tab.id)}
             className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
               activeTab === tab.id
-                ? 'border-blue-600 text-blue-600'
+                ? 'border-blue-600 text-brand'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
@@ -154,7 +154,7 @@ function CompanyProfileTab({ config, setConfig, editing, setEditing }: {
         <button
           onClick={() => setEditing(!editing)}
           className={`px-4 py-2 text-sm font-medium rounded-lg ${
-            editing ? 'bg-gray-200 text-gray-700' : 'bg-blue-600 text-white hover:bg-blue-700'
+            editing ? 'bg-gray-200 text-gray-700' : 'bg-brand text-white hover:bg-brand'
           }`}
         >
           {editing ? 'Cancel' : 'Edit'}
@@ -176,7 +176,7 @@ function CompanyProfileTab({ config, setConfig, editing, setEditing }: {
               <div>
                 <select value={config.accountTypeCode}
                   onChange={e => setConfig({ ...config, accountTypeCode: e.target.value as AccountTypeCode })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand focus:border-blue-500"
                 >
                   {Object.entries(ACCOUNT_TYPE_LABELS).map(([code, label]) => (
                     <option key={code} value={code}>{code} — {label}</option>
@@ -188,7 +188,7 @@ function CompanyProfileTab({ config, setConfig, editing, setEditing }: {
               </div>
             ) : (
               <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-semibold bg-blue-100 text-blue-800">
+                <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-semibold bg-brand-light text-brand">
                   {config.accountTypeCode} — {ACCOUNT_TYPE_LABELS[config.accountTypeCode]}
                 </span>
                 {config.accountTypeCode === AccountTypeCode.Y_HYUNDAI && (
@@ -220,7 +220,7 @@ function CompanyProfileTab({ config, setConfig, editing, setEditing }: {
                 <input
                   type="text" value={config.ncmDealerCode ?? ''} readOnly={!editing}
                   onChange={e => setConfig({ ...config, ncmDealerCode: e.target.value || null })}
-                  className="border border-gray-300 rounded px-3 py-1.5 text-sm w-48 focus:ring-2 focus:ring-blue-500"
+                  className="border border-gray-300 rounded px-3 py-1.5 text-sm w-48 focus:ring-2 focus:ring-brand"
                   placeholder="Enter NCM dealer code"
                 />
               </div>
@@ -236,7 +236,7 @@ function CompanyProfileTab({ config, setConfig, editing, setEditing }: {
           <div className="pt-4 border-t border-gray-100">
             <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-3">Multi-Rooftop Context</h3>
             <div className="space-y-2">
-              <div className="flex items-center justify-between py-1.5 px-3 rounded bg-blue-50">
+              <div className="flex items-center justify-between py-1.5 px-3 rounded bg-brand-light">
                 <span className="text-sm font-medium text-blue-800">Co. 03 — Lee Hyundai Inc.</span>
                 <div className="flex gap-1">
                   <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-200 text-blue-800">Hyundai</span>
@@ -257,7 +257,7 @@ function CompanyProfileTab({ config, setConfig, editing, setEditing }: {
           <button onClick={() => setEditing(false)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
             Cancel
           </button>
-          <button onClick={() => setEditing(false)} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">
+          <button onClick={() => setEditing(false)} className="px-4 py-2 text-sm bg-brand text-white rounded-lg hover:bg-brand font-medium">
             Save Changes
           </button>
         </div>
@@ -339,7 +339,7 @@ function FiscalPeriodTab({ config }: { config: AccountingCompanyConfig }) {
           <div className="mt-3">
             <div className="flex gap-0.5">
               {[1, 2, 3, 4, 5, 6].map(m => (
-                <div key={m} className={`flex-1 h-2 rounded-sm ${m <= config.postAheadMonths ? (m > 4 ? 'bg-amber-400' : 'bg-blue-500') : 'bg-gray-200'}`} />
+                <div key={m} className={`flex-1 h-2 rounded-sm ${m <= config.postAheadMonths ? (m > 4 ? 'bg-amber-400' : 'bg-brand-light0') : 'bg-gray-200'}`} />
               ))}
             </div>
             <div className="flex justify-between text-[10px] text-gray-400 mt-1">
@@ -362,7 +362,7 @@ function FiscalPeriodTab({ config }: { config: AccountingCompanyConfig }) {
               return (
                 <div key={i} className={`flex-shrink-0 px-3 py-2 rounded-lg text-xs text-center min-w-[80px] border ${
                   isClosed ? 'bg-gray-100 text-gray-500 border-gray-200'
-                  : isCurrent ? 'bg-blue-100 text-blue-800 border-blue-300 ring-2 ring-blue-400'
+                  : isCurrent ? 'bg-brand-light text-brand border-blue-300 ring-2 ring-blue-400'
                   : isPostAhead ? 'bg-green-50 text-green-700 border-green-200'
                   : isBeyond ? 'bg-red-50 text-red-400 border-red-200 opacity-50'
                   : 'bg-gray-50 text-gray-400 border-gray-200'
@@ -447,7 +447,7 @@ function AccountingBehaviorTab({ config, setConfig }: {
                 onClick={() => setConfig({ ...config, transactionJournalPrintCode: code as JournalPrintCode })}
                 className={`flex-1 px-3 py-2.5 rounded-lg text-sm font-medium border-2 transition-colors ${
                   config.transactionJournalPrintCode === code
-                    ? 'border-blue-500 bg-blue-50 text-blue-800'
+                    ? 'border-blue-500 bg-brand-light text-blue-800'
                     : 'border-gray-200 text-gray-600 hover:border-gray-300'
                 }`}
               >
@@ -470,7 +470,7 @@ function AccountingBehaviorTab({ config, setConfig }: {
                 onClick={() => setConfig({ ...config, lifoValuationMethod: method })}
                 className={`px-4 py-2.5 rounded-lg text-sm font-medium border-2 transition-colors ${
                   config.lifoValuationMethod === method
-                    ? 'border-blue-500 bg-blue-50 text-blue-800'
+                    ? 'border-blue-500 bg-brand-light text-blue-800'
                     : 'border-gray-200 text-gray-600 hover:border-gray-300'
                 }`}
               >
@@ -503,21 +503,21 @@ function WarrantyRemittanceTab({ configs, accountTypeCode, showFordRef, setShowF
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-gray-900">OEM Warranty Remittance</h2>
-        <button className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+        <button className="px-4 py-2 text-sm font-medium bg-brand text-white rounded-lg hover:bg-brand">
           + Add Manufacturer
         </button>
       </div>
 
       {/* Empty state for Lee Hyundai */}
       {configs.length === 0 && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-8 text-center">
+        <div className="bg-brand-light border border-brand-border rounded-xl p-8 text-center">
           <div className="text-4xl mb-3">🛡️</div>
           <h3 className="text-lg font-semibold text-blue-900 mb-2">No Warranty Remittance Configured</h3>
-          <p className="text-sm text-blue-700 max-w-lg mx-auto mb-4">
+          <p className="text-sm text-brand max-w-lg mx-auto mb-4">
             Hyundai warranty is processed via <strong>HMA DDS direct-posting</strong>, not via the remittance batch process.
             Add a manufacturer here only if using remittance batch processing.
           </p>
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-100 text-xs font-medium text-blue-800">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-brand-light text-xs font-medium text-blue-800">
             <span className="w-2 h-2 rounded-full bg-green-500" />
             HMA DDS Integration Active
           </div>
@@ -562,7 +562,7 @@ function WarrantyRemittanceTab({ configs, accountTypeCode, showFordRef, setShowF
           <div className="mt-4 bg-gray-50 rounded-xl border border-gray-200 overflow-hidden">
             <div className="px-5 py-3 bg-gray-100 border-b border-gray-200">
               <div className="flex items-center gap-4">
-                <span className="px-3 py-1 rounded-lg bg-blue-100 font-mono text-sm font-bold text-blue-800">FM</span>
+                <span className="px-3 py-1 rounded-lg bg-brand-light font-mono text-sm font-bold text-blue-800">FM</span>
                 <div>
                   <span className="font-medium text-gray-900">Ford Motors</span>
                   <span className="text-xs text-gray-500 ml-3">Source 58 · Factory Recv GL 30002 · Vendor V542</span>
@@ -627,7 +627,7 @@ function RepairTypeMappingTable({ mappings, reference }: { mappings: RepairTypeM
             <tr key={rt.code} className={`border-t border-gray-100 ${i % 2 === 0 ? '' : 'bg-gray-50/50'}`}>
               <td className="px-5 py-2 font-mono font-medium text-gray-800">{rt.code}</td>
               <td className="px-5 py-2 text-gray-700">{rt.description}</td>
-              <td className="px-5 py-2 font-mono text-blue-700">{rt.warrantyGLAccount}</td>
+              <td className="px-5 py-2 font-mono text-brand">{rt.warrantyGLAccount}</td>
               <td className="px-5 py-2 text-right">${rt.smallBalanceWriteoffMax.toFixed(2)}</td>
               <td className="px-5 py-2">{rt.writeOffCRBalance ? '✓' : '—'}</td>
               <td className="px-5 py-2 font-mono">
@@ -660,7 +660,7 @@ function AccessPermissionsTab({ roles, selectedRole, setSelectedRole }: {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-gray-900">Access & Permissions</h2>
-        <button className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+        <button className="px-4 py-2 text-sm font-medium bg-brand text-white rounded-lg hover:bg-brand">
           + New Role
         </button>
       </div>
@@ -674,7 +674,7 @@ function AccessPermissionsTab({ roles, selectedRole, setSelectedRole }: {
               onClick={() => setSelectedRole(role.roleId)}
               className={`w-full text-left px-4 py-3 rounded-lg border transition-colors ${
                 selectedRole === role.roleId
-                  ? 'border-blue-500 bg-blue-50 text-blue-800'
+                  ? 'border-blue-500 bg-brand-light text-blue-800'
                   : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
               }`}
             >
@@ -746,7 +746,7 @@ function AccessPermissionsTab({ roles, selectedRole, setSelectedRole }: {
                       <div key={sched.scheduleNumber}
                         className={`px-2 py-1.5 rounded text-xs border ${
                           !hasAccess ? 'bg-gray-50 border-gray-200 text-gray-400'
-                          : viewOnly ? 'bg-blue-50 border-blue-200 text-blue-700'
+                          : viewOnly ? 'bg-brand-light border-brand-border text-brand'
                           : 'bg-green-50 border-green-200 text-green-800'
                         }`}
                         title={sched.title}
@@ -759,14 +759,14 @@ function AccessPermissionsTab({ roles, selectedRole, setSelectedRole }: {
                         </div>
                         <div className="truncate mt-0.5 text-[10px]">{sched.title}</div>
                         {isPayroll && <span className="text-[9px] text-amber-600">💰 Payroll</span>}
-                        {isService && <span className="text-[9px] text-blue-600">🔧 Service</span>}
+                        {isService && <span className="text-[9px] text-brand">🔧 Service</span>}
                       </div>
                     );
                   })}
                 </div>
                 <div className="flex gap-4 mt-4 text-xs text-gray-500">
                   <div className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-100 border border-green-300" /> Full Access (view/print/edit)</div>
-                  <div className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-100 border border-blue-300" /> View/Print Only</div>
+                  <div className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-brand-light border border-blue-300" /> View/Print Only</div>
                   <div className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-gray-100 border border-gray-200" /> No Access</div>
                 </div>
               </div>
@@ -799,7 +799,7 @@ function ServiceEODTab({ config, setConfig, editing, setEditing }: {
         <button
           onClick={() => setEditing(!editing)}
           className={`px-4 py-2 text-sm font-medium rounded-lg ${
-            editing ? 'bg-gray-200 text-gray-700' : 'bg-blue-600 text-white hover:bg-blue-700'
+            editing ? 'bg-gray-200 text-gray-700' : 'bg-brand text-white hover:bg-brand'
           }`}
         >
           {editing ? 'Cancel' : 'Edit'}
@@ -842,7 +842,7 @@ function ServiceEODTab({ config, setConfig, editing, setEditing }: {
                 onClick={() => editing && setConfig({ ...config, eodMethod: code as ServiceEODMethod })}
                 className={`w-full text-left px-4 py-3 rounded-lg border-2 transition-colors ${
                   config.eodMethod === code
-                    ? 'border-blue-500 bg-blue-50'
+                    ? 'border-blue-500 bg-brand-light'
                     : editing ? 'border-gray-200 hover:border-gray-300' : 'border-gray-200 opacity-60'
                 }`}
               >
@@ -851,7 +851,7 @@ function ServiceEODTab({ config, setConfig, editing, setEditing }: {
                     <span className="text-sm font-medium text-gray-900">{label}</span>
                     <span className="text-xs text-gray-400 ml-2">({code})</span>
                   </div>
-                  {config.eodMethod === code && <span className="text-blue-600">●</span>}
+                  {config.eodMethod === code && <span className="text-brand">●</span>}
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
                   {code === 'M' && 'Controller manually initiates end-of-day processing'}
@@ -874,7 +874,7 @@ function ServiceEODTab({ config, setConfig, editing, setEditing }: {
                 value={config.autoRunTime ?? ''}
                 onChange={e => setConfig({ ...config, autoRunTime: e.target.value || null })}
                 readOnly={!editing}
-                className="border border-gray-300 rounded-lg px-3 py-2 text-lg font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="border border-gray-300 rounded-lg px-3 py-2 text-lg font-mono focus:ring-2 focus:ring-brand focus:border-blue-500"
               />
               {config.autoRunTime === null && (
                 <div className="mt-2 bg-red-50 rounded-lg px-3 py-2">
@@ -917,7 +917,7 @@ function ServiceEODTab({ config, setConfig, editing, setEditing }: {
               ))}
             </div>
             {editing && (
-              <button className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium">
+              <button className="mt-2 text-sm text-brand hover:text-blue-800 font-medium">
                 + Add Recipient
               </button>
             )}
@@ -930,7 +930,7 @@ function ServiceEODTab({ config, setConfig, editing, setEditing }: {
           <button onClick={() => setEditing(false)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
             Cancel
           </button>
-          <button onClick={() => setEditing(false)} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">
+          <button onClick={() => setEditing(false)} className="px-4 py-2 text-sm bg-brand text-white rounded-lg hover:bg-brand font-medium">
             Save Changes
           </button>
         </div>
@@ -952,7 +952,7 @@ function FieldRow({ label, value, editing, onChange, readonly, hint }: {
       <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">{label}</label>
       {editing && !readonly ? (
         <input type="text" value={value} onChange={e => onChange?.(e.target.value)}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand focus:border-blue-500" />
       ) : (
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-gray-900">{value}</span>
@@ -969,7 +969,7 @@ function ToggleSwitch({ checked, onChange, disabled }: { checked: boolean; onCha
     <button
       onClick={() => !disabled && onChange?.(!checked)}
       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-        checked ? 'bg-blue-600' : 'bg-gray-300'
+        checked ? 'bg-brand' : 'bg-gray-300'
       } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
     >
       <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${

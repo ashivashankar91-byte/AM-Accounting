@@ -1,7 +1,8 @@
 # AMACC — Start all local services
 # Run from amacc/ directory; infrastructure (postgres, redis, rabbitmq) must be running in Docker
 
-$base = "C:\Projects\jira-bulk-export\amacc"
+# Use the script directory as workspace root so the project can be cloned anywhere.
+$base = $PSScriptRoot
 $env:DATABASE_URL = "postgresql://amacc:amacc_dev@localhost:5433/amacc"
 $env:RABBITMQ_URL = "amqp://guest:guest@localhost:5672"
 $env:REDIS_URL = "redis://localhost:6380"

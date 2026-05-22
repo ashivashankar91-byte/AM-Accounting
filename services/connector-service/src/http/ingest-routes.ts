@@ -7,7 +7,7 @@ const PAYROLL_SERVICE_URL = process.env['PAYROLL_SERVICE_URL'] ?? 'http://payrol
 const AUDIT_SERVICE_URL = process.env['AUDIT_SERVICE_URL'] ?? 'http://audit-service:3031';
 
 // ── Idempotency store (in-memory for MVP, should be Redis/DB in production) ──
-const processedKeys = new Map<string, { id: string; createdAt: Date }>();
+const processedKeys = new Map<string, { id: string; createdAt: Date; worldpayCaptured: boolean }>();
 
 function checkIdempotency(key: string): { id: string } | null {
   const existing = processedKeys.get(key);
@@ -17,8 +17,8 @@ function checkIdempotency(key: string): { id: string } | null {
   return null;
 }
 
-function recordIdempotency(key: string, id: string): void {
-  processedKeys.set(key, { id, createdAt: new Date() });
+function recordIdempotency(key: string, id: string, worldpayCaptured = false): void {
+  processedKeys.set(key, { id, createdAt: new Date(), worldpayCaptured });
 }
 
 async function callGL(path: string, tenantId: string, body: unknown): Promise<any> {
@@ -189,6 +189,8 @@ const VehicleTransferSchema = z.object({
 const CashReceiptsSchema = z.object({
   receiptNumber: z.string().min(1),
   tenantId: z.string().min(1),
+  /// S1-12: When true the payment has been captured by WorldPay/payment processor and cannot be voided here
+  worldpayCaptured: z.boolean().optional().default(false),
   lines: z.array(z.object({
     customerId: z.string(),
     amount: z.number(),
@@ -545,6 +547,15 @@ export async function ingestRoutes(app: FastifyInstance) {
     const toAccountMap = await resolveAccountIds(data.toTenantId);
     const toInvAcct = toAccountMap.get('1210');
     const toIcAcct = toAccountMap.get('2000');
+
+    // S1-09: IC Offset GL must differ from Inventory GL
+    if (toInvAcct && toIcAcct && toInvAcct === toIcAcct) {
+      return reply.status(422).send({
+        error: 'INVALID_GL_CONFIG',
+        message: 'Receiving company: Inventory GL account (1210) cannot be the same as IC Offset GL account (2000). Configure distinct accounts before processing vehicle transfers.',
+      });
+    }
+
     const toLines: any[] = [];
     if (toInvAcct) toLines.push({
       glAccountId: toInvAcct, debit: data.bookValue, credit: 0,
@@ -555,16 +566,43 @@ export async function ingestRoutes(app: FastifyInstance) {
       memo: `Intercompany payable - ${data.vin}`, vehicleVin: data.vin, moduleSource: 'VEHICLE_TRANSFER',
     });
 
-    await callGL('/api/v1/gl/journal-entries', data.toTenantId, {
-      entryDate: new Date().toISOString().split('T')[0],
-      description: `Vehicle Transfer In - ${data.vin}`,
-      source: 'CONNECTOR_VEHICLE_TRANSFER', sourceRef: data.vin, lines: toLines,
-    });
+    // S1-08: Atomic GL posting via saga/compensation pattern.
+    // Step 1: Post receiving GL entry. If it fails, abort immediately.
+    let receivingEntryId: string | null = null;
+    try {
+      const receivingEntry = await callGL('/api/v1/gl/journal-entries', data.toTenantId, {
+        entryDate: new Date().toISOString().split('T')[0],
+        description: `Vehicle Transfer In - ${data.vin}`,
+        source: 'CONNECTOR_VEHICLE_TRANSFER', sourceRef: data.vin, lines: toLines,
+      });
+      receivingEntryId = receivingEntry.id;
+    } catch (err: any) {
+      return reply.status(502).send({
+        error: 'TRANSFER_FAILED',
+        message: `Failed to create receiving GL entry: ${err.message}`,
+      });
+    }
 
-    // Create credit entry at sending location
+    // Step 2: Post sending GL entry. If it fails, reverse the receiving entry (compensation).
     const fromAccountMap = await resolveAccountIds(data.fromTenantId);
     const fromInvAcct = fromAccountMap.get('1210');
     const fromIcAcct = fromAccountMap.get('1120');
+
+    // S1-09: Also validate sending company IC config
+    if (fromInvAcct && fromIcAcct && fromInvAcct === fromIcAcct) {
+      // Compensate: reverse the already-posted receiving entry
+      try {
+        await callGL(`/api/v1/gl/journal-entries/${receivingEntryId}/reverse`, data.toTenantId, {
+          reversalDate: new Date().toISOString().split('T')[0],
+          reason: 'Transfer aborted — sending company IC GL config error',
+        });
+      } catch { /* best-effort compensation */ }
+      return reply.status(422).send({
+        error: 'INVALID_GL_CONFIG',
+        message: 'Sending company: Inventory GL account (1210) cannot be the same as IC Offset GL account (1120). Receiving entry has been reversed.',
+      });
+    }
+
     const fromLines: any[] = [];
     if (fromInvAcct) fromLines.push({
       glAccountId: fromInvAcct, debit: 0, credit: data.bookValue,
@@ -575,11 +613,33 @@ export async function ingestRoutes(app: FastifyInstance) {
       memo: `Intercompany receivable - ${data.vin}`, vehicleVin: data.vin, moduleSource: 'VEHICLE_TRANSFER',
     });
 
-    await callGL('/api/v1/gl/journal-entries', data.fromTenantId, {
-      entryDate: new Date().toISOString().split('T')[0],
-      description: `Vehicle Transfer Out - ${data.vin}`,
-      source: 'CONNECTOR_VEHICLE_TRANSFER', sourceRef: data.vin, lines: fromLines,
-    });
+    try {
+      await callGL('/api/v1/gl/journal-entries', data.fromTenantId, {
+        entryDate: new Date().toISOString().split('T')[0],
+        description: `Vehicle Transfer Out - ${data.vin}`,
+        source: 'CONNECTOR_VEHICLE_TRANSFER', sourceRef: data.vin, lines: fromLines,
+      });
+    } catch (err: any) {
+      // Compensation: reverse the receiving entry to preserve atomicity
+      try {
+        await callGL(`/api/v1/gl/journal-entries/${receivingEntryId}/reverse`, data.toTenantId, {
+          reversalDate: new Date().toISOString().split('T')[0],
+          reason: `Transfer compensation reversal — sending GL post failed: ${(err as Error).message}`,
+        });
+      } catch (compErr: any) {
+        // Compensation itself failed — this is a split-brain condition requiring manual intervention
+        await callAudit(data.fromTenantId, 'VEHICLE_TRANSFER_SPLIT_BRAIN', 'Vehicle', data.vin, 'ERROR');
+        return reply.status(500).send({
+          error: 'TRANSFER_SPLIT_BRAIN',
+          message: `CRITICAL: Receiving GL entry ${receivingEntryId} posted but sending GL failed and compensation reversal also failed. Manual intervention required. VIN: ${data.vin}`,
+          receivingEntryId,
+        });
+      }
+      return reply.status(502).send({
+        error: 'TRANSFER_FAILED',
+        message: `Failed to create sending GL entry — receiving entry ${receivingEntryId} has been reversed. VIN: ${data.vin}. Error: ${err.message}`,
+      });
+    }
 
     await callAudit(data.fromTenantId, 'VEHICLE_TRANSFERRED', 'Vehicle', data.vin, 'TRANSFERRED');
     return reply.status(201).send({ status: 'CREATED', vin: data.vin });
@@ -591,6 +651,24 @@ export async function ingestRoutes(app: FastifyInstance) {
     const idemKey = `cash-receipt:${data.receiptNumber}:${data.tenantId}`;
     const existing = checkIdempotency(idemKey);
     if (existing) return reply.status(200).send({ status: 'DUPLICATE', existingId: existing.id });
+
+    // S1-04: Semantic duplicate check — query GL for existing entry with same source + receiptNumber
+    try {
+      const dupCheckResp = await fetch(
+        `${GL_SERVICE_URL}/api/v1/gl/journal-entries?source=CONNECTOR_CASH_RECEIPTS&sourceRef=${encodeURIComponent(data.receiptNumber)}&limit=1`,
+        { headers: { 'x-tenant-id': data.tenantId } },
+      );
+      if (dupCheckResp.ok) {
+        const existing_gl = await dupCheckResp.json() as any[];
+        if (Array.isArray(existing_gl) && existing_gl.length > 0) {
+          return reply.status(409).send({
+            error: 'DUPLICATE_RECEIPT',
+            message: `Receipt ${data.receiptNumber} already exists as journal entry ${existing_gl[0].id}. Cannot post a duplicate cash receipt.`,
+            existingJournalEntryId: existing_gl[0].id,
+          });
+        }
+      }
+    } catch { /* GL unavailable — proceed and rely on DB unique index */ }
 
     const accountMap = await resolveAccountIds(data.tenantId);
     const lines: any[] = [];
@@ -617,9 +695,44 @@ export async function ingestRoutes(app: FastifyInstance) {
       source: 'CONNECTOR_CASH_RECEIPTS', sourceRef: data.receiptNumber, lines,
     });
 
-    recordIdempotency(idemKey, entry.id);
+    recordIdempotency(idemKey, entry.id, data.worldpayCaptured);
     await callAudit(data.tenantId, 'CASH_RECEIPT_DETAILED', 'CashReceipt', data.receiptNumber, 'INGESTED');
     return reply.status(201).send({ status: 'CREATED', journalEntryId: entry.id });
+  });
+
+  // S1-12: DELETE /cash-receipts/:receiptNumber — void a receipt, blocked if WorldPay-captured
+  app.delete('/cash-receipts/:receiptNumber', async (request, reply) => {
+    const { receiptNumber } = request.params as { receiptNumber: string };
+    const tenantId = request.headers['x-tenant-id'] as string;
+    if (!tenantId) return reply.status(400).send({ error: 'x-tenant-id header required' });
+
+    const idemKey = `cash-receipt:${receiptNumber}:${tenantId}`;
+    const stored = processedKeys.get(idemKey);
+
+    // S1-12 guard: block void for WorldPay-captured transactions
+    if (stored?.worldpayCaptured) {
+      return reply.status(409).send({
+        error: 'WORLDPAY_CAPTURED',
+        message: `Receipt ${receiptNumber} has been captured by the payment processor and cannot be voided in AMACC. Issue a refund through WorldPay merchant portal instead.`,
+      });
+    }
+
+    if (!stored) {
+      return reply.status(404).send({ error: 'Receipt not found or already expired from idempotency store.' });
+    }
+
+    // Reverse the underlying GL journal entry
+    try {
+      await callGL(`/api/v1/gl/journal-entries/${stored.id}/reverse`, tenantId, {
+        reversalDate: new Date().toISOString().split('T')[0],
+        reason: `Cash receipt ${receiptNumber} voided`,
+      });
+      processedKeys.delete(idemKey);
+      await callAudit(tenantId, 'CASH_RECEIPT_VOIDED', 'CashReceipt', receiptNumber, 'VOIDED');
+      return reply.status(200).send({ status: 'VOIDED', receiptNumber });
+    } catch (err: any) {
+      return reply.status(502).send({ error: 'VOID_FAILED', message: err.message });
+    }
   });
 
   // 8. POST /finance-charges

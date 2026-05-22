@@ -1,10 +1,17 @@
 import { FastifyPluginAsync } from 'fastify';
 import { DEFAULT_LAYOUTS, PreferenceRole } from '../domain/defaults';
 
+function requireTenantId(request: any, reply: any): string | null {
+  const id = request.headers['x-tenant-id'] as string;
+  if (!id) { reply.status(400).send({ error: 'x-tenant-id header is required' }); return null; }
+  return id;
+}
+
 export function userRoutes(prisma: any): FastifyPluginAsync {
   return async (app) => {
-    app.get('/preferences', async (request) => {
-      const tenantId = (request.headers['x-tenant-id'] as string) || 'tenant-kunes';
+    app.get('/preferences', async (request, reply) => {
+      const tenantId = requireTenantId(request, reply);
+      if (!tenantId) return;
       const userId = (request.headers['x-user-id'] as string) || 'default-user';
       let prefs = await prisma.userPreferences.findUnique({
         where: { tenantId_userId: { tenantId, userId } },
@@ -24,8 +31,9 @@ export function userRoutes(prisma: any): FastifyPluginAsync {
       return prefs;
     });
 
-    app.put('/preferences', async (request) => {
-      const tenantId = (request.headers['x-tenant-id'] as string) || 'tenant-kunes';
+    app.put('/preferences', async (request, reply) => {
+      const tenantId = requireTenantId(request, reply);
+      if (!tenantId) return;
       const userId = (request.headers['x-user-id'] as string) || 'default-user';
       const body = request.body as any;
       const prefs = await prisma.userPreferences.upsert({

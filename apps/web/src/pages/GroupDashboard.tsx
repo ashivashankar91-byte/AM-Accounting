@@ -123,7 +123,7 @@ export default function GroupDashboard() {
                 <td className="py-2">
                   <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                     r.eomStatus === 'COMPLETED' ? 'bg-green-100 text-green-700' :
-                    r.eomStatus === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' :
+                    r.eomStatus === 'IN_PROGRESS' ? 'bg-brand-light text-brand' :
                     'bg-gray-100 text-gray-600'
                   }`}>{r.eomStatus}</span>
                 </td>
@@ -142,9 +142,9 @@ export default function GroupDashboard() {
               <div className="text-xs text-green-600">Sustainability Score</div>
               <div className="text-2xl font-bold text-green-700">{esgReport.sustainabilityScore ?? '—'}</div>
             </div>
-            <div className="bg-blue-50 rounded p-3 text-center">
-              <div className="text-xs text-blue-600">EV Revenue %</div>
-              <div className="text-2xl font-bold text-blue-700">{esgReport.evRevenuePct ?? '—'}%</div>
+            <div className="bg-brand-light rounded p-3 text-center">
+              <div className="text-xs text-brand">EV Revenue %</div>
+              <div className="text-2xl font-bold text-brand">{esgReport.evRevenuePct ?? '—'}%</div>
             </div>
             <div className="bg-gray-50 rounded p-3 text-center">
               <div className="text-xs text-gray-600">ICE Revenue %</div>

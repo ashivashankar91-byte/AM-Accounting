@@ -108,7 +108,7 @@ function matchFilter(a: GLAccount, f: TypeFilter): boolean {
 }
 
 const TYPE_COLORS: Record<AccountType, string> = {
-  [AccountType.ASSET]: 'bg-blue-50 text-blue-700',
+  [AccountType.ASSET]: 'bg-brand-light text-brand',
   [AccountType.LIABILITY]: 'bg-orange-50 text-orange-700',
   [AccountType.EXPENSE]: 'bg-red-50 text-red-700',
   [AccountType.INCOME]: 'bg-green-50 text-green-700',
@@ -252,7 +252,7 @@ export default function ChartOfAccounts() {
                           </td>
                           <td className="py-2 text-center">{a.addUnits ? <span className="text-green-600 text-xs font-bold">✓</span> : ''}</td>
                           <td className="py-2">
-                            {a.oemPrefix === OEMPrefix.HYUNDAI && <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded text-[10px] font-bold">HYU</span>}
+                            {a.oemPrefix === OEMPrefix.HYUNDAI && <span className="bg-brand-light text-brand px-1.5 py-0.5 rounded text-[10px] font-bold">HYU</span>}
                             {a.oemPrefix === OEMPrefix.GENESIS && <span className="bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded text-[10px] font-bold">GEN</span>}
                           </td>
                           <td className="py-2 flex gap-1">
@@ -281,7 +281,7 @@ export default function ChartOfAccounts() {
                       <div className="flex items-center gap-3">
                         <h3 className="text-xl font-bold font-mono">{selected.acctNum}</h3>
                         <span className={`px-2 py-0.5 rounded text-xs ${TYPE_COLORS[selected.type]}`}>{selected.type}</span>
-                        {selected.oemPrefix === OEMPrefix.HYUNDAI && <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-xs font-bold">Hyundai</span>}
+                        {selected.oemPrefix === OEMPrefix.HYUNDAI && <span className="bg-brand-light text-brand px-2 py-0.5 rounded text-xs font-bold">Hyundai</span>}
                         {selected.oemPrefix === OEMPrefix.GENESIS && <span className="bg-purple-100 text-purple-800 px-2 py-0.5 rounded text-xs font-bold">Genesis</span>}
                         {OEM_CRITICAL_ACCOUNTS.has(selected.acctNum) && <span className="bg-amber-200 text-amber-900 px-2 py-0.5 rounded text-xs font-bold">⚠ OEM-Critical</span>}
                       </div>
@@ -327,9 +327,9 @@ export default function ChartOfAccounts() {
                   )}
 
                   {selected.controlRequired === ControlType.STOCK_NUMBER && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm">
+                    <div className="bg-brand-light border border-brand-border rounded-lg p-4 text-sm">
                       <h4 className="font-bold text-blue-800">Stock Number Control</h4>
-                      <p className="text-blue-700 mt-1">
+                      <p className="text-brand mt-1">
                         Transactions posted to this account require a valid stock number. The system will derive
                         the vehicle record and validate GL linkage automatically.
                       </p>

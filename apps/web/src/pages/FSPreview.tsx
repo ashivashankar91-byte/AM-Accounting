@@ -82,15 +82,15 @@ function BalanceSheetTable({ page, data }: { page: FSFormPage; data?: FinancialS
         </tr>
       </thead>
       <tbody>
-        {page.lines.map((line, i) => {
+        {(page.lines ?? []).map((line, i) => {
           const isHdr = line.source === FSLineSource.HEADER;
           const month = resolveLineAmount(line, data, 'month');
           const ytd = resolveLineAmount(line, data, 'ytd');
           return (
-            <tr key={i} className={`border-b border-gray-100 ${line.isTotal ? 'bg-gray-50 font-semibold' : ''} ${isHdr ? 'bg-blue-50' : ''}`}>
+            <tr key={i} className={`border-b border-gray-100 ${line.isTotal ? 'bg-gray-50 font-semibold' : ''} ${isHdr ? 'bg-brand-light' : ''}`}>
               <td className="py-1 text-gray-400 text-xs">{isHdr ? '' : line.lineNumber}</td>
               <td className="py-1" style={{ paddingLeft: `${(line.indent ?? 0) * 16 + (isHdr ? 0 : 8)}px` }}>
-                {isHdr ? <span className="font-semibold text-blue-700 text-xs uppercase tracking-wide">{line.label}</span> : line.label}
+                {isHdr ? <span className="font-semibold text-brand text-xs uppercase tracking-wide">{line.label}</span> : line.label}
               </td>
               <td className="py-1 text-right font-mono text-xs">{line.hasUnits ? '—' : ''}</td>
               <td className="py-1 text-right font-mono text-xs">{fmt(month)}</td>
@@ -127,13 +127,13 @@ function DepartmentalTable({ page, data }: { page: FSFormPage; data?: FinancialS
         </tr>
       </thead>
       <tbody>
-        {page.lines.map((line, i) => {
+        {(page.lines ?? []).map((line, i) => {
           const isHdr = line.source === FSLineSource.HEADER;
           return (
-            <tr key={i} className={`border-b border-gray-100 ${line.isTotal ? 'bg-gray-50 font-semibold' : ''} ${isHdr ? 'bg-blue-50' : ''}`}>
+            <tr key={i} className={`border-b border-gray-100 ${line.isTotal ? 'bg-gray-50 font-semibold' : ''} ${isHdr ? 'bg-brand-light' : ''}`}>
               <td className="py-1 text-gray-400 text-xs">{isHdr ? '' : line.lineNumber}</td>
               <td className="py-1" style={{ paddingLeft: `${(line.indent ?? 0) * 16 + (isHdr ? 0 : 8)}px` }}>
-                {isHdr ? <span className="font-semibold text-blue-700 text-xs uppercase tracking-wide">{line.label}</span> : line.label}
+                {isHdr ? <span className="font-semibold text-brand text-xs uppercase tracking-wide">{line.label}</span> : line.label}
               </td>
               {depts.map((d) => {
                 const val = resolveLineAmount(line, data, 'month', d);
@@ -160,14 +160,14 @@ function ModelDetailTable({ page, data }: { page: FSFormPage; data?: FinancialSt
         </tr>
       </thead>
       <tbody>
-        {page.lines.map((line, i) => {
+        {(page.lines ?? []).map((line, i) => {
           const isHdr = line.source === FSLineSource.HEADER;
           const month = resolveLineAmount(line, data, 'month');
           return (
-            <tr key={i} className={`border-b border-gray-100 ${line.isTotal ? 'bg-gray-50 font-semibold' : ''} ${isHdr ? 'bg-blue-50' : ''}`}>
+            <tr key={i} className={`border-b border-gray-100 ${line.isTotal ? 'bg-gray-50 font-semibold' : ''} ${isHdr ? 'bg-brand-light' : ''}`}>
               <td className="py-1 text-gray-400 text-xs">{isHdr ? '' : line.lineNumber}</td>
               <td className="py-1" style={{ paddingLeft: `${(line.indent ?? 0) * 16 + (isHdr ? 0 : 8)}px` }}>
-                {isHdr ? <span className="font-semibold text-blue-700 text-xs uppercase tracking-wide">{line.label}</span> : line.label}
+                {isHdr ? <span className="font-semibold text-brand text-xs uppercase tracking-wide">{line.label}</span> : line.label}
               </td>
               <td className="py-1 text-right font-mono text-xs">{line.hasUnits ? '—' : ''}</td>
               <td className="py-1 text-right font-mono text-xs">{fmt(month)}</td>
@@ -193,14 +193,14 @@ function ServicePartsTable({ page, data }: { page: FSFormPage; data?: FinancialS
         </tr>
       </thead>
       <tbody>
-        {page.lines.map((line, i) => {
+        {(page.lines ?? []).map((line, i) => {
           const isHdr = line.source === FSLineSource.HEADER;
           const month = resolveLineAmount(line, data, 'month');
           return (
-            <tr key={i} className={`border-b border-gray-100 ${line.isTotal ? 'bg-gray-50 font-semibold' : ''} ${isHdr ? 'bg-blue-50' : ''}`}>
+            <tr key={i} className={`border-b border-gray-100 ${line.isTotal ? 'bg-gray-50 font-semibold' : ''} ${isHdr ? 'bg-brand-light' : ''}`}>
               <td className="py-1 text-gray-400 text-xs">{isHdr ? '' : line.lineNumber}</td>
               <td className="py-1" style={{ paddingLeft: `${(line.indent ?? 0) * 16 + (isHdr ? 0 : 8)}px` }}>
-                {isHdr ? <span className="font-semibold text-blue-700 text-xs uppercase tracking-wide">{line.label}</span> : line.label}
+                {isHdr ? <span className="font-semibold text-brand text-xs uppercase tracking-wide">{line.label}</span> : line.label}
               </td>
               <td className="py-1 text-right font-mono text-xs">{fmt(month)}</td>
               <td className="py-1 text-right font-mono text-xs">{isHdr ? '' : '—'}</td>
@@ -225,16 +225,16 @@ function ManagementInfoTable({ page, data }: { page: FSFormPage; data?: Financia
         </tr>
       </thead>
       <tbody>
-        {page.lines.map((line, i) => {
+        {(page.lines ?? []).map((line, i) => {
           const isHdr = line.source === FSLineSource.HEADER;
           const isSup = line.source === FSLineSource.SUPPLEMENTAL;
           const month = resolveLineAmount(line, data, 'month');
           const ytd = resolveLineAmount(line, data, 'ytd');
           return (
-            <tr key={i} className={`border-b border-gray-100 ${line.isTotal ? 'bg-gray-50 font-semibold' : ''} ${isHdr ? 'bg-blue-50' : ''} ${isSup ? 'bg-purple-50' : ''}`}>
+            <tr key={i} className={`border-b border-gray-100 ${line.isTotal ? 'bg-gray-50 font-semibold' : ''} ${isHdr ? 'bg-brand-light' : ''} ${isSup ? 'bg-purple-50' : ''}`}>
               <td className="py-1 text-gray-400 text-xs">{isHdr ? '' : line.lineNumber}</td>
               <td className="py-1" style={{ paddingLeft: `${(line.indent ?? 0) * 16 + (isHdr ? 0 : 8)}px` }}>
-                {isHdr ? <span className="font-semibold text-blue-700 text-xs uppercase tracking-wide">{line.label}</span> : line.label}
+                {isHdr ? <span className="font-semibold text-brand text-xs uppercase tracking-wide">{line.label}</span> : line.label}
                 {isSup && <span className="ml-2 text-xs text-purple-500">(supplemental)</span>}
               </td>
               <td className="py-1 text-right font-mono text-xs">{isSup ? (month ?? '—') : fmt(month)}</td>
@@ -351,7 +351,7 @@ export default function FSPreview() {
               onClick={() => setActivePage(p.pageNumber)}
               className={`px-3 py-1.5 rounded-t text-sm border-b-2 transition-colors ${
                 activePage === p.pageNumber
-                  ? 'bg-white border-blue-600 text-blue-700 font-semibold shadow-sm'
+                  ? 'bg-white border-blue-600 text-brand font-semibold shadow-sm'
                   : 'bg-gray-100 border-transparent text-gray-600 hover:bg-gray-200'
               }`}>
               P{p.pageNumber}
@@ -368,7 +368,7 @@ export default function FSPreview() {
           </h3>
           <FSPageRenderer page={currentPage} data={fsData} />
           <div className="mt-2 text-xs text-gray-400 text-right">
-            {currentPage.lines.filter((l) => l.source !== FSLineSource.HEADER).length} line items
+            {(currentPage.lines ?? []).filter((l) => l.source !== FSLineSource.HEADER).length} line items
           </div>
         </div>
       )}

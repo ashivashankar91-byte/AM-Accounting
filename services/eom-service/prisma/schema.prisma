@@ -1,7 +1,7 @@
 generator client {
   provider      = "prisma-client-js"
   output        = "../node_modules/.prisma/eom-client"
-  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "darwin-arm64"]
 }
 
 datasource db {
@@ -25,10 +25,28 @@ model EOMClose {
   // Audit trail — COBOL had no user attribution
   initiatedBy   String?   @map("initiated_by")
 
-  steps EOMStep[]
+  steps   EOMStep[]
+  backups EOmBackup[]
 
   @@unique([tenantId, periodYear, periodMonth, closeType])
   @@map("eom_closes")
+  @@index([tenantId])
+}
+
+/// BUILD-012: Pre-purge snapshot for disaster recovery
+/// Stores GL account opening balances and period balances before destructive operations
+model EOmBackup {
+  id          String   @id @default(cuid())
+  tenantId    String   @map("tenant_id")
+  eomCloseId  String   @map("eom_close_id")
+  backupType  String   @map("backup_type")  // GL_ACCOUNTS | PERIOD_BALANCES
+  backupData  Json     @map("backup_data")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  eomClose EOMClose @relation(fields: [eomCloseId], references: [id])
+
+  @@map("eom_backups")
+  @@index([eomCloseId])
   @@index([tenantId])
 }
 
@@ -65,6 +83,27 @@ model YearEndRecord {
   @@unique([tenantId, fiscalYear])
   @@map("year_end_records")
   @@index([tenantId])
+}
+
+/// @cobol-origin KOMFCAL — fiscal calendar definition and period status tracking
+/// Enables 13th month support and centralized period lifecycle management (FIX-021)
+model FiscalPeriod {
+  id           String    @id @default(uuid())
+  tenantId     String    @map("tenant_id")
+  fiscalYear   Int       @map("fiscal_year")
+  periodNumber Int       @map("period_number")
+  startDate    DateTime  @map("start_date") @db.Date
+  endDate      DateTime  @map("end_date") @db.Date
+  /// OPEN | CLOSED | ADJUSTMENT | YEAR_END
+  status       String    @default("OPEN")
+  closedAt     DateTime? @map("closed_at")
+  closedBy     String?   @map("closed_by")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  @@unique([tenantId, fiscalYear, periodNumber])
+  @@map("fiscal_periods")
+  @@index([tenantId, fiscalYear])
+  @@index([tenantId, status])
 }
 
 /// Outbox pattern for reliable event publishing from eom-service.

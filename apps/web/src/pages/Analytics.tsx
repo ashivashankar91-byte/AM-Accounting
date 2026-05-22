@@ -60,7 +60,7 @@ export default function Analytics() {
               <div key={name} className="flex items-center gap-3">
                 <span className="text-sm w-40">{name}</span>
                 <div className="flex-1 bg-gray-100 rounded-full h-4">
-                  <div className="bg-blue-500 h-4 rounded-full" style={{ width: `${Math.min(count * 15, 100)}%` }} />
+                  <div className="bg-brand-light0 h-4 rounded-full" style={{ width: `${Math.min(count * 15, 100)}%` }} />
                 </div>
                 <span className="text-sm font-medium w-8 text-right">{count}</span>
               </div>
@@ -103,11 +103,11 @@ export default function Analytics() {
               </div>
               <div className="text-xs text-yellow-600">Held</div>
             </div>
-            <div className="text-center p-3 bg-blue-50 rounded">
-              <div className="text-2xl font-bold text-blue-700">
+            <div className="text-center p-3 bg-brand-light rounded">
+              <div className="text-2xl font-bold text-brand">
                 {(batches ?? []).filter((b: any) => b.status === 'VALIDATED').length}
               </div>
-              <div className="text-xs text-blue-600">Validated</div>
+              <div className="text-xs text-brand">Validated</div>
             </div>
             <div className="text-center p-3 bg-red-50 rounded">
               <div className="text-2xl font-bold text-red-700">

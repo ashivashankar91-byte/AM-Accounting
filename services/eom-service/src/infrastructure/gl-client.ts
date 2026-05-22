@@ -107,6 +107,24 @@ export class HttpGLClient implements IGLClient {
     return { valid: true };
   }
 
+  /**
+   * Validate that a journal source is registered and reserved for year-end use.
+   * Returns valid=true if the source exists and isYearEndReserved=true.
+   * Fails open (valid=true) if gl-service is unavailable for backward compat.
+   * @cobol-origin joursec.cbl — year-end reserved source guard
+   */
+  async validateYearEndSource(tenantId: TenantId, sourceCode: string): Promise<{ valid: boolean; message?: string }> {
+    const res = await fetch(`${this.baseUrl}/api/v1/gl/admin/journal-sources`, {
+      headers: this.headers(tenantId),
+    });
+    if (!res.ok) return { valid: true }; // fail open for backward compat
+    const sources = await res.json() as Array<{ sourceCode: string; isYearEndReserved: boolean }>;
+    const source = sources.find(s => s.sourceCode === sourceCode);
+    if (!source) return { valid: false, message: `Source ${sourceCode} not found` };
+    if (!source.isYearEndReserved) return { valid: false, message: `Source ${sourceCode} is not reserved for year-end` };
+    return { valid: true };
+  }
+
   async postYearEndBatch(
     tenantId: TenantId,
     entries: Array<{ accountId: string; amount: number }>,
@@ -125,5 +143,40 @@ export class HttpGLClient implements IGLClient {
       throw new Error(`gl-service postYearEndBatch: HTTP ${res.status} — ${body}`);
     }
     return res.json() as Promise<YearEndPostResult>;
+  }
+
+  /**
+   * Fetch the fiscal year / system config for a tenant from gl-service.
+   * Returns sensible defaults when the config row does not yet exist.
+   * @cobol-origin acsys.fd — ACSYS-FISCAL-YEAR-BEGIN, ACSYS-CUTOFF-DATE, ACSYS-LAST-CLOSE-DATE
+   */
+  async getSystemConfig(tenantId: TenantId): Promise<{
+    fiscalYearStartMonth: number;
+    lastCloseDate: string | null;
+    cutoffDate: string | null;
+  }> {
+    const res = await fetch(`${this.baseUrl}/api/v1/gl/admin/system-config`, {
+      headers: this.headers(tenantId),
+    });
+    if (!res.ok) throw new Error(`Failed to fetch system config: ${res.status}`);
+    return res.json() as Promise<{
+      fiscalYearStartMonth: number;
+      lastCloseDate: string | null;
+      cutoffDate: string | null;
+    }>;
+  }
+
+  /**
+   * Advance the last_close_date after a successful month-end close.
+   * Called by eom-service after ACCT_300 completes.
+   * @cobol-origin acsys.fd — ACSYS-LAST-CLOSE-DATE write
+   */
+  async advanceLastCloseDate(tenantId: TenantId, newCloseDate: string): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/api/v1/gl/admin/system-config`, {
+      method: 'PUT',
+      headers: this.headers(tenantId),
+      body: JSON.stringify({ lastCloseDate: newCloseDate }),
+    });
+    if (!res.ok) throw new Error(`Failed to advance last close date: ${res.status}`);
   }
 }
