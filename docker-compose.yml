@@ -514,6 +514,7 @@ services:
     ports:
       - "5174:5174"
     environment:
+      API_TARGET: http://api-gateway:3000
       VITE_API_URL:
     depends_on:
       - api-gateway

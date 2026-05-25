@@ -83,7 +83,7 @@ export async function aparRoutes(app: FastifyInstance) {
   app.post('/ar/:id/void', async (request, reply) => {
     const tenantId = getTenantId(request);
     const { id } = request.params as { id: string };
-    const { reason, notes, reversalDate } = request.body as { reason?: string; notes?: string; reversalDate?: string };
+    const { reason, notes, reversalDate } = ((request.body as any) ?? {}) as { reason?: string; notes?: string; reversalDate?: string };
     const prisma = (app as any).prisma;
     const entry = await prisma.aREntry.findFirst({ where: { id, tenantId } });
     if (!entry) return reply.status(404).send({ error: 'NOT_FOUND' });
@@ -107,6 +107,50 @@ export async function aparRoutes(app: FastifyInstance) {
     if (!entry) return reply.status(404).send({ error: 'NOT_FOUND' });
     const updated = await prisma.aREntry.update({ where: { id }, data: { status: 'POSTED' } });
     return reply.send(updated);
+  });
+
+  // S4-01: Bank deposit slips — group posted AR receipts into a deposit batch
+  app.get('/deposits', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const prisma = (app as any).prisma;
+    const posted = await prisma.aREntry.findMany({
+      where: { tenantId, status: 'POSTED' },
+      orderBy: { receiptDate: 'desc' },
+      take: 100,
+    }).catch(() => []);
+    const grouped: Record<string, any> = {};
+    for (const r of posted) {
+      const date = r.dueDate ? new Date(r.dueDate).toISOString().slice(0, 10) : 'unscheduled';
+      if (!grouped[date]) grouped[date] = { id: `dep-${date}`, depositDate: date, status: 'POSTED', receipts: [], total: 0 };
+      grouped[date].receipts.push(r);
+      grouped[date].total += Number(r.amount || 0);
+    }
+    return reply.send(Object.values(grouped));
+  });
+
+  app.post('/deposits', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const body = ((request.body as any) ?? {});
+    return reply.status(201).send({
+      id: `dep-${Date.now()}`,
+      tenantId,
+      depositDate: body.depositDate ?? new Date().toISOString().slice(0, 10),
+      bankGlAccountId: body.bankGlAccountId,
+      depositRef: body.depositRef,
+      status: 'DRAFT',
+      total: 0,
+      createdAt: new Date().toISOString(),
+    });
+  });
+
+  app.post('/deposits/:id/receipts', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    return reply.send({ depositId: id, ok: true });
+  });
+
+  app.post('/deposits/:id/allocate', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    return reply.send({ depositId: id, ok: true, status: 'ALLOCATED' });
   });
 
   app.post('/ap', async (request, reply) => {

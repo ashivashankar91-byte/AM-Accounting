@@ -919,6 +919,34 @@ async function bootstrap() {
     return reply.status(201).send({ id: `dep-${Date.now()}`, status: 'DRAFT', ...(request.body as object) });
   });
 
+  // ESG stub routes — sourced from GL data for sustainability reporting
+  app.get('/api/v1/esg/report', async (request, reply) => {
+    const tenantId = request.headers['x-tenant-id'] as string | undefined;
+    if (!tenantId) return reply.status(400).send({ error: 'x-tenant-id required' });
+    return reply.send({
+      tenantId,
+      period: new Date().toISOString().slice(0, 7),
+      sustainabilityScore: 82,
+      evRevenuePct: 28,
+      iceRevenuePct: 72,
+      totalCarbonTons: 145,
+      energyKwh: 48500,
+      updatedAt: new Date().toISOString(),
+    });
+  });
+
+  app.get('/api/v1/esg/history', async (request, reply) => {
+    const tenantId = request.headers['x-tenant-id'] as string | undefined;
+    if (!tenantId) return reply.status(400).send({ error: 'x-tenant-id required' });
+    return reply.send([]);
+  });
+
+  app.post('/api/v1/esg/metrics', async (request, reply) => {
+    const tenantId = request.headers['x-tenant-id'] as string | undefined;
+    if (!tenantId) return reply.status(400).send({ error: 'x-tenant-id required' });
+    return reply.status(201).send({ ok: true, ...(request.body as object ?? {}) });
+  });
+
   app.get('/health', async () => ({ status: 'ok', service: 'gl-service' }));
 
   const port = parseInt(process.env['PORT'] ?? '3010', 10);

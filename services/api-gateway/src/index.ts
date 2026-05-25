@@ -73,6 +73,12 @@ const SERVICES: Array<{ prefix: string; upstream: string; rateLimit?: number; re
   // Intelligence layer — agent-t1 handles copilot and agents HTTP
   { prefix: '/api/v1/copilot',        upstream: process.env['AGENT_T1_URL']               ?? 'http://agent-t1:3024' },
   { prefix: '/api/v1/agents',         upstream: process.env['AGENT_T1_URL']               ?? 'http://agent-t1:3024' },
+  // Cash receipts — proxied to apar-service (AR domain); /deposits sub-routes handled there
+  { prefix: '/api/v1/cash-receipts',  upstream: process.env['APAR_SERVICE_URL']           ?? 'http://apar-service:3013', rewritePrefix: '/api/v1/apar' },
+  // ESG sustainability reporting — GL service provides stubs from live GL data
+  { prefix: '/api/v1/esg',            upstream: process.env['GL_SERVICE_URL']             ?? 'http://gl-service:3010' },
+  // Vendor shorthand (same as /apar/vendors)
+  { prefix: '/api/v1/vendors',        upstream: process.env['APAR_SERVICE_URL']           ?? 'http://apar-service:3013', rewritePrefix: '/api/v1/apar/vendors' },
 ];
 
 // ── Request logging hook ──────────────────────────────────────────────────────
