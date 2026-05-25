@@ -114,7 +114,7 @@ export async function aparRoutes(app: FastifyInstance) {
     const tenantId = getTenantId(request);
     const prisma = (app as any).prisma;
     const posted = await prisma.aREntry.findMany({
-      where: { tenantId, status: 'POSTED' },
+      where: { tenantId, status: { in: ['POSTED', 'PAID'] } },
       orderBy: { receiptDate: 'desc' },
       take: 100,
     }).catch(() => []);
