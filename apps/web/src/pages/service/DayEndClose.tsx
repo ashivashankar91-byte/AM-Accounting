@@ -25,8 +25,8 @@ interface DayEndReadiness {
   alreadyClosedToday: boolean;
 }
 
-const fmt = (n: number) =>
-  n.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 });
+const fmt = (n: number | undefined | null) =>
+  (n ?? 0).toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 });
 
 export default function DayEndClose() {
   const queryClient = useQueryClient();
