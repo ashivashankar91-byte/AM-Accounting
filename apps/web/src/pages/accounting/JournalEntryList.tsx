@@ -131,7 +131,7 @@ export default function JournalEntryList() {
       {/* Toolbar */}
       <div className="bg-white rounded-lg shadow px-4 py-3 flex items-center gap-2 flex-wrap">
         <Btn variant="secondary" size="sm" icon={<Plus className="w-3.5 h-3.5" />} onClick={() => navigate('/accounting/gl/entry')}>New Entry</Btn>
-        <Btn variant="secondary" size="sm" icon={<FileText className="w-3.5 h-3.5" />} onClick={() => navigate('/accounting/gl/entry?batch=true')}>Enter Batch</Btn>
+        <Btn variant="secondary" size="sm" icon={<FileText className="w-3.5 h-3.5" />} onClick={() => navigate('/accounting/gl/entry?batch=true')} title="Enter multiple journal entries back-to-back. Form auto-resets after each save.">Enter Batch</Btn>
         <Btn variant="secondary" size="sm" icon={<LayoutTemplate className="w-3.5 h-3.5" />} onClick={() => navigate('/accounting/gl/templates')}>Journal Templates</Btn>
         <div className="h-4 w-px bg-slate-200" />
         <Btn

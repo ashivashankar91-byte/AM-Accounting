@@ -47,7 +47,8 @@ function fmtMoney(val: string | number): string {
   return n < 0 ? `(${abs})` : abs;
 }
 
-function parseMoney(val: string | number): number {
+function parseMoney(val: string | number | undefined | null): number {
+  if (val == null) return 0;
   if (typeof val === 'number') return val;
   return parseFloat(val.replace(/[^0-9.\-]/g, '')) || 0;
 }
@@ -98,7 +99,7 @@ export default function GLTrialBalance() {
   const [printZeroBalances, setPrintZeroBalances] = useState(false);
   const [fromAccount, setFromAccount] = useState('');
   const [toAccount, setToAccount] = useState('');
-  const [shouldFetch, setShouldFetch] = useState(false);
+  const [shouldFetch, setShouldFetch] = useState(true);
 
   const {
     data: tbData,
@@ -110,6 +111,18 @@ export default function GLTrialBalance() {
     queryFn: () => glApi.getTrialBalance(selectedYear, selectedMonth),
     enabled: shouldFetch,
     retry: false,
+    select: (raw: any): TrialBalanceResponse => ({
+      totalDebits: String(raw.totalDebits ?? 0),
+      totalCredits: String(raw.totalCredits ?? 0),
+      accounts: (raw.accounts ?? []).map((a: any) => ({
+        accountCode: a.accountCode,
+        accountName: a.accountName,
+        accountType: a.accountType,
+        priorBalance: String(a.priorBalance ?? a.openingBalance ?? 0),
+        currentAmount: String(a.currentAmount ?? a.periodDebits ?? a.debit ?? 0),
+        ytdAmount: String(a.ytdAmount ?? (Number(a.openingBalance ?? 0) + Number(a.periodDebits ?? a.debit ?? 0))),
+      })),
+    }),
   });
 
   const handleGenerate = useCallback(() => {
@@ -166,7 +179,7 @@ export default function GLTrialBalance() {
     return filtered;
   }
 
-  const filteredAccounts = shouldFetch ? getFilteredAccounts() : [];
+  const filteredAccounts = getFilteredAccounts();
 
   const totalPrior = filteredAccounts.reduce((s, a) => s + parseMoney(a.priorBalance), 0);
   const totalCurrent = filteredAccounts.reduce((s, a) => s + parseMoney(a.currentAmount), 0);

@@ -161,11 +161,11 @@ export default function ManualJournalEntry() {
         {/* Balance indicator + Submit */}
         <div className="flex items-center justify-between pt-2 border-t">
           <div className="flex items-center gap-3">
-            <span className={`inline-flex items-center gap-1.5 text-sm font-medium ${balanced ? 'text-green-600' : 'text-red-600'}`}>
-              <span className={`w-2.5 h-2.5 rounded-full ${balanced ? 'bg-green-500' : 'bg-red-500'}`} />
-              {balanced ? 'Balanced' : `Out of balance: $${fmt(Math.abs(totalDebit - totalCredit))}`}
+            <span className={`inline-flex items-center gap-1.5 text-sm font-medium ${!hasLines ? 'text-gray-400' : balanced ? 'text-green-600' : 'text-red-600'}`}>
+              <span className={`w-2.5 h-2.5 rounded-full ${!hasLines ? 'bg-gray-300' : balanced ? 'bg-green-500' : 'bg-red-500'}`} />
+              {!hasLines ? 'Add journal lines to balance' : balanced ? 'Balanced' : `Out of balance: $${fmt(Math.abs(totalDebit - totalCredit))}`}
             </span>
-            {!balanced && <span className="text-xs text-gray-400">Debits must equal credits to submit.</span>}
+            {!balanced && hasLines && <span className="text-xs text-gray-400">Debits must equal credits to submit.</span>}
           </div>
           <button
             onClick={() => createMut.mutate()}

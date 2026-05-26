@@ -110,6 +110,68 @@ export async function scheduleRoutes(app: FastifyInstance) {
     }
   });
 
+  // Schedule aging inquiry — used by ScheduleInquiry.tsx
+  // Returns control-level aging summary for a given schedule
+  app.get('/api/v1/schedules/aging', async (req, reply) => {
+    const tenantId = requireTenantId(req, reply);
+    if (!tenantId) return;
+    const prisma = container.resolve<any>('PrismaClient');
+    const q = req.query as any;
+
+    // Control search mode (ControlPickerPopup uses ?search=...)
+    if (q.search) {
+      const rows = await prisma.scheduleDetail.findMany({
+        where: {
+          tenantId,
+          controlNumber: { contains: q.search, mode: 'insensitive' },
+        },
+        select: { controlNumber: true, description: true },
+        distinct: ['controlNumber'],
+        take: 50,
+      }).catch(() => []);
+      const controls = (rows as any[]).map((r: any) => ({
+        controlNum: r.controlNumber,
+        name: r.description ?? r.controlNumber,
+        phone: '',
+        street: '',
+        city: '',
+      }));
+      return reply.send(controls);
+    }
+
+    // Aging mode: ?scheduleId=...&thruDate=...&hideZero=true
+    if (!q.scheduleId) return reply.send([]);
+    const thruDate = q.thruDate ? new Date(q.thruDate) : new Date();
+
+    const details = await prisma.scheduleDetail.findMany({
+      where: {
+        tenantId,
+        scheduleNumber: q.scheduleId.toString().padStart(2, '0').slice(0, 2),
+        transactionDate: { lte: thruDate },
+      },
+      orderBy: [{ controlNumber: 'asc' }, { transactionDate: 'asc' }],
+    }).catch(() => []);
+
+    // Group by controlNumber
+    const grouped = new Map<string, any>();
+    const now = new Date();
+    for (const d of details as any[]) {
+      const ctrl = d.controlNumber;
+      if (!grouped.has(ctrl)) {
+        grouped.set(ctrl, { controlNum: ctrl, description: d.description ?? ctrl, ageDays: 0, amount: 0 });
+      }
+      const row = grouped.get(ctrl)!;
+      row.amount += Number(d.amount ?? 0);
+      const txDate = d.transactionDate ? new Date(d.transactionDate) : now;
+      const age = Math.floor((now.getTime() - txDate.getTime()) / 86400000);
+      if (age > row.ageDays) row.ageDays = age;
+    }
+
+    let rows = Array.from(grouped.values());
+    if (q.hideZero === 'true') rows = rows.filter((r) => r.amount !== 0);
+    return reply.send(rows);
+  });
+
   app.post('/api/v1/schedules', async (req, reply) => {
     const tenantId = requireTenantId(req, reply);
     if (!tenantId) return;

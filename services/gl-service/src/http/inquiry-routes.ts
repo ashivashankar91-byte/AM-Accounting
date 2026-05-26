@@ -106,30 +106,156 @@ export async function inquiryRoutes(app: FastifyInstance) {
     const currentYear = q.periodYear ?? now.getFullYear();
     const currentMonth = q.periodMonth ?? (now.getMonth() + 1);
 
+    // Helper: look up account and build account info object
+    const lookupAccount = async () => {
+      const acct = await prisma.gLAccount.findFirst({ where: { tenantId, code } });
+      if (!acct) return null;
+      return {
+        acct,
+        info: {
+          accountCode: code,
+          accountName: acct.name,
+          accountType: acct.type,
+          balance: Number(acct.currentBalance ?? 0),
+        },
+      };
+    };
+
+    // Helper: query journal_lines for account and return as journal/transaction rows
+    const fetchJournalLineRows = async (
+      acctId: string,
+      fromDt?: Date,
+      toDt?: Date,
+    ) => {
+      const lineWhere: any = {
+        glAccountId: acctId,
+        journalEntry: { tenantId },
+      };
+      if (fromDt || toDt) {
+        lineWhere.journalEntry = {
+          tenantId,
+          entryDate: {
+            ...(fromDt ? { gte: fromDt } : {}),
+            ...(toDt ? { lte: toDt } : {}),
+          },
+        };
+      }
+      return prisma.journalLine.findMany({
+        where: lineWhere,
+        include: { journalEntry: true },
+        orderBy: [{ journalEntry: { entryDate: 'asc' } }, { id: 'asc' }],
+        take: 500,
+      });
+    };
+
     if (q.typeCode === 1) {
-      // Current period journal summaries
-      const lines = await repo.getPeriodJournals(tenantId, code, currentYear, currentMonth);
-      return reply.send({ typeCode: 1, accountCode: code, periodYear: currentYear, periodMonth: currentMonth, lines });
+      const periodLines = await repo.getPeriodJournals(tenantId, code, currentYear, currentMonth);
+      if (periodLines.length > 0) {
+        return reply.send({ typeCode: 1, accountCode: code, periodYear: currentYear, periodMonth: currentMonth, lines: periodLines, journals: periodLines });
+      }
+      // Fallback: query journal_lines for this period
+      const found = await lookupAccount();
+      if (!found) return reply.send({ typeCode: 1, accountCode: code, periodYear: currentYear, periodMonth: currentMonth, journals: [], lines: [] });
+      const periodStart = new Date(currentYear, currentMonth - 1, 1);
+      const periodEnd = new Date(currentYear, currentMonth, 0, 23, 59, 59);
+      const rawLines = await fetchJournalLineRows(found.acct.id, periodStart, periodEnd);
+      let running = 0;
+      const journals = rawLines.map((l) => {
+        const debit = Number(l.debit);
+        const credit = Number(l.credit);
+        running += debit - credit;
+        return {
+          id: l.id,
+          entryDate: l.journalEntry.entryDate.toISOString(),
+          reference: l.journalEntry.sourceRef ?? l.journalEntry.id,
+          description: l.memo ?? l.journalEntry.description,
+          debitAmount: debit,
+          creditAmount: credit,
+          runningBalance: running,
+          status: l.journalEntry.status,
+        };
+      });
+      return reply.send({ typeCode: 1, accountCode: code, periodYear: currentYear, periodMonth: currentMonth, journals, lines: journals, account: found.info });
     }
 
     if (q.typeCode === 3) {
-      // Prior period: one month back
       const priorMonth = currentMonth === 1 ? 12 : currentMonth - 1;
       const priorYear = currentMonth === 1 ? currentYear - 1 : currentYear;
-      const lines = await repo.getPeriodJournals(tenantId, code, priorYear, priorMonth);
-      return reply.send({ typeCode: 3, accountCode: code, periodYear: priorYear, periodMonth: priorMonth, lines });
+      const periodLines = await repo.getPeriodJournals(tenantId, code, priorYear, priorMonth);
+      if (periodLines.length > 0) {
+        return reply.send({ typeCode: 3, accountCode: code, periodYear: priorYear, periodMonth: priorMonth, lines: periodLines, journals: periodLines });
+      }
+      const found = await lookupAccount();
+      if (!found) return reply.send({ typeCode: 3, accountCode: code, periodYear: priorYear, periodMonth: priorMonth, journals: [], lines: [] });
+      const periodStart = new Date(priorYear, priorMonth - 1, 1);
+      const periodEnd = new Date(priorYear, priorMonth, 0, 23, 59, 59);
+      const rawLines = await fetchJournalLineRows(found.acct.id, periodStart, periodEnd);
+      let running = 0;
+      const journals = rawLines.map((l) => {
+        const debit = Number(l.debit);
+        const credit = Number(l.credit);
+        running += debit - credit;
+        return {
+          id: l.id,
+          entryDate: l.journalEntry.entryDate.toISOString(),
+          reference: l.journalEntry.sourceRef ?? l.journalEntry.id,
+          description: l.memo ?? l.journalEntry.description,
+          debitAmount: debit,
+          creditAmount: credit,
+          runningBalance: running,
+          status: l.journalEntry.status,
+        };
+      });
+      return reply.send({ typeCode: 3, accountCode: code, periodYear: priorYear, periodMonth: priorMonth, journals, lines: journals, account: found.info });
     }
 
     if (q.typeCode === 2) {
-      // Transactions posted AFTER last close date
-      const lines = await repo.getHistoryByAccount(tenantId, code, { afterDate: lastCloseDate });
-      return reply.send({ typeCode: 2, accountCode: code, lastCloseDate: lastCloseDate.toISOString().slice(0, 10), lines });
+      const histLines = await repo.getHistoryByAccount(tenantId, code, { afterDate: lastCloseDate });
+      if (histLines.length > 0) {
+        return reply.send({ typeCode: 2, accountCode: code, lastCloseDate: lastCloseDate.toISOString().slice(0, 10), lines: histLines, transactions: histLines });
+      }
+      const found = await lookupAccount();
+      if (!found) return reply.send({ typeCode: 2, accountCode: code, transactions: [], lines: [] });
+      const rawLines = await fetchJournalLineRows(found.acct.id, lastCloseDate);
+      let running = 0;
+      const transactions = rawLines.map((l) => {
+        const amount = Number(l.debit) - Number(l.credit);
+        running += amount;
+        return {
+          id: l.id,
+          transactionDate: l.journalEntry.entryDate.toISOString(),
+          transactionType: Number(l.debit) > 0 ? 'DEBIT' : 'CREDIT',
+          sourceCode: l.journalEntry.source,
+          amount,
+          runningBalance: running,
+        };
+      });
+      return reply.send({ typeCode: 2, accountCode: code, lastCloseDate: lastCloseDate.toISOString().slice(0, 10), transactions, lines: transactions, account: found.info });
     }
 
     if (q.typeCode === 4) {
-      // Transactions ON OR BEFORE last close date
-      const lines = await repo.getHistoryByAccount(tenantId, code, { onOrBeforeDate: lastCloseDate });
-      return reply.send({ typeCode: 4, accountCode: code, lastCloseDate: lastCloseDate.toISOString().slice(0, 10), lines });
+      const histLines = await repo.getHistoryByAccount(tenantId, code, { onOrBeforeDate: lastCloseDate });
+      if (histLines.length > 0) {
+        return reply.send({ typeCode: 4, accountCode: code, lastCloseDate: lastCloseDate.toISOString().slice(0, 10), lines: histLines, transactions: histLines });
+      }
+      const found = await lookupAccount();
+      if (!found) return reply.send({ typeCode: 4, accountCode: code, transactions: [], lines: [] });
+      const periodEnd = lastCloseDate;
+      const rawLines = await fetchJournalLineRows(found.acct.id, undefined, periodEnd);
+      let running = 0;
+      const transactions = rawLines.map((l) => {
+        const amount = Number(l.debit) - Number(l.credit);
+        running += amount;
+        return {
+          id: l.id,
+          transactionDate: l.journalEntry.entryDate.toISOString(),
+          transactionType: Number(l.debit) > 0 ? 'DEBIT' : 'CREDIT',
+          sourceCode: l.journalEntry.source,
+          amount,
+          runningBalance: running,
+        };
+      });
+      return reply.send({ typeCode: 4, accountCode: code, lastCloseDate: lastCloseDate.toISOString().slice(0, 10), transactions, lines: transactions, account: found.info });
     }
 
     // typeCode === 5: Filtered by source + controlNumber + date range
@@ -139,6 +265,29 @@ export async function inquiryRoutes(app: FastifyInstance) {
       fromDate: q.fromDate ? new Date(q.fromDate) : undefined,
       toDate: q.toDate ? new Date(q.toDate) : undefined,
     });
+    if (lines.length > 0) {
+      return reply.send({ typeCode: 5, accountCode: code, source: q.source, controlNumber: q.controlNumber, fromDate: q.fromDate, toDate: q.toDate, lines, transactions: lines });
+    }
+    const found = await lookupAccount();
+    if (!found) return reply.send({ typeCode: 5, accountCode: code, transactions: [], lines: [] });
+    const rawLines = await fetchJournalLineRows(
+      found.acct.id,
+      q.fromDate ? new Date(q.fromDate) : undefined,
+      q.toDate ? new Date(q.toDate) : undefined,
+    );
+    let running = 0;
+    const transactions = rawLines.map((l) => {
+      const amount = Number(l.debit) - Number(l.credit);
+      running += amount;
+      return {
+        id: l.id,
+        transactionDate: l.journalEntry.entryDate.toISOString(),
+        transactionType: Number(l.debit) > 0 ? 'DEBIT' : 'CREDIT',
+        sourceCode: l.journalEntry.source,
+        amount,
+        runningBalance: running,
+      };
+    });
     return reply.send({
       typeCode: 5,
       accountCode: code,
@@ -146,7 +295,9 @@ export async function inquiryRoutes(app: FastifyInstance) {
       controlNumber: q.controlNumber,
       fromDate: q.fromDate,
       toDate: q.toDate,
-      lines,
+      transactions,
+      lines: transactions,
+      account: found.info,
     });
   });
 

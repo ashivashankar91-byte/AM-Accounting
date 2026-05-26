@@ -336,9 +336,12 @@ export default function JournalEntry() {
         <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
-            <span className="text-sm font-medium text-amber-900">
-              Batch Entry Mode — Entry #{batchCount.session + 1} of session ({batchCount.saved} saved)
-            </span>
+            <div>
+              <span className="text-sm font-medium text-amber-900">
+                Batch Entry Mode — Entry #{batchCount.session + 1} ({batchCount.saved} saved this session)
+              </span>
+              <p className="text-xs text-amber-700 mt-0.5">Form resets automatically after each save — enter multiple entries back-to-back.</p>
+            </div>
           </div>
           <button
             onClick={() => navigate('/accounting/gl')}
@@ -601,15 +604,15 @@ export default function JournalEntry() {
           <div className="flex items-center gap-3">
             <span
               className={`inline-flex items-center gap-1.5 text-sm font-medium ${
-                isBalanced ? 'text-green-600' : 'text-red-600'
+                !hasContent ? 'text-gray-400' : isBalanced ? 'text-green-600' : 'text-red-600'
               }`}
             >
               <span
-                className={`w-2.5 h-2.5 rounded-full ${isBalanced ? 'bg-green-500' : 'bg-red-500'}`}
+                className={`w-2.5 h-2.5 rounded-full ${!hasContent ? 'bg-gray-300' : isBalanced ? 'bg-green-500' : 'bg-red-500'}`}
               />
-              {isBalanced ? 'Balanced' : `Out of balance: $${fmt(difference)}`}
+              {!hasContent ? 'Add journal lines to balance' : isBalanced ? 'Balanced' : `Out of balance: $${fmt(difference)}`}
             </span>
-            {!isBalanced && (
+            {!isBalanced && hasContent && (
               <span className="text-xs text-gray-500">
                 Debits must equal credits to post (F8)
               </span>
