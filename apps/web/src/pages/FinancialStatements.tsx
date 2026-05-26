@@ -37,7 +37,7 @@ export default function FinancialStatements() {
     { key: 'cash-flow', label: 'Cash Flow' },
   ];
 
-  const fmt = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+  const fmt = (n: number | undefined | null) => (n ?? 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 
   return (
     <div className="p-6 space-y-4">

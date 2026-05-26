@@ -126,6 +126,18 @@ async function bootstrap() {
     return reply.send({ status: 'queued', reportId: `rpt-${Date.now()}` });
   });
 
+  app.get('/api/v1/reports/history', async (request, reply) => {
+    const tenantId = request.headers['x-tenant-id'] as string | undefined;
+    if (!tenantId) return reply.status(401).send({ error: 'x-tenant-id header is required' });
+    return reply.send([]);
+  });
+
+  app.post('/api/v1/reports/schedule', async (request, reply) => {
+    const tenantId = request.headers['x-tenant-id'] as string | undefined;
+    if (!tenantId) return reply.status(401).send({ error: 'x-tenant-id header is required' });
+    return reply.status(201).send({ id: `sched-${Date.now()}`, ...(request.body as object ?? {}) });
+  });
+
   const port = parseInt(process.env['PORT'] ?? '3046', 10);
   await app.listen({ port, host: '0.0.0.0' });
   logger.info(`analytics-service listening on :${port}`);
