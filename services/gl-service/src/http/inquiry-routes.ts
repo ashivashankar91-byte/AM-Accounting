@@ -149,16 +149,15 @@ export async function inquiryRoutes(app: FastifyInstance) {
     };
 
     if (q.typeCode === 1) {
-      const periodLines = await repo.getPeriodJournals(tenantId, code, currentYear, currentMonth);
-      if (periodLines.length > 0) {
-        return reply.send({ typeCode: 1, accountCode: code, periodYear: currentYear, periodMonth: currentMonth, lines: periodLines, journals: periodLines });
-      }
-      // Fallback: query journal_lines for this period
+      // Always fetch from journal_lines for the journals display (period summaries don't have the right shape)
       const found = await lookupAccount();
       if (!found) return reply.send({ typeCode: 1, accountCode: code, periodYear: currentYear, periodMonth: currentMonth, journals: [], lines: [] });
       const periodStart = new Date(currentYear, currentMonth - 1, 1);
       const periodEnd = new Date(currentYear, currentMonth, 0, 23, 59, 59);
-      const rawLines = await fetchJournalLineRows(found.acct.id, periodStart, periodEnd);
+      // Also include prior months so the "all time" view has context - get last 6 months
+      const sixMonthsAgo = new Date(currentYear, currentMonth - 7, 1);
+      const rawLines = await fetchJournalLineRows(found.acct.id, sixMonthsAgo, periodEnd);
+      const periodLines = await repo.getPeriodJournals(tenantId, code, currentYear, currentMonth);
       let running = 0;
       const journals = rawLines.map((l) => {
         const debit = Number(l.debit);
@@ -175,16 +174,12 @@ export async function inquiryRoutes(app: FastifyInstance) {
           status: l.journalEntry.status,
         };
       });
-      return reply.send({ typeCode: 1, accountCode: code, periodYear: currentYear, periodMonth: currentMonth, journals, lines: journals, account: found.info });
+      return reply.send({ typeCode: 1, accountCode: code, periodYear: currentYear, periodMonth: currentMonth, journals, lines: periodLines, account: found.info });
     }
 
     if (q.typeCode === 3) {
       const priorMonth = currentMonth === 1 ? 12 : currentMonth - 1;
       const priorYear = currentMonth === 1 ? currentYear - 1 : currentYear;
-      const periodLines = await repo.getPeriodJournals(tenantId, code, priorYear, priorMonth);
-      if (periodLines.length > 0) {
-        return reply.send({ typeCode: 3, accountCode: code, periodYear: priorYear, periodMonth: priorMonth, lines: periodLines, journals: periodLines });
-      }
       const found = await lookupAccount();
       if (!found) return reply.send({ typeCode: 3, accountCode: code, periodYear: priorYear, periodMonth: priorMonth, journals: [], lines: [] });
       const periodStart = new Date(priorYear, priorMonth - 1, 1);
