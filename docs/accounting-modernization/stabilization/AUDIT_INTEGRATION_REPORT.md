@@ -45,6 +45,14 @@ tsc --noEmit: 0 errors — tenant-service, auth-service, coa-service, audit-serv
 npm run build:services: 29 built, 1 failed (fs-service — pre-existing, out of scope)
 ```
 
+## Critical bug found and fixed in Phase 8 (RLS silently broke this phase's entire delivery path)
+
+When Phase 5's RLS policies went live, this phase's drainer stopped delivering anything, silently. Root cause: `AuditOutboxDrainer.start()`'s `setInterval` callback runs as a background timer, never inside a Fastify request — so `RlsTenantContext.get()` (an `AsyncLocalStorage`, populated only by `tenantContextHook`, a preHandler) always returns `undefined` for it. The RLS middleware then runs `set_config('app.current_tenant_id', '')` before `findUnpublished()`'s query, and the RLS policy (`tenant_id = current_setting(...)`) matches nothing — every poll returned zero rows, for every tenant, forever. Rows were still written to the outbox correctly (a real HTTP write request does have tenant context), so nothing looked wrong until Phase 8 actually posted a transaction end-to-end and found it sitting undelivered in `audit_outbox` with `retryCount: 0` (not even a failed attempt — the query itself just never saw the row).
+
+**Fix**: new migrations in tenant-service, auth-service, and coa-service (`20260727000001_exclude_outbox_tables_from_rls`) run `ALTER TABLE ... DISABLE ROW LEVEL SECURITY` on `audit_outbox`, `authz_outbox_events`, `tenant_outbox_events`, and `coa_outbox_events`. These are internal system delivery queues — a service's own pending-work list — not tenant-facing queryable data; no user-facing feature ever reads "my tenant's outbox." They now sit in the same platform-wide/tenant-agnostic category as `tenants`, `permission`, `role_permission`, etc. (see `TENANT_ISOLATION_REPORT.md`'s Coverage section, updated accordingly). This was a genuine product/architecture call (loosening an RLS-protected table), not applied unilaterally — confirmed with the Product Owner before applying.
+
+**Re-verified after the fix**: re-ran the full Phase 8 golden-path transaction (create legal entity → fiscal calendar → open period → seed COA → post + reverse a journal entry) and confirmed all 9 resulting `audit_outbox` rows drained to `audit_logs` with `published_at` set and zero duplicate `sourceEventId`s. Full regression: `tsc --noEmit` 0 errors and all unit suites (154/88/275/4) still pass across all 4 services, RLS isolation suite still 9/9, live-DB suite still 5/5 — this fix touches only the 4 outbox tables, nothing else.
+
 ## Explicitly disclosed scope limits
 
 - **Broker delivery is not yet proven end-to-end** — the drainer bypasses the broker entirely (HTTP poller, by design, given the RabbitMQ subscribe() gap documented above). Phase 7 is where real broker publish/consume gets proven; this phase's audit trail works regardless of that gap.
