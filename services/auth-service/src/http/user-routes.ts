@@ -9,6 +9,7 @@ import {
   UserValidationError,
   DuplicateEmailError,
   LastAdminError,
+  InvalidResetTokenError,
 } from '../application/user-service';
 
 // ── S205: /iam/users routes — user account lifecycle ────────────────────────────
@@ -69,6 +70,9 @@ function handleError(error: unknown, reply: any) {
   if (error instanceof UserValidationError) {
     return reply.status(422).send({ error: error.code, message: error.message });
   }
+  if (error instanceof InvalidResetTokenError) {
+    return reply.status(422).send({ error: 'INVALID_RESET_TOKEN', message: error.message });
+  }
   if (error instanceof z.ZodError) {
     return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
   }
@@ -82,6 +86,11 @@ const CreateUserSchema = z.object({
   displayName: z.string().min(1).max(80),
   entityScope: z.array(z.string().min(1)).optional(),
   storeScope:  z.array(z.string().min(1)).optional(),
+});
+
+const SetPasswordSchema = z.object({
+  resetToken:  z.string().min(1),
+  newPassword: z.string().min(8).max(200),
 });
 
 export async function userRoutes(app: FastifyInstance) {
@@ -137,6 +146,17 @@ export async function userRoutes(app: FastifyInstance) {
     try {
       const result = await svc().resetUser(tenantId, (request.params as any).id, getActor(request));
       return reply.status(202).send(result);
+    } catch (err) { return handleError(err, reply); }
+  });
+
+  // ── Set password (public — guarded by the one-time reset token itself, ──────
+  //    not by a permission check: the caller has no session yet). FINAL-R0 S205.
+  app.post('/users/:id/set-password', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    try {
+      const body = SetPasswordSchema.parse(request.body);
+      const user = await svc().setPassword(tenantId, (request.params as any).id, body.resetToken, body.newPassword);
+      return reply.status(200).send({ user });
     } catch (err) { return handleError(err, reply); }
   });
 }
