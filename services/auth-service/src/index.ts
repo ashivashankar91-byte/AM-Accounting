@@ -14,6 +14,7 @@ import { RabbitMQEventPublisher } from './infrastructure/event-publisher';
 import {
   IEventPublisher, HttpAuditClient, AuditOutboxDrainer,
   makePrismaAuditOutboxStore, makePrismaGenericEventOutboxStore,
+  createTenantRlsMiddleware, tenantContextHook,
 } from '@amacc/shared-kernel';
 import { PrismaClient } from '.prisma/auth-client';
 import pino from 'pino';
@@ -33,6 +34,12 @@ async function bootstrap() {
 
   // S207: authorization provider (permission catalog + check API)
   const prisma = new PrismaClient();
+
+  // R0 Stabilization Phase 5 (ADR-001): set app.current_tenant_id on every
+  // query, enforced by RLS policies (migration 20260726000003_add_rls_policies).
+  (prisma as any).$use(createTenantRlsMiddleware(prisma));
+  app.addHook('preHandler', tenantContextHook);
+
   container.registerInstance('PrismaClient', prisma);
   container.register('AuthzService', { useClass: AuthzService });
 

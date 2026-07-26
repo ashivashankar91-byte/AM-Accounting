@@ -5,7 +5,7 @@ import { PrismaClient } from '.prisma/audit-client';
 import { AuditService } from './application/audit-service';
 import { auditRoutes } from './http/routes';
 import { RabbitMQEventPublisher } from './infrastructure/event-publisher';
-import { DomainEvent } from '@amacc/shared-kernel';
+import { DomainEvent, createTenantRlsMiddleware, tenantContextHook } from '@amacc/shared-kernel';
 import pino from 'pino';
 
 const logger = pino({ name: 'audit-service' });
@@ -69,6 +69,19 @@ async function bootstrap() {
 
   const prisma = new PrismaClient();
   await prisma.$connect();
+
+  // R0 Stabilization Phase 5 (ADR-001): set app.current_tenant_id on every
+  // query, enforced by RLS policies (migration 20260726000002_add_rls_policies).
+  // NOTE (disclosed, not silently accepted): audit-service's cross-tenant
+  // admin GET endpoints (getByEntity/getByActor/getByPeriod with no tenantId)
+  // will now return zero rows under RLS unless the caller session has the
+  // amacc_rls_bypass role — this is a deliberate ADR-001 trade-off (a query
+  // with no tenant context is denied, not "sees everything"), but it is a
+  // real behavior change to an existing admin capability and is called out
+  // in TENANT_ISOLATION_REPORT.md as a Product Owner decision point, not
+  // silently absorbed.
+  (prisma as any).$use(createTenantRlsMiddleware(prisma));
+  app.addHook('preHandler', tenantContextHook);
 
   const auditService = new AuditService(prisma);
 

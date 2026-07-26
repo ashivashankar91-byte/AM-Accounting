@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test:journal-lifecycle": "tsx test-journal-lifecycle.ts"
+    "test:journal-lifecycle": "tsx test-journal-lifecycle.ts",
+    "test:rls-isolation": "tsx test-rls-isolation.ts"
   },
   "dependencies": {
     "pg": "^8.12.0"

@@ -28,6 +28,7 @@ import { RabbitMQEventPublisher } from './infrastructure/event-publisher';
 import {
   IEventPublisher, HttpAuthzClient, AuthzClient,
   HttpAuditClient, AuditOutboxDrainer, makePrismaAuditOutboxStore,
+  createTenantRlsMiddleware, tenantContextHook,
 } from '@amacc/shared-kernel';
 import { PrismaClient } from '.prisma/coa-client';
 import pino from 'pino';
@@ -46,6 +47,12 @@ async function bootstrap() {
   container.registerInstance<IEventPublisher>('IEventPublisher', eventPublisher);
 
   const prisma = new PrismaClient();
+
+  // R0 Stabilization Phase 5 (ADR-001): set app.current_tenant_id on every
+  // query, enforced by RLS policies (migration 20260726000002_add_rls_policies).
+  (prisma as any).$use(createTenantRlsMiddleware(prisma));
+  app.addHook('preHandler', tenantContextHook);
+
   container.registerInstance('PrismaClient', prisma);
 
   container.registerInstance<AuthzClient>('AuthzClient', new HttpAuthzClient({

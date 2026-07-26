@@ -8,6 +8,8 @@ export * from './authz/authz-client';
 export * from './authz/authz-guard';
 export * from './audit/audit-client';
 export * from './audit/audit-outbox-drainer';
+export * from './tenancy/tenant-context';
+export * from './tenancy/rls-middleware';
 export * from './middleware/tracing';
 export * from './middleware/logger';
 export * from './middleware/health';

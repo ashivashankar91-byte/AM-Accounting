@@ -17,6 +17,7 @@ import { FranchiseService } from './application/franchise-service';
 import {
   IEventPublisher, ITenantRepository, HttpAuthzClient, AuthzClient,
   HttpAuditClient, AuditOutboxDrainer, makePrismaAuditOutboxStore,
+  createTenantRlsMiddleware, tenantContextHook,
 } from '@amacc/shared-kernel';
 import { PrismaClient } from '.prisma/tenant-client';
 import pino from 'pino';
@@ -29,6 +30,11 @@ async function bootstrap() {
 
   const prisma = new PrismaClient();
   await prisma.$connect();
+
+  // R0 Stabilization Phase 5 (ADR-001): set app.current_tenant_id on every
+  // query, enforced by RLS policies (migration 20260726000003_add_rls_policies).
+  (prisma as any).$use(createTenantRlsMiddleware(prisma));
+  app.addHook('preHandler', tenantContextHook);
 
   // Make Prisma available to route handlers via (app as any).prisma
   app.decorate('prisma', prisma);
