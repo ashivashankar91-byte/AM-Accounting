@@ -3,7 +3,7 @@
     "schema": "1.0",
     "description": "Single operational source of truth for the AMACC accounting modernisation release workflow.",
     "controlledBy": "Product Owner — update story status and readiness here. Do not use CURRENT_RELEASE.md as a control file.",
-    "lastUpdated": "2026-07-26",
+    "lastUpdated": "2026-07-27",
     "sourcePackage": "docs/accounting-modernization/AutoMate2_Accounting_Backlog_Package_v1.1.zip"
   },
   "activePackage": "R0-JOURNAL-LIFECYCLE",
@@ -101,9 +101,9 @@
       "title": "Create & Maintain Legal Entity",
       "layman": "Set up the dealer group's legal companies so every dollar is booked to the right legal name.",
       "sprint": 1,
-      "status": "DONE_PENDING_INTEGRATION",
+      "status": "DONE",
       "completedDate": "2026-07-22",
-      "usesStubs": true,
+      "usesStubs": false,
       "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207 and tenant-service build passes tsc --noEmit",
       "dependencies": [],
       "blockers": [],
@@ -113,12 +113,20 @@
         "auditReport": "docs/accounting-modernization/audit-results/S200-AUDIT_RESULTS_v1.2.md",
         "notes": "S200 audit complete. GAP-S200-SEMANTIC, GAP-S200-AUTHZ, GAP-S200-DOCBLOCK, GAP-S200-REACTIVATE closed per decision register."
       },
-      "stabilizationReconciliation": {
-        "phase": "R0 Stabilization Phase 1",
-        "priorClaim": "status DONE, usesStubs:false",
-        "correctedBecause": "docs/accounting-modernization/repository-verification/AUTHORIZATION_AND_AUDIT_VERIFICATION.md and REPOSITORY_CONTRADICTIONS.md #2 found legal-entity-routes.ts uses the same local static ROLE_PERMISSIONS stub map as every usesStubs:true story, not the real S207 AuthzService; tenant-service has no audit mechanism at all (not even a stub); and tenant-service currently fails tsc --noEmit. usesStubs:false and full DONE are not supportable claims until Phase 2 (build) and Phase 3 (authz centralization) close.",
-        "reference": "docs/accounting-modernization/repository-verification/REPOSITORY_CONTRADICTIONS.md#2"
-      }
+      "stabilizationReconciliation": [
+        {
+          "phase": "R0 Stabilization Phase 1",
+          "priorClaim": "status DONE, usesStubs:false",
+          "correctedBecause": "docs/accounting-modernization/repository-verification/AUTHORIZATION_AND_AUDIT_VERIFICATION.md and REPOSITORY_CONTRADICTIONS.md #2 found legal-entity-routes.ts uses the same local static ROLE_PERMISSIONS stub map as every usesStubs:true story, not the real S207 AuthzService; tenant-service has no audit mechanism at all (not even a stub); and tenant-service currently fails tsc --noEmit. usesStubs:false and full DONE are not supportable claims until Phase 2 (build) and Phase 3 (authz centralization) close.",
+          "reference": "docs/accounting-modernization/repository-verification/REPOSITORY_CONTRADICTIONS.md#2"
+        },
+        {
+          "phase": "R0 Stabilization Phase 9 (Certification)",
+          "priorStatus": "DONE_PENDING_INTEGRATION",
+          "promotedBecause": "Legal entity created via real gateway->tenant-service call (POST /api/v1/legal-entities) in the Phase 8 golden path; real S207 authz check; real RLS-enforced write; real S007 audit delivery confirmed in audit_logs.",
+          "reference": "docs/accounting-modernization/stabilization/E2E_FOUNDATION_REPORT.md"
+        }
+      ]
     },
 
     "S201": {
@@ -245,7 +253,7 @@
       "title": "Permission Catalog & Check API",
       "layman": "One master list of every action the system allows, and one gatekeeper that answers 'may this person do this here?' — the same way, everywhere.",
       "sprint": 1,
-      "status": "DONE_PENDING_INTEGRATION",
+      "status": "DONE",
       "completedDate": "2026-07-24",
       "usesStubs": false,
       "stubGate": "DONE_PENDING_INTEGRATION until auth-service passes tsc --noEmit, deny events are consumed by a real S007 audit sink instead of authz_outbox_events with no reader, and live-database + broker-backed verification exist. usesStubs remains false: S207's own engine (AuthzService.check()) is genuinely real and deny-by-default, not a local stand-in. The fact that 19 of the other 21 stories do not yet call it is tracked as their own gap in AUTHORIZATION_WRITE_PATH_CENSUS.csv, not a defect in S207 itself.",
@@ -259,6 +267,12 @@
         "vitestCount": 27,
         "completionDoc": "docs/accounting-modernization/audit-results/S207-COMPLETION.md",
         "notes": "authz-service.test.ts (16), authz-routes.test.ts (10), authz-benchmark.test.ts (1, p99). Migration 20260724000002_add_authz_catalog applied (10 permissions, 34 role grants, catalog v1.0.0). Runtime transcript via gateway: deny no-role, allow ADMIN, deny ACCOUNTANT manage, unknown-permission=400, scope-escalation deny+flag, catalog list=10, catalog diff. 3 iam.authz.denied events confirmed in authz_outbox_events with §9 payload {eventId,userId,permissionKey,scope,route,ts,schemaV:1}. Deny-by-default proven."
+      },
+      "stabilizationReconciliation": {
+        "phase": "R0 Stabilization Phase 9 (Certification)",
+        "priorStatus": "DONE_PENDING_INTEGRATION",
+        "promotedBecause": "All 3 stubGate conditions met: auth-service passes tsc --noEmit; iam.authz.denied events now drained by a real S007 audit sink (authzDenialDrainer, confirmed delivering after the Phase 8 outbox-RLS-exclusion fix) instead of an unread table; live-database (9/9 RLS isolation tests) and broker-backed (10/10) verification both exist. Two real bugs in the HTTP client (wrong URL path; missing x-tenant-id) found and fixed only by exercising the real call chain in Phase 8.",
+        "reference": "docs/accounting-modernization/stabilization/E2E_FOUNDATION_REPORT.md"
       }
     },
 
@@ -294,9 +308,9 @@
       "package": "R0-ACCOUNTING-SETUP",
       "epic": "CE-02",
       "sprint": 2,
-      "status": "DONE_PENDING_INTEGRATION",
+      "status": "DONE",
       "completedDate": "2026-07-24",
-      "usesStubs": true,
+      "usesStubs": false,
       "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207",
       "dependencies": ["S200"],
       "blockers": [],
@@ -311,6 +325,12 @@
         "gatewayRoute": "/api/v1/fiscal -> coa-service:3016",
         "doc": "docs/accounting-modernization/audit-results/S208-COMPLETION.md",
         "specDeviation": "Hosted in coa-service; legacy eom-service fiscal_periods coexists (consolidation is an integration-gate task); recorded in completion doc §1"
+      },
+      "stabilizationReconciliation": {
+        "phase": "R0 Stabilization Phase 9 (Certification)",
+        "priorStatus": "DONE_PENDING_INTEGRATION",
+        "promotedBecause": "Real gateway->coa-service calls in the Phase 8 golden path: calendar defined, FY2026 periods generated (12, gapless). Real S207 authz, real S007 audit delivery confirmed.",
+        "reference": "docs/accounting-modernization/stabilization/E2E_FOUNDATION_REPORT.md"
       }
     },
 
@@ -320,9 +340,9 @@
       "package": "R0-ACCOUNTING-SETUP",
       "epic": "CE-02",
       "sprint": 2,
-      "status": "DONE_PENDING_INTEGRATION",
+      "status": "DONE",
       "completedDate": "2026-07-24",
-      "usesStubs": true,
+      "usesStubs": false,
       "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207",
       "dependencies": ["S208", "S223"],
       "blockers": [],
@@ -340,6 +360,12 @@
         "gatewayRoute": "/api/v1/fiscal -> coa-service:3016 (shared with S208; no gateway change)",
         "doc": "docs/accounting-modernization/audit-results/S209-COMPLETION.md",
         "specDeviation": "Skip-open warning returns HTTP 200 with requiresConfirmation (soft warn+confirm) rather than a distinct status code, staying within packet §9 codes (200/422/404). Later close transitions (SOFT/HARD/LOCKED) deferred to S008/R1; enum values ship now."
+      },
+      "stabilizationReconciliation": {
+        "phase": "R0 Stabilization Phase 9 (Certification)",
+        "priorStatus": "DONE_PENDING_INTEGRATION",
+        "promotedBecause": "Real gateway->coa-service call in the Phase 8 golden path: period 2026-01 opened FUTURE->OPEN. Real S207 authz, real S007 audit delivery confirmed.",
+        "reference": "docs/accounting-modernization/stabilization/E2E_FOUNDATION_REPORT.md"
       }
     },
 
@@ -403,9 +429,9 @@
       "package": "R0-ACCOUNTING-SETUP",
       "epic": "CE-03",
       "sprint": 2,
-      "status": "DONE_PENDING_INTEGRATION",
+      "status": "DONE",
       "completedDate": "2026-07-24",
-      "usesStubs": true,
+      "usesStubs": false,
       "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207",
       "dependencies": ["S210", "S211"],
       "blockers": [],
@@ -419,6 +445,12 @@
         "event": "coa.seeded (one per run)",
         "runtime": "fresh seed created=31; re-run created=0/merged=31 (idempotent); KUNES created=29/conflicts=2 (never overwritten); 422 unknown manifest; 400 no tenant; gateway :3100 200; coa_seed_run 3 rows; 3 coa.seeded outbox; 3 audit SEED",
         "specDeviation": "colon-verb paths (/coa:seed, /coa:diff-from-canonical) rendered as path segments; interim manifest BP-3.2 via MANIFESTS registry pending UQ-14"
+      },
+      "stabilizationReconciliation": {
+        "phase": "R0 Stabilization Phase 9 (Certification)",
+        "priorStatus": "DONE_PENDING_INTEGRATION",
+        "promotedBecause": "Real gateway->coa-service call in the Phase 8 golden path: 31 GL accounts seeded (manifest BP-3.2, 0 conflicts). Real S207 authz, real S007 audit delivery confirmed.",
+        "reference": "docs/accounting-modernization/stabilization/E2E_FOUNDATION_REPORT.md"
       }
     },
 
@@ -428,9 +460,9 @@
       "package": "R0-ACCOUNTING-SETUP",
       "epic": "CE-03",
       "sprint": 2,
-      "status": "DONE_PENDING_INTEGRATION",
+      "status": "DONE",
       "completedDate": "2026-07-24",
-      "usesStubs": true,
+      "usesStubs": false,
       "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207",
       "dependencies": ["S200"],
       "blockers": [],
@@ -444,6 +476,12 @@
         "event": "coa.source.created|updated|deactivated",
         "runtime": "bootstrap created=8/merged=0; re-run created=0/merged=8 (idempotent); assert-manual SVC(SYSTEM)->422 BR212-1, GJ(MANUAL)->200; PATCH GJ(reserved)->422 RESERVED_SOURCE_IMMUTABLE; create SYSTEM->422 CANNOT_CREATE_SYSTEM_SOURCE; deactivate MISC->INACTIVE v2; deactivate SVC(reserved)->422; dup GJ->409; unknown->404; no tenant->400; gateway :3100 200; journal_source 9 rows; 9 created+1 deactivated outbox; 2 BOOTSTRAP+1 CREATE+1 DEACTIVATE audit",
         "specDeviation": "registry under /api/v1/coa/journal-sources (gateway-reachable, S210/S010 precedent); reserved seeded via idempotent bootstrap-reserved (BR212-2 tenants add MANUAL only); assert-manual guard added for BR212-1 API enforcement (reused by S214 JE path); interim mnemonic codes + reserved numericAlias pending UQ-13"
+      },
+      "stabilizationReconciliation": {
+        "phase": "R0 Stabilization Phase 9 (Certification)",
+        "priorStatus": "DONE_PENDING_INTEGRATION",
+        "promotedBecause": "Real gateway->coa-service call in the Phase 8 golden path: 8 reserved sources bootstrapped including GJ, then used to post a real journal. Real S207 authz, real S007 audit delivery confirmed.",
+        "reference": "docs/accounting-modernization/stabilization/E2E_FOUNDATION_REPORT.md"
       }
     },
 
@@ -476,8 +514,8 @@
       "title": "Balanced Journal Posting API",
       "layman": "The one true door to the ledger: an entry only posts if debits equal credits to the cent, the period is open, the source and every account are valid, and the entry has never posted before. No AI gate, no auto-approve, no half-written journals.",
       "sprint": "Sprint 2 (CE-03, L1, P0, NO_UI_STORY)",
-      "status": "DONE_PENDING_INTEGRATION",
-      "usesStubs": true,
+      "status": "DONE",
+      "usesStubs": false,
       "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207",
       "dependencies": ["S209", "S212", "S210", "S213", "S208"],
       "blockers": [],
@@ -499,6 +537,12 @@
         "tests": "25 new (posting-rules 19 named BR013 matrix + determinism; posting 6 persistence/idempotency/no-partial-write). Full coa-service suite 144 passed / 10 files.",
         "runtime": "Gateway :3100 → coa-service :3016: balanced 201 GJ-2026-01-000006; duplicate idempotencyKey 200 idempotent; unbalanced 422 BR013-1; FUTURE period 422 BR013-2; non-postable 422 BR013-4; missing dept 422 BR013-5; inactive source 422 BR013-3; missing tenant 400. Ledger side-effects (entry+2 lines+2 snapshots+outbox acct.je.posted+audit POSTED+gl_account balances) verified in Postgres. Deferred DR=CR trigger rejects direct unbalanced insert at COMMIT.",
         "migrationApplied": true
+      },
+      "stabilizationReconciliation": {
+        "phase": "R0 Stabilization Phase 9 (Certification)",
+        "priorStatus": "DONE_PENDING_INTEGRATION",
+        "promotedBecause": "Real gateway->coa-service calls in the Phase 8 golden path: a genuine business-rule rejection (BR013-5, missing dept code) proven first, then a real balanced post (GJ-2026-01-000001), then a proven idempotent re-post with the same key. Live-DB tested (BR013/BR013-6) independently too. Real S207 authz, real S007 audit delivery confirmed.",
+        "reference": "docs/accounting-modernization/stabilization/E2E_FOUNDATION_REPORT.md"
       }
     },
 
@@ -597,8 +641,8 @@
       "title": "View Journal Entry",
       "layman": "Open any posted journal by its number and see the whole story: source, period, who posted it, the lines, an immutable badge, and clickable links to its reversal (or the entry it reversed).",
       "sprint": "Sprint 3 (CE-04, L1, P0)",
-      "status": "DONE_PENDING_INTEGRATION",
-      "usesStubs": true,
+      "status": "DONE",
+      "usesStubs": false,
       "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207",
       "dependencies": ["S013"],
       "blockers": [],
@@ -620,6 +664,12 @@
         "runtime": "gateway :3100: GET journals/GJ-2026-01-000007 -> 200 immutable:true postedBy dev-user 2 balanced lines; GET journals/GJ-2026-01-000999 -> 404 JOURNAL_NOT_FOUND suggestion.matches [000006,000007,000008]. Masked-role runtime deferred to S207 (dev auth forces ADMIN); reversal-pair runtime demo lands with S218 - both unit-tested.",
         "migrationApplied": "20260724210000_journal_view_index (additive index; reads only)",
         "knownLimitations": "Masked-role serialization + audit.viewed verified by unit test only (dev auth hardcodes ADMIN); reversal linkage runtime demo pending S218."
+      },
+      "stabilizationReconciliation": {
+        "phase": "R0 Stabilization Phase 9 (Certification)",
+        "priorStatus": "DONE_PENDING_INTEGRATION",
+        "promotedBecause": "Real gateway->coa-service call in the Phase 8 golden path: posted journal viewed by journal number (full header+lines+immutability), plus a real cross-tenant negative test (403 NO_MATCHING_ROLE, not the real data). Real S207 authz confirmed both allow and deny paths live, superseding the prior 'dev auth hardcodes ADMIN' limitation.",
+        "reference": "docs/accounting-modernization/stabilization/E2E_FOUNDATION_REPORT.md"
       }
     },
 
@@ -627,8 +677,8 @@
       "title": "Reverse Posted JE",
       "layman": "Fix a posted mistake the honest way: post an equal-and-opposite entry into the same or a later open period, with a mandatory reason, linked both ways to the original — history is never erased.",
       "sprint": "Sprint 2 (CE-04, L1, P0)",
-      "status": "DONE_PENDING_INTEGRATION",
-      "usesStubs": true,
+      "status": "DONE",
+      "usesStubs": false,
       "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207",
       "dependencies": ["S013"],
       "blockers": [],
@@ -650,6 +700,12 @@
         "runtime": "gateway :3100: POST journals/8c3a5d42..:reverse -> 201 GJ-2026-01-000009 reversalPeriod 2026-01; 2nd reverse -> 409 ALREADY_REVERSED {reversedBy, reversalNumber}. GET original GJ-2026-01-000007 -> status REVERSED reversedBy->GJ-000009; GET reversal GJ-2026-01-000009 -> reversalOf->GJ-000007 mirrored lines (10000 cr250 / 49000 dr250). DB: coa_outbox acct.je.posted payload.reversalOf=original; audit chain POSTED->REVERSED(rev_no GJ-000009)+REVERSAL_POSTED; journal_entry original REVERSED+reversed_by, reversal POSTED+reversal_of. Fills S217-deferred bidirectional-linkage runtime demo.",
         "migrationApplied": "20260724220000_reversal_linkage_index (additive index on reversed_by; reversal_of/reversed_by columns pre-exist from S013)",
         "knownLimitations": "Masked-role paths unreachable at runtime until S207 (dev auth hardcodes ADMIN); integration re-run against real S007 audit + broker events pending."
+      },
+      "stabilizationReconciliation": {
+        "phase": "R0 Stabilization Phase 9 (Certification)",
+        "priorStatus": "DONE_PENDING_INTEGRATION",
+        "promotedBecause": "Real gateway->coa-service call in the Phase 8 golden path: posted journal reversed (mirrored lines, both-way linkage, new journal number GJ-2026-01-000002). Live-DB tested (BR218) independently too. Real S207 authz, real S007 audit delivery confirmed, superseding the prior 'dev auth hardcodes ADMIN' and 'integration re-run pending' limitations.",
+        "reference": "docs/accounting-modernization/stabilization/E2E_FOUNDATION_REPORT.md"
       }
     },
 
@@ -687,25 +743,32 @@
   "sequence": ["S013", "S214", "S215", "S216", "S217", "S218", "S219"],
   "sequenceNote": "R0-JOURNAL-LIFECYCLE build order honors the vertical flow Draft->validate->post->view->reverse->void AND the packet dependency graph: S013 (posting engine + shared rule source) FIRST because S215 reuses its rule engine (BR215-1) and S216 calls it (BR216-1); S214 (draft) provides the aggregate S215/S216/S219 operate on; S215 validate; S216 post; S217 view posted; S218 reverse posted; S219 void draft. Matches the requested included-stories order S013,S214,S215,S216,S217,S218,S219.",
   "nextEligibleStory": "NONE",
-  "packageStatus": "PACKAGE_COMPLETE_WITH_PENDING_INTEGRATIONS — R0-JOURNAL-LIFECYCLE 7/7 complete (S013,S214,S215,S216,S217,S218,S219 all DONE_PENDING_INTEGRATION). Pending gate: rerun integration suites against real S007/S207 + broker-backed event verification.",
+  "packageStatus": "PACKAGE_COMPLETE_WITH_PENDING_INTEGRATIONS — R0-JOURNAL-LIFECYCLE 7/7 complete; S013/S217/S218 promoted to DONE in R0 Stabilization Phase 9 (real gateway->service->auth-service golden path proven live); S214/S215/S216/S219 remain DONE_PENDING_INTEGRATION (authorization is genuinely centralized through real S207, but their specific write paths were not individually re-run against the live stack in Phase 8 — see STORY_CERTIFICATION_MATRIX.csv).",
 
   "integrationGateStatus": {
-    "R0-ACCOUNTING-SETUP": "PENDING — carry-forward: real S007 AuditPort + real S207 AuthzPort + broker-backed event verification across S223/S208/S209/S210/S211/S010/S212/S213",
-    "R0-JOURNAL-LIFECYCLE": "PENDING — carry-forward: real S007 AuditPort + real S207 AuthzPort + broker-backed event verification + live-database proof across S013/S214/S215/S216/S217/S218/S219 (added in R0 Stabilization Phase 1 — this package was previously omitted from integrationGateStatus despite being DONE_PENDING_INTEGRATION in the stories object; see REPOSITORY_CONTRADICTIONS.md #8 / R0_STABILIZATION_REPORT.md)",
-    "S200": "PENDING — corrected from DONE to DONE_PENDING_INTEGRATION in R0 Stabilization Phase 1; awaiting real S007/S207 wiring and a passing tenant-service build",
-    "S201": "PENDING — awaiting real S007/S207 services (carry-forward from R0-ORG-FOUNDATION)",
-    "S203": "PENDING — awaiting real S007/S207 services (carry-forward from R0-ORG-FOUNDATION)",
-    "S204": "PENDING — awaiting real S007/S207 services (carry-forward from R0-ORG-FOUNDATION)",
-    "S206": "PENDING — awaiting real S007 audit consumer (carry-forward; AuthzPort already real via co-located S207)",
-    "S205": "PARTIAL — corrected from DONE_PENDING_INTEGRATION to PARTIAL in R0 Stabilization Phase 1; missing login/session-issuance endpoint is a functional gap, not only an integration gap",
-    "S207": "PENDING — corrected from DONE to DONE_PENDING_INTEGRATION in R0 Stabilization Phase 1; engine itself is real (usesStubs remains false), gated on a passing auth-service build and live-database/broker proof"
+    "R0-ACCOUNTING-SETUP": "PARTIAL — S208/S209/S010/S212 promoted to DONE in R0 Stabilization Phase 9 (real gateway->coa-service golden path proven live: calendar defined, periods generated, period opened, COA seeded, sources bootstrapped). S223/S210/S211/S213 remain DONE_PENDING_INTEGRATION — authorization is centralized through real S207 (Phase 3) but their specific write paths were not individually re-run against the live stack in Phase 8; see STORY_CERTIFICATION_MATRIX.csv.",
+    "R0-JOURNAL-LIFECYCLE": "PARTIAL — S013/S217/S218 promoted to DONE in R0 Stabilization Phase 9 (real gateway->coa-service golden path proven live: post rejected on a real business rule then succeeded, idempotent re-post proven, viewed, reversed). S214/S215/S216/S219 remain DONE_PENDING_INTEGRATION — authorization is centralized through real S207 but the draft->validate->direct-post->void flow specifically was not exercised through the live stack in Phase 8; see STORY_CERTIFICATION_MATRIX.csv.",
+    "S200": "DONE — promoted in R0 Stabilization Phase 9; real gateway->tenant-service call, real S207 authz, real RLS-enforced write, real S007 audit delivery confirmed",
+    "S201": "PENDING — awaiting real-stack exercise (carry-forward from R0-ORG-FOUNDATION); authorization already centralized through real S207 (Phase 3)",
+    "S203": "PENDING — awaiting real-stack exercise (carry-forward from R0-ORG-FOUNDATION); authorization already centralized through real S207 (Phase 3)",
+    "S204": "PENDING — awaiting real-stack exercise (carry-forward from R0-ORG-FOUNDATION); authorization already centralized through real S207 (Phase 3)",
+    "S206": "PENDING — awaiting real-stack exercise of its own create/grant/revoke API (carry-forward); real S007 audit consumer and real S207 authz are both now genuinely wired and delivering",
+    "S205": "PARTIAL — unchanged; still missing a real login/session-issuance endpoint (a functional gap, not only an integration gap) — explicitly out of scope for this stabilization package (one of the 9 remaining R0 stories)",
+    "S207": "DONE — promoted in R0 Stabilization Phase 9; all 3 stubGate conditions met (tsc clean, real S007 audit sink draining iam.authz.denied, live-database + broker-backed verification both exist)"
   },
   "stabilization": {
     "phase0CheckpointCommit": "8453d0f",
     "phase0CheckpointBranch": "r0-stabilization-baseline",
     "reconciledOn": "R0 Stabilization Phase 1",
+    "certifiedOn": "R0 Stabilization Phase 9",
     "reportDirectory": "docs/accounting-modernization/stabilization/",
-    "note": "Status corrections in this file (S200, S205, S207) were made against evidence in docs/accounting-modernization/repository-verification/. CURRENT_RELEASE.md is generated from this file by scripts/generate-release-doc.js — do not hand-edit CURRENT_RELEASE.md; run `node scripts/generate-release-doc.js` after any story status change, and run `node scripts/generate-release-doc.js --check` in CI to fail the build if the two disagree."
+    "note": "Status corrections in this file (S200, S205, S207) were made against evidence in docs/accounting-modernization/repository-verification/. CURRENT_RELEASE.md is generated from this file by scripts/generate-release-doc.js — do not hand-edit CURRENT_RELEASE.md; run `node scripts/generate-release-doc.js` after any story status change, and run `node scripts/generate-release-doc.js --check` in CI to fail the build if the two disagree.",
+    "phase9Promotions": {
+      "promotedToDone": ["S200", "S207", "S208", "S209", "S010", "S212", "S013", "S217", "S218"],
+      "evidence": "docs/accounting-modernization/stabilization/STORY_CERTIFICATION_MATRIX.csv and E2E_FOUNDATION_REPORT.md — each promoted story was individually exercised via a real HTTP call through the live api-gateway -> service -> auth-service -> RLS-enforced Postgres -> audit-service chain, not merely authorized on paper.",
+      "remainingAt12StoriesDonePendingIntegration": ["S201", "S203", "S204", "S206", "S223", "S210", "S211", "S213", "S214", "S215", "S216", "S219"],
+      "remainingReason": "Authorization is genuinely centralized through the real S207 engine for all of these (Phase 3), and the shared HttpAuthzClient/RLS-middleware bugs found and fixed in Phase 8 apply uniformly to every route using that shared code — but each story's own specific write path was not individually re-run against the live stack in this pass. Conservative: not claimed as DONE without direct evidence per story."
+    }
   },
 
   "decisionRegister": "docs/accounting-modernization/decisions/DECISION_REGISTER.md",

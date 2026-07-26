@@ -5,7 +5,7 @@
 <!-- CI must run `node scripts/generate-release-doc.js --check` and fail the build on drift. -->
 
 **Control file:** `docs/accounting-modernization/MODULE_STATE.json`
-**Last updated:** 2026-07-26
+**Last updated:** 2026-07-27
 
 ---
 
@@ -19,30 +19,30 @@ This table lists **every** story in MODULE_STATE.json's `stories` object (22 tot
 
 | ID | Title | Status |
 |---|---|---|
-| S200 | Create & Maintain Legal Entity | 🟡 DONE_PENDING_INTEGRATION |
+| S200 | Create & Maintain Legal Entity | ✅ DONE |
 | S201 | Create & Maintain Store (Rooftop) | 🟡 DONE_PENDING_INTEGRATION |
 | S203 | Department Code Maintenance | 🟡 DONE_PENDING_INTEGRATION |
 | S204 | Franchise Maintenance | 🟡 DONE_PENDING_INTEGRATION |
 | S205 | User Account Lifecycle | 🟠 PARTIAL |
 | S206 | Basic Role Management | 🟡 DONE_PENDING_INTEGRATION |
-| S207 | Permission Catalog & Check API | 🟡 DONE_PENDING_INTEGRATION |
+| S207 | Permission Catalog & Check API | ✅ DONE |
 | S223 | Configuration Framework | 🟡 DONE_PENDING_INTEGRATION |
-| S208 | Fiscal Calendar Definition | 🟡 DONE_PENDING_INTEGRATION |
-| S209 | Accounting Period Open & Status | 🟡 DONE_PENDING_INTEGRATION |
+| S208 | Fiscal Calendar Definition | ✅ DONE |
+| S209 | Accounting Period Open & Status | ✅ DONE |
 | S210 | Basic Chart of Accounts CRUD | 🟡 DONE_PENDING_INTEGRATION |
 | S211 | Account Hierarchy & Totaling Groups | 🟡 DONE_PENDING_INTEGRATION |
-| S010 | Seed Canonical COA Skeleton | 🟡 DONE_PENDING_INTEGRATION |
-| S212 | Journal Source Registry | 🟡 DONE_PENDING_INTEGRATION |
+| S010 | Seed Canonical COA Skeleton | ✅ DONE |
+| S212 | Journal Source Registry | ✅ DONE |
 | S213 | Journal Numbering Sequences | 🟡 DONE_PENDING_INTEGRATION |
-| S013 | Balanced Journal Posting API | 🟡 DONE_PENDING_INTEGRATION |
+| S013 | Balanced Journal Posting API | ✅ DONE |
 | S214 | Draft Journal | 🟡 DONE_PENDING_INTEGRATION |
 | S215 | Validate Manual JE | 🟡 DONE_PENDING_INTEGRATION |
 | S216 | Post Manual JE (Direct-Post) | 🟡 DONE_PENDING_INTEGRATION |
-| S217 | View Journal Entry | 🟡 DONE_PENDING_INTEGRATION |
-| S218 | Reverse Posted JE | 🟡 DONE_PENDING_INTEGRATION |
+| S217 | View Journal Entry | ✅ DONE |
+| S218 | Reverse Posted JE | ✅ DONE |
 | S219 | Void/Delete Draft JE | 🟡 DONE_PENDING_INTEGRATION |
 
-**Totals:** {"DONE_PENDING_INTEGRATION":21,"PARTIAL":1} — 21/22 at DONE or DONE_PENDING_INTEGRATION.
+**Totals:** {"DONE":9,"DONE_PENDING_INTEGRATION":12,"PARTIAL":1} — 21/22 at DONE or DONE_PENDING_INTEGRATION.
 
 ## Completed packages
 
@@ -53,12 +53,12 @@ Closed: 2026-07-24
 | ID | Title | Status |
 |---|---|---|
 | S223 | Configuration Framework | 🟡 DONE_PENDING_INTEGRATION |
-| S208 | Fiscal Calendar Definition | 🟡 DONE_PENDING_INTEGRATION |
-| S209 | Accounting Period Open & Status | 🟡 DONE_PENDING_INTEGRATION |
+| S208 | Fiscal Calendar Definition | ✅ DONE |
+| S209 | Accounting Period Open & Status | ✅ DONE |
 | S210 | Basic Chart of Accounts CRUD | 🟡 DONE_PENDING_INTEGRATION |
 | S211 | Account Hierarchy & Totaling Groups | 🟡 DONE_PENDING_INTEGRATION |
-| S010 | Seed Canonical COA Skeleton | 🟡 DONE_PENDING_INTEGRATION |
-| S212 | Journal Source Registry | 🟡 DONE_PENDING_INTEGRATION |
+| S010 | Seed Canonical COA Skeleton | ✅ DONE |
+| S212 | Journal Source Registry | ✅ DONE |
 | S213 | Journal Numbering Sequences | 🟡 DONE_PENDING_INTEGRATION |
 
 All 8 accounting-setup stories DONE_PENDING_INTEGRATION in coa-service: config framework, fiscal calendar, accounting periods, chart of accounts, account hierarchy, COA seed, journal source registry, journal numbering sequences. Foundation for GL posting is in place; posting hooks (SourceService.assertUsableByManual BR212-1, SequenceService.allocate BR213-1, FiscalCalendarService.resolve BR208-5, GlAccount.balance/hasPostings) are consumed by R0-JOURNAL-LIFECYCLE S013.
@@ -75,11 +75,11 @@ Closed: 2026-07-24
 
 | ID | Title | Status |
 |---|---|---|
-| S200 | Create & Maintain Legal Entity | 🟡 DONE_PENDING_INTEGRATION |
+| S200 | Create & Maintain Legal Entity | ✅ DONE |
 | S201 | Create & Maintain Store (Rooftop) | 🟡 DONE_PENDING_INTEGRATION |
 | S203 | Department Code Maintenance | 🟡 DONE_PENDING_INTEGRATION |
 | S204 | Franchise Maintenance | 🟡 DONE_PENDING_INTEGRATION |
-| S207 | Permission Catalog & Check API | 🟡 DONE_PENDING_INTEGRATION |
+| S207 | Permission Catalog & Check API | ✅ DONE |
 | S206 | Basic Role Management | 🟡 DONE_PENDING_INTEGRATION |
 | S205 | User Account Lifecycle | 🟠 PARTIAL |
 
@@ -95,15 +95,15 @@ Carry-forward integrations:
 
 (Verbatim from `MODULE_STATE.json.integrationGateStatus` — this is the authoritative list of what remains before any DONE_PENDING_INTEGRATION or PARTIAL story can become DONE.)
 
-- **R0-ACCOUNTING-SETUP**: PENDING — carry-forward: real S007 AuditPort + real S207 AuthzPort + broker-backed event verification across S223/S208/S209/S210/S211/S010/S212/S213
-- **R0-JOURNAL-LIFECYCLE**: PENDING — carry-forward: real S007 AuditPort + real S207 AuthzPort + broker-backed event verification + live-database proof across S013/S214/S215/S216/S217/S218/S219 (added in R0 Stabilization Phase 1 — this package was previously omitted from integrationGateStatus despite being DONE_PENDING_INTEGRATION in the stories object; see REPOSITORY_CONTRADICTIONS.md #8 / R0_STABILIZATION_REPORT.md)
-- **S200**: PENDING — corrected from DONE to DONE_PENDING_INTEGRATION in R0 Stabilization Phase 1; awaiting real S007/S207 wiring and a passing tenant-service build
-- **S201**: PENDING — awaiting real S007/S207 services (carry-forward from R0-ORG-FOUNDATION)
-- **S203**: PENDING — awaiting real S007/S207 services (carry-forward from R0-ORG-FOUNDATION)
-- **S204**: PENDING — awaiting real S007/S207 services (carry-forward from R0-ORG-FOUNDATION)
-- **S206**: PENDING — awaiting real S007 audit consumer (carry-forward; AuthzPort already real via co-located S207)
-- **S205**: PARTIAL — corrected from DONE_PENDING_INTEGRATION to PARTIAL in R0 Stabilization Phase 1; missing login/session-issuance endpoint is a functional gap, not only an integration gap
-- **S207**: PENDING — corrected from DONE to DONE_PENDING_INTEGRATION in R0 Stabilization Phase 1; engine itself is real (usesStubs remains false), gated on a passing auth-service build and live-database/broker proof
+- **R0-ACCOUNTING-SETUP**: PARTIAL — S208/S209/S010/S212 promoted to DONE in R0 Stabilization Phase 9 (real gateway->coa-service golden path proven live: calendar defined, periods generated, period opened, COA seeded, sources bootstrapped). S223/S210/S211/S213 remain DONE_PENDING_INTEGRATION — authorization is centralized through real S207 (Phase 3) but their specific write paths were not individually re-run against the live stack in Phase 8; see STORY_CERTIFICATION_MATRIX.csv.
+- **R0-JOURNAL-LIFECYCLE**: PARTIAL — S013/S217/S218 promoted to DONE in R0 Stabilization Phase 9 (real gateway->coa-service golden path proven live: post rejected on a real business rule then succeeded, idempotent re-post proven, viewed, reversed). S214/S215/S216/S219 remain DONE_PENDING_INTEGRATION — authorization is centralized through real S207 but the draft->validate->direct-post->void flow specifically was not exercised through the live stack in Phase 8; see STORY_CERTIFICATION_MATRIX.csv.
+- **S200**: DONE — promoted in R0 Stabilization Phase 9; real gateway->tenant-service call, real S207 authz, real RLS-enforced write, real S007 audit delivery confirmed
+- **S201**: PENDING — awaiting real-stack exercise (carry-forward from R0-ORG-FOUNDATION); authorization already centralized through real S207 (Phase 3)
+- **S203**: PENDING — awaiting real-stack exercise (carry-forward from R0-ORG-FOUNDATION); authorization already centralized through real S207 (Phase 3)
+- **S204**: PENDING — awaiting real-stack exercise (carry-forward from R0-ORG-FOUNDATION); authorization already centralized through real S207 (Phase 3)
+- **S206**: PENDING — awaiting real-stack exercise of its own create/grant/revoke API (carry-forward); real S007 audit consumer and real S207 authz are both now genuinely wired and delivering
+- **S205**: PARTIAL — unchanged; still missing a real login/session-issuance endpoint (a functional gap, not only an integration gap) — explicitly out of scope for this stabilization package (one of the 9 remaining R0 stories)
+- **S207**: DONE — promoted in R0 Stabilization Phase 9; all 3 stubGate conditions met (tsc clean, real S007 audit sink draining iam.authz.denied, live-database + broker-backed verification both exist)
 
 ## Binding decisions
 
