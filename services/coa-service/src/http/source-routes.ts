@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { container } from 'tsyringe';
-import { authMiddleware } from '@amacc/shared-kernel';
+import { authMiddleware, createAuthzGuard, AuthzClient } from '@amacc/shared-kernel';
 import {
   SourceService,
   SourceValidationError,
@@ -22,23 +22,13 @@ function getTenantId(request: any): string {
   return id;
 }
 
-// ── AuthzPort stub (deny-by-default; S207 replacement) ──────────────────────────
+// ── Authorization (deny-by-default, centralized through real S207) ────────────
 export const SOURCE_PERMISSIONS = { MANAGE: 'coa.source.manage', VIEW: 'coa.source.view' } as const;
 
-const ROLE_PERMISSIONS: Record<string, ReadonlySet<string>> = {
-  ADMIN: new Set([SOURCE_PERMISSIONS.MANAGE, SOURCE_PERMISSIONS.VIEW]),
-  CONTROLLER: new Set([SOURCE_PERMISSIONS.MANAGE, SOURCE_PERMISSIONS.VIEW]),
-  ACCOUNTANT: new Set([SOURCE_PERMISSIONS.VIEW]),
-};
-
+// R0 Stabilization Phase 3: centralized through the real S207 AuthzService
+// (see account-routes.ts header comment for full rationale).
 export function requireSourcePermission(permission: string) {
-  return async function checkPermission(request: any, reply: any) {
-    const role = request.user?.role as string | undefined;
-    const granted = role ? (ROLE_PERMISSIONS[role] ?? new Set<string>()) : new Set<string>();
-    if (!granted.has(permission)) {
-      return reply.status(403).send({ error: 'FORBIDDEN', message: `Missing required permission: ${permission}` });
-    }
-  };
+  return createAuthzGuard(container.resolve<AuthzClient>('AuthzClient'), { getTenantId })(permission);
 }
 
 function handleError(error: unknown, reply: any) {

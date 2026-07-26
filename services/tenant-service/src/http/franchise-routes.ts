@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { container } from 'tsyringe';
-import { authMiddleware } from '@amacc/shared-kernel';
+import { authMiddleware, createAuthzGuard, AuthzClient } from '@amacc/shared-kernel';
 import { PrismaClient } from '.prisma/tenant-client';
 import {
   FranchiseService,
@@ -31,25 +31,9 @@ export const FRANCHISE_PERMISSIONS = {
   MANAGE: 'acct.franchise.manage',
 } as const;
 
-const ROLE_PERMISSIONS: Record<string, ReadonlySet<string>> = {
-  ADMIN:      new Set([FRANCHISE_PERMISSIONS.VIEW, FRANCHISE_PERMISSIONS.MANAGE]),
-  CONTROLLER: new Set([FRANCHISE_PERMISSIONS.VIEW, FRANCHISE_PERMISSIONS.MANAGE]),
-  ACCOUNTANT: new Set([FRANCHISE_PERMISSIONS.VIEW]),
-  SERVICE:    new Set([FRANCHISE_PERMISSIONS.VIEW, FRANCHISE_PERMISSIONS.MANAGE]),
-};
-
-export function requireFranchisePermission(permission: string) {
-  return async function checkPermission(request: any, reply: any) {
-    const role = request.user?.role as string | undefined;
-    const granted = role ? (ROLE_PERMISSIONS[role] ?? new Set<string>()) : new Set<string>();
-    if (!granted.has(permission)) {
-      return reply.status(403).send({
-        error:   'FORBIDDEN',
-        message: `Missing required permission: ${permission}`,
-      });
-    }
-  };
-}
+// R0 Stabilization Phase 3: local ROLE_PERMISSIONS stub replaced by the real
+// S207 AuthzService via HttpAuthzClient (see legal-entity-routes.ts header
+// comment for full rationale). Grants now live in auth-service's catalog.
 
 function handleError(error: unknown, reply: any) {
   if (error instanceof FranchiseNotFoundError) {
@@ -92,9 +76,10 @@ export async function oemRefRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authMiddleware(JWT_SECRET));
 
   const prisma = container.resolve<PrismaClient>('PrismaClient');
+  const requirePermission = createAuthzGuard(container.resolve<AuthzClient>('AuthzClient'), { getTenantId });
 
   // GET /  → platform-controlled OEM list for franchise dropdowns
-  app.get('/', { preHandler: requireFranchisePermission(FRANCHISE_PERMISSIONS.VIEW) }, async (_request, reply) => {
+  app.get('/', { preHandler: requirePermission(FRANCHISE_PERMISSIONS.VIEW) }, async (_request, reply) => {
     const items = await prisma.oemRef.findMany({
       where: { active: true },
       orderBy: [{ displayName: 'asc' }],
@@ -111,9 +96,10 @@ export async function franchiseRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authMiddleware(JWT_SECRET));
 
   const svc = container.resolve<FranchiseService>('FranchiseService');
+  const requirePermission = createAuthzGuard(container.resolve<AuthzClient>('AuthzClient'), { getTenantId });
 
   // GET /:storeId/franchises
-  app.get('/:storeId/franchises', { preHandler: requireFranchisePermission(FRANCHISE_PERMISSIONS.VIEW) }, async (request, reply) => {
+  app.get('/:storeId/franchises', { preHandler: requirePermission(FRANCHISE_PERMISSIONS.VIEW) }, async (request, reply) => {
     const tenantId = getTenantId(request);
     const { storeId } = request.params as { storeId: string };
     const { oemCode, active } = request.query as any;
@@ -129,7 +115,7 @@ export async function franchiseRoutes(app: FastifyInstance) {
   });
 
   // POST /:storeId/franchises
-  app.post('/:storeId/franchises', { preHandler: requireFranchisePermission(FRANCHISE_PERMISSIONS.MANAGE) }, async (request, reply) => {
+  app.post('/:storeId/franchises', { preHandler: requirePermission(FRANCHISE_PERMISSIONS.MANAGE) }, async (request, reply) => {
     const tenantId = getTenantId(request);
     const { storeId } = request.params as { storeId: string };
     try {
@@ -143,7 +129,7 @@ export async function franchiseRoutes(app: FastifyInstance) {
   });
 
   // GET /:storeId/franchises/:id
-  app.get('/:storeId/franchises/:id', { preHandler: requireFranchisePermission(FRANCHISE_PERMISSIONS.VIEW) }, async (request, reply) => {
+  app.get('/:storeId/franchises/:id', { preHandler: requirePermission(FRANCHISE_PERMISSIONS.VIEW) }, async (request, reply) => {
     const tenantId = getTenantId(request);
     const { storeId, id } = request.params as { storeId: string; id: string };
     try {
@@ -155,7 +141,7 @@ export async function franchiseRoutes(app: FastifyInstance) {
   });
 
   // PATCH /:storeId/franchises/:id  (dealer code correction / buy-sell end-date)
-  app.patch('/:storeId/franchises/:id', { preHandler: requireFranchisePermission(FRANCHISE_PERMISSIONS.MANAGE) }, async (request, reply) => {
+  app.patch('/:storeId/franchises/:id', { preHandler: requirePermission(FRANCHISE_PERMISSIONS.MANAGE) }, async (request, reply) => {
     const tenantId = getTenantId(request);
     const { storeId, id } = request.params as { storeId: string; id: string };
     try {

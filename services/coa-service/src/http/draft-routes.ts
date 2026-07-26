@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { container } from 'tsyringe';
-import { authMiddleware } from '@amacc/shared-kernel';
+import { authMiddleware, createAuthzGuard, AuthzClient } from '@amacc/shared-kernel';
 import {
   DraftService,
   DraftInputError,
@@ -28,7 +28,7 @@ function getTenantId(request: any): string {
   return id;
 }
 
-// ── AuthzPort stub (deny-by-default; S207 replacement) ──────────────────────────
+// ── Authorization (deny-by-default, centralized through real S207) ────────────
 export const JE_DRAFT_PERMISSIONS = {
   CREATE: 'je.draft.create',
   EDIT: 'je.draft.edit',
@@ -37,53 +37,53 @@ export const JE_DRAFT_PERMISSIONS = {
   VOID_ANY: 'je.draft.void.any',
 } as const;
 
-const ROLE_PERMISSIONS: Record<string, ReadonlySet<string>> = {
-  ADMIN: new Set([
-    JE_DRAFT_PERMISSIONS.CREATE,
-    JE_DRAFT_PERMISSIONS.EDIT,
-    JE_DRAFT_PERMISSIONS.VIEW_ALL,
-    JE_DRAFT_PERMISSIONS.VOID,
-    JE_DRAFT_PERMISSIONS.VOID_ANY,
-  ]),
-  CONTROLLER: new Set([
-    JE_DRAFT_PERMISSIONS.CREATE,
-    JE_DRAFT_PERMISSIONS.EDIT,
-    JE_DRAFT_PERMISSIONS.VIEW_ALL,
-    JE_DRAFT_PERMISSIONS.VOID,
-  ]),
-  ACCOUNTANT: new Set([JE_DRAFT_PERMISSIONS.CREATE, JE_DRAFT_PERMISSIONS.EDIT, JE_DRAFT_PERMISSIONS.VOID]),
-  CLERK: new Set([JE_DRAFT_PERMISSIONS.CREATE, JE_DRAFT_PERMISSIONS.EDIT, JE_DRAFT_PERMISSIONS.VOID]),
-};
-
-function grantedFor(role?: string): ReadonlySet<string> {
-  return role ? (ROLE_PERMISSIONS[role] ?? new Set<string>()) : new Set<string>();
-}
+// R0 Stabilization Phase 3: centralized through the real S207 AuthzService
+// (see account-routes.ts header comment for full rationale). Unlike the other
+// 8 coa-service route files, this one also derived business-logic flags
+// (canViewAll/canVoidOwn/canVoidAny, passed into DraftService) directly from
+// the local role->Set map — actorOf() below now resolves those the same way
+// the route guard does (real permission checks), not a duplicated map.
 
 export function requireJeDraftPermission(permission: string) {
-  return async function checkPermission(request: any, reply: any) {
-    if (!grantedFor(request.user?.role as string | undefined).has(permission)) {
-      return reply.status(403).send({ error: 'FORBIDDEN', message: `Missing required permission: ${permission}` });
-    }
-  };
+  return createAuthzGuard(container.resolve<AuthzClient>('AuthzClient'), { getTenantId })(permission);
 }
 
 /** Any role holding at least one draft permission may list/view (deny-by-default). */
 function requireDraftReader() {
   return async function checkReader(request: any, reply: any) {
-    if (grantedFor(request.user?.role as string | undefined).size === 0) {
+    const userId = request.user?.sub as string | undefined;
+    if (!userId) {
+      return reply.status(401).send({ error: 'UNAUTHENTICATED', message: 'No authenticated user on request' });
+    }
+    const tenantId = getTenantId(request);
+    const client = container.resolve<AuthzClient>('AuthzClient');
+    const perms = [
+      JE_DRAFT_PERMISSIONS.CREATE, JE_DRAFT_PERMISSIONS.EDIT, JE_DRAFT_PERMISSIONS.VIEW_ALL,
+      JE_DRAFT_PERMISSIONS.VOID, JE_DRAFT_PERMISSIONS.VOID_ANY,
+    ];
+    const results = await Promise.all(
+      perms.map((permissionKey) => client.check({ userId, permissionKey, scope: { tenantId } })),
+    );
+    if (!results.some((r) => r.allow)) {
       return reply.status(403).send({ error: 'FORBIDDEN', message: 'No draft permissions' });
     }
   };
 }
 
-function actorOf(request: any, tenantId: string) {
-  const granted = grantedFor(request.user?.role as string | undefined);
+async function actorOf(request: any, tenantId: string) {
+  const client = container.resolve<AuthzClient>('AuthzClient');
+  const userId = (request.user?.sub as string | undefined) ?? 'system';
+  const [viewAll, voidOwn, voidAny] = await Promise.all([
+    client.check({ userId, permissionKey: JE_DRAFT_PERMISSIONS.VIEW_ALL, scope: { tenantId } }),
+    client.check({ userId, permissionKey: JE_DRAFT_PERMISSIONS.VOID, scope: { tenantId } }),
+    client.check({ userId, permissionKey: JE_DRAFT_PERMISSIONS.VOID_ANY, scope: { tenantId } }),
+  ]);
   return {
     tenantId,
-    userId: (request.user?.sub as string | undefined) ?? 'system',
-    canViewAll: granted.has(JE_DRAFT_PERMISSIONS.VIEW_ALL),
-    canVoidOwn: granted.has(JE_DRAFT_PERMISSIONS.VOID),
-    canVoidAny: granted.has(JE_DRAFT_PERMISSIONS.VOID_ANY),
+    userId,
+    canViewAll: viewAll.allow,
+    canVoidOwn: voidOwn.allow,
+    canVoidAny: voidAny.allow,
   };
 }
 
@@ -174,7 +174,7 @@ export async function draftRoutes(app: FastifyInstance) {
   app.get('/manual-journals/drafts', { preHandler: requireDraftReader() }, async (request, reply) => {
     try {
       const tenantId = getTenantId(request);
-      const drafts = await svc.list(actorOf(request, tenantId));
+      const drafts = await svc.list(await actorOf(request, tenantId));
       return reply.send({ drafts });
     } catch (err) {
       return handleError(err, reply);
@@ -186,7 +186,7 @@ export async function draftRoutes(app: FastifyInstance) {
     try {
       const tenantId = getTenantId(request);
       const { id } = request.params as { id: string };
-      const draft = await svc.get(id, actorOf(request, tenantId));
+      const draft = await svc.get(id, await actorOf(request, tenantId));
       return reply.send(draft);
     } catch (err) {
       return handleError(err, reply);
@@ -199,7 +199,7 @@ export async function draftRoutes(app: FastifyInstance) {
       const tenantId = getTenantId(request);
       const { id } = request.params as { id: string };
       const body = DraftSchema.parse(request.body ?? {});
-      const draft = await svc.update(id, body, actorOf(request, tenantId));
+      const draft = await svc.update(id, body, await actorOf(request, tenantId));
       return reply.send({ draftId: draft.id, status: draft.status, version: draft.version });
     } catch (err) {
       return handleError(err, reply);
@@ -212,7 +212,7 @@ export async function draftRoutes(app: FastifyInstance) {
       const tenantId = getTenantId(request);
       const { id } = request.params as { id: string };
       const body = AttachmentSchema.parse(request.body ?? {});
-      const att = await svc.addAttachment(id, body, actorOf(request, tenantId));
+      const att = await svc.addAttachment(id, body, await actorOf(request, tenantId));
       return reply.status(201).send({ attachmentId: att.id, fileName: att.fileName, sizeBytes: att.sizeBytes });
     } catch (err) {
       return handleError(err, reply);
@@ -233,7 +233,7 @@ export async function draftRoutes(app: FastifyInstance) {
       }
       const id = target.slice(0, sep);
       const action = target.slice(sep + 1);
-      const actor = actorOf(request, tenantId);
+      const actor = await actorOf(request, tenantId);
 
       if (action === 'validate') {
         // je.validate is implied by je.draft.edit (S215).

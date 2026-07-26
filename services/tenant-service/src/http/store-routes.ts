@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { container } from 'tsyringe';
-import { authMiddleware } from '@amacc/shared-kernel';
+import { authMiddleware, createAuthzGuard, AuthzClient } from '@amacc/shared-kernel';
 import {
   StoreService,
   StoreNotFoundError,
@@ -31,25 +31,9 @@ export const STORE_PERMISSIONS = {
   MANAGE: 'acct.store.manage',
 } as const;
 
-const ROLE_PERMISSIONS: Record<string, ReadonlySet<string>> = {
-  ADMIN:      new Set([STORE_PERMISSIONS.VIEW, STORE_PERMISSIONS.MANAGE]),
-  CONTROLLER: new Set([STORE_PERMISSIONS.VIEW, STORE_PERMISSIONS.MANAGE]),
-  ACCOUNTANT: new Set([STORE_PERMISSIONS.VIEW]),
-  SERVICE:    new Set([STORE_PERMISSIONS.VIEW, STORE_PERMISSIONS.MANAGE]),
-};
-
-export function requireStorePermission(permission: string) {
-  return async function checkPermission(request: any, reply: any) {
-    const role = request.user?.role as string | undefined;
-    const granted = role ? (ROLE_PERMISSIONS[role] ?? new Set<string>()) : new Set<string>();
-    if (!granted.has(permission)) {
-      return reply.status(403).send({
-        error: 'FORBIDDEN',
-        message: `Missing required permission: ${permission}`,
-      });
-    }
-  };
-}
+// R0 Stabilization Phase 3: local ROLE_PERMISSIONS stub replaced by the real
+// S207 AuthzService via HttpAuthzClient (see legal-entity-routes.ts header
+// comment for full rationale). Grants now live in auth-service's catalog.
 
 function handleError(error: unknown, reply: any) {
   if (error instanceof StoreNotFoundError) {
@@ -108,9 +92,10 @@ export async function storeRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authMiddleware(JWT_SECRET));
 
   const svc = container.resolve<StoreService>('StoreService');
+  const requirePermission = createAuthzGuard(container.resolve<AuthzClient>('AuthzClient'), { getTenantId });
 
   // ── GET / — List with optional entityId/search/status filter ───────────────
-  app.get('/', { preHandler: requireStorePermission(STORE_PERMISSIONS.VIEW) }, async (request, reply) => {
+  app.get('/', { preHandler: requirePermission(STORE_PERMISSIONS.VIEW) }, async (request, reply) => {
     const tenantId = getTenantId(request);
     const { entityId, search, status, page, pageSize } = request.query as {
       entityId?: string;
@@ -135,7 +120,7 @@ export async function storeRoutes(app: FastifyInstance) {
   });
 
   // ── POST / — Create ─────────────────────────────────────────────────────────
-  app.post('/', { preHandler: requireStorePermission(STORE_PERMISSIONS.MANAGE) }, async (request, reply) => {
+  app.post('/', { preHandler: requirePermission(STORE_PERMISSIONS.MANAGE) }, async (request, reply) => {
     const tenantId = getTenantId(request);
     try {
       const body = CreateSchema.parse(request.body);
@@ -147,7 +132,7 @@ export async function storeRoutes(app: FastifyInstance) {
   });
 
   // ── GET /:id — Get by id ────────────────────────────────────────────────────
-  app.get('/:id', { preHandler: requireStorePermission(STORE_PERMISSIONS.VIEW) }, async (request, reply) => {
+  app.get('/:id', { preHandler: requirePermission(STORE_PERMISSIONS.VIEW) }, async (request, reply) => {
     const tenantId = getTenantId(request);
     const { id } = request.params as { id: string };
     try {
@@ -159,7 +144,7 @@ export async function storeRoutes(app: FastifyInstance) {
   });
 
   // ── PUT /:id — Update ───────────────────────────────────────────────────────
-  app.put('/:id', { preHandler: requireStorePermission(STORE_PERMISSIONS.MANAGE) }, async (request, reply) => {
+  app.put('/:id', { preHandler: requirePermission(STORE_PERMISSIONS.MANAGE) }, async (request, reply) => {
     const tenantId = getTenantId(request);
     const { id } = request.params as { id: string };
     try {
@@ -172,7 +157,7 @@ export async function storeRoutes(app: FastifyInstance) {
   });
 
   // ── POST /:id/deactivate — Deactivate ───────────────────────────────────────
-  app.post('/:id/deactivate', { preHandler: requireStorePermission(STORE_PERMISSIONS.MANAGE) }, async (request, reply) => {
+  app.post('/:id/deactivate', { preHandler: requirePermission(STORE_PERMISSIONS.MANAGE) }, async (request, reply) => {
     const tenantId = getTenantId(request);
     const { id } = request.params as { id: string };
     try {

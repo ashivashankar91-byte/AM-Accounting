@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { container } from 'tsyringe';
-import { authMiddleware } from '@amacc/shared-kernel';
+import { authMiddleware, createAuthzGuard, AuthzClient } from '@amacc/shared-kernel';
 import { SequenceService, SequenceValidationError } from '../application/sequence-service';
 
 function getTenantId(request: any): string {
@@ -14,7 +14,7 @@ function getTenantId(request: any): string {
   return id;
 }
 
-// ── AuthzPort stub (deny-by-default; S207 replacement) ──────────────────────────
+// ── Authorization (deny-by-default, centralized through real S207) ────────────
 export const SEQUENCE_PERMISSIONS = {
   GAP_REPORT: 'je.gap_report.view',
   // allocate/logGap are internal to the posting path (S013/S214); guarded by a
@@ -22,20 +22,10 @@ export const SEQUENCE_PERMISSIONS = {
   ALLOCATE: 'je.sequence.allocate',
 } as const;
 
-const ROLE_PERMISSIONS: Record<string, ReadonlySet<string>> = {
-  ADMIN: new Set([SEQUENCE_PERMISSIONS.GAP_REPORT, SEQUENCE_PERMISSIONS.ALLOCATE]),
-  CONTROLLER: new Set([SEQUENCE_PERMISSIONS.GAP_REPORT, SEQUENCE_PERMISSIONS.ALLOCATE]),
-  ACCOUNTANT: new Set([SEQUENCE_PERMISSIONS.GAP_REPORT]),
-};
-
+// R0 Stabilization Phase 3: centralized through the real S207 AuthzService
+// (see account-routes.ts header comment for full rationale).
 export function requireSequencePermission(permission: string) {
-  return async function checkPermission(request: any, reply: any) {
-    const role = request.user?.role as string | undefined;
-    const granted = role ? (ROLE_PERMISSIONS[role] ?? new Set<string>()) : new Set<string>();
-    if (!granted.has(permission)) {
-      return reply.status(403).send({ error: 'FORBIDDEN', message: `Missing required permission: ${permission}` });
-    }
-  };
+  return createAuthzGuard(container.resolve<AuthzClient>('AuthzClient'), { getTenantId })(permission);
 }
 
 function handleError(error: unknown, reply: any) {

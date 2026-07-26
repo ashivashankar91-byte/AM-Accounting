@@ -14,7 +14,7 @@ import { LegalEntityService } from './application/legal-entity-service';
 import { StoreService } from './application/store-service';
 import { DepartmentService } from './application/department-service';
 import { FranchiseService } from './application/franchise-service';
-import { IEventPublisher, ITenantRepository } from '@amacc/shared-kernel';
+import { IEventPublisher, ITenantRepository, HttpAuthzClient, AuthzClient } from '@amacc/shared-kernel';
 import { PrismaClient } from '.prisma/tenant-client';
 import pino from 'pino';
 
@@ -46,6 +46,9 @@ async function bootstrap() {
   container.register('StoreService', { useClass: StoreService });
   container.register('DepartmentService', { useClass: DepartmentService });
   container.register('FranchiseService', { useClass: FranchiseService });
+  container.registerInstance<AuthzClient>('AuthzClient', new HttpAuthzClient({
+    onError: (err, req) => logger.error({ err, permission: req.permissionKey }, 'authz/check failed'),
+  }));
 
   await app.register(tenantRoutes, { prefix: '/api/v1/tenants' });
   await app.register(legalEntityRoutes, { prefix: '/api/v1/legal-entities' });

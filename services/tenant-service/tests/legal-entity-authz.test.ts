@@ -4,6 +4,8 @@ import Fastify, { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
 import * as crypto from 'crypto';
 import { legalEntityRoutes } from '../src/http/legal-entity-routes';
+import { createFakeAuthzClient } from './support/fake-authz-client';
+import { LEGAL_ENTITY_PERMISSIONS } from '../src/http/legal-entity-routes';
 
 // ── JWT helper (mirrors @amacc/shared-kernel's HS256 scheme) ──────────────────
 
@@ -13,10 +15,17 @@ function b64u(s: string): string {
   return Buffer.from(s).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
 
+// R0 Stabilization Phase 3: sub is now the role name itself. Permission
+// decisions no longer come from the JWT's role claim (the central S207
+// engine ignores it and resolves persisted role assignments by userId+scope
+// instead — see fake-authz-client.ts) but the claim is kept on the token
+// since JWTPayload still carries it for other legitimate uses, and reusing
+// it as a stable per-test-case user id keeps every existing test's shape
+// and intent unchanged.
 function tokenFor(role: string, tenantId = 'tenant-a'): string {
   const header = b64u(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const now = Math.floor(Date.now() / 1000);
-  const body = b64u(JSON.stringify({ sub: 'test-user', tenantId, role, iat: now, exp: now + 3600 }));
+  const body = b64u(JSON.stringify({ sub: role, tenantId, role, iat: now, exp: now + 3600 }));
   const sig = Buffer.from(
     crypto.createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('binary'),
   ).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
@@ -26,6 +35,17 @@ function tokenFor(role: string, tenantId = 'tenant-a'): string {
 function authed(role: string, tenantId = 'tenant-a') {
   return { 'x-tenant-id': tenantId, authorization: `Bearer ${tokenFor(role, tenantId)}` };
 }
+
+// Mirrors legal-entity-routes.ts's former local ROLE_PERMISSIONS stub exactly
+// (now centralized in auth-service's catalog — see the R0 Stabilization
+// migration); used here to drive the fake AuthzClient so this test still
+// proves the same grant matrix, just resolved through the real guard shape.
+const ROLE_GRANTS: Record<string, ReadonlySet<string>> = {
+  ADMIN:      new Set([LEGAL_ENTITY_PERMISSIONS.VIEW, LEGAL_ENTITY_PERMISSIONS.MANAGE]),
+  CONTROLLER: new Set([LEGAL_ENTITY_PERMISSIONS.VIEW, LEGAL_ENTITY_PERMISSIONS.MANAGE]),
+  ACCOUNTANT: new Set([LEGAL_ENTITY_PERMISSIONS.VIEW]),
+  SERVICE:    new Set([LEGAL_ENTITY_PERMISSIONS.VIEW, LEGAL_ENTITY_PERMISSIONS.MANAGE]),
+};
 
 // ── Fake service (route-layer test — business logic already covered elsewhere) ─
 
@@ -61,6 +81,15 @@ describe('Legal Entity route authorization (PRM200-1: deny-by-default acct.entit
     process.env['AMACC_JWT_SECRET'] = JWT_SECRET;
 
     container.registerInstance('LegalEntityService', fakeService());
+    container.registerInstance('AuthzClient', createFakeAuthzClient(
+      [
+        { userId: 'ADMIN',      tenantId: 'tenant-a', role: 'ADMIN' },
+        { userId: 'CONTROLLER', tenantId: 'tenant-a', role: 'CONTROLLER' },
+        { userId: 'ACCOUNTANT', tenantId: 'tenant-a', role: 'ACCOUNTANT' },
+        { userId: 'SERVICE',    tenantId: 'tenant-a', role: 'SERVICE' },
+      ],
+      ROLE_GRANTS,
+    ));
     app = Fastify();
     await app.register(legalEntityRoutes, { prefix: '/api/v1/legal-entities' });
     await app.ready();
@@ -205,5 +234,21 @@ describe('Legal Entity route authorization (PRM200-1: deny-by-default acct.entit
       headers: { 'x-tenant-id': 'tenant-b', authorization: `Bearer ${tokenFor('ADMIN', 'tenant-a')}` },
     });
     expect(res.statusCode).toBe(403);
+  });
+
+  it('cross-tenant negative (assignment-scope, distinct from the JWT/header check above): an ADMIN grant that only exists for tenant-a does not authorize the same user in tenant-c, even with a matching header+JWT tenantId', async () => {
+    // A matching header+JWT tenantId means authMiddleware's own mismatch guard
+    // passes — this exercises the central S207 engine's per-tenant assignment
+    // scoping specifically (fake-authz-client's FakeAssignment.tenantId filter),
+    // proving deny-by-default holds per-tenant, not just per-role-string. The
+    // local stub this replaced had no concept of tenant scope at all: any JWT
+    // bearing role:'ADMIN' was trusted for every tenant.
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/legal-entities',
+      headers: { 'x-tenant-id': 'tenant-c', authorization: `Bearer ${tokenFor('ADMIN', 'tenant-c')}` },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ error: 'FORBIDDEN', reason: 'NO_MATCHING_ROLE' });
   });
 });

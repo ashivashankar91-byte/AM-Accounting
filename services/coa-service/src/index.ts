@@ -25,7 +25,7 @@ import { JournalViewService } from './application/journal-view-service';
 import { ReversalService } from './application/reversal-service';
 import { DraftService } from './application/draft-service';
 import { RabbitMQEventPublisher } from './infrastructure/event-publisher';
-import { IEventPublisher } from '@amacc/shared-kernel';
+import { IEventPublisher, HttpAuthzClient, AuthzClient } from '@amacc/shared-kernel';
 import { PrismaClient } from '.prisma/coa-client';
 import pino from 'pino';
 
@@ -44,6 +44,10 @@ async function bootstrap() {
 
   const prisma = new PrismaClient();
   container.registerInstance('PrismaClient', prisma);
+
+  container.registerInstance<AuthzClient>('AuthzClient', new HttpAuthzClient({
+    onError: (err, req) => logger.error({ err, permission: req.permissionKey }, 'authz/check failed'),
+  }));
 
   // S223: typed, scoped, effective-dated configuration registry.
   container.register('ConfigService', { useClass: ConfigService });

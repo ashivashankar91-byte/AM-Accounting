@@ -3,7 +3,8 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Fastify, { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
 import * as crypto from 'crypto';
-import { storeRoutes } from '../src/http/store-routes';
+import { storeRoutes, STORE_PERMISSIONS } from '../src/http/store-routes';
+import { createFakeAuthzClient } from './support/fake-authz-client';
 
 // ── JWT helper ────────────────────────────────────────────────────────────────
 
@@ -13,10 +14,14 @@ function b64u(s: string): string {
   return Buffer.from(s).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
 
+// R0 Stabilization Phase 3: sub is the role name — see legal-entity-authz.test.ts
+// for why (the central S207 engine resolves persisted assignments by userId,
+// not the JWT role claim; reusing role as a stable per-case user id keeps
+// every existing test's shape unchanged).
 function tokenFor(role: string, tenantId = 'tenant-a'): string {
   const header = b64u(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const now = Math.floor(Date.now() / 1000);
-  const body = b64u(JSON.stringify({ sub: 'test-user', tenantId, role, iat: now, exp: now + 3600 }));
+  const body = b64u(JSON.stringify({ sub: role, tenantId, role, iat: now, exp: now + 3600 }));
   const sig = Buffer.from(
     crypto.createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('binary'),
   ).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
@@ -26,6 +31,13 @@ function tokenFor(role: string, tenantId = 'tenant-a'): string {
 function authed(role: string, tenantId = 'tenant-a') {
   return { 'x-tenant-id': tenantId, authorization: `Bearer ${tokenFor(role, tenantId)}` };
 }
+
+const ROLE_GRANTS: Record<string, ReadonlySet<string>> = {
+  ADMIN:      new Set([STORE_PERMISSIONS.VIEW, STORE_PERMISSIONS.MANAGE]),
+  CONTROLLER: new Set([STORE_PERMISSIONS.VIEW, STORE_PERMISSIONS.MANAGE]),
+  ACCOUNTANT: new Set([STORE_PERMISSIONS.VIEW]),
+  SERVICE:    new Set([STORE_PERMISSIONS.VIEW, STORE_PERMISSIONS.MANAGE]),
+};
 
 // ── Fake service ──────────────────────────────────────────────────────────────
 
@@ -77,6 +89,15 @@ describe('Store route authorization (PRM201-1: deny-by-default acct.store.view /
     process.env['AMACC_JWT_SECRET'] = JWT_SECRET;
 
     container.registerInstance('StoreService', fakeStoreService());
+    container.registerInstance('AuthzClient', createFakeAuthzClient(
+      [
+        { userId: 'ADMIN',      tenantId: 'tenant-a', role: 'ADMIN' },
+        { userId: 'CONTROLLER', tenantId: 'tenant-a', role: 'CONTROLLER' },
+        { userId: 'ACCOUNTANT', tenantId: 'tenant-a', role: 'ACCOUNTANT' },
+        { userId: 'SERVICE',    tenantId: 'tenant-a', role: 'SERVICE' },
+      ],
+      ROLE_GRANTS,
+    ));
 
     app = Fastify();
     await app.register(storeRoutes, { prefix: '/api/v1/stores' });
@@ -198,5 +219,15 @@ describe('Store route authorization (PRM201-1: deny-by-default acct.store.view /
       },
     });
     expect(res.statusCode).toBe(403);
+  });
+
+  it('cross-tenant negative (assignment-scope, distinct from the JWT/header check above): an ADMIN grant that only exists for tenant-a does not authorize the same user in tenant-c, even with a matching header+JWT tenantId', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/stores',
+      headers: { 'x-tenant-id': 'tenant-c', authorization: `Bearer ${tokenFor('ADMIN', 'tenant-c')}` },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ error: 'FORBIDDEN', reason: 'NO_MATCHING_ROLE' });
   });
 });

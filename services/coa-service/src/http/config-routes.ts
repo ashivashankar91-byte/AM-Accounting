@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { container } from 'tsyringe';
-import { authMiddleware } from '@amacc/shared-kernel';
+import { authMiddleware, createAuthzGuard, AuthzClient } from '@amacc/shared-kernel';
 import {
   ConfigService,
   ConfigUnknownKeyError,
@@ -20,7 +20,7 @@ function getTenantId(request: any): string {
   return id;
 }
 
-// ── AuthzPort stub (deny-by-default static role map; S207 replacement) ──────────
+// ── Authorization (deny-by-default, centralized through real S207) ────────────
 // Permission strings per packet §2: config.view (read), config.manage (write).
 
 export const CONFIG_PERMISSIONS = {
@@ -28,23 +28,10 @@ export const CONFIG_PERMISSIONS = {
   MANAGE: 'config.manage',
 } as const;
 
-const ROLE_PERMISSIONS: Record<string, ReadonlySet<string>> = {
-  ADMIN: new Set([CONFIG_PERMISSIONS.VIEW, CONFIG_PERMISSIONS.MANAGE]),
-  CONTROLLER: new Set([CONFIG_PERMISSIONS.VIEW, CONFIG_PERMISSIONS.MANAGE]),
-  ACCOUNTANT: new Set([CONFIG_PERMISSIONS.VIEW]),
-};
-
+// R0 Stabilization Phase 3: centralized through the real S207 AuthzService
+// (see account-routes.ts header comment for full rationale).
 export function requireConfigPermission(permission: string) {
-  return async function checkPermission(request: any, reply: any) {
-    const role = request.user?.role as string | undefined;
-    const granted = role ? (ROLE_PERMISSIONS[role] ?? new Set<string>()) : new Set<string>();
-    if (!granted.has(permission)) {
-      return reply.status(403).send({
-        error: 'FORBIDDEN',
-        message: `Missing required permission: ${permission}`,
-      });
-    }
-  };
+  return createAuthzGuard(container.resolve<AuthzClient>('AuthzClient'), { getTenantId })(permission);
 }
 
 function handleError(error: unknown, reply: any) {

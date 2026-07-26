@@ -1,0 +1,48 @@
+import type { AuthzClient } from './authz-client';
+
+/**
+ * Route-scope extractor: given the incoming request, return the tenant/entity/
+ * store scope to check the permission against. Most routes only have a
+ * tenantId at guard time (the resource being acted on doesn't carry an
+ * entity/store id, or isn't loaded yet); routes nested under an entity/store
+ * path param can supply it so scope-escalation (BR207-4) is enforced, not
+ * just tenant membership.
+ */
+export type AuthzScopeExtractor = (request: any) => { entityId?: string | null; storeId?: string | null };
+
+export interface AuthzGuardOptions {
+  getTenantId: (request: any) => string;
+  scope?: AuthzScopeExtractor;
+}
+
+/**
+ * Factory mirroring the shape of the local `requireXPermission(permission)`
+ * stubs it replaces, so call sites in route files barely change: same
+ * `{ preHandler: requirePermission(SOME_PERMISSIONS.X) }` usage, now backed by
+ * the one central S207 engine instead of a per-file duplicated role→Set map.
+ */
+export function createAuthzGuard(client: AuthzClient, options: AuthzGuardOptions) {
+  return function requirePermission(permission: string) {
+    return async function checkPermission(request: any, reply: any) {
+      const userId = request.user?.sub as string | undefined;
+      if (!userId) {
+        return reply.status(401).send({ error: 'UNAUTHENTICATED', message: 'No authenticated user on request' });
+      }
+      const tenantId = options.getTenantId(request);
+      const extra = options.scope?.(request) ?? {};
+      const result = await client.check({
+        userId,
+        permissionKey: permission,
+        scope: { tenantId, entityId: extra.entityId ?? null, storeId: extra.storeId ?? null },
+        route: request.routeOptions?.url ?? request.routerPath ?? request.url,
+      });
+      if (!result.allow) {
+        return reply.status(403).send({
+          error: 'FORBIDDEN',
+          message: `Missing required permission: ${permission}`,
+          reason: result.reason,
+        });
+      }
+    };
+  };
+}

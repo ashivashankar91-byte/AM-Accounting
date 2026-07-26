@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { container } from 'tsyringe';
-import { authMiddleware } from '@amacc/shared-kernel';
+import { authMiddleware, createAuthzGuard, AuthzClient } from '@amacc/shared-kernel';
 import {
   PostingService,
   PostingInputError,
@@ -26,28 +26,21 @@ function getTenantId(request: any): string {
   return id;
 }
 
-// ── AuthzPort stub (deny-by-default; S207 replacement) ──────────────────────────
+// ── Authorization (deny-by-default, centralized through real S207) ────────────
 export const JE_PERMISSIONS = {
   POST: 'je.post',
   VIEW: 'je.view',
   REVERSE: 'je.reverse',
 } as const;
 
-const ROLE_PERMISSIONS: Record<string, ReadonlySet<string>> = {
-  ADMIN: new Set([JE_PERMISSIONS.POST, JE_PERMISSIONS.VIEW, JE_PERMISSIONS.REVERSE]),
-  CONTROLLER: new Set([JE_PERMISSIONS.POST, JE_PERMISSIONS.VIEW, JE_PERMISSIONS.REVERSE]),
-  ACCOUNTANT: new Set([JE_PERMISSIONS.POST, JE_PERMISSIONS.VIEW, JE_PERMISSIONS.REVERSE]),
-  CLERK: new Set([JE_PERMISSIONS.VIEW]),
-};
-
+// R0 Stabilization Phase 3: centralized through the real S207 AuthzService
+// (see account-routes.ts header comment for full rationale). Resolved fresh
+// on every call (not cached at module scope) because draft-routes.ts imports
+// and calls this both at route-registration time (preHandler) and inline
+// mid-request-handler (postDraft's validate-first path) — the latter needs a
+// plain callable factory, not one bound to a single app-registration closure.
 export function requireJePermission(permission: string) {
-  return async function checkPermission(request: any, reply: any) {
-    const role = request.user?.role as string | undefined;
-    const granted = role ? (ROLE_PERMISSIONS[role] ?? new Set<string>()) : new Set<string>();
-    if (!granted.has(permission)) {
-      return reply.status(403).send({ error: 'FORBIDDEN', message: `Missing required permission: ${permission}` });
-    }
-  };
+  return createAuthzGuard(container.resolve<AuthzClient>('AuthzClient'), { getTenantId })(permission);
 }
 
 function handleError(error: unknown, reply: any) {

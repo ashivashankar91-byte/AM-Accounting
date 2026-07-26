@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { container } from 'tsyringe';
-import { authMiddleware } from '@amacc/shared-kernel';
+import { authMiddleware, createAuthzGuard, AuthzClient } from '@amacc/shared-kernel';
 import { SeedService, UnknownManifestError } from '../application/seed-service';
 
 function getTenantId(request: any): string {
@@ -14,25 +14,15 @@ function getTenantId(request: any): string {
   return id;
 }
 
-// ── AuthzPort stub (deny-by-default; S207 replacement) ──────────────────────────
+// ── Authorization (deny-by-default, centralized through real S207) ────────────
 // Permission string per packet §2: coa.seed.run.
 
 export const SEED_PERMISSIONS = { RUN: 'coa.seed.run' } as const;
 
-const ROLE_PERMISSIONS: Record<string, ReadonlySet<string>> = {
-  ADMIN: new Set([SEED_PERMISSIONS.RUN]),
-  CONTROLLER: new Set([SEED_PERMISSIONS.RUN]),
-  ACCOUNTANT: new Set<string>(),
-};
-
+// R0 Stabilization Phase 3: centralized through the real S207 AuthzService
+// (see account-routes.ts header comment for full rationale).
 export function requireSeedPermission(permission: string) {
-  return async function checkPermission(request: any, reply: any) {
-    const role = request.user?.role as string | undefined;
-    const granted = role ? (ROLE_PERMISSIONS[role] ?? new Set<string>()) : new Set<string>();
-    if (!granted.has(permission)) {
-      return reply.status(403).send({ error: 'FORBIDDEN', message: `Missing required permission: ${permission}` });
-    }
-  };
+  return createAuthzGuard(container.resolve<AuthzClient>('AuthzClient'), { getTenantId })(permission);
 }
 
 function handleError(error: unknown, reply: any) {

@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { container } from 'tsyringe';
-import { authMiddleware } from '@amacc/shared-kernel';
+import { authMiddleware, createAuthzGuard, AuthzClient } from '@amacc/shared-kernel';
 import {
   LegalEntityService,
   LegalEntityNotFoundError,
@@ -21,37 +21,22 @@ function getTenantId(request: any): string {
   return id;
 }
 
-// ── Authorization (deny-by-default) ────────────────────────────────────────────
+// ── Authorization (deny-by-default, centralized through S207) ─────────────────
 //
 // PRM200-1: acct.entity.view (read) / acct.entity.manage (create, edit, deactivate,
 // mark-posted) are enforced per-route on top of the authMiddleware JWT check above.
-// A role not present in ROLE_PERMISSIONS gets an empty grant set — deny by default.
+// R0 Stabilization Phase 3: the local ROLE_PERMISSIONS stub map that used to live
+// here was replaced by a call to the real S207 AuthzService (via HttpAuthzClient),
+// registered as 'AuthzClient' in this service's DI container (src/index.ts).
+// Role -> permission grants now live centrally in auth-service's permission/
+// role_permission catalog (see services/auth-service/prisma/migrations/
+// 20260726000001_extend_authz_catalog_r0_stabilization) instead of being
+// duplicated here. Deny-by-default is enforced by the central engine itself.
 
 export const LEGAL_ENTITY_PERMISSIONS = {
   VIEW:   'acct.entity.view',
   MANAGE: 'acct.entity.manage',
 } as const;
-
-const ROLE_PERMISSIONS: Record<string, ReadonlySet<string>> = {
-  ADMIN:      new Set([LEGAL_ENTITY_PERMISSIONS.VIEW, LEGAL_ENTITY_PERMISSIONS.MANAGE]),
-  CONTROLLER: new Set([LEGAL_ENTITY_PERMISSIONS.VIEW, LEGAL_ENTITY_PERMISSIONS.MANAGE]),
-  ACCOUNTANT: new Set([LEGAL_ENTITY_PERMISSIONS.VIEW]),
-  // Trusted service-to-service caller (e.g. gl-service's POST /:id/mark-posted callback).
-  SERVICE:    new Set([LEGAL_ENTITY_PERMISSIONS.VIEW, LEGAL_ENTITY_PERMISSIONS.MANAGE]),
-};
-
-export function requirePermission(permission: string) {
-  return async function checkPermission(request: any, reply: any) {
-    const role = request.user?.role as string | undefined;
-    const granted = role ? (ROLE_PERMISSIONS[role] ?? new Set<string>()) : new Set<string>();
-    if (!granted.has(permission)) {
-      return reply.status(403).send({
-        error: 'FORBIDDEN',
-        message: `Missing required permission: ${permission}`,
-      });
-    }
-  };
-}
 
 function handleError(error: unknown, reply: any) {
   if (error instanceof LegalEntityNotFoundError) {
@@ -116,6 +101,7 @@ export async function legalEntityRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authMiddleware(JWT_SECRET));
 
   const svc = container.resolve<LegalEntityService>('LegalEntityService');
+  const requirePermission = createAuthzGuard(container.resolve<AuthzClient>('AuthzClient'), { getTenantId });
 
   // ── GET / — List with search and status filter ──────────────────────────────
   app.get('/', { preHandler: requirePermission(LEGAL_ENTITY_PERMISSIONS.VIEW) }, async (request, reply) => {

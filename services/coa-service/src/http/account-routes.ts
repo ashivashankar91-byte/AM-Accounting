@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { container } from 'tsyringe';
-import { authMiddleware } from '@amacc/shared-kernel';
+import { authMiddleware, createAuthzGuard, AuthzClient } from '@amacc/shared-kernel';
 import {
   AccountService,
   AccountValidationError,
@@ -25,31 +25,21 @@ function getTenantId(request: any): string {
   return id;
 }
 
-// ── AuthzPort stub (deny-by-default; S207 replacement) ──────────────────────────
+// ── Authorization (deny-by-default, centralized through S207) ─────────────────
 // Permission strings per packet §2: coa.account.view, coa.account.manage.
+// R0 Stabilization Phase 3: the local ROLE_PERMISSIONS stub that used to live
+// here was replaced by a call to the real S207 AuthzService (via
+// HttpAuthzClient, registered as 'AuthzClient' in src/index.ts). Grants now
+// live centrally in auth-service's permission/role_permission catalog (see
+// services/auth-service/prisma/migrations/20260726000001_extend_authz_catalog_r0_stabilization).
 
 export const ACCOUNT_PERMISSIONS = {
   VIEW: 'coa.account.view',
   MANAGE: 'coa.account.manage',
 } as const;
 
-const ROLE_PERMISSIONS: Record<string, ReadonlySet<string>> = {
-  ADMIN: new Set([ACCOUNT_PERMISSIONS.VIEW, ACCOUNT_PERMISSIONS.MANAGE]),
-  CONTROLLER: new Set([ACCOUNT_PERMISSIONS.VIEW, ACCOUNT_PERMISSIONS.MANAGE]),
-  ACCOUNTANT: new Set([ACCOUNT_PERMISSIONS.VIEW]),
-};
-
 export function requireAccountPermission(permission: string) {
-  return async function checkPermission(request: any, reply: any) {
-    const role = request.user?.role as string | undefined;
-    const granted = role ? (ROLE_PERMISSIONS[role] ?? new Set<string>()) : new Set<string>();
-    if (!granted.has(permission)) {
-      return reply.status(403).send({
-        error: 'FORBIDDEN',
-        message: `Missing required permission: ${permission}`,
-      });
-    }
-  };
+  return createAuthzGuard(container.resolve<AuthzClient>('AuthzClient'), { getTenantId })(permission);
 }
 
 function handleError(error: unknown, reply: any) {
