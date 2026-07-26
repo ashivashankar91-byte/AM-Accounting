@@ -1,6 +1,6 @@
 /**
  * Thin HTTP client for the ONE central S207 permission engine
- * (auth-service: GET /authz/check). This is not a second authorization
+ * (auth-service: GET /api/v1/authz/check). This is not a second authorization
  * framework — it exists so services other than auth-service (which can call
  * AuthzService.check() in-process) can reach the same engine over HTTP.
  *
@@ -63,9 +63,16 @@ export class HttpAuthzClient implements AuthzClient {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      const res = await fetch(`${this.baseUrl}/authz/check?${params.toString()}`, {
+      const res = await fetch(`${this.baseUrl}/api/v1/authz/check?${params.toString()}`, {
         method: 'GET',
-        headers: req.route ? { 'x-guarded-route': req.route } : undefined,
+        headers: {
+          // Required for auth-service's own RLS middleware to set
+          // app.current_tenant_id before its authz_role_assignment lookup —
+          // without this, the query silently sees zero rows under RLS and
+          // every check denies, regardless of a real assignment existing.
+          'x-tenant-id': req.scope.tenantId,
+          ...(req.route ? { 'x-guarded-route': req.route } : {}),
+        },
         signal: controller.signal,
       });
       if (!res.ok) {
