@@ -1,0 +1,101 @@
+openapi: 3.0.3
+info:
+  title: AMACC COA Service — Journal Numbering Sequences (S213)
+  version: 1.0.0
+  description: >
+    Atomic per-source+entity+period journal numbering with gap logging and a gap
+    report. Format {SOURCE}-{YYYY-MM}-{seq:06d} is INTERIM (UQ-12/19). allocate
+    and log-gap are internal primitives consumed by the S013/S214 posting path,
+    exposed here as permission-guarded handles for runtime verification.
+servers:
+  - url: /api/v1/coa
+components:
+  parameters:
+    TenantId:
+      name: x-tenant-id
+      in: header
+      required: true
+      schema: { type: string }
+  schemas:
+    Allocation:
+      type: object
+      properties:
+        journalNumber: { type: string, example: 'GJ-2026-01-000001' }
+        seq: { type: integer }
+        sourceCode: { type: string }
+        entityId: { type: string }
+        periodCode: { type: string, pattern: '^[0-9]{4}-[0-9]{2}$' }
+    GapLog:
+      type: object
+      properties:
+        id: { type: string }
+        tenantId: { type: string }
+        sourceCode: { type: string }
+        entityId: { type: string }
+        periodCode: { type: string }
+        expectedNumber: { type: string }
+        expectedSeq: { type: integer }
+        reason: { type: string }
+        actor: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        message: { type: string }
+paths:
+  /journal-sequences/allocate:
+    post:
+      summary: Atomically allocate the next journal number (perm je.sequence.allocate)
+      description: BR213-1 atomic under concurrency; BR213-3 resets per period.
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sourceCode, entityId, periodCode]
+              properties:
+                sourceCode: { type: string, pattern: '^[A-Z0-9]{2,6}$' }
+                entityId: { type: string }
+                periodCode: { type: string, pattern: '^[0-9]{4}-[0-9]{2}$' }
+      responses:
+        '200': { description: Allocated, content: { application/json: { schema: { $ref: '#/components/schemas/Allocation' } } } }
+        '422': { description: INVALID_SOURCE_CODE | INVALID_PERIOD_CODE, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '400': { description: Validation / missing tenant }
+        '403': { description: FORBIDDEN }
+  /journal-sequences/log-gap:
+    post:
+      summary: Record a gap for a failed/aborted post (BR213-3, perm je.sequence.allocate)
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sourceCode, entityId, periodCode, seq, reason]
+              properties:
+                sourceCode: { type: string }
+                entityId: { type: string }
+                periodCode: { type: string, pattern: '^[0-9]{4}-[0-9]{2}$' }
+                seq: { type: integer, minimum: 1 }
+                reason: { type: string, minLength: 1 }
+                actor: { type: string }
+      responses:
+        '201': { description: Gap logged, content: { application/json: { schema: { $ref: '#/components/schemas/GapLog' } } } }
+        '422': { description: MISSING_REASON | INVALID_SOURCE_CODE | INVALID_PERIOD_CODE, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '400': { description: Validation / missing tenant }
+        '403': { description: FORBIDDEN }
+  /journals/gap-report:
+    get:
+      summary: Gap report for a period (perm je.gap_report.view)
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - { name: entity, in: query, schema: { type: string } }
+        - { name: period, in: query, schema: { type: string, pattern: '^[0-9]{4}-[0-9]{2}$' } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/GapLog' } } } } }
+        '400': { description: Missing tenant }
+        '403': { description: FORBIDDEN }

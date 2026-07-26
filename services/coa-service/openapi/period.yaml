@@ -1,0 +1,176 @@
+openapi: 3.0.3
+info:
+  title: AMACC Accounting Period Open & Status API (S209)
+  version: "1.0.0"
+  description: >
+    Opens accounting periods for business (FUTURE->OPEN) and exposes a status
+    board + posting-eligibility check. Only the FUTURE->OPEN transition is
+    implemented in this story; the full status vocabulary (SOFT_CLOSED,
+    HARD_CLOSED, LOCKED) ships for downstream posting/close stories. Hosted in
+    coa-service; served under the shared /api/v1/fiscal prefix.
+servers:
+  - url: /api/v1/fiscal
+    description: Via api-gateway (:3100) or coa-service directly (:3016)
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    TenantHeader:
+      name: x-tenant-id
+      in: header
+      required: true
+      schema: { type: string }
+      description: Tenant scope. Missing header -> 400.
+  schemas:
+    PeriodStatus:
+      type: string
+      enum: [FUTURE, OPEN, SOFT_CLOSED, HARD_CLOSED, LOCKED]
+    BoardRow:
+      type: object
+      properties:
+        periodId: { type: string, format: uuid }
+        periodCode: { type: string, example: "2026-01" }
+        periodNumber: { type: integer, example: 1 }
+        fiscalYear: { type: integer, example: 2026 }
+        status: { $ref: '#/components/schemas/PeriodStatus' }
+        adjustmentsOnly: { type: boolean }
+        openedBy: { type: string, nullable: true }
+        openedAt: { type: string, format: date-time, nullable: true }
+    Eligibility:
+      type: object
+      properties:
+        periodId: { type: string, format: uuid }
+        periodCode: { type: string }
+        status: { $ref: '#/components/schemas/PeriodStatus' }
+        postable: { type: boolean }
+        reason: { type: string }
+    OpenRequest:
+      type: object
+      properties:
+        confirm:
+          type: boolean
+          description: Set true to proceed past a skip-open warning.
+        actor:
+          type: string
+          description: Optional override; defaults to the authenticated subject.
+    OpenSuccess:
+      type: object
+      properties:
+        opened: { type: boolean, example: true }
+        status: { $ref: '#/components/schemas/PeriodStatus' }
+        skippedPeriods:
+          type: array
+          items: { type: string }
+          nullable: true
+    SkipOpenWarning:
+      type: object
+      properties:
+        opened: { type: boolean, example: false }
+        requiresConfirmation: { type: boolean, example: true }
+        warning: { type: string, example: SKIP_OPEN }
+        skippedPeriods:
+          type: array
+          items: { type: string, example: "2026-02" }
+        message: { type: string }
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        message: { type: string }
+paths:
+  /periods:
+    get:
+      summary: Period status board for an entity
+      description: Requires permission fiscal.period.view.
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - name: entity
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Board rows ordered by fiscal year then period number.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  board:
+                    type: array
+                    items: { $ref: '#/components/schemas/BoardRow' }
+        "400": { description: Missing x-tenant-id or entity, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        "403": { description: Missing fiscal.period.view }
+  /periods/{id}/eligibility:
+    get:
+      summary: Posting eligibility for a period
+      description: postable=true only when status is OPEN. Requires fiscal.period.view.
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Eligibility result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Eligibility' }
+        "404": { description: PERIOD_NOT_FOUND, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        "403": { description: Missing fiscal.period.view }
+  /periods/{id}/open:
+    post:
+      summary: Open a period (FUTURE->OPEN, i.e. :open)
+      description: >
+        Transitions a FUTURE period to OPEN. Enforces the concurrent-open limit
+        (config fiscal.max_open_periods, default 2) and warns when earlier
+        unopened periods would be skipped. Requires permission fiscal.period.open.
+        Emits fiscal.period.opened. Idempotent when the period is already OPEN.
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OpenRequest' }
+      responses:
+        "200":
+          description: >
+            Either the period was opened (OpenSuccess) or a skip-open warning was
+            returned with no state change (SkipOpenWarning — re-submit confirm=true).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/OpenSuccess'
+                  - $ref: '#/components/schemas/SkipOpenWarning'
+        "422":
+          description: INVALID_TRANSITION (not FUTURE) or MAX_OPEN_REACHED (limit hit).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "404": { description: PERIOD_NOT_FOUND, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        "400": { description: Missing x-tenant-id / malformed body }
+        "403": { description: Missing fiscal.period.open }
+x-events:
+  fiscal.period.opened:
+    description: Emitted when a period transitions to OPEN.
+    payload:
+      eventId: { type: string, format: uuid }
+      entityId: { type: string, format: uuid }
+      periodCode: { type: string, example: "2026-01" }
+      actor: { type: string }
+      ts: { type: string, format: date-time }
+      schemaV: { type: integer, example: 1 }
+  consumes:
+    - fiscal.year.generated: "S208 — periods materialized as FUTURE; no action beyond availability."

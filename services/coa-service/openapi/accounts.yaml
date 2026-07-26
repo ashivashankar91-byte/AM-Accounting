@@ -1,0 +1,222 @@
+openapi: 3.0.3
+info:
+  title: AMACC Chart of Accounts CRUD API (S210)
+  version: "1.0.0"
+  description: >
+    Entity-scoped Chart of Accounts master (account number, name, type, normal
+    balance, postable, status). New canonical table `gl_account` owned by
+    coa-service, distinct from the legacy gl-service `gl_accounts` (tenant-scoped).
+    Served under /api/v1/coa.
+servers:
+  - url: /api/v1/coa
+    description: Via api-gateway (:3100) or coa-service directly (:3016)
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    TenantHeader:
+      name: x-tenant-id
+      in: header
+      required: true
+      schema: { type: string }
+  schemas:
+    AccountType:
+      type: string
+      enum: [ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE]
+    NormalBalance:
+      type: string
+      enum: [DR, CR]
+    AccountStatus:
+      type: string
+      enum: [ACTIVE, INACTIVE]
+    Account:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        entityId: { type: string, format: uuid }
+        accountNumber: { type: string, example: "10000", pattern: '^\d{5}$' }
+        name: { type: string, maxLength: 120 }
+        type: { $ref: '#/components/schemas/AccountType' }
+        normalBalance: { $ref: '#/components/schemas/NormalBalance' }
+        isContra: { type: boolean }
+        contraReason: { type: string, nullable: true }
+        postable: { type: boolean }
+        parentId: { type: string, nullable: true }
+        status: { $ref: '#/components/schemas/AccountStatus' }
+        balance: { type: string, example: "0" }
+        hasPostings: { type: boolean }
+        version: { type: integer }
+    CreateAccount:
+      type: object
+      required: [entityId, accountNumber, name, type]
+      properties:
+        entityId: { type: string, format: uuid }
+        accountNumber: { type: string, pattern: '^\d{5}$' }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        type: { $ref: '#/components/schemas/AccountType' }
+        normalBalance: { $ref: '#/components/schemas/NormalBalance' }
+        postable: { type: boolean }
+        contraReason:
+          type: string
+          description: Required when normalBalance differs from the type default (BR210-3).
+        parentId: { type: string }
+    UpdateAccount:
+      description: >
+        Two mutually-exclusive shapes. When `parentId` is present the request is an
+        effective-dated re-parent (S211); otherwise it is a field update.
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        type:
+          $ref: '#/components/schemas/AccountType'
+        normalBalance: { $ref: '#/components/schemas/NormalBalance' }
+        postable: { type: boolean }
+        contraReason: { type: string }
+        parentId:
+          type: string
+          nullable: true
+          description: S211 re-parent target (a non-postable summary node); null detaches to root.
+        effectiveFrom:
+          type: string
+          format: date-time
+          description: S211 effective date for the re-parent (defaults to now).
+    TreeNode:
+      type: object
+      properties:
+        id: { type: string }
+        accountNumber: { type: string }
+        name: { type: string }
+        type: { $ref: '#/components/schemas/AccountType' }
+        normalBalance: { $ref: '#/components/schemas/NormalBalance' }
+        postable: { type: boolean }
+        status: { $ref: '#/components/schemas/AccountStatus' }
+        children:
+          type: array
+          items: { $ref: '#/components/schemas/TreeNode' }
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        message: { type: string }
+    NonZeroBalanceError:
+      allOf:
+        - $ref: '#/components/schemas/Error'
+        - type: object
+          properties:
+            balance: { type: string, example: "250" }
+paths:
+  /accounts:
+    post:
+      summary: Create an account
+      description: Requires permission coa.account.manage.
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateAccount' }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/Account' } } } }
+        "409": { description: DUPLICATE_ACCOUNT_NUMBER (BR210-1), content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        "422": { description: Validation / CONTRA_REASON_REQUIRED / INVALID_TYPE / INVALID_ACCOUNT_NUMBER, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        "400": { description: Missing x-tenant-id / malformed body }
+        "403": { description: Missing coa.account.manage }
+    get:
+      summary: COA browser (list accounts for an entity)
+      description: Requires permission coa.account.view.
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - { name: entity, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: status, in: query, required: false, schema: { $ref: '#/components/schemas/AccountStatus' } }
+      responses:
+        "200":
+          description: Accounts ordered by number.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accounts:
+                    type: array
+                    items: { $ref: '#/components/schemas/Account' }
+        "400": { description: Missing x-tenant-id or entity }
+        "403": { description: Missing coa.account.view }
+  /accounts/{id}:
+    get:
+      summary: Get one account
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Account, content: { application/json: { schema: { $ref: '#/components/schemas/Account' } } } }
+        "404": { description: ACCOUNT_NOT_FOUND, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        "403": { description: Missing coa.account.view }
+    patch:
+      summary: Update or re-parent an account
+      description: >
+        Requires coa.account.manage. A field update (name/type/normalBalance/postable)
+        rejects a type change once the account has postings (BR210-2). When the body
+        carries `parentId` this is an effective-dated re-parent (S211): cycles (BR211-1),
+        non-summary parents (BR211-2), depth > 6, and unknown parents all return 422.
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateAccount' }
+      responses:
+        "200": { description: Updated / re-parented, content: { application/json: { schema: { $ref: '#/components/schemas/Account' } } } }
+        "422": { description: TYPE_IMMUTABLE_AFTER_POSTING / CYCLE_DETECTED / MAX_DEPTH_EXCEEDED / PARENT_NOT_SUMMARY / PARENT_NOT_FOUND / validation, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        "404": { description: ACCOUNT_NOT_FOUND }
+        "403": { description: Missing coa.account.manage }
+  /accounts/{id}/deactivate:
+    post:
+      summary: Deactivate an account (:deactivate)
+      description: Requires coa.account.manage. Blocked while balance != 0 (BR210-4). Idempotent when already INACTIVE.
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Deactivated (or already INACTIVE), content: { application/json: { schema: { $ref: '#/components/schemas/Account' } } } }
+        "422": { description: NONZERO_BALANCE (carries balance), content: { application/json: { schema: { $ref: '#/components/schemas/NonZeroBalanceError' } } } }
+        "404": { description: ACCOUNT_NOT_FOUND }
+        "403": { description: Missing coa.account.manage }
+  /tree:
+    get:
+      summary: Nested account hierarchy for an entity (S211)
+      description: Requires coa.account.view. Roots first, children ordered by account number.
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - { name: entity, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Nested tree.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tree:
+                    type: array
+                    items: { $ref: '#/components/schemas/TreeNode' }
+        "400": { description: Missing x-tenant-id or entity }
+        "403": { description: Missing coa.account.view }
+x-events:
+  produced:
+    coa.account.created:
+      payload: { eventId: uuid, entityId: uuid, accountNumber: string, changes: object, actor: string, ts: date-time, schemaV: 1 }
+    coa.account.updated:
+      payload: { eventId: uuid, entityId: uuid, accountNumber: string, changes: object, actor: string, ts: date-time, schemaV: 1 }
+    coa.account.deactivated:
+      payload: { eventId: uuid, entityId: uuid, accountNumber: string, changes: object, actor: string, ts: date-time, schemaV: 1 }
+    coa.account.reparented:
+      payload: { eventId: uuid, accountId: uuid, oldParentId: uuid-or-null, newParentId: uuid-or-null, effectiveFrom: date-time, actor: string, ts: date-time, schemaV: 1 }
+  consumed: []

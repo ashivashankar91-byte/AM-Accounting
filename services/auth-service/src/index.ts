@@ -4,8 +4,15 @@ import cors from '@fastify/cors';
 import { container } from 'tsyringe';
 import { authRoutes } from './http/routes';
 import { developerRoutes } from './http/developer-routes';
+import { authzRoutes } from './http/authz-routes';
+import { roleRoutes } from './http/role-routes';
+import { userRoutes } from './http/user-routes';
+import { AuthzService } from './application/authz-service';
+import { RoleService } from './application/role-service';
+import { UserService } from './application/user-service';
 import { RabbitMQEventPublisher } from './infrastructure/event-publisher';
 import { IEventPublisher } from '@amacc/shared-kernel';
+import { PrismaClient } from '.prisma/auth-client';
 import pino from 'pino';
 
 const logger = pino({ name: 'auth-service' });
@@ -21,8 +28,48 @@ async function bootstrap() {
   await eventPublisher.connect();
   container.registerInstance<IEventPublisher>('IEventPublisher', eventPublisher);
 
+  // S207: authorization provider (permission catalog + check API)
+  const prisma = new PrismaClient();
+  container.registerInstance('PrismaClient', prisma);
+  container.register('AuthzService', { useClass: AuthzService });
+
+  // S206: basic role management (write authority; projects into S207 read models)
+  container.register('RoleService', { useClass: RoleService });
+
+  // S205: user account lifecycle (create/deactivate/unlock/reset; emits iam.user.*)
+  container.register('UserService', { useClass: UserService });
+
+  // Cache invalidation on role/assignment changes (S206 events).
+  const authz = container.resolve<AuthzService>('AuthzService');
+  for (const evt of ['iam.role.created', 'iam.role.updated', 'iam.role.retired',
+                     'iam.assignment.granted', 'iam.assignment.revoked']) {
+    try {
+      (eventPublisher as unknown as { subscribe?: (t: string, h: (e: unknown) => Promise<void>) => void })
+        .subscribe?.(evt, async () => authz.invalidateCache());
+    } catch {
+      /* subscribe optional — cache also self-expires via TTL */
+    }
+  }
+
+  // S206: consume iam.user.deactivated → auto-revoke that user's assignments.
+  try {
+    (eventPublisher as unknown as { subscribe?: (t: string, h: (e: any) => Promise<void>) => void })
+      .subscribe?.('iam.user.deactivated', async (e: any) => {
+        const tenantId = e?.tenantId ?? e?.payload?.tenantId;
+        const userId = e?.payload?.userId ?? e?.userId;
+        if (tenantId && userId) {
+          await container.resolve<RoleService>('RoleService').handleUserDeactivated(tenantId, userId);
+        }
+      });
+  } catch {
+    /* subscribe optional */
+  }
+
   // Register routes
   await app.register(authRoutes, { prefix: '/api/v1/auth' });
+  await app.register(authzRoutes, { prefix: '/api/v1/authz' });
+  await app.register(roleRoutes, { prefix: '/api/v1/iam' });
+  await app.register(userRoutes, { prefix: '/api/v1/iam' });
   if (process.env['NODE_ENV'] === 'development') {
     await app.register(developerRoutes);
   }

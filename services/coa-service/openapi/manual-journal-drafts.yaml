@@ -1,0 +1,277 @@
+openapi: 3.1.0
+info:
+  title: AMACC Manual Journal Drafts (S214)
+  version: 1.0.0
+  description: >
+    Draft manual journal entries — an accountant's safe scratchpad. Drafts save in
+    ANY state with no validation on save (BR214-1), reload with full fidelity, retain
+    edit history (BR214-3), and bind attachments (BR214-4). Visibility is restricted to
+    the preparer and callers holding je.draft.view_all (BR214-2). Validation (S215),
+    posting (S216) and void (S219) are separate deliberate acts.
+servers:
+  - url: /api/v1/coa
+components:
+  parameters:
+    TenantId:
+      name: x-tenant-id
+      in: header
+      required: true
+      schema: { type: string }
+  schemas:
+    DraftLine:
+      type: object
+      description: All fields optional — a draft may hold a partial or unbalanced line.
+      properties:
+        accountId: { type: string, nullable: true }
+        accountNumber: { type: string, nullable: true }
+        storeId: { type: string, nullable: true }
+        deptCode: { type: string, nullable: true }
+        controlNumber: { type: string, nullable: true, description: INTERIM (UQ-18 pending) }
+        applyNumber: { type: string, nullable: true, description: INTERIM (UQ-18 pending) }
+        dr: { type: number, nullable: true }
+        cr: { type: number, nullable: true }
+        memo: { type: string, nullable: true }
+    DraftPayload:
+      type: object
+      properties:
+        entityId: { type: string, nullable: true }
+        entryDate: { type: string, nullable: true, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        sourceCode: { type: string, nullable: true }
+        memo: { type: string, nullable: true, maxLength: 500 }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/DraftLine' }
+    DraftRef:
+      type: object
+      properties:
+        draftId: { type: string }
+        status: { type: string, enum: [DRAFT, VALIDATED, POSTED_LINKED, VOIDED] }
+        version: { type: integer }
+    Attachment:
+      type: object
+      properties:
+        attachmentId: { type: string }
+        fileName: { type: string }
+        sizeBytes: { type: integer }
+    ValidationResult:
+      type: object
+      description: >
+        S215 — outcome of running the draft through the SINGLE S013 rule engine
+        (BR215-1). A pass here can never post-fail (BR215-2).
+      properties:
+        pass: { type: boolean }
+        deltaDr: { type: number }
+        deltaCr: { type: number }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              lineIndex: { type: integer, nullable: true }
+              rule: { type: string, description: 'BR013-x | BR215-x' }
+              message: { type: string }
+              field: { type: string, nullable: true }
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        message: { type: string }
+    VoidRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          nullable: true
+          maxLength: 500
+          description: Required when voiding another preparer's draft (je.draft.void.any).
+    VoidResult:
+      type: object
+      properties:
+        draftId: { type: string }
+        status: { type: string, enum: [VOIDED] }
+        idempotent: { type: boolean }
+paths:
+  /manual-journals/drafts:
+    post:
+      summary: Create a draft (any state — BR214-1)
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DraftPayload' }
+      responses:
+        '201':
+          description: Draft created
+          content: { application/json: { schema: { $ref: '#/components/schemas/DraftRef' } } }
+        '400': { description: Missing tenant / bad input, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: Missing je.draft.create }
+    get:
+      summary: List drafts (scoped to preparer unless je.draft.view_all — BR214-2)
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      responses:
+        '200':
+          description: Draft list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  drafts: { type: array, items: { type: object } }
+  /manual-journals/drafts/{id}:
+    get:
+      summary: Reload a draft with full fidelity (BR214-1) + attachments
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Draft }
+        '403': { description: Not preparer and no view_all (BR214-2), content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: Draft not found, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    put:
+      summary: Full-fidelity replace of a DRAFT (increments version, retains history — BR214-3)
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DraftPayload' }
+      responses:
+        '200':
+          description: Draft updated
+          content: { application/json: { schema: { $ref: '#/components/schemas/DraftRef' } } }
+        '403': { description: Missing je.draft.edit or not preparer }
+        '404': { description: Draft not found }
+        '409': { description: Draft is not editable (non-DRAFT status), content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /manual-journals/drafts/{id}/attachments:
+    post:
+      summary: Bind an attachment to a draft (BR214-4)
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fileName, mimeType, sizeBytes]
+              properties:
+                fileName: { type: string }
+                mimeType: { type: string }
+                sizeBytes: { type: integer, minimum: 0 }
+      responses:
+        '201':
+          description: Attachment bound
+          content: { application/json: { schema: { $ref: '#/components/schemas/Attachment' } } }
+        '404': { description: Draft not found }
+        '422': { description: Rejected — bad MIME or > 25 MB, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /manual-journals/drafts/{id}:validate:
+    post:
+      summary: Validate a draft against the S013 rule engine (S215, single rule source)
+      description: >
+        Runs the draft through the SAME rules the posting door uses (BR215-1). A pass
+        advances validationState to PASS (status VALIDATED); a fail keeps DRAFT so the
+        accountant can keep fixing. Rule-engine unavailability returns 503 — never a
+        silent pass. Requires je.validate (implied by je.draft.edit).
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Validation result (pass or fail with line-level errors)
+          content: { application/json: { schema: { $ref: '#/components/schemas/ValidationResult' } } }
+        '403': { description: Missing je.validate }
+        '404': { description: Draft not found }
+        '409': { description: Draft is POSTED_LINKED/VOIDED — cannot be validated, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '503': { description: Rule engine unavailable — validation not performed (never a silent pass), content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /manual-journals/drafts/{id}:post:
+    post:
+      summary: Post a validated draft to the ledger through the S013 door (S216, direct-post)
+      description: >
+        The deliberate Post action (BR216-1). Runs the draft through the SINGLE posting
+        engine (the same one S215 validate uses) and, on success, mints an immutable
+        journal entry and links the draft (status POSTED_LINKED). A never-validated draft
+        is validated first (§3) and its failures surface in the S215 ValidationResult
+        shape. Posting is attributed to the authenticated user (BR216-3) and gated by the
+        tenant je.posting_mode config (BR216-2): `direct` posts; anything else is refused
+        with 'routing requires S031' until approval routing (S031/R1) ships. There is NO
+        AI gate and NO auto-approve. Idempotent per draft (a re-post returns the same
+        journal). Requires je.post.
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '201':
+          description: Posted — immutable journal minted and draft linked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  journalId: { type: string }
+                  journalNumber: { type: string, example: 'GJ-2026-01-000007' }
+                  periodCode: { type: string, example: '2026-01' }
+                  status: { type: string, example: 'POSTED_LINKED' }
+                  idempotent: { type: boolean }
+        '403': { description: Missing je.post }
+        '404': { description: Draft not found }
+        '409': { description: Draft is VOIDED — reverse the posted journal instead, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422':
+          description: >
+            Either the draft failed validation (POST_VALIDATION_FAILED, with the S215
+            ValidationResult) or je.posting_mode is not `direct` (POSTING_MODE_GATE,
+            message 'routing requires S031').
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string, enum: [POST_VALIDATION_FAILED, POSTING_MODE_GATE] }
+                  message: { type: string }
+                  validation: { $ref: '#/components/schemas/ValidationResult' }
+  /manual-journals/drafts/{id}:void:
+    post:
+      summary: Void an unposted draft with soft-delete + audit trail (S219)
+      description: >
+        Soft-deletes a draft by setting status VOIDED (BR219-1) and emits
+        je.draft.voided + audit before/after images. Posted history cannot be voided
+        (BR219-2: 409 'reverse only'). Own drafts require je.draft.void.
+        Voiding another preparer's draft requires je.draft.void.any and a
+        non-empty reason (BR219-3). Action is idempotent for already-voided drafts.
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VoidRequest' }
+      responses:
+        '200':
+          description: Draft now voided (or already voided idempotent replay)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoidResult' }
+        '403': { description: Missing je.draft.void or je.draft.void.any }
+        '404': { description: Draft not found }
+        '409':
+          description: Draft already posted/linked; delete forbidden — reverse only
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string, enum: [REVERSE_ONLY] }
+                  message: { type: string, example: 'reverse only' }
+        '422':
+          description: Missing reason for admin-style void of another preparer draft
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string, enum: [VOID_REASON_REQUIRED] }
+                  message: { type: string }

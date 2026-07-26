@@ -1,0 +1,215 @@
+openapi: 3.0.3
+info:
+  title: AMACC Fiscal Calendar (S208)
+  version: 1.0.0
+  description: >
+    Per-legal-entity fiscal calendar definition, year generation (12 or 12+13th),
+    and deterministic date->period resolution (BR208-5) consumed by S013 posting.
+    Hosted in coa-service. Refactored from the tenant-scoped eom-service prototype
+    (KOMFCAL / FIX-021) to per-entity scope per packet §0.
+servers:
+  - url: /api/v1/fiscal
+    description: via api-gateway (/api/v1/fiscal -> coa-service:3016)
+components:
+  parameters:
+    TenantHeader:
+      name: x-tenant-id
+      in: header
+      required: true
+      schema: { type: string }
+    EntityId:
+      name: entityId
+      in: path
+      required: true
+      schema: { type: string }
+  schemas:
+    FiscalCalendar:
+      type: object
+      properties:
+        id: { type: string }
+        entityId: { type: string }
+        fyStartMonth: { type: integer, minimum: 1, maximum: 12 }
+        structure: { type: string, enum: [TWELVE, TWELVE_PLUS_13TH] }
+        status: { type: string, enum: [DEFINED, LOCKED] }
+    Period:
+      type: object
+      properties:
+        code: { type: string, description: "YYYY-MM (1-12) or YYYY-13 (13th)" }
+        periodNumber: { type: integer, minimum: 1, maximum: 13 }
+        fiscalYear: { type: integer }
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        status: { type: string, enum: [FUTURE] }
+        adjustmentsOnly: { type: boolean }
+    DefineCalendarRequest:
+      type: object
+      required: [fyStartMonth, structure]
+      properties:
+        fyStartMonth: { type: integer, minimum: 1, maximum: 12 }
+        structure: { type: string, enum: [TWELVE, TWELVE_PLUS_13TH] }
+        actor: { type: string }
+    GenerateYearRequest:
+      type: object
+      required: [fiscalYear]
+      properties:
+        fiscalYear: { type: integer }
+        actor: { type: string }
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        message: { type: string }
+  events:
+    fiscal.year.generated:
+      description: Emitted when a fiscal year's periods are generated.
+      payload:
+        type: object
+        properties:
+          eventId: { type: string }
+          entityId: { type: string }
+          fy: { type: integer }
+          periodCount: { type: integer }
+          actor: { type: string }
+          ts: { type: string, format: date-time }
+          schemaV: { type: integer, example: 1 }
+paths:
+  /entities/{entityId}/fiscal-calendar:
+    post:
+      summary: Define or update an entity's fiscal calendar (BR208-1)
+      security: [{ fiscal.calendar.manage: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - { $ref: '#/components/parameters/EntityId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DefineCalendarRequest' }
+      responses:
+        '201':
+          description: Calendar created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FiscalCalendar' }
+        '200':
+          description: Calendar updated (structure changed before any postings)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FiscalCalendar' }
+        '400':
+          description: Invalid input (bad structure/month)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: Structure change after postings (BR208-4, CALENDAR_LOCKED)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403': { description: Missing fiscal.calendar.manage }
+    get:
+      summary: Read an entity's fiscal calendar
+      security: [{ fiscal.calendar.view: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - { $ref: '#/components/parameters/EntityId' }
+      responses:
+        '200':
+          description: Calendar
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FiscalCalendar' }
+        '404':
+          description: No calendar defined
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403': { description: Missing fiscal.calendar.view }
+  /entities/{entityId}/fiscal-calendar/years:
+    post:
+      summary: Generate a fiscal year's periods (:generateYear) — BR208-2
+      security: [{ fiscal.calendar.manage: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - { $ref: '#/components/parameters/EntityId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GenerateYearRequest' }
+      responses:
+        '201':
+          description: Periods generated (emits fiscal.year.generated)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  fiscalYear: { type: integer }
+                  periodCount: { type: integer, description: "12 or 13" }
+                  periods:
+                    type: array
+                    items: { $ref: '#/components/schemas/Period' }
+        '409':
+          description: Fiscal year already generated (overlap)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: No calendar defined for the entity
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403': { description: Missing fiscal.calendar.manage }
+  /entities/{entityId}/periods:
+    get:
+      summary: List generated periods (optionally filtered by fiscal year)
+      security: [{ fiscal.calendar.view: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - { $ref: '#/components/parameters/EntityId' }
+        - { name: fy, in: query, required: false, schema: { type: integer } }
+      responses:
+        '200':
+          description: Periods
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  periods:
+                    type: array
+                    items: { $ref: '#/components/schemas/Period' }
+        '403': { description: Missing fiscal.calendar.view }
+  /entities/{entityId}/periods/resolve:
+    get:
+      summary: Resolve a calendar date to exactly one period (BR208-5)
+      security: [{ fiscal.calendar.view: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - { $ref: '#/components/parameters/EntityId' }
+        - { name: date, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: Resolved period (deterministic)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  periodCode: { type: string }
+                  periodNumber: { type: integer }
+                  fiscalYear: { type: integer }
+                  status: { type: string }
+                  adjustmentsOnly: { type: boolean }
+        '400':
+          description: Missing/malformed date param
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: No period covers the date
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403': { description: Missing fiscal.calendar.view }

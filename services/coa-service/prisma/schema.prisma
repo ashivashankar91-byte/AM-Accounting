@@ -1,0 +1,410 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/coa-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// S223 — Catalog of allowed configuration keys. Keys are catalog-controlled
+/// (BR223-4): any PUT/GET against a key absent from this table is rejected 400.
+/// Each key declares its value type and the scopes at which it may be set.
+model ConfigKeyCatalog {
+  key          String   @id
+  type         String // BOOL | INT | ENUM | STRING
+  allowedScope String[] @map("allowed_scope") // subset of TENANT | ENTITY | STORE
+  enumValues   String[] @default([]) @map("enum_values") // only for type=ENUM
+  defaultValue String   @map("default_value")
+  description  String
+  sinceVersion String   @map("since_version")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("config_key_catalog")
+}
+
+/// S223 — A scoped, effective-dated configuration value version.
+/// Scope resolution (BR223-2): STORE -> ENTITY -> TENANT -> catalog default.
+/// Version lifecycle (BR223-3): SCHEDULED (future-dated) -> EFFECTIVE -> SUPERSEDED.
+model ConfigSetting {
+  id            String    @id @default(uuid())
+  tenantId      String    @map("tenant_id")
+  key           String
+  type          String // denormalized from catalog for validation-at-read
+  scope         String // TENANT | ENTITY | STORE
+  entityId      String?   @map("entity_id") // required when scope=ENTITY or STORE
+  storeId       String?   @map("store_id") // required when scope=STORE
+  value         String // typed by `type`; validated on write
+  effectiveFrom DateTime  @map("effective_from")
+  status        String    @default("SCHEDULED") // SCHEDULED | EFFECTIVE | SUPERSEDED
+  actor         String
+  createdAt     DateTime  @default(now()) @map("created_at")
+  supersededAt  DateTime? @map("superseded_at")
+
+  @@index([tenantId, key])
+  @@index([tenantId, key, scope, entityId, storeId])
+  @@index([effectiveFrom])
+  @@map("config_setting")
+}
+
+/// AuditPort stub outbox (S007 dependency). Shared table — created by the first
+/// Sprint-1 story to merge (auth-service S206). Modeled here for cross-service
+/// write access; the migration uses CREATE TABLE IF NOT EXISTS so it is idempotent.
+model AuditOutboxEvent {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  docType     String    @map("doc_type")
+  docId       String    @map("doc_id")
+  action      String
+  before      Json?
+  after       Json?
+  actor       String
+  publishedAt DateTime? @map("published_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([publishedAt])
+  @@map("audit_outbox")
+}
+
+/// S208 — Per-legal-entity fiscal calendar. One calendar per entity (BR208-1).
+/// Refactored from the eom-service prototype (KOMFCAL / FIX-021), which was
+/// tenant-scoped — the tenant=entity conflation packet §0 forbids. Structure
+/// becomes immutable (LOCKED) once any generated period has postings (BR208-4).
+model FiscalCalendar {
+  id           String    @id @default(uuid())
+  tenantId     String    @map("tenant_id")
+  entityId     String    @map("entity_id")
+  fyStartMonth Int       @map("fy_start_month") @db.SmallInt // 1-12
+  structure    String // TWELVE | TWELVE_PLUS_13TH
+  status       String    @default("DEFINED") // DEFINED | LOCKED
+  actor        String
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  lockedAt     DateTime? @map("locked_at")
+
+  periods FiscalPeriod[]
+
+  @@unique([entityId])
+  @@index([tenantId])
+  @@map("fiscal_calendar")
+}
+
+/// S208 — Generated fiscal period. Created FUTURE (BR208-2); S209 owns the
+/// opening/close lifecycle. 13th period flagged adjustmentsOnly (BR208-3).
+/// code = YYYY-MM (periods 1-12) or YYYY-13 (13th). Deterministic date->period
+/// resolution (BR208-5) is a platform API consumed by S013 posting.
+model FiscalPeriod {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  entityId        String   @map("entity_id")
+  calendarId      String   @map("calendar_id")
+  fiscalYear      Int      @map("fiscal_year")
+  periodNumber    Int      @map("period_number") @db.SmallInt // 1-13
+  code            String // YYYY-MM | YYYY-13
+  startDate       DateTime @map("start_date") @db.Date
+  endDate         DateTime @map("end_date") @db.Date
+  status          String   @default("FUTURE") // FUTURE | OPEN | SOFT_CLOSED | HARD_CLOSED | LOCKED (S209: FUTURE->OPEN only)
+  adjustmentsOnly Boolean  @default(false) @map("adjustments_only")
+  hasPostings     Boolean  @default(false) @map("has_postings")
+  openedBy        String?  @map("opened_by")
+  openedAt        DateTime? @map("opened_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  calendar FiscalCalendar @relation(fields: [calendarId], references: [id])
+
+  @@unique([entityId, code])
+  @@unique([entityId, fiscalYear, periodNumber])
+  @@index([tenantId, entityId, fiscalYear])
+  @@index([entityId, startDate, endDate])
+  @@index([entityId, status])
+  @@map("fiscal_period")
+}
+
+/// Domain-event outbox for reliable delivery of coa-service events
+/// (config.changed, and later chart/fiscal events). Mirrors tenant_outbox_events.
+model CoaOutboxEvent {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  eventType   String    @map("event_type")
+  aggregateId String    @map("aggregate_id")
+  payload     Json
+  publishedAt DateTime? @map("published_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([publishedAt])
+  @@map("coa_outbox_events")
+}
+
+/// S210 — Entity-scoped Chart of Accounts master. New canonical account table
+/// distinct from the legacy gl-service `gl_accounts` (tenant-scoped, no entity
+/// dimension). BR210-1 number unique per entity; BR210-2 type immutable once
+/// hasPostings; BR210-3 normalBalance defaulted by type, contra override needs a
+/// reason; BR210-4 deactivation blocked while balance != 0; BR210-5 non-postable
+/// summary accounts reject journal lines (enforced at S013). balance/hasPostings
+/// are maintained by the S013 posting path.
+model GlAccount {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  entityId      String   @map("entity_id")
+  accountNumber String   @map("account_number") @db.VarChar(5)
+  name          String   @db.VarChar(120)
+  type          String // ASSET | LIABILITY | EQUITY | REVENUE | EXPENSE
+  normalBalance String   @map("normal_balance") // DR | CR
+  isContra      Boolean  @default(false) @map("is_contra")
+  contraReason  String?  @map("contra_reason")
+  postable      Boolean  @default(true)
+  parentId      String?  @map("parent_id") // S211 hierarchy (single-parent)
+  parentEffectiveFrom DateTime? @map("parent_effective_from") // S211 effective-dated re-parent
+  status        String   @default("ACTIVE") // ACTIVE | INACTIVE
+  balance       Decimal  @default(0) @db.Decimal(15, 2)
+  hasPostings   Boolean  @default(false) @map("has_postings")
+  version       Int      @default(1)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@unique([entityId, accountNumber])
+  @@index([tenantId])
+  @@index([tenantId, entityId])
+  @@index([entityId, status])
+  @@index([entityId, parentId])
+  @@map("gl_account")
+}
+
+// S211 — append-only effective-dated re-parent trail (BR211-3).
+model GlAccountReparent {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  entityId      String   @map("entity_id")
+  accountId     String   @map("account_id")
+  oldParentId   String?  @map("old_parent_id")
+  newParentId   String?  @map("new_parent_id")
+  effectiveFrom DateTime @map("effective_from")
+  actor         String
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([accountId, effectiveFrom])
+  @@index([tenantId, entityId])
+  @@map("gl_account_reparent")
+}
+
+// S010 — canonical COA seed execution record (idempotency + audit).
+model CoaSeedRun {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  entityId        String   @map("entity_id")
+  manifestVersion String   @map("manifest_version")
+  createdCount    Int      @default(0) @map("created_count")
+  mergedCount     Int      @default(0) @map("merged_count")
+  conflictCount   Int      @default(0) @map("conflict_count")
+  actor           String
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, entityId, createdAt])
+  @@map("coa_seed_run")
+}
+
+// S212 — journal source registry (manual GJ + reserved system sources).
+model JournalSource {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  code           String   @db.VarChar(6)
+  numericAlias   Int?     @map("numeric_alias") // reserved pending UQ-13
+  name           String   @db.VarChar(120)
+  sourceClass    String   @map("source_class") // MANUAL | SYSTEM
+  reserved       Boolean  @default(false)
+  autoPost       Boolean  @default(false) @map("auto_post")
+  yearEndOnly    Boolean  @default(false) @map("year_end_only")
+  thirteenthOnly Boolean  @default(false) @map("thirteenth_only")
+  status         String   @default("ACTIVE")
+  version        Int      @default(1)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, code])
+  @@index([tenantId, sourceClass, status])
+  @@map("journal_source")
+}
+
+model JournalSequence {
+  id         String   @id @default(uuid())
+  tenantId   String   @map("tenant_id")
+  sourceCode String   @map("source_code") @db.VarChar(6)
+  entityId   String   @map("entity_id")
+  periodCode String   @map("period_code") @db.VarChar(7) // YYYY-MM
+  nextSeq    Int      @default(1) @map("next_seq")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, sourceCode, entityId, periodCode])
+  @@map("journal_sequence")
+}
+
+model SequenceGapLog {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  sourceCode     String   @map("source_code") @db.VarChar(6)
+  entityId       String   @map("entity_id")
+  periodCode     String   @map("period_code") @db.VarChar(7) // YYYY-MM
+  expectedNumber String   @map("expected_number") @db.VarChar(40)
+  expectedSeq    Int      @map("expected_seq")
+  reason         String
+  actor          String?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, entityId, periodCode, createdAt])
+  @@map("sequence_gap_log")
+}
+
+// S013 — Balanced Journal Posting: the single point of ledger truth. Entries are
+// created directly POSTED (no AI review gate / auto-approve). Immutable once
+// posted (BR013-7): the only correction path is a linked reversal (S218), which
+// mints a NEW entry. All money NUMERIC(15,2). DR=CR enforced by a DEFERRABLE
+// constraint trigger (trg_je_balanced) plus the pure evaluator in domain/journal-posting.
+model JournalEntry {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  entityId       String   @map("entity_id")
+  journalNumber  String   @map("journal_number")
+  sourceCode     String   @map("source_code")
+  periodId       String   @map("period_id")
+  periodCode     String   @map("period_code")
+  entryDate      DateTime @map("entry_date") @db.Date
+  memo           String?  @db.VarChar(500)
+  status         String   @default("POSTED") // POSTED | REVERSED
+  idempotencyKey String   @map("idempotency_key")
+  totalDebits    Decimal  @default(0) @map("total_debits") @db.Decimal(15, 2)
+  totalCredits   Decimal  @default(0) @map("total_credits") @db.Decimal(15, 2)
+  reversalOf     String?  @map("reversal_of") // S218 linkage
+  reversedBy     String?  @map("reversed_by") // S218 back-link
+  reversalReason String?  @map("reversal_reason") @db.VarChar(500)
+  draftId        String?  @map("draft_id") // S216 POSTED-LINKED back-ref
+  postedBy       String   @map("posted_by")
+  postedAt       DateTime @default(now()) @map("posted_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  lines JournalLine[]
+
+  @@unique([entityId, journalNumber])
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, entityId])
+  @@index([tenantId, journalNumber])
+  @@index([entityId, periodCode])
+  @@index([reversalOf])
+  @@index([reversedBy])
+  @@map("journal_entry")
+}
+
+model JournalLine {
+  id             String   @id @default(uuid())
+  journalEntryId String   @map("journal_entry_id")
+  tenantId       String   @map("tenant_id")
+  lineIndex      Int      @map("line_index")
+  accountId      String   @map("account_id")
+  accountNumber  String   @map("account_number") @db.VarChar(5)
+  storeId        String   @map("store_id")
+  deptCode       String?  @map("dept_code")
+  controlNumber  String?  @map("control_number")
+  applyNumber    String?  @map("apply_number")
+  dr             Decimal  @default(0) @db.Decimal(15, 2)
+  cr             Decimal  @default(0) @db.Decimal(15, 2)
+  memo           String?  @db.VarChar(500)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  entry JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+
+  @@index([journalEntryId])
+  @@index([accountId])
+  @@index([tenantId])
+  @@map("journal_line")
+}
+
+// Append-only ledger effect record (one row per posting x account).
+model BalanceSnapshot {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  entityId       String   @map("entity_id")
+  accountId      String   @map("account_id")
+  journalEntryId String   @map("journal_entry_id")
+  journalNumber  String   @map("journal_number")
+  periodCode     String   @map("period_code")
+  dr             Decimal  @default(0) @db.Decimal(15, 2)
+  cr             Decimal  @default(0) @db.Decimal(15, 2)
+  delta          Decimal  @default(0) @db.Decimal(15, 2)
+  balanceAfter   Decimal  @default(0) @map("balance_after") @db.Decimal(15, 2)
+  postedAt       DateTime @map("posted_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([entityId, accountId, periodCode])
+  @@index([journalEntryId])
+  @@map("balance_snapshot")
+}
+
+// S214 — Create & Save Draft Manual JE. A draft is a safe scratchpad that saves
+// in ANY state (BR214-1, no validation on save). Lines are stored as JSON so a
+// half-finished entry round-trips faithfully. Edit history is retained in
+// ManualJeDraftRevision (BR214-3). Validation (S215), posting (S216) and void
+// (S219) transition status; this story owns only DRAFT create/edit + attachments.
+model ManualJeDraft {
+  id                  String    @id @default(uuid())
+  tenantId            String    @map("tenant_id")
+  entityId            String?   @map("entity_id") // nullable: draft may start before an entity is chosen
+  preparer            String // owning user (BR214-2 visibility)
+  status              String    @default("DRAFT") // DRAFT | VALIDATED | POSTED_LINKED | VOIDED
+  entryDate           DateTime? @map("entry_date") @db.Date
+  sourceCode          String?   @map("source_code")
+  memo                String?   @db.VarChar(500)
+  lines               Json      @default("[]") // [{accountId,accountNumber,storeId,deptCode,controlNumber,applyNumber,dr,cr,memo}]
+  version             Int       @default(1)
+  validatedAt         DateTime? @map("validated_at")
+  validationResult    Json?     @map("validation_result")
+  postedJournalId     String?   @map("posted_journal_id")
+  postedJournalNumber String?   @map("posted_journal_number")
+  voidedAt            DateTime? @map("voided_at")
+  voidReason          String?   @map("void_reason") @db.VarChar(500)
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  revisions   ManualJeDraftRevision[]
+  attachments Attachment[]
+
+  @@index([tenantId, preparer])
+  @@index([tenantId, status])
+  @@index([postedJournalId])
+  @@map("manual_je_draft")
+}
+
+// S214 — append-only draft edit history (BR214-3).
+model ManualJeDraftRevision {
+  id        String   @id @default(uuid())
+  draftId   String   @map("draft_id")
+  tenantId  String   @map("tenant_id")
+  version   Int
+  editor    String
+  snapshot  Json
+  createdAt DateTime @default(now()) @map("created_at")
+
+  draft ManualJeDraft @relation(fields: [draftId], references: [id], onDelete: Cascade)
+
+  @@index([draftId, version])
+  @@map("manual_je_draft_revision")
+}
+
+// S214 — attachment bound at the draft (BR214-4, basic upload; R1 hardening).
+model Attachment {
+  id         String   @id @default(uuid())
+  tenantId   String   @map("tenant_id")
+  draftId    String   @map("draft_id")
+  fileName   String   @map("file_name") @db.VarChar(255)
+  mimeType   String   @map("mime_type") @db.VarChar(120)
+  sizeBytes  BigInt   @map("size_bytes")
+  storageKey String?  @map("storage_key")
+  uploadedBy String   @map("uploaded_by")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  draft ManualJeDraft @relation(fields: [draftId], references: [id], onDelete: Cascade)
+
+  @@index([draftId])
+  @@map("attachment")
+}

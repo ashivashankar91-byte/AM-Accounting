@@ -54,10 +54,12 @@ const AVAILABLE_SCOPES = [
 ];
 
 // Seed a demo key
+// RISK-002 fix: tenant must be configurable for white-label deployments.
+// Override with AMACC_DEMO_TENANT_ID env var — never hardcode a production tenant here.
 const demoId = 'devkey-demo-001';
 devKeys.set(demoId, {
   id: demoId,
-  tenantId: 'tenant-kunes',
+  tenantId: process.env['AMACC_DEMO_TENANT_ID'] ?? 'tenant-demo',
   name: 'DMS Integration Key',
   description: 'Used by AutoMate DMS connector for nightly GL sync',
   keyPrefix: 'amacc_dk',

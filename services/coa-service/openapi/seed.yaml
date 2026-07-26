@@ -1,0 +1,136 @@
+openapi: 3.0.3
+info:
+  title: AMACC COA — Canonical Seed (S010)
+  version: 1.0.0
+  description: >
+    Idempotent per-entity canonical Chart-of-Accounts skeleton loader.
+    Seeds the BP-3.2 skeleton (interim per UQ-14) into gl_account, merge-by-number
+    (never overwrite), with a diff-from-canonical report. Permission: coa.seed.run.
+    NOTE: packet §9 colon-verb paths (/coa:seed, /coa:diff-from-canonical) are
+    rendered here as path segments for gateway compatibility (functionally identical).
+servers:
+  - url: /api/v1/coa
+paths:
+  /seed:
+    post:
+      summary: Seed the canonical COA skeleton into an entity (idempotent)
+      operationId: seedCoa
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entityId]
+              properties:
+                entityId: { type: string, minLength: 1 }
+                manifestVersion:
+                  type: string
+                  description: Registered manifest version. Defaults to BP-3.2.
+                  example: BP-3.2
+                actor: { type: string, minLength: 1 }
+      responses:
+        '201':
+          description: Seed applied (created new, merged existing, reported conflicts).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SeedResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422':
+          description: Unknown manifest version.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /diff-from-canonical:
+    get:
+      summary: Report divergence of an entity's COA vs the canonical manifest
+      operationId: diffFromCanonical
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - name: entity
+          in: query
+          required: true
+          schema: { type: string }
+        - name: manifestVersion
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Divergence report.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DiffResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+components:
+  parameters:
+    TenantHeader:
+      name: x-tenant-id
+      in: header
+      required: true
+      schema: { type: string }
+  responses:
+    BadRequest:
+      description: Missing tenant header or required parameter.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Missing coa.seed.run permission.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    SeedConflict:
+      type: object
+      properties:
+        number: { type: string }
+        diffs:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              canonical: {}
+              existing: {}
+    SeedResult:
+      type: object
+      properties:
+        manifestVersion: { type: string, example: BP-3.2 }
+        created: { type: integer, example: 31 }
+        merged: { type: integer, example: 0 }
+        conflicts:
+          type: array
+          items: { $ref: '#/components/schemas/SeedConflict' }
+    DiffResult:
+      type: object
+      properties:
+        manifestVersion: { type: string }
+        missing:
+          type: array
+          items: { type: string }
+        divergent:
+          type: array
+          items: { $ref: '#/components/schemas/SeedConflict' }
+        extra:
+          type: array
+          items: { type: string }
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        message: { type: string }
+  x-events:
+    coa.seeded:
+      description: Emitted once per seed run.
+      payload:
+        eventId: { type: string }
+        entityId: { type: string }
+        manifestVersion: { type: string }
+        createdCount: { type: integer }
+        actor: { type: string }
+        ts: { type: string, format: date-time }
+        schemaV: { type: integer, example: 1 }

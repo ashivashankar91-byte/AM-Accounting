@@ -44,3 +44,11 @@ __pycache__/
 *.tmp
 *.zip
 *.tar.gz
+
+# Generated dev/test artifacts (R0 stabilization cleanup)
+.vite/
+playwright-report/
+test-results/
+
+# Backlog package is a tracked reference document, not a generated archive
+!docs/accounting-modernization/AutoMate2_Accounting_Backlog_Package_v1.1.zip

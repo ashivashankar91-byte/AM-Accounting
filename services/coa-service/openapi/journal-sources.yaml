@@ -1,0 +1,137 @@
+openapi: 3.0.3
+info:
+  title: AMACC COA Service — Journal Source Registry (S212)
+  version: 1.0.0
+  description: >
+    Governed registry of journal origin codes. Reserved system sources
+    (Service/Parts/Warranty/Payroll) and reserved manual codes (GJ/ADJ/YE/M13)
+    are seeded via bootstrap and are immutable (BR212-2). Tenants may add custom
+    MANUAL sources. SYSTEM sources are not usable by the manual JE path (BR212-1).
+servers:
+  - url: /api/v1/coa
+components:
+  parameters:
+    TenantId:
+      name: x-tenant-id
+      in: header
+      required: true
+      schema: { type: string }
+  schemas:
+    SourceClass: { type: string, enum: [MANUAL, SYSTEM] }
+    SourceStatus: { type: string, enum: [ACTIVE, INACTIVE] }
+    Flags:
+      type: object
+      properties:
+        autoPost: { type: boolean }
+        yearEndOnly: { type: boolean }
+        thirteenthOnly: { type: boolean }
+    JournalSource:
+      type: object
+      properties:
+        id: { type: string }
+        tenantId: { type: string }
+        code: { type: string, pattern: '^[A-Z0-9]{2,6}$' }
+        numericAlias: { type: integer, nullable: true, description: Reserved legacy code (UQ-13 pending) }
+        name: { type: string, maxLength: 120 }
+        sourceClass: { $ref: '#/components/schemas/SourceClass' }
+        reserved: { type: boolean }
+        autoPost: { type: boolean }
+        yearEndOnly: { type: boolean }
+        thirteenthOnly: { type: boolean }
+        status: { $ref: '#/components/schemas/SourceStatus' }
+        version: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CreateSource:
+      type: object
+      required: [code, name]
+      properties:
+        code: { type: string, pattern: '^[A-Z0-9]{2,6}$' }
+        name: { type: string, maxLength: 120 }
+        numericAlias: { type: integer, nullable: true }
+        flags: { $ref: '#/components/schemas/Flags' }
+        actor: { type: string }
+    UpdateSource:
+      type: object
+      properties:
+        name: { type: string, maxLength: 120 }
+        flags: { $ref: '#/components/schemas/Flags' }
+        actor: { type: string }
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        message: { type: string }
+paths:
+  /journal-sources:
+    get:
+      summary: List journal sources (coa.source.view)
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - { name: class, in: query, schema: { $ref: '#/components/schemas/SourceClass' } }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/SourceStatus' } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/JournalSource' } } } } }
+        '400': { description: Missing tenant }
+    post:
+      summary: Create a custom MANUAL source (coa.source.manage)
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateSource' } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/JournalSource' } } } }
+        '409': { description: DUPLICATE_SOURCE_CODE, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422':
+          description: INVALID_CODE | INVALID_NAME | INVALID_CLASS | CANNOT_CREATE_SYSTEM_SOURCE (BR212-2)
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+  /journal-sources/bootstrap-reserved:
+    post:
+      summary: Idempotently seed the reserved source set (coa.source.manage)
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { created: { type: integer }, merged: { type: integer } } } } } }
+  /journal-sources/assert-manual:
+    post:
+      summary: BR212-1 guard — assert a code is usable by the manual JE path (coa.source.view)
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [code], properties: { code: { type: string } } } } }
+      responses:
+        '200': { description: Usable, content: { application/json: { schema: { type: object, properties: { usable: { type: boolean }, code: { type: string }, class: { $ref: '#/components/schemas/SourceClass' } } } } } }
+        '422':
+          description: SYSTEM_SOURCE_NOT_MANUAL (BR212-1) | SOURCE_INACTIVE
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '404': { description: SOURCE_NOT_FOUND }
+  /journal-sources/{code}:
+    get:
+      summary: Get a source by code (coa.source.view)
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - { name: code, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/JournalSource' } } } }
+        '404': { description: SOURCE_NOT_FOUND }
+    patch:
+      summary: Update a custom source name/flags (coa.source.manage)
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - { name: code, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/UpdateSource' } } }
+      responses:
+        '200': { description: Updated, content: { application/json: { schema: { $ref: '#/components/schemas/JournalSource' } } } }
+        '422': { description: RESERVED_SOURCE_IMMUTABLE (BR212-2), content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: SOURCE_NOT_FOUND }
+  /journal-sources/{code}/deactivate:
+    post:
+      summary: Deactivate a custom source (coa.source.manage)
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - { name: code, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Deactivated (idempotent), content: { application/json: { schema: { $ref: '#/components/schemas/JournalSource' } } } }
+        '422': { description: RESERVED_SOURCE_IMMUTABLE (BR212-2), content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: SOURCE_NOT_FOUND }
