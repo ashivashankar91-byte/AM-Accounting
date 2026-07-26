@@ -124,7 +124,7 @@ export async function storeRoutes(app: FastifyInstance) {
     const tenantId = getTenantId(request);
     try {
       const body = CreateSchema.parse(request.body);
-      const store = await svc.create({ ...body, tenantId });
+      const store = await svc.create({ ...body, tenantId }, request.user?.sub);
       return reply.status(201).send(store);
     } catch (err) {
       return handleError(err, reply);
@@ -149,7 +149,7 @@ export async function storeRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string };
     try {
       const body = UpdateSchema.parse(request.body);
-      const store = await svc.update(tenantId, id, body);
+      const store = await svc.update(tenantId, id, body, request.user?.sub);
       return reply.send(store);
     } catch (err) {
       return handleError(err, reply);

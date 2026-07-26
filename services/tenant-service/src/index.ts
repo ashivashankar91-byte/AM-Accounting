@@ -14,7 +14,10 @@ import { LegalEntityService } from './application/legal-entity-service';
 import { StoreService } from './application/store-service';
 import { DepartmentService } from './application/department-service';
 import { FranchiseService } from './application/franchise-service';
-import { IEventPublisher, ITenantRepository, HttpAuthzClient, AuthzClient } from '@amacc/shared-kernel';
+import {
+  IEventPublisher, ITenantRepository, HttpAuthzClient, AuthzClient,
+  HttpAuditClient, AuditOutboxDrainer, makePrismaAuditOutboxStore,
+} from '@amacc/shared-kernel';
 import { PrismaClient } from '.prisma/tenant-client';
 import pino from 'pino';
 
@@ -58,9 +61,26 @@ async function bootstrap() {
   await app.register(oemRefRoutes, { prefix: '/api/v1/oems' });
   app.get('/health', async () => ({ status: 'ok', service: 'tenant-service' }));
 
+  // R0 Stabilization Phase 4: drain audit_outbox to the real S007 audit-service.
+  // See packages/shared-kernel/src/audit/audit-outbox-drainer.ts for why this
+  // is a poller rather than relying on RabbitMQEventPublisher.subscribe().
+  const auditDrainer = new AuditOutboxDrainer(
+    makePrismaAuditOutboxStore((prisma as any).auditOutboxEvent),
+    new HttpAuditClient(),
+    {
+      serviceName: 'tenant-service',
+      onFailed: (row, err, willRetry) => logger.error({ outboxId: row.id, err, willRetry }, 'audit outbox delivery failed'),
+    },
+  );
+  const stopAuditDrainer = auditDrainer.start(5000);
+
   const port = parseInt(process.env['PORT'] ?? '3002', 10);
   await app.listen({ port, host: '0.0.0.0' });
   logger.info(`tenant-service listening on :${port}`);
+
+  const shutdown = () => { stopAuditDrainer(); process.exit(0); };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 bootstrap().catch((err) => {

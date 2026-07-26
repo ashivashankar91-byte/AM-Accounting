@@ -131,7 +131,7 @@ export async function legalEntityRoutes(app: FastifyInstance) {
     const tenantId = getTenantId(request);
     try {
       const body = CreateSchema.parse(request.body);
-      const { entity, warnDuplicateStatutoryId } = await svc.create({ ...body, tenantId });
+      const { entity, warnDuplicateStatutoryId } = await svc.create({ ...body, tenantId }, request.user?.sub);
       const status = warnDuplicateStatutoryId ? 201 : 201;
       return reply
         .status(status)
@@ -159,7 +159,7 @@ export async function legalEntityRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string };
     try {
       const body = UpdateSchema.parse(request.body);
-      const { entity, warnDuplicateStatutoryId } = await svc.update(tenantId, id, body);
+      const { entity, warnDuplicateStatutoryId } = await svc.update(tenantId, id, body, request.user?.sub);
       return reply.send({ ...entity, warnDuplicateStatutoryId });
     } catch (err) {
       return handleError(err, reply);

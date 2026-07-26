@@ -184,3 +184,26 @@ model TenantOutboxEvent {
   @@index([publishedAt, retryCount])
   @@map("tenant_outbox_events")
 }
+
+/// R0 Stabilization Phase 4: AuditPort outbox — tenant-service had NO audit
+/// mechanism at all before this (not even a stub). Every create/update/
+/// deactivate on LegalEntity/Store/Department/Franchise writes a before/after
+/// record here; a poller (packages/shared-kernel's AuditOutboxDrainer, wired
+/// in src/index.ts) drains unpublished rows to the real S007 audit-service.
+model AuditOutboxEvent {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  docType     String    @map("doc_type")
+  docId       String    @map("doc_id")
+  action      String
+  before      Json?
+  after       Json?
+  actor       String
+  publishedAt DateTime? @map("published_at")
+  retryCount  Int       @default(0) @map("retry_count")
+  lastError   String?   @map("last_error")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([publishedAt, retryCount])
+  @@map("audit_outbox")
+}

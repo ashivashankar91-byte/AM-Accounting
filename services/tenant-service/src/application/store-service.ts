@@ -125,7 +125,7 @@ export class StoreService {
     return store;
   }
 
-  async create(dto: CreateStoreDTO) {
+  async create(dto: CreateStoreDTO, actor = 'system') {
     // Validate entityId belongs to this tenant (BR201-1: orphan store = 422)
     const entity = await this.prisma.legalEntity.findFirst({
       where: { id: dto.entityId, tenantId: dto.tenantId },
@@ -171,11 +171,12 @@ export class StoreService {
       storeName:    store.storeName,
       stateProvince: store.stateProvince,
     });
+    await this._audit(dto.tenantId, 'Store', store.id, 'CREATE', null, store, actor);
 
     return store;
   }
 
-  async update(tenantId: string, id: string, dto: UpdateStoreDTO) {
+  async update(tenantId: string, id: string, dto: UpdateStoreDTO, actor = 'system') {
     const current = await this.prisma.store.findFirst({ where: { id, tenantId } });
     if (!current) throw new StoreNotFoundError(id);
 
@@ -205,6 +206,7 @@ export class StoreService {
       storeCode: store.storeCode,
       changes:   Object.keys(data).filter(k => k !== 'version'),
     });
+    await this._audit(tenantId, 'Store', id, 'UPDATE', current, store, actor);
 
     return store;
   }
@@ -240,11 +242,29 @@ export class StoreService {
       reason:        dto.reason,
       deactivatedBy: dto.deactivatedBy,
     });
+    await this._audit(tenantId, 'Store', id, 'DEACTIVATE', current, store, dto.deactivatedBy);
 
     return store;
   }
 
   // ── Private helpers ─────────────────────────────────────────────────────────
+
+  private async _audit(
+    tenantId: string, docType: string, docId: string, action: string,
+    before: unknown, after: unknown, actor?: string,
+  ): Promise<void> {
+    try {
+      await this.prisma.auditOutboxEvent.create({
+        data: {
+          id: crypto.randomUUID(), tenantId, docType, docId, action,
+          before: (before ?? undefined) as any, after: (after ?? undefined) as any,
+          actor: actor ?? 'system',
+        },
+      });
+    } catch {
+      // Non-fatal: AuditPort write must not fail the business operation.
+    }
+  }
 
   private async _writeOutbox(
     tenantId: string,

@@ -11,7 +11,10 @@ import { AuthzService } from './application/authz-service';
 import { RoleService } from './application/role-service';
 import { UserService } from './application/user-service';
 import { RabbitMQEventPublisher } from './infrastructure/event-publisher';
-import { IEventPublisher } from '@amacc/shared-kernel';
+import {
+  IEventPublisher, HttpAuditClient, AuditOutboxDrainer,
+  makePrismaAuditOutboxStore, makePrismaGenericEventOutboxStore,
+} from '@amacc/shared-kernel';
 import { PrismaClient } from '.prisma/auth-client';
 import pino from 'pino';
 
@@ -78,9 +81,37 @@ async function bootstrap() {
   app.get('/health', async () => ({ status: 'ok', service: 'auth-service' }));
   app.get('/api/v1/auth/health', async () => ({ status: 'ok', service: 'auth-service' }));
 
+  // R0 Stabilization Phase 4: drain audit_outbox to the real S007 audit-service.
+  const auditDrainer = new AuditOutboxDrainer(
+    makePrismaAuditOutboxStore((prisma as any).auditOutboxEvent),
+    new HttpAuditClient(),
+    {
+      serviceName: 'auth-service',
+      onFailed: (row, err, willRetry) => logger.error({ outboxId: row.id, err, willRetry }, 'audit outbox delivery failed'),
+    },
+  );
+  const stopAuditDrainer = auditDrainer.start(5000);
+
+  // authz_outbox_events (iam.authz.denied) is a compliance-critical audit
+  // trail in its own right — drained separately since it uses the generic
+  // eventType/aggregateId/payload outbox shape, not audit_outbox's shape.
+  const authzDenialDrainer = new AuditOutboxDrainer(
+    makePrismaGenericEventOutboxStore((prisma as any).authzOutboxEvent, () => 'AuthzDenial'),
+    new HttpAuditClient(),
+    {
+      serviceName: 'auth-service-authz-denial',
+      onFailed: (row, err, willRetry) => logger.error({ outboxId: row.id, err, willRetry }, 'authz denial audit delivery failed'),
+    },
+  );
+  const stopAuthzDenialDrainer = authzDenialDrainer.start(5000);
+
   const port = parseInt(process.env['PORT'] ?? '3001', 10);
   await app.listen({ port, host: '0.0.0.0' });
   logger.info(`auth-service listening on :${port}`);
+
+  const shutdown = () => { stopAuditDrainer(); stopAuthzDenialDrainer(); process.exit(0); };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 bootstrap().catch((err) => {

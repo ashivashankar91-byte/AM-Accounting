@@ -153,6 +153,7 @@ export class FranchiseService {
       ts:            new Date().toISOString(),
       schemaV:       1,
     });
+    await this._audit(dto.tenantId, 'Franchise', franchise.id, 'CREATE', null, franchise, dto.actor);
 
     return franchise;
   }
@@ -202,6 +203,7 @@ export class FranchiseService {
       ts:            new Date().toISOString(),
       schemaV:       1,
     });
+    await this._audit(tenantId, 'Franchise', id, 'UPDATE', current, franchise, dto.actor);
 
     return franchise;
   }
@@ -236,6 +238,23 @@ export class FranchiseService {
 
   private _toIsoDate(d: Date): string {
     return d.toISOString().slice(0, 10);
+  }
+
+  private async _audit(
+    tenantId: string, docType: string, docId: string, action: string,
+    before: unknown, after: unknown, actor?: string,
+  ): Promise<void> {
+    try {
+      await this.prisma.auditOutboxEvent.create({
+        data: {
+          id: crypto.randomUUID(), tenantId, docType, docId, action,
+          before: (before ?? undefined) as any, after: (after ?? undefined) as any,
+          actor: actor ?? 'system',
+        },
+      });
+    } catch {
+      // Non-fatal: AuditPort write must not fail the business operation.
+    }
   }
 
   private async _writeOutbox(

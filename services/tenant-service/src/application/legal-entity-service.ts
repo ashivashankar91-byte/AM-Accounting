@@ -117,7 +117,7 @@ export class LegalEntityService {
     return entity;
   }
 
-  async create(dto: CreateLegalEntityDTO) {
+  async create(dto: CreateLegalEntityDTO, actor = 'system') {
     // Check entity code uniqueness (DB unique constraint also guards this)
     const existing = await this.prisma.legalEntity.findFirst({
       where: { tenantId: dto.tenantId, entityCode: dto.entityCode },
@@ -161,11 +161,12 @@ export class LegalEntityService {
       entityCode: entity.entityCode,
       legalName:  entity.legalName,
     });
+    await this._audit(dto.tenantId, 'LegalEntity', entity.id, 'CREATE', null, entity, actor);
 
     return { entity, warnDuplicateStatutoryId: !!dupStatutory };
   }
 
-  async update(tenantId: string, id: string, dto: UpdateLegalEntityDTO) {
+  async update(tenantId: string, id: string, dto: UpdateLegalEntityDTO, actor = 'system') {
     const current = await this.prisma.legalEntity.findFirst({ where: { id, tenantId } });
     if (!current) throw new LegalEntityNotFoundError(id);
 
@@ -216,6 +217,7 @@ export class LegalEntityService {
       entityCode: entity.entityCode,
       changes:    Object.keys(data).filter(k => !['version', 'effectiveDate'].includes(k)),
     });
+    await this._audit(tenantId, 'LegalEntity', id, 'UPDATE', current, entity, actor);
 
     return { entity, warnDuplicateStatutoryId: !!warnDuplicateStatutoryId };
   }
@@ -251,6 +253,7 @@ export class LegalEntityService {
       reason:            dto.reason,
       deactivatedBy:     dto.deactivatedBy,
     });
+    await this._audit(tenantId, 'LegalEntity', id, 'DEACTIVATE', current, entity, dto.deactivatedBy);
 
     return entity;
   }
@@ -277,6 +280,26 @@ export class LegalEntityService {
       });
     } catch {
       // Non-fatal: log but don't fail the business operation
+    }
+  }
+
+  /** R0 Stabilization Phase 4: AuditPort outbox — tenant-service had none
+   * before this. Drained to the real S007 audit-service by AuditOutboxDrainer
+   * (see src/index.ts). Never fatal to the business operation. */
+  private async _audit(
+    tenantId: string, docType: string, docId: string, action: string,
+    before: unknown, after: unknown, actor?: string,
+  ): Promise<void> {
+    try {
+      await this.prisma.auditOutboxEvent.create({
+        data: {
+          id: crypto.randomUUID(), tenantId, docType, docId, action,
+          before: (before ?? undefined) as any, after: (after ?? undefined) as any,
+          actor: actor ?? 'system',
+        },
+      });
+    } catch {
+      // Non-fatal: AuditPort write must not fail the business operation.
     }
   }
 }

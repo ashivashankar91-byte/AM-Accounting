@@ -100,7 +100,7 @@ export async function departmentRoutes(app: FastifyInstance) {
     const { entityId } = request.params as { entityId: string };
     try {
       const body = CreateSchema.parse(request.body);
-      const dept = await svc.create({ tenantId, entityId, ...body });
+      const dept = await svc.create({ tenantId, entityId, ...body }, request.user?.sub);
       return reply.status(201).send(dept);
     } catch (err) {
       return handleError(err, reply);
@@ -138,7 +138,7 @@ export async function departmentRoutes(app: FastifyInstance) {
     const { entityId, id } = request.params as { entityId: string; id: string };
     try {
       const body = UpdateSchema.parse(request.body);
-      const dept = await svc.update(tenantId, entityId, id, body);
+      const dept = await svc.update(tenantId, entityId, id, body, request.user?.sub);
       return reply.send(dept);
     } catch (err) {
       return handleError(err, reply);

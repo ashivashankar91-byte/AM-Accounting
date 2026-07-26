@@ -25,7 +25,10 @@ import { JournalViewService } from './application/journal-view-service';
 import { ReversalService } from './application/reversal-service';
 import { DraftService } from './application/draft-service';
 import { RabbitMQEventPublisher } from './infrastructure/event-publisher';
-import { IEventPublisher, HttpAuthzClient, AuthzClient } from '@amacc/shared-kernel';
+import {
+  IEventPublisher, HttpAuthzClient, AuthzClient,
+  HttpAuditClient, AuditOutboxDrainer, makePrismaAuditOutboxStore,
+} from '@amacc/shared-kernel';
 import { PrismaClient } from '.prisma/coa-client';
 import pino from 'pino';
 
@@ -120,9 +123,24 @@ async function bootstrap() {
 
   app.get('/health', async () => ({ status: 'ok', service: 'coa-service' }));
 
+  // R0 Stabilization Phase 4: drain audit_outbox to the real S007 audit-service.
+  const auditDrainer = new AuditOutboxDrainer(
+    makePrismaAuditOutboxStore((prisma as any).auditOutboxEvent),
+    new HttpAuditClient(),
+    {
+      serviceName: 'coa-service',
+      onFailed: (row, err, willRetry) => logger.error({ outboxId: row.id, err, willRetry }, 'audit outbox delivery failed'),
+    },
+  );
+  const stopAuditDrainer = auditDrainer.start(5000);
+
   const port = parseInt(process.env['PORT'] ?? '3016', 10);
   await app.listen({ port, host: '0.0.0.0' });
   logger.info(`coa-service listening on :${port}`);
+
+  const shutdown = () => { stopAuditDrainer(); process.exit(0); };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 bootstrap().catch((err) => {

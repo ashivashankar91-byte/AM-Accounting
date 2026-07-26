@@ -164,7 +164,7 @@ export class DepartmentService {
 
   // ── create ──────────────────────────────────────────────────────────────────
 
-  async create(dto: CreateDepartmentDTO) {
+  async create(dto: CreateDepartmentDTO, actor = 'system') {
     // Validate entity belongs to tenant
     const entity = await this.prisma.legalEntity.findFirst({
       where: { id: dto.entityId, tenantId: dto.tenantId },
@@ -218,13 +218,14 @@ export class DepartmentService {
       actor:     'user',
       schemaV:   1,
     });
+    await this._audit(dto.tenantId, 'Department', dept.id, 'CREATE', null, dept, actor);
 
     return dept;
   }
 
   // ── update ──────────────────────────────────────────────────────────────────
 
-  async update(tenantId: string, entityId: string, id: string, dto: UpdateDepartmentDTO) {
+  async update(tenantId: string, entityId: string, id: string, dto: UpdateDepartmentDTO, actor = 'system') {
     const current = await this.prisma.department.findFirst({ where: { id, tenantId, entityId } });
     if (!current) throw new DepartmentNotFoundError(id);
 
@@ -259,6 +260,7 @@ export class DepartmentService {
       changes:  Object.keys(data).filter(k => k !== 'version'),
       schemaV:  1,
     });
+    await this._audit(tenantId, 'Department', id, 'UPDATE', current, dept, actor);
 
     return dept;
   }
@@ -297,11 +299,29 @@ export class DepartmentService {
       deactivatedBy: dto.deactivatedBy,
       schemaV:       1,
     });
+    await this._audit(tenantId, 'Department', id, 'DEACTIVATE', current, dept, dto.deactivatedBy);
 
     return dept;
   }
 
   // ── Private helpers ──────────────────────────────────────────────────────────
+
+  private async _audit(
+    tenantId: string, docType: string, docId: string, action: string,
+    before: unknown, after: unknown, actor?: string,
+  ): Promise<void> {
+    try {
+      await this.prisma.auditOutboxEvent.create({
+        data: {
+          id: crypto.randomUUID(), tenantId, docType, docId, action,
+          before: (before ?? undefined) as any, after: (after ?? undefined) as any,
+          actor: actor ?? 'system',
+        },
+      });
+    } catch {
+      // Non-fatal: AuditPort write must not fail the business operation.
+    }
+  }
 
   private async _writeOutbox(
     tenantId:    string,

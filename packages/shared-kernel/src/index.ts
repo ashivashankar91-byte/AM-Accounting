@@ -6,6 +6,8 @@ export * from './outbox';
 export * from './middleware/auth';
 export * from './authz/authz-client';
 export * from './authz/authz-guard';
+export * from './audit/audit-client';
+export * from './audit/audit-outbox-drainer';
 export * from './middleware/tracing';
 export * from './middleware/logger';
 export * from './middleware/health';

@@ -170,9 +170,11 @@ model AuditOutboxEvent {
   after       Json?
   actor       String
   publishedAt DateTime? @map("published_at")
+  retryCount  Int       @default(0) @map("retry_count")
+  lastError   String?   @map("last_error")
   createdAt   DateTime  @default(now()) @map("created_at")
 
-  @@index([publishedAt])
+  @@index([publishedAt, retryCount])
   @@map("audit_outbox")
 }
 

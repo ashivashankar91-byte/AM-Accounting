@@ -93,6 +93,25 @@ async function bootstrap() {
     'VEHICLE_PURCHASED', 'VEHICLE_TRANSFERRED', 'PAYROLL_LINES_SUBMITTED',
     'FINANCE_CHARGE_POSTED', 'CREDIT_CARD_BATCH_SETTLED', 'CASH_RECEIPT_DETAILED',
     'YEAR_END_CLOSE_POSTED', 'AMDB_DROPMATE_IMPORTED', 'TECH_HOURS_RECONCILED', 'DEPARTMENT_PL_READY',
+    // R0 Stabilization Phase 4 — the actual dot-case events the 22 R0 stories
+    // emit (org-foundation, accounting-setup, journal-lifecycle). The PRIMARY
+    // delivery path for these is AuditOutboxDrainer (a poller reading each
+    // service's local audit_outbox table — see packages/shared-kernel/src/
+    // audit/audit-outbox-drainer.ts for why: RabbitMQEventPublisher.subscribe()
+    // only fires for the SAME process's own publish() calls today, so this
+    // subscription list cannot yet receive cross-process events from
+    // tenant-service/auth-service/coa-service). Registered here so delivery
+    // becomes real the moment Phase 7 makes the broker path genuinely
+    // cross-process, without a second migration of this list.
+    'acct.je.posted', 'coa.account.created', 'coa.account.updated', 'coa.account.deactivated',
+    'coa.account.reparented', 'coa.seeded', 'coa.source.created', 'coa.source.updated', 'coa.source.deactivated',
+    'config.changed', 'fiscal.period.opened', 'fiscal.year.generated',
+    'iam.assignment.granted', 'iam.assignment.revoked', 'iam.authz.denied',
+    'iam.role.created', 'iam.role.updated', 'iam.role.retired',
+    'iam.user.created', 'iam.user.deactivated', 'iam.user.locked', 'iam.user.unlocked',
+    'org.dept.created', 'org.dept.updated', 'org.dept.deactivated',
+    'org.franchise.created', 'org.franchise.updated',
+    'je.draft.created', 'je.draft.updated', 'je.draft.voided',
   ];
 
   for (const eventType of allEventTypes) {
