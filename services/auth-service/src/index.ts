@@ -28,6 +28,7 @@ async function bootstrap() {
   // DI registrations
   const eventPublisher = new RabbitMQEventPublisher({
     url: process.env['RABBITMQ_URL'] ?? 'amqp://localhost:5672',
+    serviceName: 'auth-service',
   });
   await eventPublisher.connect();
   container.registerInstance<IEventPublisher>('IEventPublisher', eventPublisher);

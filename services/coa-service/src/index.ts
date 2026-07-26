@@ -42,6 +42,7 @@ async function bootstrap() {
   // ── DI ──────────────────────────────────────────────────────────────────────
   const eventPublisher = new RabbitMQEventPublisher({
     url: process.env['RABBITMQ_URL'] ?? 'amqp://localhost:5672',
+    serviceName: 'coa-service',
   });
   await eventPublisher.connect();
   container.registerInstance<IEventPublisher>('IEventPublisher', eventPublisher);
