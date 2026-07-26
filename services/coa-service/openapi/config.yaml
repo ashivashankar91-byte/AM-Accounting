@@ -1,0 +1,143 @@
+openapi: 3.0.3
+info:
+  title: AMACC Configuration Framework (S223)
+  version: 1.0.0
+  description: >
+    Typed, scoped, effective-dated configuration registry. Keys are
+    catalog-controlled; values are type-validated; scope resolution is
+    STORE -> ENTITY -> TENANT -> catalog default. Hosted in coa-service.
+servers:
+  - url: /api/v1/config
+    description: via api-gateway (/api/v1/config -> coa-service:3016)
+components:
+  parameters:
+    TenantHeader:
+      name: x-tenant-id
+      in: header
+      required: true
+      schema: { type: string }
+  schemas:
+    ResolvedConfig:
+      type: object
+      properties:
+        key: { type: string }
+        type: { type: string, enum: [BOOL, INT, ENUM, STRING] }
+        value: { type: string }
+        resolvedScope: { type: string, enum: [TENANT, ENTITY, STORE, DEFAULT] }
+    CatalogKey:
+      type: object
+      properties:
+        key: { type: string }
+        type: { type: string, enum: [BOOL, INT, ENUM, STRING] }
+        allowedScope:
+          type: array
+          items: { type: string, enum: [TENANT, ENTITY, STORE] }
+        enumValues: { type: array, items: { type: string } }
+        defaultValue: { type: string }
+        description: { type: string }
+        sinceVersion: { type: string }
+    PutConfigRequest:
+      type: object
+      required: [scope, value]
+      properties:
+        scope: { type: string, enum: [TENANT, ENTITY, STORE] }
+        entityId: { type: string, description: required when scope=ENTITY or STORE }
+        storeId: { type: string, description: required when scope=STORE }
+        value: { type: string }
+        effectiveFrom: { type: string, format: date-time }
+        actor: { type: string }
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        message: { type: string }
+  events:
+    config.changed:
+      description: Emitted on every configuration change.
+      payload:
+        type: object
+        properties:
+          eventId: { type: string }
+          key: { type: string }
+          scope: { type: string }
+          before: { type: string }
+          after: { type: string }
+          effectiveFrom: { type: string, format: date-time }
+          actor: { type: string }
+          ts: { type: string, format: date-time }
+          schemaV: { type: integer, example: 1 }
+paths:
+  /catalog:
+    get:
+      summary: List the registry of allowed configuration keys
+      security: [{ config.view: [] }]
+      parameters: [{ $ref: '#/components/parameters/TenantHeader' }]
+      responses:
+        '200':
+          description: Registry of allowed keys
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys:
+                    type: array
+                    items: { $ref: '#/components/schemas/CatalogKey' }
+        '403': { description: Missing config.view }
+  /{key}:
+    get:
+      summary: Resolve a configuration value at the given scope
+      security: [{ config.view: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - { name: key, in: path, required: true, schema: { type: string } }
+        - { name: entity, in: query, required: false, schema: { type: string } }
+        - { name: store, in: query, required: false, schema: { type: string } }
+      responses:
+        '200':
+          description: Resolved value + resolvedScope
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResolvedConfig' }
+        '400':
+          description: Unknown configuration key
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403': { description: Missing config.view }
+    put:
+      summary: Set a scoped, effective-dated configuration value
+      security: [{ config.manage: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - { name: key, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PutConfigRequest' }
+      responses:
+        '200':
+          description: Value set (emits config.changed)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key: { type: string }
+                  scope: { type: string }
+                  value: { type: string }
+                  status: { type: string, enum: [SCHEDULED, EFFECTIVE] }
+                  effectiveFrom: { type: string, format: date-time }
+                  before: { type: string }
+        '400':
+          description: Unknown configuration key
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: Type-invalid value or scope not permitted for key
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403': { description: Missing config.manage }

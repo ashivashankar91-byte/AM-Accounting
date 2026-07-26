@@ -4,9 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test:journal-lifecycle": "tsx test-journal-lifecycle.ts"
+    "test:journal-lifecycle": "tsx test-journal-lifecycle.ts",
+    "test:rls-isolation": "tsx test-rls-isolation.ts",
+    "test:broker-integration": "tsx test-broker-integration.ts"
   },
   "dependencies": {
+    "amqplib": "^0.10.9",
     "pg": "^8.12.0"
   },
   "devDependencies": {

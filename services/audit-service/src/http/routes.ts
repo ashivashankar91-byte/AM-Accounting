@@ -20,6 +20,7 @@ const CreateAuditSchema = z.object({
   occurredAt: z.string().datetime().optional().transform((s) => s ? new Date(s) : undefined),
   ipAddress: z.string().optional(),
   sessionId: z.string().optional(),
+  sourceEventId: z.string().optional(),
 });
 
 export function auditRoutes(auditService: AuditService) {

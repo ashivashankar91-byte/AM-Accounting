@@ -29,6 +29,11 @@ model AuditLog {
   occurredAt    DateTime @map("occurred_at")
   ipAddress     String?  @map("ip_address")
   sessionId     String?  @map("session_id")
+  /// R0 Stabilization Phase 4: the source outbox row's own id, when the record
+  /// arrived via the AuditOutboxDrainer poller. Unique so retried/duplicate
+  /// deliveries of the same outbox row are idempotent (insert-if-absent),
+  /// never an UPDATE (the table is append-only/immutable by trigger).
+  sourceEventId String?  @unique @map("source_event_id")
 
   @@map("audit_logs")
   @@index([tenantId])

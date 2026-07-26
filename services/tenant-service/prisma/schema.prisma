@@ -23,3 +23,187 @@ model Tenant {
 
   @@map("tenants")
 }
+
+/// ACC-S200: Legal entity within a tenant.
+/// entity_code is immutable after creation.
+/// functional_currency is immutable after the first posted journal (has_posted_journals = true).
+/// Deactivation is soft-only — rows are never deleted.
+model LegalEntity {
+  id                 String    @id @default(uuid())
+  tenantId           String    @map("tenant_id")
+  /// Unique short code (e.g. "KUNES-IL"). Immutable after creation.
+  entityCode         String    @map("entity_code")
+  legalName          String    @map("legal_name")
+  displayName        String?   @map("display_name")
+  /// EIN or statutory tax ID. Duplicate triggers a warning (409 with WARN_DUPLICATE_STATUTORY_ID), not a hard block.
+  statutoryId        String?   @map("statutory_id")
+  /// ISO 4217. Immutable once has_posted_journals = true.
+  functionalCurrency String    @default("USD") @map("functional_currency")
+  country            String    @default("US")
+  /// 1–12. Default: 12 (December).
+  fiscalYearEndMonth Int       @default(12) @map("fiscal_year_end_month")
+  address            String?
+  city               String?
+  state              String?
+  postalCode         String?   @map("postal_code")
+  /// ACTIVE | INACTIVE
+  status             String    @default("ACTIVE")
+  effectiveDate      DateTime  @map("effective_date") @db.Date
+  /// Optimistic concurrency version. Increment on every update.
+  version            Int       @default(1)
+  /// Set to true by GL service on first posted journal. Used to enforce currency immutability.
+  hasPostedJournals  Boolean   @default(false) @map("has_posted_journals")
+  deactivatedAt      DateTime? @map("deactivated_at")
+  deactivatedBy      String?   @map("deactivated_by")
+  deactivationReason String?   @map("deactivation_reason")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  @@unique([tenantId, entityCode])
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("legal_entities")
+}
+
+/// ACC-S201: Store (rooftop) within a legal entity.
+/// store_code is immutable after creation (unique per entity).
+/// stateProvince drives tax jurisdiction defaulting (future stories).
+/// Deactivation is soft-only — rows are never deleted.
+model Store {
+  id                 String    @id @default(uuid())
+  tenantId           String    @map("tenant_id")
+  entityId           String    @map("entity_id")
+  storeCode          String    @map("store_code")
+  storeName          String    @map("store_name")
+  stateProvince      String    @map("state_province")
+  addressLine1       String?   @map("address_line1")
+  addressLine2       String?   @map("address_line2")
+  city               String?
+  postalCode         String?   @map("postal_code")
+  dmvId              String?   @map("dmv_id")
+  status             String    @default("ACTIVE")
+  version            Int       @default(1)
+  deactivatedAt      DateTime? @map("deactivated_at")
+  deactivatedBy      String?   @map("deactivated_by")
+  deactivationReason String?   @map("deactivation_reason")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  @@unique([entityId, storeCode])
+  @@index([tenantId])
+  @@index([tenantId, entityId])
+  @@index([tenantId, status])
+  @@map("stores")
+}
+
+/// ACC-S203: Department dimension per legal entity.
+/// Codes 01-12 are platform-canonical (seeded on entity creation). ACCOUNTING_SME_VALIDATION_PENDING.
+/// Codes 20-89 are controller-defined custom departments.
+/// code is immutable after creation; name is editable and unique per entity.
+/// Deactivation is soft-only — rows are never deleted. Reactivation is out of scope (S203).
+model Department {
+  id                 String    @id @default(uuid())
+  tenantId           String    @map("tenant_id")
+  entityId           String    @map("entity_id")
+  /// 2-digit numeric string. Canonical: "01"-"12". Custom: "20"-"89".
+  code               String    @db.VarChar(2)
+  /// Display name, 1-60 chars. Unique per entity.
+  name               String    @db.VarChar(60)
+  /// true = system-seeded canonical; false = controller-created custom.
+  canonical          Boolean   @default(false)
+  /// ACTIVE | INACTIVE
+  status             String    @default("ACTIVE")
+  /// Optimistic concurrency version. Increment on every update.
+  version            Int       @default(1)
+  deactivatedAt      DateTime? @map("deactivated_at")
+  deactivatedBy      String?   @map("deactivated_by")
+  deactivationReason String?   @map("deactivation_reason")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  @@unique([entityId, code])
+  @@unique([entityId, name])
+  @@index([tenantId])
+  @@index([tenantId, entityId])
+  @@index([tenantId, status])
+  @@map("departments")
+}
+
+/// ACC-S204: Platform-controlled OEM reference list (BR204-1).
+/// oem_code is the enum surface (FORD|GM|TOYOTA|STELLANTIS|HONDA|NISSAN at launch).
+/// dealer_code_pattern is the per-OEM dealer-code regex (BR204-2). Correctable as data.
+model OemRef {
+  /// FORD | GM | TOYOTA | STELLANTIS | HONDA | NISSAN
+  oemCode           String   @id @map("oem_code")
+  displayName       String   @map("display_name")
+  /// Regex the dealer code must satisfy.
+  dealerCodePattern String   @map("dealer_code_pattern")
+  dealerCodeHint    String   @map("dealer_code_hint")
+  active            Boolean  @default(true)
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@map("oem_ref")
+}
+
+/// ACC-S204: Franchise (brand) per store — an org dimension distinct from the FS OEM profile.
+/// Effective-dated for buy/sell events (BR204-3); no separate status machine.
+/// One ACTIVE franchise (effective_to IS NULL) per (store, oem) — enforced by partial unique index.
+model Franchise {
+  id            String    @id @default(uuid())
+  tenantId      String    @map("tenant_id")
+  storeId       String    @map("store_id")
+  /// FK-by-value to OemRef.oemCode.
+  oemCode       String    @map("oem_code")
+  dealerCode    String    @map("dealer_code")
+  effectiveFrom DateTime  @map("effective_from") @db.Date
+  effectiveTo   DateTime? @map("effective_to") @db.Date
+  /// Optimistic concurrency version.
+  version       Int       @default(1)
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@index([tenantId, storeId])
+  @@index([oemCode])
+  @@map("franchises")
+}
+
+/// Outbox for reliable event publishing from tenant-service.
+/// Polled by outbox processor and forwarded to RabbitMQ.
+model TenantOutboxEvent {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  eventType   String    @map("event_type")
+  aggregateId String    @map("aggregate_id")
+  payload     Json
+  publishedAt DateTime? @map("published_at")
+  retryCount  Int       @default(0) @map("retry_count")
+  lastError   String?   @map("last_error")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([publishedAt, retryCount])
+  @@map("tenant_outbox_events")
+}
+
+/// R0 Stabilization Phase 4: AuditPort outbox — tenant-service had NO audit
+/// mechanism at all before this (not even a stub). Every create/update/
+/// deactivate on LegalEntity/Store/Department/Franchise writes a before/after
+/// record here; a poller (packages/shared-kernel's AuditOutboxDrainer, wired
+/// in src/index.ts) drains unpublished rows to the real S007 audit-service.
+model AuditOutboxEvent {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  docType     String    @map("doc_type")
+  docId       String    @map("doc_id")
+  action      String
+  before      Json?
+  after       Json?
+  actor       String
+  publishedAt DateTime? @map("published_at")
+  retryCount  Int       @default(0) @map("retry_count")
+  lastError   String?   @map("last_error")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([publishedAt, retryCount])
+  @@map("audit_outbox")
+}

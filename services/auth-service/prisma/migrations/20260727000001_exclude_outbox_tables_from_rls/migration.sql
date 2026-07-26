@@ -1,0 +1,22 @@
+-- R0 Stabilization Phase 8 finding: the audit-outbox drainer
+-- (packages/shared-kernel/src/audit/audit-outbox-drainer.ts) is a background
+-- setInterval poller with no per-request AsyncLocalStorage tenant context —
+-- it must see EVERY tenant's unpublished rows in one query, not one tenant's.
+-- Once Phase 5's RLS policies went live, this same query started silently
+-- returning zero rows for every service (SELECT ... WHERE tenant_id = ''),
+-- because the middleware's set_config('app.current_tenant_id', '') runs with
+-- no tenant available outside of a Fastify request. The result: audit records
+-- (and iam.authz.denied events, drained via the same mechanism) were written
+-- to the outbox correctly but never delivered — a live, silent regression
+-- only caught by actually booting the stack and posting a real transaction
+-- end-to-end in Phase 8.
+--
+-- Outbox tables are internal system delivery queues (a service's own
+-- pending-work list), not tenant-facing queryable data — no user-facing
+-- feature ever reads "my tenant's outbox." They belong in the same
+-- platform-wide/tenant-agnostic category as `tenants`, `permission`,
+-- `role_permission`, etc. (see TENANT_ISOLATION_REPORT.md's "Coverage"
+-- section), which is why they are excluded here rather than given a
+-- special-cased bypass role for a background job.
+ALTER TABLE "audit_outbox" DISABLE ROW LEVEL SECURITY;
+ALTER TABLE "authz_outbox_events" DISABLE ROW LEVEL SECURITY;

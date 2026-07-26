@@ -36,3 +36,197 @@ model RefreshToken {
   @@map("refresh_tokens")
   @@index([tenantId])
 }
+
+// ── S207: Permission Catalog & Check API ───────────────────────────────────────
+// Versioned, deny-by-default authorization. Catalog ships with releases (BR207-1):
+// no runtime-added permissions. Scope model tenant->entity->store (BR207-4).
+
+/// Master list of every action the system allows. One row per permission key.
+model Permission {
+  key          String   @id                      // dot-namespaced, e.g. "je.post"
+  description  String
+  sinceVersion String   @map("since_version")    // catalog version the key shipped in
+  status       String   @default("SHIPPED")      // DRAFT | SHIPPED | DEPRECATED
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  rolePermissions RolePermission[]
+
+  @@map("permission")
+  @@index([status])
+}
+
+/// Grants a permission key to a role. Seeded with releases (S206 later manages).
+model RolePermission {
+  role          String
+  permissionKey String   @map("permission_key")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  permission Permission @relation(fields: [permissionKey], references: [key], onDelete: Cascade)
+
+  @@id([role, permissionKey])
+  @@map("role_permission")
+  @@index([permissionKey])
+}
+
+/// Read-model projection of who holds which role, in which scope. Populated by
+/// S206 `iam.assignment.*` events (cache invalidation). S207 exposes NO CRUD here
+/// — assignment MANAGEMENT is S206. Seeded minimally so checks are demonstrable.
+model AuthzRoleAssignment {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  userId    String   @map("user_id")
+  role      String
+  entityId  String?  @map("entity_id")
+  storeId   String?  @map("store_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, userId, role, entityId, storeId], name: "authz_assignment_unique")
+  @@map("authz_role_assignment")
+  @@index([tenantId, userId])
+}
+
+/// Catalog version metadata. Enables the GET /authz/catalog diff report (AC).
+model CatalogVersion {
+  version     String   @id                        // e.g. "1.0.0"
+  releasedAt  DateTime @default(now()) @map("released_at")
+  description String?
+
+  @@map("catalog_version")
+}
+
+/// Transactional outbox for iam.authz.denied events (mirrors tenant_outbox_events).
+model AuthzOutboxEvent {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  eventType   String    @map("event_type")
+  aggregateId String    @map("aggregate_id")
+  payload     Json
+  publishedAt DateTime? @map("published_at")
+  retryCount  Int       @default(0) @map("retry_count")
+  lastError   String?   @map("last_error")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([publishedAt, retryCount])
+  @@map("authz_outbox_events")
+}
+
+// ── S206: Basic Role Management ────────────────────────────────────────────────
+// Roles are named permission sets (BR206-1); access is granted only by auditable,
+// store-scoped role assignment (BR206-3). Never by individual permission grant.
+
+/// A named set of catalog permission keys. `key` is the stable slug projected into
+/// role_permission / authz_role_assignment (the S207 read models). Starter roles
+/// (BR206-4) ship builtIn = true. Name is unique per tenant (1–60 chars).
+model Role {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  key         String                                  // stable slug, e.g. ADMIN
+  name        String                                  // display name, 1–60
+  permissions String[] @default([])                   // catalog permission keys (BR206-1)
+  builtIn     Boolean  @default(false) @map("built_in")
+  status      String   @default("ACTIVE")             // ACTIVE | RETIRED
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  assignments RoleAssignment[]
+
+  @@unique([tenantId, name], name: "role_name_per_tenant")
+  @@unique([tenantId, key], name: "role_key_per_tenant")
+  @@map("role")
+  @@index([tenantId])
+}
+
+/// Grant of a role to a user, scoped to a legal entity and either ALL stores in
+/// that entity (allStores = true) or a specific set (storeIds). Deletion of an
+/// assigned role is blocked (BR206-2); revocation flips status to REVOKED.
+model RoleAssignment {
+  id        String    @id @default(uuid())
+  tenantId  String    @map("tenant_id")
+  userId    String    @map("user_id")
+  roleId    String    @map("role_id")
+  entityId  String?   @map("entity_id")            // null = tenant-wide (platform/tenant admin)
+  storeIds  String[]  @default([]) @map("store_ids")  // empty when allStores = true
+  allStores Boolean   @default(false) @map("all_stores")
+  status    String    @default("GRANTED")             // GRANTED | REVOKED
+  createdAt DateTime  @default(now()) @map("created_at")
+  revokedAt DateTime? @map("revoked_at")
+
+  role Role @relation(fields: [roleId], references: [id])
+
+  @@map("role_assignment")
+  @@index([tenantId, userId])
+  @@index([roleId])
+}
+
+/// AuditPort stub outbox (S007 dependency). Every state change writes a record with
+/// before/after images; the real audit service consumes this table when S007 merges.
+model AuditOutboxEvent {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  docType     String    @map("doc_type")
+  docId       String    @map("doc_id")
+  action      String
+  before      Json?
+  after       Json?
+  actor       String
+  publishedAt DateTime? @map("published_at")
+  retryCount  Int       @default(0) @map("retry_count")
+  lastError   String?   @map("last_error")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([publishedAt, retryCount])
+  @@map("audit_outbox")
+}
+
+// ── S205: User Account Lifecycle ────────────────────────────────────────────────
+// Security admins create, deactivate, unlock and reset users with entity/store scope
+// so only current staff hold access. Users hold NO permissions directly (BR205-4) —
+// authorization comes solely from S206 role assignments. Every state change emits a
+// §9 event and an AuditPort record (§11). Deactivation revokes sessions (BR205-2) and
+// emits iam.user.deactivated, which S206 consumes to auto-revoke that user's roles.
+
+/// A staff login. Email is unique per tenant (BR205-1). Status transitions:
+/// INVITED → ACTIVE → LOCKED (5 failed logins) → ACTIVE (admin unlock);
+/// ACTIVE → INACTIVE (deactivate; sessions revoked). Users carry entity/store scope
+/// but no direct permissions.
+model User {
+  id           String    @id @default(uuid())
+  tenantId     String    @map("tenant_id")
+  email        String
+  displayName  String    @map("display_name")            // 1–80
+  status       String    @default("INVITED")             // INVITED | ACTIVE | LOCKED | INACTIVE
+  failedLogins Int       @default(0) @map("failed_logins")
+  entityScope  String[]  @default([]) @map("entity_scope")
+  storeScope   String[]  @default([]) @map("store_scope")
+  version      Int       @default(0)
+  resetTokenHash      String?   @map("reset_token_hash")
+  resetTokenExpiresAt DateTime? @map("reset_token_expires_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deactivatedAt DateTime? @map("deactivated_at")
+
+  sessions Session[]
+
+  @@unique([tenantId, email], name: "user_email_per_tenant")
+  @@map("user")
+  @@index([tenantId])
+}
+
+/// An issued session. Deactivation flips every ACTIVE session to REVOKED within the
+/// SLA (BR205-2), which is how "leaver access is closed" is proven by a timed test.
+model Session {
+  id        String    @id @default(uuid())
+  tenantId  String    @map("tenant_id")
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash")
+  status    String    @default("ACTIVE")                 // ACTIVE | REVOKED
+  createdAt DateTime  @default(now()) @map("created_at")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("session")
+  @@index([tenantId, userId])
+  @@index([status])
+}
