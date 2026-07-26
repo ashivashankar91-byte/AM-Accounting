@@ -25,6 +25,15 @@ import { RlsTenantContext } from './tenant-context';
  */
 export function createTenantRlsMiddleware(prismaLike: { $executeRawUnsafe: (query: string, ...values: any[]) => Promise<any> }) {
   return async (params: { model?: string; action: string }, next: (params: any) => Promise<any>) => {
+    // Raw queries (params.model undefined) are skipped — otherwise the
+    // $executeRawUnsafe call below would itself re-enter this same $use
+    // middleware (Prisma's legacy middleware wraps ALL client operations,
+    // including its own raw-query methods), recursing without end. This was
+    // never exercised by an actual booted service until Phase 8: the Phase 5
+    // manual proof used a plain `pg` client (bypassing $use entirely), so the
+    // infinite-recursion path went undetected until the first real
+    // model-query triggered it here in production wiring.
+    if (!params.model) return next(params);
     const tenantId = RlsTenantContext.get();
     // set_config(...) is a normal function call — its second argument is a
     // real bind parameter, not string-interpolated SQL (unlike the SET
