@@ -3,7 +3,7 @@
     "schema": "1.0",
     "description": "Single operational source of truth for the AMACC accounting modernisation release workflow.",
     "controlledBy": "Product Owner — update story status and readiness here. Do not use CURRENT_RELEASE.md as a control file.",
-    "lastUpdated": "2026-07-24",
+    "lastUpdated": "2026-07-26",
     "sourcePackage": "docs/accounting-modernization/AutoMate2_Accounting_Backlog_Package_v1.1.zip"
   },
   "activePackage": "R0-JOURNAL-LIFECYCLE",
@@ -101,9 +101,10 @@
       "title": "Create & Maintain Legal Entity",
       "layman": "Set up the dealer group's legal companies so every dollar is booked to the right legal name.",
       "sprint": 1,
-      "status": "DONE",
+      "status": "DONE_PENDING_INTEGRATION",
       "completedDate": "2026-07-22",
-      "usesStubs": false,
+      "usesStubs": true,
+      "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207 and tenant-service build passes tsc --noEmit",
       "dependencies": [],
       "blockers": [],
       "completionEvidence": {
@@ -111,6 +112,12 @@
         "playwrightCount": null,
         "auditReport": "docs/accounting-modernization/audit-results/S200-AUDIT_RESULTS_v1.2.md",
         "notes": "S200 audit complete. GAP-S200-SEMANTIC, GAP-S200-AUTHZ, GAP-S200-DOCBLOCK, GAP-S200-REACTIVATE closed per decision register."
+      },
+      "stabilizationReconciliation": {
+        "phase": "R0 Stabilization Phase 1",
+        "priorClaim": "status DONE, usesStubs:false",
+        "correctedBecause": "docs/accounting-modernization/repository-verification/AUTHORIZATION_AND_AUDIT_VERIFICATION.md and REPOSITORY_CONTRADICTIONS.md #2 found legal-entity-routes.ts uses the same local static ROLE_PERMISSIONS stub map as every usesStubs:true story, not the real S207 AuthzService; tenant-service has no audit mechanism at all (not even a stub); and tenant-service currently fails tsc --noEmit. usesStubs:false and full DONE are not supportable claims until Phase 2 (build) and Phase 3 (authz centralization) close.",
+        "reference": "docs/accounting-modernization/repository-verification/REPOSITORY_CONTRADICTIONS.md#2"
       }
     },
 
@@ -118,7 +125,7 @@
       "title": "Create & Maintain Store (Rooftop)",
       "layman": "Add each physical dealership location with its rooftop code so journal entries are stamped by location.",
       "sprint": 1,
-      "status": "DONE",
+      "status": "DONE_PENDING_INTEGRATION",
       "completedDate": "2026-07-23",
       "usesStubs": true,
       "stubGate": "DONE_PENDING_INTEGRATION",
@@ -128,6 +135,12 @@
         "vitestCount": "119 (as of S203 merge; S201 tests included)",
         "playwrightCount": 8,
         "notes": "store-routes.test.ts, store-isolation.test.ts, store.test.ts passing. Playwright 8/8. Tenant isolation at app layer (tenantId WHERE clause) per ADR-001."
+      },
+      "stabilizationReconciliation": {
+        "phase": "R0 Stabilization Phase 1",
+        "priorClaim": "status DONE, despite this story's own usesStubs:true and stubGate:DONE_PENDING_INTEGRATION fields",
+        "correctedBecause": "Internal inconsistency in the original file: status said DONE while the story's own usesStubs/stubGate fields and the repository-verification evidence (local ROLE_PERMISSIONS stub in store-routes.ts, no audit table in tenant-service, tenant-service tsc failure) all say otherwise. Corrected to match S203/S204, which use the identical pattern and were already correctly labeled DONE_PENDING_INTEGRATION.",
+        "reference": "docs/accounting-modernization/repository-verification/STORY_EVIDENCE_MATRIX.csv"
       }
     },
 
@@ -180,10 +193,10 @@
       "title": "User Account Lifecycle",
       "layman": "Create logins for staff and switch them off the day they leave, so only current employees can touch the books.",
       "sprint": 1,
-      "status": "DONE_PENDING_INTEGRATION",
+      "status": "PARTIAL",
       "completedDate": "2026-07-24",
       "usesStubs": true,
-      "stubGate": "Re-run integration suite green against real S007 audit consumer + broker-backed iam.user.deactivated fan-out to S206",
+      "stubGate": "PARTIAL until a real login/session-issuance endpoint exists; also re-run integration suite green against real S007 audit consumer + broker-backed iam.user.deactivated fan-out to S206",
       "dependencies": ["S206"],
       "blockers": [],
       "specDeviations": [
@@ -196,6 +209,13 @@
         "vitestSuiteTotal": 87,
         "completionDoc": "docs/accounting-modernization/audit-results/S205-COMPLETION.md",
         "notes": "user-service.test.ts (19), user-routes.test.ts (12); full auth-service suite 87/87 (S207 27 + S206 29 + S205 31). Migration 20260724000004_add_user_lifecycle applied (user+session tables, catalog v1.2.0, iam.user.view/manage permissions + role grants, 2 bootstrap users). Runtime transcript (:3001): list=dev+acct ACTIVE, create=201 INVITED, dup=409 DUPLICATE_EMAIL, create-as-accountant=403, role-less authz=NO_MATCHING_ROLE, reset=202 token, deactivate=200 revokedSessions:2 (both REVOKED), last-admin-self=422 LAST_ADMIN, unlock=200 failedLogins:0, catalog diff 1.1.0→1.2.0 adds iam.user.manage|view (15 total). audit_outbox doc_type=user recorded CREATE/RESET/DEACTIVATE/UNLOCK (BR205-3). AuditPort stub only + in-memory bus no-op subscribe → DONE_PENDING_INTEGRATION."
+      },
+      "stabilizationReconciliation": {
+        "phase": "R0 Stabilization Phase 1",
+        "priorClaim": "status DONE_PENDING_INTEGRATION",
+        "correctedTo": "PARTIAL",
+        "correctedBecause": "This story's own specDeviations already admit 'No login/token endpoint in this story — the prototype unvalidated token issuance is discarded... Credential auth / session issuance is a follow-up.' A user-lifecycle story with no way for a created user to actually authenticate is a materially incomplete acceptance criterion, not merely an integration-pending gap. DONE_PENDING_INTEGRATION is reserved for stories whose functional scope is complete and only cross-cutting wiring (authz/audit/broker/tenancy proof) remains.",
+        "reference": "docs/accounting-modernization/audit-results/S205-COMPLETION.md"
       }
     },
 
@@ -225,9 +245,10 @@
       "title": "Permission Catalog & Check API",
       "layman": "One master list of every action the system allows, and one gatekeeper that answers 'may this person do this here?' — the same way, everywhere.",
       "sprint": 1,
-      "status": "DONE",
+      "status": "DONE_PENDING_INTEGRATION",
       "completedDate": "2026-07-24",
       "usesStubs": false,
+      "stubGate": "DONE_PENDING_INTEGRATION until auth-service passes tsc --noEmit, deny events are consumed by a real S007 audit sink instead of authz_outbox_events with no reader, and live-database + broker-backed verification exist. usesStubs remains false: S207's own engine (AuthzService.check()) is genuinely real and deny-by-default, not a local stand-in. The fact that 19 of the other 21 stories do not yet call it is tracked as their own gap in AUTHORIZATION_WRITE_PATH_CENSUS.csv, not a defect in S207 itself.",
       "dependencies": [],
       "blockers": [],
       "specDeviations": [
@@ -670,11 +691,21 @@
 
   "integrationGateStatus": {
     "R0-ACCOUNTING-SETUP": "PENDING — carry-forward: real S007 AuditPort + real S207 AuthzPort + broker-backed event verification across S223/S208/S209/S210/S211/S010/S212/S213",
+    "R0-JOURNAL-LIFECYCLE": "PENDING — carry-forward: real S007 AuditPort + real S207 AuthzPort + broker-backed event verification + live-database proof across S013/S214/S215/S216/S217/S218/S219 (added in R0 Stabilization Phase 1 — this package was previously omitted from integrationGateStatus despite being DONE_PENDING_INTEGRATION in the stories object; see REPOSITORY_CONTRADICTIONS.md #8 / R0_STABILIZATION_REPORT.md)",
+    "S200": "PENDING — corrected from DONE to DONE_PENDING_INTEGRATION in R0 Stabilization Phase 1; awaiting real S007/S207 wiring and a passing tenant-service build",
     "S201": "PENDING — awaiting real S007/S207 services (carry-forward from R0-ORG-FOUNDATION)",
     "S203": "PENDING — awaiting real S007/S207 services (carry-forward from R0-ORG-FOUNDATION)",
     "S204": "PENDING — awaiting real S007/S207 services (carry-forward from R0-ORG-FOUNDATION)",
     "S206": "PENDING — awaiting real S007 audit consumer (carry-forward; AuthzPort already real via co-located S207)",
-    "S205": "PENDING — awaiting real S007 audit consumer + broker-backed iam.user.deactivated fan-out to S206 (carry-forward; AuthzPort already real via co-located S207)"
+    "S205": "PARTIAL — corrected from DONE_PENDING_INTEGRATION to PARTIAL in R0 Stabilization Phase 1; missing login/session-issuance endpoint is a functional gap, not only an integration gap",
+    "S207": "PENDING — corrected from DONE to DONE_PENDING_INTEGRATION in R0 Stabilization Phase 1; engine itself is real (usesStubs remains false), gated on a passing auth-service build and live-database/broker proof"
+  },
+  "stabilization": {
+    "phase0CheckpointCommit": "8453d0f",
+    "phase0CheckpointBranch": "r0-stabilization-baseline",
+    "reconciledOn": "R0 Stabilization Phase 1",
+    "reportDirectory": "docs/accounting-modernization/stabilization/",
+    "note": "Status corrections in this file (S200, S205, S207) were made against evidence in docs/accounting-modernization/repository-verification/. CURRENT_RELEASE.md is generated from this file by scripts/generate-release-doc.js — do not hand-edit CURRENT_RELEASE.md; run `node scripts/generate-release-doc.js` after any story status change, and run `node scripts/generate-release-doc.js --check` in CI to fail the build if the two disagree."
   },
 
   "decisionRegister": "docs/accounting-modernization/decisions/DECISION_REGISTER.md",

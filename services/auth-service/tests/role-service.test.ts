@@ -124,6 +124,15 @@ function makePrisma() {
         if (existing) return { ...existing };
         state.authz.push({ ...create }); return { ...create };
       },
+      findFirst: async ({ where }: any) => {
+        return state.authz.find((a: any) =>
+          a.tenantId === where.tenantId && a.userId === where.userId && a.role === where.role &&
+          a.entityId === where.entityId && a.storeId === where.storeId) ?? null;
+      },
+      create: async ({ data }: any) => {
+        state.authz.push({ ...data });
+        return { ...data };
+      },
       deleteMany: async ({ where }: any) => {
         const before = state.authz.length;
         state.authz = state.authz.filter((a: any) => {
@@ -266,6 +275,15 @@ describe('S206 · assignments', () => {
     expect(rows[0]).toMatchObject({ entityId: ENTITY, storeId: null });
     expect(published.map((e) => e.type)).toContain('iam.assignment.granted');
     expect(state.audit.at(-1)).toMatchObject({ docType: 'role_assignment', action: 'GRANT' });
+  });
+
+  it('projects a tenant-wide (null entityId) assignment idempotently — regression: Prisma compound-unique keys cannot match NULL=NULL, so re-projection must not accumulate duplicate rows', async () => {
+    const svc: any = makeSvc();
+    await svc._projectAssignment(TENANT, 'u-bootstrap-admin', 'ADMIN', null, true, []);
+    await svc._projectAssignment(TENANT, 'u-bootstrap-admin', 'ADMIN', null, true, []);
+    const rows = state.authz.filter((x: any) => x.userId === 'u-bootstrap-admin');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ entityId: null, storeId: null, role: 'ADMIN' });
   });
 
   it('grants a store-scoped assignment: one read-model row per store (AC cross-store)', async () => {

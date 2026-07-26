@@ -317,22 +317,28 @@ export class RoleService {
 
   private async _projectAssignment(
     tenantId: string, userId: string, roleKey: string,
-    entityId: string, allStores: boolean, storeIds: string[],
+    entityId: string | null, allStores: boolean, storeIds: string[],
   ): Promise<void> {
     const rows = allStores
       ? [{ entityId, storeId: null as string | null }]
       : storeIds.map((storeId) => ({ entityId, storeId }));
     for (const r of rows) {
-      await this.prisma.authzRoleAssignment.upsert({
-        where: {
-          authz_assignment_unique: {
-            tenantId, userId, role: roleKey,
-            entityId: r.entityId, storeId: r.storeId,
-          },
-        },
-        create: { id: randomUUID(), tenantId, userId, role: roleKey, entityId: r.entityId, storeId: r.storeId },
-        update: {},
+      // Prisma's compound-unique input (authz_assignment_unique) requires
+      // non-null values for every key column, but entityId/storeId are
+      // legitimately null for tenant-wide / all-store grants — and Postgres
+      // unique indexes never treat NULL = NULL, so an upsert keyed on that
+      // compound constraint could never find a null-valued row and would
+      // insert a fresh duplicate on every re-assignment. find-then-create
+      // against the plain (nullable-safe) where filter is idempotent in
+      // every case, matching _unprojectAssignment's filter shape below.
+      const existing = await this.prisma.authzRoleAssignment.findFirst({
+        where: { tenantId, userId, role: roleKey, entityId: r.entityId, storeId: r.storeId },
       });
+      if (!existing) {
+        await this.prisma.authzRoleAssignment.create({
+          data: { id: randomUUID(), tenantId, userId, role: roleKey, entityId: r.entityId, storeId: r.storeId },
+        });
+      }
     }
   }
 

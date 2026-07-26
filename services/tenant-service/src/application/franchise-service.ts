@@ -1,6 +1,6 @@
 import { inject, injectable } from 'tsyringe';
 import { IEventPublisher } from '@amacc/shared-kernel';
-import { PrismaClient } from '.prisma/tenant-client';
+import { PrismaClient, Prisma } from '.prisma/tenant-client';
 import crypto from 'crypto';
 
 // ── OEM launch set (BR204-1) ───────────────────────────────────────────────────
@@ -242,7 +242,7 @@ export class FranchiseService {
     tenantId:    string,
     eventType:   string,
     aggregateId: string,
-    payload:     Record<string, unknown>,
+    payload:     Prisma.InputJsonValue,
   ) {
     try {
       await this.prisma.tenantOutboxEvent.create({

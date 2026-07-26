@@ -1,6 +1,6 @@
 import { inject, injectable } from 'tsyringe';
 import { IEventPublisher } from '@amacc/shared-kernel';
-import { PrismaClient } from '.prisma/tenant-client';
+import { PrismaClient, Prisma } from '.prisma/tenant-client';
 import crypto from 'crypto';
 
 // ── Canonical 01-12 seed list ─────────────────────────────────────────────────
@@ -307,7 +307,7 @@ export class DepartmentService {
     tenantId:    string,
     eventType:   string,
     aggregateId: string,
-    payload:     Record<string, unknown>,
+    payload:     Prisma.InputJsonValue,
   ) {
     try {
       await this.prisma.tenantOutboxEvent.create({
