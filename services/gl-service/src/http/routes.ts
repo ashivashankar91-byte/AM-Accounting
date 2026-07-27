@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { container } from 'tsyringe';
 import { GLService } from '../application/gl-service';
+import { StructuralImbalanceError, TrialBalanceService } from '../application/trial-balance-service';
 import { GLAccountType, authMiddleware, asTenantId } from '@amacc/shared-kernel';
 import { taxRoutes } from './tax-routes';
 import { report1099Routes } from './1099-routes';
@@ -89,6 +90,7 @@ const CreateJournalEntrySchema = z.object({
       debit: z.number().min(0),
       credit: z.number().min(0),
       memo: z.string().optional(),
+      storeId: z.string().optional(),
       departmentCode: z.string().optional(),
       technicianId: z.string().optional(),
       roNumber: z.string().optional(),
@@ -134,6 +136,7 @@ function resolvePermission(method: string, url: string): string | null {
   if (url === '/fs/oem-mappings/bulk' && method === 'POST') return GL_PERMISSIONS.ADMIN_MANAGE;
   if (url === '/fs/oem-mappings' && method === 'GET') return GL_PERMISSIONS.LEDGER_VIEW;
   if (url === '/fs/oem-statement/generate' && method === 'POST') return GL_PERMISSIONS.LEDGER_VIEW;
+  if (url === '/reports/trial-balance') return GL_PERMISSIONS.REPORT_TB_VIEW;
   if (url === '/trial-balance' || url === '/periods' || url === '/periods/:year/:month') return GL_PERMISSIONS.LEDGER_VIEW;
   if (url === '/balance-sheet' || url === '/financial-statements/balance-sheet' || url === '/financial-statements/income-statement') return GL_PERMISSIONS.LEDGER_VIEW;
   if (url === '/income-statement' || url === '/cash-flow-statement' || url === '/financial-statements/consolidated') return GL_PERMISSIONS.LEDGER_VIEW;
@@ -165,6 +168,7 @@ function resolveAudit(method: string, url: string) {
     return { docType: 'JOURNAL_ENTRY', docId: (request: any) => String(request.params?.id ?? 'journal-entries') };
   }
   if (
+    url === '/reports/trial-balance' ||
     url === '/trial-balance' ||
     url === '/balance-sheet' ||
     url === '/financial-statements/balance-sheet' ||
@@ -193,6 +197,7 @@ export async function glRoutes(app: FastifyInstance) {
   attachRouteSecurity(app, prisma as any, resolvePermission, resolveAudit, 401);
 
   const svc = container.resolve<GLService>('GLService');
+  const trialBalanceSvc = container.resolve(TrialBalanceService);
 
   // POST /accounts — Create GL account
   app.post('/accounts', async (request, reply) => {
@@ -622,6 +627,46 @@ export async function glRoutes(app: FastifyInstance) {
     const { year, month } = PeriodSchema.parse(request.query);
     const tb = await svc.getTrialBalance(tenantId, { year, month } as any);
     return reply.send(tb);
+  });
+
+  // GET /reports/trial-balance — S014 footed trial balance by company/entity slice
+  app.get('/reports/trial-balance', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const query = z.object({
+      entity: z.string().min(1).optional(),
+      company: z.string().min(1).optional(),
+      store: z.string().optional(),
+      dept: z.string().optional(),
+      asOf: z.string().regex(/^\d{4}-\d{2}$/),
+    }).parse(request.query);
+
+    const entity = query.entity ?? query.company;
+    if (!entity) {
+      return reply.status(400).send({
+        error: 'MISSING_ENTITY',
+        message: 'entity query parameter is required',
+      });
+    }
+
+    try {
+      const report = await trialBalanceSvc.getReport(tenantId, {
+        entity,
+        store: query.store,
+        dept: query.dept,
+        asOf: query.asOf,
+      });
+      return reply.send(report);
+    } catch (error) {
+      if (error instanceof StructuralImbalanceError) {
+        return reply.status(500).send({
+          error: error.code,
+          drSum: error.drSum,
+          crSum: error.crSum,
+          delta: error.delta,
+        });
+      }
+      throw error;
+    }
   });
 
   // GET /periods — List all period statuses (EOM close status)

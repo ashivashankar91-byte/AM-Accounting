@@ -9,6 +9,7 @@ export const GL_PERMISSIONS = {
   LEDGER_VIEW: 'gl.ledger.view',
   LEDGER_MANAGE: 'gl.ledger.manage',
   ADMIN_MANAGE: 'gl.admin.manage',
+  REPORT_TB_VIEW: 'report.tb.view',
 } as const;
 
 export function getTenantId(request: any, statusCode = 400): TenantId {
@@ -31,6 +32,11 @@ export interface RouteAuditSpec {
   docId?: (request: any) => string;
 }
 
+function normalizeRouteUrl(rawUrl: unknown): string {
+  const routeUrl = String(rawUrl ?? '').replace(/^\/api\/v1\/gl/, '');
+  return routeUrl || '/';
+}
+
 export function attachRouteSecurity(
   app: FastifyInstance,
   prisma: PrismaClient,
@@ -45,7 +51,7 @@ export function attachRouteSecurity(
 
   app.addHook('preHandler', async (request: any, reply: any) => {
     const rawRouteUrl = request.routeOptions?.url ?? request.routerPath ?? request.url?.split('?')[0] ?? '';
-    const routeUrl = String(rawRouteUrl).replace(/^\/api\/v1\/gl/, '') || '/';
+    const routeUrl = normalizeRouteUrl(rawRouteUrl);
     const permission = resolvePermission(String(request.method), String(routeUrl));
     if (!permission) return;
     return requirePermission(permission)(request, reply);
@@ -53,7 +59,8 @@ export function attachRouteSecurity(
 
   app.addHook('onRoute', (routeOptions: any) => {
     const method = Array.isArray(routeOptions.method) ? String(routeOptions.method[0]) : String(routeOptions.method);
-    const audit = resolveAudit(method, routeOptions.url);
+    const routeUrl = normalizeRouteUrl(routeOptions.url);
+    const audit = resolveAudit(method, routeUrl);
     if (!audit || typeof routeOptions.handler !== 'function') return;
 
     const original = routeOptions.handler;
@@ -64,11 +71,11 @@ export function attachRouteSecurity(
         await appendAuditRows(prisma as any, {
           tenantId,
           docType: audit.docType,
-          docId: audit.docId?.(request) ?? routeOptions.url,
+          docId: audit.docId?.(request) ?? routeUrl,
           action: audit.action ?? 'VIEWED',
           actor: getActor(request),
           after: {
-            route: routeOptions.url,
+            route: routeUrl,
             method,
             params: request.params ?? {},
             query: request.query ?? {},

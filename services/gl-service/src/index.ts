@@ -14,6 +14,7 @@ import { ExchangeRateService } from './infrastructure/exchange-rate-service';
 import { appendAuditRows } from './infrastructure/audit';
 import { GLService } from './application/gl-service';
 import { AgentReviewTimeoutJob } from './application/agent-timeout';
+import { TrialBalanceService } from './application/trial-balance-service';
 import { GLValidationEngine } from './domain/validation-engine';
 import {
   DuplicateEntryRule,
@@ -80,6 +81,7 @@ async function bootstrap() {
   container.register<IJournalRepository>('IJournalRepository', { useClass: PrismaJournalRepository });
   container.register<IGLAccountRepository>('IGLAccountRepository', { useClass: PrismaGLAccountRepository });
   container.register('GLService', { useClass: GLService });
+  container.register(TrialBalanceService, { useClass: TrialBalanceService });
   container.register(InquiryRepository, { useClass: InquiryRepository });
 
   await app.register(glRoutes, { prefix: '/api/v1/gl' });

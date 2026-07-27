@@ -646,7 +646,7 @@ export class GLService {
 
           // 3a. Update GL period running balance — JRN file equivalent
           // @trace-cobol UPDATE-JOURNAL paragraph
-          await this.updateJournalBalance(tx, tenantId, account, entry, netAmount);
+          await this.updateJournalBalance(tx, tenantId, account, entry, line, netAmount);
 
           // 3b. Write history transaction record — HISTTRAN file equivalent
           // @trace-cobol UPDATE-HISTTRAN + WR-HISTTRAN paragraphs
@@ -829,8 +829,13 @@ export class GLService {
       credit: line.debit,
       memo: `REVERSAL: ${line.memo ?? ''}`,
       departmentCode: line.departmentCode,
+      storeId: line.storeId,
       technicianId: line.technicianId,
       roNumber: line.roNumber,
+      controlNumber: line.controlNumber,
+      companyCode: line.companyCode,
+      applyToCost: line.applyToCost,
+      unitCount: line.unitCount,
       applyCd: '#',          // Suppress COS/INV chain on reversal
     }));
 
@@ -921,6 +926,7 @@ export class GLService {
     tenantId: string,
     account: any,
     entry: JournalEntry,
+    line: any,
     netAmount: number,
   ): Promise<void> {
     // @trace-cobol "IF GLOBAL-YE-IS-IN-PROGRESS EXIT PARAGRAPH" — year-end skips journal
@@ -936,15 +942,29 @@ export class GLService {
 
     await tx.gLAccountPeriodBalance.upsert({
       where: {
-        tenantId_glAccountId_periodYear_periodMonth_journalSource: {
+        tenantId_glAccountId_periodYear_periodMonth_journalSource_companyCode_storeId_departmentCode: {
           tenantId,
           glAccountId: account.id,
           periodYear,
           periodMonth,
           journalSource,
+          companyCode: line.companyCode ?? '',
+          storeId: line.storeId ?? '',
+          departmentCode: line.departmentCode ?? '',
         },
       },
-      create: { tenantId, glAccountId: account.id, periodYear, periodMonth, journalSource, runningBalance: netAmount, unitCount },
+      create: {
+        tenantId,
+        glAccountId: account.id,
+        periodYear,
+        periodMonth,
+        journalSource,
+        companyCode: line.companyCode ?? '',
+        storeId: line.storeId ?? '',
+        departmentCode: line.departmentCode ?? '',
+        runningBalance: netAmount,
+        unitCount,
+      },
       update: { runningBalance: { increment: netAmount }, unitCount: { increment: unitCount } },
     });
   }
@@ -1045,7 +1065,7 @@ export class GLService {
     }
 
     const cosLineNumber = baseLineNumber + 1;
-    await this.updateJournalBalance(tx, tenantId, cosAccount, entry, costAmount);
+    await this.updateJournalBalance(tx, tenantId, cosAccount, entry, line, costAmount);
     await this.writeHistoryTransaction(tx, tenantId, cosAccount, entry, line, costAmount, cosLineNumber, 'C', postedAt, postedByUserId);
     if (cosAccount.scheduleCode && !(entry as any).isYearEnd) {
       const entryDate = entry.entryDate instanceof Date ? entry.entryDate : new Date(entry.entryDate as any);
@@ -1078,7 +1098,7 @@ export class GLService {
     // @trace-cobol "COMPUTE AMOUNT = TR-COST * -1" — inventory is offset of cost
     const invAmount = costAmount * -1;
     const invLineNumber = baseLineNumber + 2;
-    await this.updateJournalBalance(tx, tenantId, invAccount, entry, invAmount);
+    await this.updateJournalBalance(tx, tenantId, invAccount, entry, line, invAmount);
     await this.writeHistoryTransaction(tx, tenantId, invAccount, entry, line, invAmount, invLineNumber, 'I', postedAt, postedByUserId);
     if (invAccount.scheduleCode && !(entry as any).isYearEnd) {
       const entryDate = entry.entryDate instanceof Date ? entry.entryDate : new Date(entry.entryDate as any);
