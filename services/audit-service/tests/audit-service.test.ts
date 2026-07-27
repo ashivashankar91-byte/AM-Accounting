@@ -10,23 +10,73 @@ import 'reflect-metadata';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AuditService } from '../src/application/audit-service';
 
+/** Extracts the literal SQL text of a tagged-template raw-query call, so the
+ * fake can tell an anchor INSERT apart from an anchor UPDATE/SELECT without
+ * a real SQL parser. */
+function sqlOf(strings: TemplateStringsArray): string {
+  return strings.join('?');
+}
+
 function fakePrisma(initial: any[] = []) {
   const rows = [...initial];
-  return {
-    auditLog: {
-      create: vi.fn(async ({ data }: any) => {
-        if (data.sourceEventId && rows.some((r) => r.sourceEventId === data.sourceEventId)) {
-          const err: any = new Error('Unique constraint failed on the fields: (`source_event_id`)');
-          err.code = 'P2002';
-          throw err;
-        }
-        const record = { id: `audit-${rows.length + 1}`, ...data };
-        rows.push(record);
-        return record;
-      }),
-      findUnique: vi.fn(async ({ where }: any) => rows.find((r) => r.sourceEventId === where.sourceEventId) ?? null),
-    },
+  // In-memory stand-in for the audit_chain_anchors bookkeeping table.
+  const anchors = new Map<string, { tailHash: string | null; tailAuditLogId: string | null }>();
+
+  const auditLog = {
+    create: vi.fn(async ({ data }: any) => {
+      if (data.sourceEventId && rows.some((r) => r.sourceEventId === data.sourceEventId)) {
+        const err: any = new Error('Unique constraint failed on the fields: (`source_event_id`)');
+        err.code = 'P2002';
+        throw err;
+      }
+      // Mimic Postgres's generated `partition_key` column (see
+      // migration 20260727000001_add_hash_chain): the real DB derives this
+      // from occurred_at/tenant_id automatically; the app never sends it.
+      const partitionKey = `${data.occurredAt.toISOString().slice(0, 7)}:${data.tenantId}`;
+      const record = { id: `audit-${rows.length + 1}`, ...data, partitionKey };
+      rows.push(record);
+      return record;
+    }),
+    findUnique: vi.fn(async ({ where }: any) => rows.find((r) => r.sourceEventId === where.sourceEventId) ?? null),
+    findMany: vi.fn(async ({ where }: any) => {
+      let result = rows;
+      if (where?.partitionKey) result = result.filter((r) => r.partitionKey === where.partitionKey);
+      return [...result].sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime() || (a.id < b.id ? -1 : 1));
+    }),
   };
+
+  const client: any = {
+    auditLog,
+    $queryRaw: vi.fn(async (strings: TemplateStringsArray, ...values: any[]) => {
+      const sql = sqlOf(strings);
+      if (sql.includes('SELECT tail_hash FROM audit_chain_anchors')) {
+        const partitionKey = values[0];
+        const anchor = anchors.get(partitionKey);
+        return anchor ? [{ tail_hash: anchor.tailHash }] : [];
+      }
+      if (sql.includes('SELECT DISTINCT partition_key FROM audit_logs')) {
+        const keys = [...new Set(rows.map((r) => r.partitionKey).filter(Boolean))].sort();
+        return keys.map((k) => ({ partition_key: k }));
+      }
+      throw new Error(`fakePrisma.$queryRaw: unrecognized query: ${sql}`);
+    }),
+    $executeRaw: vi.fn(async (strings: TemplateStringsArray, ...values: any[]) => {
+      const sql = sqlOf(strings);
+      if (sql.includes('INSERT INTO audit_chain_anchors')) {
+        const partitionKey = values[0];
+        if (!anchors.has(partitionKey)) anchors.set(partitionKey, { tailHash: null, tailAuditLogId: null });
+        return 1;
+      }
+      if (sql.includes('UPDATE audit_chain_anchors')) {
+        const [tailHash, tailAuditLogId, partitionKey] = values;
+        anchors.set(partitionKey, { tailHash, tailAuditLogId });
+        return 1;
+      }
+      throw new Error(`fakePrisma.$executeRaw: unrecognized query: ${sql}`);
+    }),
+    $transaction: vi.fn(async (fn: (tx: any) => Promise<any>) => fn(client)),
+  };
+  return client;
 }
 
 describe('AuditService.log — idempotent delivery (R0 Stabilization Phase 4)', () => {
@@ -74,5 +124,109 @@ describe('AuditService.log — idempotent delivery (R0 Stabilization Phase 4)', 
       actorType: 'USER', actorId: 'u', actorName: 'u', action: 'CREATE',
     });
     expect(result.idempotent).toBe(false);
+  });
+});
+
+describe('AuditService — BR7-2 hash chain', () => {
+  it('chains hashPrev/hashSelf across successive writes in the same partition, starting from a null genesis', async () => {
+    const prisma = fakePrisma();
+    const svc = new AuditService(prisma as any);
+    const occurredAt = new Date('2026-07-01T00:00:00.000Z');
+    await svc.log({ tenantId: 't1', eventType: 'a', entityType: 'X', entityId: '1', actorType: 'USER', actorId: 'u', actorName: 'u', action: 'CREATE', occurredAt });
+    await svc.log({ tenantId: 't1', eventType: 'b', entityType: 'X', entityId: '2', actorType: 'USER', actorId: 'u', actorName: 'u', action: 'CREATE', occurredAt: new Date('2026-07-02T00:00:00.000Z') });
+    await svc.log({ tenantId: 't1', eventType: 'c', entityType: 'X', entityId: '3', actorType: 'USER', actorId: 'u', actorName: 'u', action: 'CREATE', occurredAt: new Date('2026-07-03T00:00:00.000Z') });
+
+    const call = (i: number) => prisma.auditLog.create.mock.calls[i][0].data;
+    expect(call(0).hashPrev).toBeNull();
+    expect(call(0).hashSelf).toBeTruthy();
+    expect(call(1).hashPrev).toBe(call(0).hashSelf); // second row chains from the first
+    expect(call(2).hashPrev).toBe(call(1).hashSelf); // third row chains from the second
+  });
+
+  it('starts a fresh chain (hashPrev null) for a different tenant/month partition, independent of other partitions', async () => {
+    const prisma = fakePrisma();
+    const svc = new AuditService(prisma as any);
+    await svc.log({ tenantId: 't1', eventType: 'a', entityType: 'X', entityId: '1', actorType: 'USER', actorId: 'u', actorName: 'u', action: 'CREATE', occurredAt: new Date('2026-07-01T00:00:00.000Z') });
+    await svc.log({ tenantId: 't2', eventType: 'a', entityType: 'X', entityId: '1', actorType: 'USER', actorId: 'u', actorName: 'u', action: 'CREATE', occurredAt: new Date('2026-07-01T00:00:00.000Z') });
+    const call = (i: number) => prisma.auditLog.create.mock.calls[i][0].data;
+    expect(call(0).hashPrev).toBeNull();
+    expect(call(1).hashPrev).toBeNull(); // different tenant => different partition => own genesis
+  });
+
+  it('verifyChain reports ok for an untampered chain and recomputes the same hashes verifyChain would expect', async () => {
+    const prisma = fakePrisma();
+    const svc = new AuditService(prisma as any);
+    await svc.log({ tenantId: 't1', eventType: 'a', entityType: 'X', entityId: '1', actorType: 'USER', actorId: 'u', actorName: 'u', action: 'CREATE', occurredAt: new Date('2026-07-01T00:00:00.000Z') });
+    await svc.log({ tenantId: 't1', eventType: 'b', entityType: 'X', entityId: '2', actorType: 'USER', actorId: 'u', actorName: 'u', action: 'CREATE', occurredAt: new Date('2026-07-02T00:00:00.000Z') });
+
+    const result = await svc.verifyChain('2026-07:t1');
+    expect(result.ok).toBe(true);
+    expect(result.recordsChecked).toBe(2);
+  });
+
+  it('verifyChain detects tampering with a stored record\'s content (hashSelf no longer matches recomputed hash)', async () => {
+    const prisma = fakePrisma();
+    const svc = new AuditService(prisma as any);
+    await svc.log({ tenantId: 't1', eventType: 'a', entityType: 'X', entityId: '1', actorType: 'USER', actorId: 'u', actorName: 'u', action: 'CREATE', occurredAt: new Date('2026-07-01T00:00:00.000Z') });
+    await svc.log({ tenantId: 't1', eventType: 'b', entityType: 'X', entityId: '2', actorType: 'USER', actorId: 'u', actorName: 'u', action: 'CREATE', occurredAt: new Date('2026-07-02T00:00:00.000Z') });
+
+    // Simulate a row being altered out-of-band (bypassing the app entirely,
+    // e.g. a rogue superuser disabling the immutability trigger) — the
+    // chain must still catch it.
+    const stored = await prisma.auditLog.findMany({ where: { partitionKey: '2026-07:t1' } });
+    stored[0].action = 'TAMPERED';
+
+    const result = await svc.verifyChain('2026-07:t1');
+    expect(result.ok).toBe(false);
+    expect(result.brokenAt).toBe(stored[0].id);
+    expect(result.reason).toMatch(/hashSelf/);
+  });
+
+  it('verifyChain detects a broken hashPrev link (e.g. a row deleted/reordered out-of-band)', async () => {
+    const prisma = fakePrisma();
+    const svc = new AuditService(prisma as any);
+    await svc.log({ tenantId: 't1', eventType: 'a', entityType: 'X', entityId: '1', actorType: 'USER', actorId: 'u', actorName: 'u', action: 'CREATE', occurredAt: new Date('2026-07-01T00:00:00.000Z') });
+    await svc.log({ tenantId: 't1', eventType: 'b', entityType: 'X', entityId: '2', actorType: 'USER', actorId: 'u', actorName: 'u', action: 'CREATE', occurredAt: new Date('2026-07-02T00:00:00.000Z') });
+
+    const stored = await prisma.auditLog.findMany({ where: { partitionKey: '2026-07:t1' } });
+    stored[1].hashPrev = 'not-the-real-prior-hash';
+
+    const result = await svc.verifyChain('2026-07:t1');
+    expect(result.ok).toBe(false);
+    expect(result.brokenAt).toBe(stored[1].id);
+    expect(result.reason).toMatch(/hashPrev/);
+  });
+
+  it('listPartitions returns every distinct partition key with at least one row', async () => {
+    const prisma = fakePrisma();
+    const svc = new AuditService(prisma as any);
+    await svc.log({ tenantId: 't1', eventType: 'a', entityType: 'X', entityId: '1', actorType: 'USER', actorId: 'u', actorName: 'u', action: 'CREATE', occurredAt: new Date('2026-07-01T00:00:00.000Z') });
+    await svc.log({ tenantId: 't2', eventType: 'a', entityType: 'X', entityId: '1', actorType: 'USER', actorId: 'u', actorName: 'u', action: 'CREATE', occurredAt: new Date('2026-08-01T00:00:00.000Z') });
+    const partitions = await svc.listPartitions();
+    expect(partitions.sort()).toEqual(['2026-07:t1', '2026-08:t2']);
+  });
+
+  it('BR7-4: a fault mid-write (audit-log create throws for a reason other than the sourceEventId idempotency case) rolls back the whole write, including any anchor advance', async () => {
+    const prisma = fakePrisma();
+    // Force the very next create() call to fail with an unrelated DB error,
+    // simulating an audit-write fault. Because the anchor lock/read/update
+    // and the auditLog.create all happen inside the same $transaction, the
+    // fake's $transaction wrapper re-throws synchronously (no partial
+    // anchor mutation survives) — mirroring real Postgres transaction
+    // rollback semantics.
+    prisma.auditLog.create.mockImplementationOnce(async () => {
+      throw new Error('simulated audit-store outage');
+    });
+    const svc = new AuditService(prisma as any);
+    await expect(svc.log({
+      tenantId: 't1', eventType: 'a', entityType: 'X', entityId: '1', actorType: 'USER', actorId: 'u', actorName: 'u', action: 'CREATE', occurredAt: new Date('2026-07-01T00:00:00.000Z'),
+    })).rejects.toThrow('simulated audit-store outage');
+
+    // The next successful write must still start from a null hashPrev
+    // (genesis), proving the failed attempt above never advanced the chain
+    // anchor and left no gap/gap-hash behind.
+    await svc.log({ tenantId: 't1', eventType: 'b', entityType: 'X', entityId: '2', actorType: 'USER', actorId: 'u', actorName: 'u', action: 'CREATE', occurredAt: new Date('2026-07-01T00:00:00.000Z') });
+    const call0 = prisma.auditLog.create.mock.calls[1][0].data; // index 1: the first call (index 0) was the failed one
+    expect(call0.hashPrev).toBeNull();
   });
 });

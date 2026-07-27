@@ -74,7 +74,10 @@ export type EventType =
   | 'SCHEDULE_DELETED'
   | 'GL_INTEGRITY_ALERT'
   | 'COMPLIANCE_ALERT'
-  | 'THIRTEENTH_MONTH_FINALIZED';
+  | 'THIRTEENTH_MONTH_FINALIZED'
+  // S007 BR7-2: emitted by audit-service's periodic hash-chain verify job
+  // when a partition's chain fails to recompute (tamper/corruption alarm).
+  | 'audit.chain.alert';
 
 export function createEvent(
   type: EventType,
@@ -158,4 +161,5 @@ export const EVENT_ROUTING: Record<EventType, string[]> = {
   GL_INTEGRITY_ALERT:             ['agent-t1', 'notification-service', 'audit-service'],
   COMPLIANCE_ALERT:               ['notification-service', 'audit-service'],
   THIRTEENTH_MONTH_FINALIZED:     ['fs-service', 'audit-service', 'notification-service'],
+  'audit.chain.alert':            ['notification-service'],
 };

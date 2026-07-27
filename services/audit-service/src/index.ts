@@ -63,6 +63,34 @@ function eventToAuditFields(event: DomainEvent): { entityType: string; entityId:
   }
 }
 
+/**
+ * BR7-2: verify every known partition's hash chain and publish
+ * audit.chain.alert for any that fail. Best-effort per partition — one
+ * broken/erroring partition must not prevent checking the others.
+ */
+async function runChainVerifyJob(auditService: AuditService, eventPublisher: RabbitMQEventPublisher): Promise<void> {
+  const partitions = await auditService.listPartitions();
+  for (const partitionKey of partitions) {
+    let result;
+    try {
+      result = await auditService.verifyChain(partitionKey);
+    } catch (err) {
+      logger.error({ err, partitionKey }, 'audit chain-verify failed for partition (treated as unverified, not tampered)');
+      continue;
+    }
+    if (!result.ok) {
+      logger.error({ partitionKey, brokenAt: result.brokenAt, reason: result.reason }, 'AUDIT CHAIN TAMPER DETECTED');
+      await eventPublisher.publish({
+        type: 'audit.chain.alert',
+        tenantId: partitionKey.split(':')[1] ?? 'unknown',
+        payload: { partitionKey, brokenAt: result.brokenAt, reason: result.reason, ts: new Date().toISOString() },
+        occurredAt: new Date(),
+        correlationId: `audit-chain-verify:${partitionKey}`,
+      }).catch((err) => logger.error(err, 'failed to publish audit.chain.alert'));
+    }
+  }
+}
+
 async function bootstrap() {
   const app = Fastify({ logger: true });
   await app.register(cors, { origin: true });
@@ -150,6 +178,19 @@ async function bootstrap() {
 
   await app.register(auditRoutes(auditService), { prefix: '/api/v1/audit' });
   app.get('/health', async () => ({ status: 'ok', service: 'audit-service' }));
+
+  // BR7-2: periodic chain-verify job. Walks every known partition and, on
+  // any hash-chain break, emits audit.chain.alert {partitionKey,brokenAt,ts}
+  // for downstream alarming (per the S007 story packet's event contract).
+  // Disabled in tests via AUDIT_CHAIN_VERIFY_INTERVAL_MS=0.
+  const verifyIntervalMs = parseInt(process.env['AUDIT_CHAIN_VERIFY_INTERVAL_MS'] ?? '300000', 10);
+  if (verifyIntervalMs > 0) {
+    setInterval(() => {
+      runChainVerifyJob(auditService, eventPublisher).catch((err) =>
+        logger.error(err, 'audit chain-verify job failed unexpectedly'),
+      );
+    }, verifyIntervalMs);
+  }
 
   const port = parseInt(process.env['PORT'] ?? '3031', 10);
   await app.listen({ port, host: '0.0.0.0' });

@@ -72,5 +72,23 @@ export function auditRoutes(auditService: AuditService) {
       const logs = await auditService.getByTenant(tenantId);
       return reply.send(logs);
     });
+
+    // GET /api/v1/audit/chain/verify?partitionKey=YYYY-MM:tenantId
+    // BR7-2 tamper-detection: on-demand chain-verify for one partition.
+    app.get('/chain/verify', async (request, reply) => {
+      const partitionKey = (request.query as { partitionKey?: string }).partitionKey;
+      if (!partitionKey) {
+        return reply.status(400).send({ error: 'partitionKey query parameter is required' });
+      }
+      const result = await auditService.verifyChain(partitionKey);
+      return reply.status(result.ok ? 200 : 409).send(result);
+    });
+
+    // GET /api/v1/audit/chain/partitions — list known partition keys, so an
+    // operator or the periodic verify job can enumerate what to check.
+    app.get('/chain/partitions', async (_request, reply) => {
+      const partitions = await auditService.listPartitions();
+      return reply.send({ partitions });
+    });
   };
 }

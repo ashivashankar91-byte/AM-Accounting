@@ -35,10 +35,38 @@ model AuditLog {
   /// never an UPDATE (the table is append-only/immutable by trigger).
   sourceEventId String?  @unique @map("source_event_id")
 
+  /// S007 BR7-2 hash chain. hashSelf = sha256(hashPrev + canonical content of
+  /// this row), computed synchronously at insert time (see AuditService.log).
+  /// hashPrev is null only for the first row ever written in a partition
+  /// (the chain's genesis record).
+  hashPrev      String?  @map("hash_prev")
+  hashSelf      String?  @map("hash_self")
+  /// Generated column ('YYYY-MM' derived from occurred_at via date_part,
+  /// zero-padded) || ':' || tenant_id — see the hash-chain migration for the
+  /// exact expression (to_char is rejected by Postgres for generated
+  /// columns: it is not IMMUTABLE, only date_part is).
+  /// Computed by Postgres, never written by the application — see migration
+  /// 20260727000001_add_hash_chain for why this is generated, not physically
+  /// partitioned.
+  partitionKey  String?  @map("partition_key")
+
   @@map("audit_logs")
   @@index([tenantId])
   @@index([entityType, entityId])
   @@index([actorId])
   @@index([occurredAt])
   @@index([tenantId, eventType])
+  @@index([partitionKey])
+}
+
+/// Mutable bookkeeping pointer to the current chain tail hash per partition.
+/// NOT audit evidence itself (see migration 20260727000001_add_hash_chain) —
+/// the audit_logs immutability guarantee does not apply to this table.
+model AuditChainAnchor {
+  partitionKey   String   @id @map("partition_key")
+  tailHash       String?  @map("tail_hash")
+  tailAuditLogId String?  @map("tail_audit_log_id")
+  updatedAt      DateTime @default(now()) @map("updated_at")
+
+  @@map("audit_chain_anchors")
 }
