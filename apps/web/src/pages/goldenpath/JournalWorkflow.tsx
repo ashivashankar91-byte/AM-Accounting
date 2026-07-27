@@ -180,6 +180,12 @@ export default function JournalWorkflow() {
           View Audit History
         </button>
       )}
+
+      <p style={{ marginTop: 16 }}>
+        <Link to="/golden-path/trial-balance" data-testid="journal-go-to-trial-balance">
+          Trial Balance report (S222)
+        </Link>
+      </p>
     </div>
   );
 }

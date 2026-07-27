@@ -48,6 +48,7 @@ import GoldenPathFiscalPeriod from './pages/goldenpath/FiscalPeriod';
 import GoldenPathChartOfAccounts from './pages/goldenpath/ChartOfAccounts';
 import GoldenPathJournalWorkflow from './pages/goldenpath/JournalWorkflow';
 import GoldenPathAuditHistory from './pages/goldenpath/AuditHistory';
+import GoldenPathTrialBalance from './pages/goldenpath/TrialBalance';
 import TrialBalance from './pages/TrialBalance';
 import ManualJournalEntry from './pages/ManualJournalEntry';
 import AMACCSync from './pages/AMACCSync';
@@ -526,6 +527,11 @@ export default function App() {
               <Route path="/golden-path/coa" element={<GoldenPathProtectedRoute><GoldenPathChartOfAccounts /></GoldenPathProtectedRoute>} />
               <Route path="/golden-path/journal" element={<GoldenPathProtectedRoute><GoldenPathJournalWorkflow /></GoldenPathProtectedRoute>} />
               <Route path="/golden-path/audit/:entityType/:entityId" element={<GoldenPathProtectedRoute><GoldenPathAuditHistory /></GoldenPathProtectedRoute>} />
+              {/* S222 — Trial Balance Screen. Not a step in the sequential
+                  login->...->audit-history Golden Path (TB isn't one of its
+                  11 steps); a directly-reachable Controller reporting screen
+                  consuming the real S014 gl-service API. */}
+              <Route path="/golden-path/trial-balance" element={<GoldenPathProtectedRoute><GoldenPathTrialBalance /></GoldenPathProtectedRoute>} />
 
               {/* WF-A001 through WF-A010 */}
               <Route path="/accounting/dashboard" element={<DashboardWorkflow />} />

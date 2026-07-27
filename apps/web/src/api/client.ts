@@ -34,6 +34,9 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
       const body = await res.json().catch(() => ({}));
       const err = new Error(body.message ?? body.error ?? `API error ${res.status}`);
       (err as any).status = res.status;
+      // S222: preserve the full parsed error body (e.g. STRUCTURAL_IMBALANCE's
+      // drSum/crSum/delta) so callers can render more than just a message string.
+      (err as any).body = body;
       throw err;
     }
     return res.json();
@@ -831,4 +834,35 @@ export const goldenPathApi = {
 
   getAuditHistory: (entityType: string, entityId: string) =>
     apiFetch<any[]>(`/api/v1/audit/entity/${entityType}/${entityId}`),
+
+  // S222 — Trial Balance Screen: consumes the real S014 gl-service report
+  // as-is (no client-side recomputation of dr/cr/ending balances). Note:
+  // `entity` here is gl-service's own companyCode slice dimension, which is
+  // architecturally separate from the tenant-service legalEntityId used by
+  // the rest of the Golden Path (ADR-JL-001 — journal lifecycle lives in
+  // coa-service; gl-service is a separate reporting ledger with its own
+  // schema and is not yet fed by coa-service's posted journals).
+  getTrialBalance: (params: { entity: string; store?: string; dept?: string; asOf: string }) => {
+    const qs = new URLSearchParams({ entity: params.entity, asOf: params.asOf });
+    if (params.store) qs.set('store', params.store);
+    if (params.dept) qs.set('dept', params.dept);
+    return apiFetch<{
+      scope: { entity: string; store: string | null; dept: string | null; asOf: string };
+      accounts: Array<{
+        accountId: string; accountCode: string; accountName: string; accountType: string;
+        normalBalance: 'DEBIT' | 'CREDIT'; priorBalance: number; currentAmount: number;
+        endingBalance: number; debitBalance: number; creditBalance: number;
+      }>;
+      drSum: number; crSum: number; delta: number;
+    }>(`/api/v1/gl/reports/trial-balance?${qs.toString()}`);
+  },
+
+  // S222 drill-through target: reuses the real S220 activity API (no
+  // duplicated calculation) for whichever coa-service account, in the
+  // *current* golden-path legal entity, shares the clicked TB row's human
+  // account number. Because gl-service and coa-service are separate ledgers,
+  // a match is a best-effort cross-service correlation by account number,
+  // not a guaranteed foreign-key relationship.
+  getAccountActivity: (accountId: string, params?: string) =>
+    apiFetch<any>(`/api/v1/coa/inquiry/accounts/${accountId}/activity${params ? `?${params}` : ''}`),
 };
