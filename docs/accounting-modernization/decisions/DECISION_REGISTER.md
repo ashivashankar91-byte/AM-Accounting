@@ -39,6 +39,42 @@ Individual decisions with significant context have their own ADR file.
 
 ---
 
+## Open questions — UXMAP series (Golden R0 UX implementation-mapping pass, 2026-07-28)
+
+Raised by the S220/S221/S014/S222/S227 implementation-mapping pass. Full
+evidence and citations in
+[`../GOLDEN_R0_UX_IMPLEMENTATION_MAPPING.md`](../GOLDEN_R0_UX_IMPLEMENTATION_MAPPING.md).
+Uses a distinct `UXMAP-NN` prefix to avoid colliding with this file's own
+`UQ-NN` sequence and with the separate backlog-numbered UQs referenced in
+`GOLDEN_R0_STORY_CONTRACT_GAPS.md` (e.g. `UQ-15_AUDIT_RETENTION_WORM.md`).
+
+| ID | Question / Item | Screen(s) | Classification | Status |
+|---|---|---|---|---|
+| UXMAP-01 | `KNOWN_LIMITATIONS_REGISTER.md` miscategorizes S220 as a gl-service screen (it's coa-service) | S220 | API_CONFIRMATION_REQUIRED | OPEN |
+| UXMAP-02 | Retire, rewire, or leave `GLInquiry.tsx` (legacy, disconnected from real S220 backend) | S220 | PRODUCT_DECISION_REQUIRED | OPEN |
+| UXMAP-03 | TB→GL-Inquiry drill-through preset mismatch (`CURRENT_MONTH` vs `OPEN_MONTH`) — deterministic failure | S220/S222 | KNOWN_GOLDEN_R0_LIMITATION (active defect) | OPEN |
+| UXMAP-04 | GL Inquiry preset catalogue: only 1 of ~12 contract-named presets implemented | S220 | SME_DECISION_REQUIRED | OPEN |
+| UXMAP-05 | `sourceCode` filter named in story contract but absent from S220 code | S220 | API_CONFIRMATION_REQUIRED | OPEN |
+| UXMAP-06 | S217 journal-detail response shape (S220 drill-down target) not verified in this pass | S220 | API_CONFIRMATION_REQUIRED | OPEN |
+| UXMAP-07 | No dedicated Playwright coverage of the S220 endpoint itself | S220 | KNOWN_GOLDEN_R0_LIMITATION | OPEN |
+| UXMAP-08 | Saved-search UPDATE missing entirely (no route/service method) | S221 | PRODUCT_DECISION_REQUIRED | OPEN |
+| UXMAP-09 | No frontend UI for saved-search create/list/run/delete | S221 | KNOWN_GOLDEN_R0_LIMITATION | OPEN |
+| UXMAP-10 | `S221_LIVE_GATEWAY_CERTIFICATION_REPORT.md` stale re: saved-search audit coverage (contradicted by commit `8bb96b0`) | S221 | API_CONFIRMATION_REQUIRED | OPEN |
+| UXMAP-11 | No drill-down links rendered in GL Search UI despite drill keys being present in the data | S221 | KNOWN_GOLDEN_R0_LIMITATION | OPEN |
+| UXMAP-12 | No negative/permission E2E coverage for saved-search-write endpoints | S221 | KNOWN_GOLDEN_R0_LIMITATION | OPEN |
+| UXMAP-13 | No backend Trial Balance export endpoint / no export audit trail | S014/S222 | PRODUCT_DECISION_REQUIRED | OPEN |
+| UXMAP-14 | Legacy `GLTrialBalance.tsx`: broken export link + dead department filter | S014/S222 | PRODUCT_DECISION_REQUIRED | OPEN |
+| UXMAP-15 | Invalid `asOf` throws unhandled 500 instead of clean 400 | S014/S222 | API_CONFIRMATION_REQUIRED | OPEN |
+| UXMAP-16 | gl-service default-stack deployment status not independently confirmed | S014/S222/S227 | API_CONFIRMATION_REQUIRED | OPEN |
+| UXMAP-17 | `GOLDEN_R0_STORY_CONTRACT_MATRIX.md`/`GAPS.md` stale re: S227 implementation status | S227 | KNOWN_GOLDEN_R0_LIMITATION | OPEN |
+| UXMAP-18 | No automated test for BS-specific `STRUCTURAL_IMBALANCE` banner | S227 (BS) | KNOWN_GOLDEN_R0_LIMITATION | OPEN |
+| UXMAP-19 | No comparative-period / YTD support on Balance Sheet or Income Statement | S227 | PRODUCT_DECISION_REQUIRED | OPEN |
+| UXMAP-20 | No drill-down from Balance Sheet or Income Statement line items | S227 | PRODUCT_DECISION_REQUIRED | OPEN |
+| UXMAP-21 | No percentage-of-revenue column on Income Statement | S227 (IS) | PRODUCT_DECISION_REQUIRED | OPEN |
+| UXMAP-22 | `KNOWN_LIMITATIONS_REGISTER.md` row 3 wording conflates BS-specific `STRUCTURAL_IMBALANCE` with Income Statement, where only `UNCLASSIFIED_ACCOUNT_TYPE` applies | S227 (IS) | PRODUCT_DECISION_REQUIRED | OPEN |
+
+---
+
 ## How to add a decision
 
 1. Assign the next `DEC-NNN` ID.

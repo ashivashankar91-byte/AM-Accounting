@@ -126,7 +126,14 @@ export default function TrialBalance() {
         setDrillError(`No account numbered ${row.accountCode} exists in the current legal entity's Chart of Accounts — cross-service drill-through unavailable for this row.`);
         return;
       }
-      const activity = await goldenPathApi.getAccountActivity(match.id, `preset=CURRENT_MONTH`);
+      // FINAL-R0 closure defect fix (UXMAP-03): this previously sent
+      // `preset=CURRENT_MONTH`, a value the real coa-service S220
+      // QuerySchema does not recognize (services/coa-service/src/http/
+      // gl-inquiry-routes.ts only implements `OPEN_MONTH`) -- every real
+      // invocation of this drill-through deterministically threw
+      // `400 UNKNOWN_PRESET`, masked because the only prior test coverage
+      // asserted panel visibility, not that real data loaded.
+      const activity = await goldenPathApi.getAccountActivity(match.id, `preset=OPEN_MONTH`);
       setDrillResult(activity);
     } catch (err: any) {
       setDrillError(err.message);
