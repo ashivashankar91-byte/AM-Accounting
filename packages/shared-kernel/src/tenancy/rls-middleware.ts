@@ -42,3 +42,30 @@ export function createTenantRlsMiddleware(prismaLike: { $executeRawUnsafe: (quer
     return next(params);
   };
 }
+
+/**
+ * Final-R0 Batch C defect fix: the middleware above sets `app.current_tenant_id`
+ * on `prismaLike`'s own connection (drawn from the base client's pool). That is
+ * NOT the same physical connection Prisma uses for an *interactive* transaction
+ * (`prisma.$transaction(async (tx) => { ... })`) — interactive transactions are
+ * pinned to one dedicated connection for their whole callback, acquired
+ * separately from the pool the middleware's raw SET runs on. The documented
+ * "known limitation" in the comment above was empirically verified only for
+ * the batched-array `$transaction([...])` form (used by fiscal-service.ts,
+ * where each promise is built on the base client and still goes through the
+ * middleware normally) — NOT for the interactive-callback form, which was
+ * found in Final-R0 Batch C live-gateway testing to deterministically violate
+ * every RLS policy with a 42501 error (`app.current_tenant_id` is unset on the
+ * transaction's own connection).
+ *
+ * Fix: call this helper as the FIRST statement inside every interactive
+ * `$transaction(async (tx) => { ... })` callback, using `tx` itself (so the
+ * SET lands on the transaction's own dedicated connection before any model
+ * query runs on it).
+ */
+export async function setTenantContextOnConnection(
+  txLike: { $executeRawUnsafe: (query: string, ...values: any[]) => Promise<any> },
+  tenantId: string | null | undefined,
+): Promise<void> {
+  await txLike.$executeRawUnsafe(`SELECT set_config('app.current_tenant_id', $1, false)`, tenantId ?? '');
+}

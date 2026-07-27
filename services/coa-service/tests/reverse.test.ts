@@ -114,6 +114,7 @@ function makePrisma() {
     journalSource: { findUnique: async ({ where }: any) => SOURCES[where.tenantId_code?.code] ?? null },
     coaOutboxEvent: { create: async ({ data }: any) => (outbox.push(data), data) },
     auditOutboxEvent: { create: async ({ data }: any) => (audits.push(data), data) },
+    $executeRawUnsafe: async () => undefined,
     $transaction: async (fn: any) => fn(prisma),
   };
   return prisma;

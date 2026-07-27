@@ -86,6 +86,7 @@ function makePrisma() {
     },
     coaOutboxEvent: { create: async ({ data }: any) => (outbox.push(data), data) },
     auditOutboxEvent: { create: async ({ data }: any) => (audits.push(data), data) },
+    $executeRawUnsafe: async () => undefined,
     $transaction: async (fn: any) => fn(prisma),
   };
   return prisma;
