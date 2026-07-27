@@ -77,26 +77,49 @@ CREATE TABLE "adjusting_entry_attestation" (
   CONSTRAINT "adjusting_entry_attestation_draft_id_key" UNIQUE ("draft_id")
 );
 
--- ── 5. RLS: tenant isolation, same pattern as 20260726000002_add_rls_policies ─
+-- ── 5. Ledger-writer role must exist before it can be referenced by the RLS
+-- policies below (moved ahead of the former §7 location for that reason).
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'amacc_period_ledger_writer') THEN
+    CREATE ROLE amacc_period_ledger_writer NOLOGIN NOSUPERUSER NOBYPASSRLS;
+  END IF;
+END
+$$;
+
+-- ── 6. RLS: tenant isolation, same pattern as 20260726000002_add_rls_policies ─
 ALTER TABLE "fiscal_period_transition" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "fiscal_period_transition" FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY tenant_isolation_select ON "fiscal_period_transition"
   FOR SELECT USING (tenant_id = current_setting('app.current_tenant_id', true));
--- Deliberately NO insert/update/delete policy — the REVOKE below is the
--- primary control; the missing policy is defense-in-depth (a future
--- mistaken GRANT would still hit "no permissive policy" = deny).
+-- Deliberately NO insert/update/delete policy for amacc_app or PUBLIC — the
+-- REVOKE below is the primary control; the missing policy is defense-in-depth
+-- (a future mistaken GRANT would still hit "no permissive policy" = deny).
+-- The ledger-writer role gets its own narrow INSERT-only policy below: since
+-- FORCE ROW LEVEL SECURITY applies RLS even to a SECURITY DEFINER function's
+-- executing role (it is not the table owner and not BYPASSRLS), the function
+-- body's own INSERT would otherwise be denied with no permissive policy.
+CREATE POLICY ledger_writer_insert ON "fiscal_period_transition"
+  FOR INSERT TO amacc_period_ledger_writer WITH CHECK (true);
 
 ALTER TABLE "adjusting_entry_attestation" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "adjusting_entry_attestation" FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY tenant_isolation_select ON "adjusting_entry_attestation"
   FOR SELECT USING (tenant_id = current_setting('app.current_tenant_id', true));
+-- Same reasoning as above; record_adjusting_attestation() also performs an
+-- upsert (ON CONFLICT ... DO UPDATE), so both INSERT and UPDATE policies are
+-- required for the ledger-writer role specifically.
+CREATE POLICY ledger_writer_insert ON "adjusting_entry_attestation"
+  FOR INSERT TO amacc_period_ledger_writer WITH CHECK (true);
+CREATE POLICY ledger_writer_update ON "adjusting_entry_attestation"
+  FOR UPDATE TO amacc_period_ledger_writer USING (true) WITH CHECK (true);
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON "fiscal_period_transition" TO amacc_rls_bypass;
 GRANT SELECT, INSERT, UPDATE, DELETE ON "adjusting_entry_attestation" TO amacc_rls_bypass;
 
--- ── 6. Privilege hardening: amacc_app may only ever SELECT these two tables ──
+-- ── 7. Privilege hardening: amacc_app may only ever SELECT these two tables ──
 -- infra/postgres/init/01-create-app-role.sql's ALTER DEFAULT PRIVILEGES FOR
 -- ROLE amacc auto-granted amacc_app SELECT/INSERT/UPDATE/DELETE on both
 -- tables the instant they were created above (this migration runs as the
@@ -107,17 +130,15 @@ REVOKE INSERT, UPDATE, DELETE ON "fiscal_period_transition" FROM PUBLIC;
 REVOKE INSERT, UPDATE, DELETE ON "adjusting_entry_attestation" FROM amacc_app;
 REVOKE INSERT, UPDATE, DELETE ON "adjusting_entry_attestation" FROM PUBLIC;
 
--- ── 7. Trigger-only insert path via a narrowly-privileged SECURITY DEFINER role ──
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'amacc_period_ledger_writer') THEN
-    CREATE ROLE amacc_period_ledger_writer NOLOGIN NOSUPERUSER NOBYPASSRLS;
-  END IF;
-END
-$$;
-
+-- ── 8. Trigger-only insert path: grant DML to the role created in §5 above ──
 GRANT INSERT ON "fiscal_period_transition" TO amacc_period_ledger_writer;
-GRANT INSERT ON "adjusting_entry_attestation" TO amacc_period_ledger_writer;
+-- SELECT is required in addition to INSERT/UPDATE because
+-- record_adjusting_attestation() uses ON CONFLICT (draft_id) DO UPDATE:
+-- Postgres needs SELECT on the target table to evaluate the conflict
+-- target / existing row during the upsert, even though the RLS
+-- tenant_isolation_select policy (no "TO" clause, applies to every role)
+-- already permits the read -- the table-level GRANT was still missing.
+GRANT SELECT, INSERT, UPDATE ON "adjusting_entry_attestation" TO amacc_period_ledger_writer;
 
 -- search_path is pinned to prevent the classic SECURITY DEFINER
 -- vulnerability (an attacker-controlled search_path redirecting an
