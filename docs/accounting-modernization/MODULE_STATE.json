@@ -903,7 +903,9 @@
       "status": "DONE_PENDING_INTEGRATION",
       "completedDate": null,
       "usesStubs": false,
-      "dependencies": ["S007"],
+      "dependencies": [
+        "S007"
+      ],
       "blockers": [
         "Package-wide Figma/SME/UX validation for the 9 controlled-fleet stories is still open (GOLDEN_R0_STORY_CONTRACT_GAPS.md Class 4 = PENDING); S224 is FIGMA_REQUIRED and no UI has been built without a Figma artifact.",
         "No individual PO release-to-DONE has been issued for S224 (only 'released for implementation' per the S007-acceptance PO message)."
@@ -927,7 +929,10 @@
       "status": "DONE_PENDING_INTEGRATION",
       "completedDate": null,
       "usesStubs": false,
-      "dependencies": ["S007", "S207"],
+      "dependencies": [
+        "S007",
+        "S207"
+      ],
       "blockers": [
         "Package-wide Figma/SME/UX validation for the 9 controlled-fleet stories is still open (GOLDEN_R0_STORY_CONTRACT_GAPS.md Class 4 = PENDING); S202 is FIGMA_REQUIRED and no UI has been built without a Figma artifact.",
         "No individual PO release-to-DONE has been issued for S202 (only 'released for controlled implementation')."
@@ -935,13 +940,13 @@
       "completionEvidence": {
         "vitestCount": "22 new tests (tests/org-service.test.ts: 12; tests/org-routes.test.ts: 10); zero regressions in tenant-service (178/178 total) or auth-service (118/118, after the permission-catalog migration)",
         "playwrightCount": null,
-        "notes": "Real S007/S207 dependencies satisfied directly (not via AuditPort/AuthzPort stub -- both are DONE/real). GET /org/tree assembles a synthetic GROUP root (one per tenant, not persisted -- group-service's flat DealerGroup/DealerGroupTenant model is explicitly not reused, per the contract's own instruction, since it spans multiple tenants) over LegalEntity->Store->Franchise, tenant-scoped. POST /org/tree:reparent implements BR202-2 (effective-dated re-parent via a new OrgReparentEvent override table; base FKs remain immutable) and BR202-1 (cycle rejection, 422). Centralized S207 authorization (org.tree.view/org.tree.manage), real audit before/after images, org.node.reparented event. In the course of seeding org.tree.* into the real S207 permission catalog, found and fixed a real defect: S224's audit.view/audit.export permissions had never been registered in that same catalog, so they would have denied every caller against the live gateway despite being route-enforced. Fresh-database migration reproducibility verified for both tenant-service (9/9 migrations) and auth-service (10/10 migrations) against ephemeral Postgres 15 instances; RLS re-verified as the real non-superuser app role (not the postgres superuser, which always bypasses RLS) -- tenant-scoped visibility proven directly via psql. tsc --noEmit clean on both services. No frontend UI was built this phase (explicitly scoped out, not silently skipped): S202 is FIGMA_REQUIRED and package-wide Figma/SME/UX validation remains open."
+        "notes": "Real S007/S207 dependencies satisfied directly (not via AuditPort/AuthzPort stub -- both are DONE/real). GET /org/tree assembles a synthetic GROUP root (one per tenant, not persisted -- group-service's flat DealerGroup/DealerGroupTenant model is explicitly not reused, per the contract's own instruction, since it spans multiple tenants) over LegalEntity->Store->Franchise, tenant-scoped. POST /org/tree:reparent implements BR202-2 (effective-dated re-parent via a new OrgReparentEvent override table; base FKs remain immutable) and BR202-1 (cycle rejection, 422). Centralized S207 authorization (org.tree.view/org.tree.manage), real audit before/after images, org.node.reparented event. In the course of seeding org.tree.* into the real S207 permission catalog, found and fixed a real defect: S224's audit.view/audit.export permissions had never been registered in that same catalog, so they would have denied every caller against the live gateway despite being route-enforced. Fresh-database migration reproducibility verified for both tenant-service (9/9 migrations) and auth-service (10/10 migrations) against ephemeral Postgres 15 instances; RLS re-verified as the real non-superuser app role (not the postgres superuser, which always bypasses RLS) -- tenant-scoped visibility proven directly via psql. tsc --noEmit clean on both services. No frontend UI was built this phase (explicitly scoped out, not silently skipped): S202 is FIGMA_REQUIRED and package-wide Figma/SME/UX validation remains open. Real-gateway evidence closed 2026-07-27: fixed a real gap where api-gateway had no /api/v1/org route (added); deployed both pending migrations to the live shared database (via the amacc migration role, since amacc_app deliberately lacks CREATE on schema public); restarted auth-service/tenant-service/api-gateway to load the new code. Live HTTP evidence covers: positive tree view with real persisted data, 401 no-token, 401 invalid-token, 403 cross-tenant tenant-id mismatch (with a 200 same-tenant control), 403 real S207 action-level denial for a genuine view-only ACCOUNTANT identity, 422 invalid-parent validation, 400 schema validation, and a positive reparent with a persisted org_reparent_events row. Real S007 audit rows confirmed directly in audit_logs: orgnode.reparent and authzdenial.iam.authz.denied. See S202_LIVE_GATEWAY_CERTIFICATION_REPORT.md."
       },
       "stabilizationReconciliation": {
         "phase": "Golden-R0 Controlled Fleet Implementation",
         "priorStatus": "NOT_STARTED (new Golden-R0 fleet story; not part of the original 22 R0 stories)",
         "promotedBecause": "Backend/API/authorization/audit-evidence work is complete and evidenced against real, freshly-migrated databases with zero test regressions, and a genuine S224 authorization-catalog defect was found and fixed as a byproduct. Capped at DONE_PENDING_INTEGRATION (not DONE) solely because PO condition 9 requires business/Figma/UX validation before any controlled-fleet story reaches DONE, and that validation is still package-wide open -- this is a business/UX sign-off gap, not a technical stub-adapter gap.",
-        "reference": "docs/accounting-modernization/stabilization/STORY_CERTIFICATION_MATRIX.csv; commits 7a042bb, d7626f6 on golden-r0-fleet"
+        "reference": "docs/accounting-modernization/stabilization/STORY_CERTIFICATION_MATRIX.csv; commits 7a042bb, d7626f6 on golden-r0-fleet; S202_LIVE_GATEWAY_CERTIFICATION_REPORT.md"
       }
     }
   },
@@ -969,7 +974,7 @@
     "S207": "DONE \u2014 promoted in R0 Stabilization Phase 9; all 3 stubGate conditions met (tsc clean, real S007 audit sink draining iam.authz.denied, live-database + broker-backed verification both exist)",
     "S007": "DONE \u2014 Golden-R0 Controlled Fleet: real transactional audit coupling across tenant-service/auth-service/coa-service/audit-service (3 gaps found and fixed), hash-chain tamper detection proven live-DB, write-path coverage census CI-enforced. Unblocks S224 per PO condition 6.",
     "S224": "DONE_PENDING_INTEGRATION \u2014 Golden-R0 Controlled Fleet: real S007 dependency satisfied (no stub); document-history GET+export endpoints implemented with centralized S207 authz, BR224-3 audit.viewed emission, fresh-database migration reproducibility verified. Capped below DONE pending package-wide Figma/SME/UX validation (PO condition 9), not a technical gap.",
-    "S202": "DONE_PENDING_INTEGRATION \u2014 Golden-R0 Controlled Fleet: real S007/S207 dependencies satisfied directly; org tree GET+reparent endpoints implemented with centralized S207 authz (org.tree.view/manage), effective-dated re-parent (BR202-2), cycle rejection (BR202-1), CSV export parity (BR202-3), fresh-database migration reproducibility verified for tenant-service and auth-service. Also fixed a real S224 authz-catalog defect found along the way. Capped below DONE pending package-wide Figma/SME/UX validation (PO condition 9), not a technical gap."
+    "S202": "DONE_PENDING_INTEGRATION \u2014 Golden-R0 Controlled Fleet: real S007/S207 dependencies satisfied directly; org tree GET+reparent endpoints implemented with centralized S207 authz (org.tree.view/manage), effective-dated re-parent (BR202-2), cycle rejection (BR202-1), CSV export parity (BR202-3), fresh-database migration reproducibility verified for tenant-service and auth-service. Also fixed a real S224 authz-catalog defect found along the way. Capped below DONE pending package-wide Figma/SME/UX validation (PO condition 9), not a technical gap. Real-gateway evidence closed 2026-07-27 (see S202_LIVE_GATEWAY_CERTIFICATION_REPORT.md); remaining gap is Figma/UX validation only."
   },
   "stabilization": {
     "phase0CheckpointCommit": "8453d0f",

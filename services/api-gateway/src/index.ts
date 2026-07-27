@@ -43,6 +43,7 @@ const SERVICES: Array<{ prefix: string; upstream: string; rateLimit?: number; re
   { prefix: '/api/v1/stores',         upstream: process.env['TENANT_SERVICE_URL']         ?? 'http://tenant-service:3002' },
   { prefix: '/api/v1/entities',       upstream: process.env['TENANT_SERVICE_URL']         ?? 'http://tenant-service:3002' },
   { prefix: '/api/v1/oems',           upstream: process.env['TENANT_SERVICE_URL']         ?? 'http://tenant-service:3002' },
+  { prefix: '/api/v1/org',            upstream: process.env['TENANT_SERVICE_URL']         ?? 'http://tenant-service:3002' },
   { prefix: '/api/v1/config',         upstream: process.env['COA_SERVICE_URL']            ?? 'http://coa-service:3016' },
   { prefix: '/api/v1/fiscal',         upstream: process.env['COA_SERVICE_URL']            ?? 'http://coa-service:3016' },
   { prefix: '/api/v1/gl/fs',           upstream: process.env['FS_SERVICE_URL']             ?? 'http://fs-service:3015',        rewritePrefix: '/api/v1/fs' },
