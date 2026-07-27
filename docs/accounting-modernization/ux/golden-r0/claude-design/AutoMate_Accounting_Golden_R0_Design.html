@@ -1,0 +1,1755 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#E9EDF2;color:#16202E;font-family:'IBM Plex Sans',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:#0B5CAB;text-decoration:none}
+a:hover{color:#094C90;text-decoration:underline}
+button:disabled{opacity:.42;cursor:not-allowed}
+button{font-family:inherit}
+input,select,textarea{font-family:inherit}
+:focus-visible{outline:2px solid #0B5CAB;outline-offset:1px}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{opacity:.45}50%{opacity:.85}}
+</style>
+</helmet>
+
+<div style="max-width:1520px;margin:0 auto;padding:0 32px 120px">
+
+<header style="padding:44px 0 26px">
+<div style="font:600 11px 'IBM Plex Mono',monospace;letter-spacing:.14em;color:#6B7787;text-transform:uppercase">AutoMate Accounting</div>
+<h1 style="margin:8px 0 10px;font-size:38px;line-height:1.1;font-weight:600;letter-spacing:-.02em">Golden R0 — UX Foundation</h1>
+<p style="margin:0;max-width:760px;font-size:15px;line-height:1.55;color:#4A5666;text-wrap:pretty">Design foundation and production-ready screens for the AutoMate dealership Accounting module. Sections 00–04 establish the foundation and Journal Entry; sections 05–09 extend it to GL Search, GL Inquiry, Trial Balance and the two published statements — one shell, one component set, one set of financial-presentation rules.</p>
+<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:18px">
+<span style="font:600 10.5px 'IBM Plex Mono',monospace;letter-spacing:.04em;padding:5px 9px;border-radius:3px;background:#FFF6E0;color:#8A5A00;border:1px solid #EBD49A">JOURNAL_ENTRY_DESIGN_IN_PROGRESS</span>
+<span style="font:600 10.5px 'IBM Plex Mono',monospace;letter-spacing:.04em;padding:5px 9px;border-radius:3px;background:#EEF3FA;color:#0B5CAB;border:1px solid #C6D8EE">PRODUCT_REVIEW_REQUIRED</span>
+<span style="font:600 10.5px 'IBM Plex Mono',monospace;letter-spacing:.04em;padding:5px 9px;border-radius:3px;background:#EEF3FA;color:#0B5CAB;border:1px solid #C6D8EE">SME_REVIEW_REQUIRED</span>
+<span style="font:600 10.5px 'IBM Plex Mono',monospace;letter-spacing:.04em;padding:5px 9px;border-radius:3px;background:#FDECEA;color:#B3261E;border:1px solid #F0C0BB">NOT_YET_READY_FOR_IMPLEMENTATION</span>
+</div>
+</header>
+
+<nav style="position:sticky;top:0;z-index:60;display:flex;flex-wrap:wrap;gap:2px;padding:9px 12px;margin-bottom:34px;background:rgba(255,255,255,.93);backdrop-filter:blur(6px);border:1px solid #DCE1E8;border-radius:6px;box-shadow:0 1px 3px rgba(20,32,48,.07)">
+<a href="#s00" style="font-size:12.5px;font-weight:500;color:#3C4A5C;padding:6px 11px;border-radius:4px" style-hover="background:#EEF3FA;color:#0B5CAB;text-decoration:none">00 · Read Me &amp; Status</a>
+<a href="#s01" style="font-size:12.5px;font-weight:500;color:#3C4A5C;padding:6px 11px;border-radius:4px" style-hover="background:#EEF3FA;color:#0B5CAB;text-decoration:none">01 · Visual Foundations</a>
+<a href="#s02" style="font-size:12.5px;font-weight:500;color:#3C4A5C;padding:6px 11px;border-radius:4px" style-hover="background:#EEF3FA;color:#0B5CAB;text-decoration:none">02 · Component Library</a>
+<a href="#s03" style="font-size:12.5px;font-weight:500;color:#3C4A5C;padding:6px 11px;border-radius:4px" style-hover="background:#EEF3FA;color:#0B5CAB;text-decoration:none">03 · Navigation &amp; Shell</a>
+<a href="#s04" style="font-size:12.5px;font-weight:500;color:#3C4A5C;padding:6px 11px;border-radius:4px" style-hover="background:#EEF3FA;color:#0B5CAB;text-decoration:none">04 · Journal Entry</a>
+<a href="#s05" style="font-size:12.5px;font-weight:500;color:#3C4A5C;padding:6px 11px;border-radius:4px" style-hover="background:#EEF3FA;color:#0B5CAB;text-decoration:none">05 · GL Search</a>
+<a href="#s06" style="font-size:12.5px;font-weight:500;color:#3C4A5C;padding:6px 11px;border-radius:4px" style-hover="background:#EEF3FA;color:#0B5CAB;text-decoration:none">06 · GL Inquiry</a>
+<a href="#s07" style="font-size:12.5px;font-weight:500;color:#3C4A5C;padding:6px 11px;border-radius:4px" style-hover="background:#EEF3FA;color:#0B5CAB;text-decoration:none">07 · Trial Balance</a>
+<a href="#s08" style="font-size:12.5px;font-weight:500;color:#3C4A5C;padding:6px 11px;border-radius:4px" style-hover="background:#EEF3FA;color:#0B5CAB;text-decoration:none">08 · Balance Sheet</a>
+<a href="#s09" style="font-size:12.5px;font-weight:500;color:#3C4A5C;padding:6px 11px;border-radius:4px" style-hover="background:#EEF3FA;color:#0B5CAB;text-decoration:none">09 · Income Statement</a>
+<a href="#handoff" style="font-size:12.5px;font-weight:500;color:#3C4A5C;padding:6px 11px;border-radius:4px" style-hover="background:#EEF3FA;color:#0B5CAB;text-decoration:none">Handoff</a>
+<a href="#decisions" style="font-size:12.5px;font-weight:500;color:#3C4A5C;padding:6px 11px;border-radius:4px" style-hover="background:#EEF3FA;color:#0B5CAB;text-decoration:none">Decisions</a>
+<a href="#readiness" style="font-size:12.5px;font-weight:600;color:#B3261E;padding:6px 11px;border-radius:4px" style-hover="background:#FDECEA;text-decoration:none">Readiness</a>
+</nav>
+
+<section id="s00" style="scroll-margin-top:70px;margin-bottom:64px">
+<div style="display:flex;align-items:baseline;gap:14px;padding-bottom:12px;border-bottom:2px solid #1E3A5C;margin-bottom:26px">
+<span style="font:600 13px 'IBM Plex Mono',monospace;color:#0B5CAB">00</span>
+<h2 style="margin:0;font-size:24px;font-weight:600;letter-spacing:-.01em">Read Me and Status</h2>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px">
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;padding:20px 22px">
+<h3 style="margin:0 0 10px;font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C">Project purpose</h3>
+<p style="margin:0;font-size:13.5px;line-height:1.6;color:#3C4A5C;text-wrap:pretty">Establish a single, implementation-ready UX foundation for the AutoMate Accounting module so that every General Ledger screen shares one shell, one component vocabulary and one set of financial-presentation rules. R0 proves the foundation on the highest-risk screen: Journal Entry.</p>
+</div>
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;padding:20px 22px">
+<h3 style="margin:0 0 10px;font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C">Current application status</h3>
+<p style="margin:0 0 10px;font-size:13.5px;line-height:1.6;color:#3C4A5C;text-wrap:pretty">The Accounting module is functional but prototype-quality. Working backend behaviour exists for the Draft → Validate → Post → View → Reverse workflow. The front end presents it as unstyled form controls, inline text links and numbered plain-text steps.</p>
+<p style="margin:0;font-size:13.5px;line-height:1.6;color:#3C4A5C">No accounting logic is being changed in R0. This is a presentation, structure and state-coverage pass.</p>
+</div>
+</div>
+
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;padding:20px 22px;margin-bottom:18px">
+<h3 style="margin:0 0 12px;font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C">Evidence used</h3>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
+<div style="border-left:3px solid #43206B;padding-left:14px">
+<div style="font-size:12.5px;font-weight:600;margin-bottom:4px">Reference A — Solera-family dealership shell</div>
+<p style="margin:0;font-size:13px;line-height:1.6;color:#5A6675">Used for <strong style="font-weight:600;color:#3C4A5C">visual language only</strong>: purple navigation rail, white work surfaces, blue primary actions, dark navy section headers, hairline borders, compact enterprise density, tabs / cards / data tables. Workflow, content and fields from that screen are not carried over.</p>
+</div>
+<div style="border-left:3px solid #0B5CAB;padding-left:14px">
+<div style="font-size:12.5px;font-weight:600;margin-bottom:4px">Reference B — current AutoMate Accounting screens</div>
+<p style="margin:0;font-size:13px;line-height:1.6;color:#5A6675">Used as the <strong style="font-weight:600;color:#3C4A5C">source of truth for behaviour</strong>: existing Journal Entry workflow, field set, filter set, validation messaging and cross-screen links. Everything functional in the redesign traces back to something already present.</p>
+</div>
+</div>
+</div>
+
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;padding:20px 22px;margin-bottom:18px">
+<h3 style="margin:0 0 12px;font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C">Design principles</h3>
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px 22px">
+<div><div style="font-size:12.5px;font-weight:600;margin-bottom:3px">The ledger is the interface</div><p style="margin:0;font-size:12.5px;line-height:1.55;color:#5A6675">Lines, amounts and totals get the space. Chrome does not.</p></div>
+<div><div style="font-size:12.5px;font-weight:600;margin-bottom:3px">Backend is authoritative</div><p style="margin:0;font-size:12.5px;line-height:1.55;color:#5A6675">The UI computes totals for usability, never for permission to post.</p></div>
+<div><div style="font-size:12.5px;font-weight:600;margin-bottom:3px">Context is always visible</div><p style="margin:0;font-size:12.5px;line-height:1.55;color:#5A6675">Entity, store, department and fiscal period never leave the screen.</p></div>
+<div><div style="font-size:12.5px;font-weight:600;margin-bottom:3px">State is explicit</div><p style="margin:0;font-size:12.5px;line-height:1.55;color:#5A6675">Draft, Validated, Posted and Reversed each look and behave differently.</p></div>
+<div><div style="font-size:12.5px;font-weight:600;margin-bottom:3px">Destructive work is deliberate</div><p style="margin:0;font-size:12.5px;line-height:1.55;color:#5A6675">Post and Reverse are confirmed, attributed and audited.</p></div>
+<div><div style="font-size:12.5px;font-weight:600;margin-bottom:3px">Dense, not cramped</div><p style="margin:0;font-size:12.5px;line-height:1.55;color:#5A6675">A full journal fits on one screen without scrolling the totals away.</p></div>
+</div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px">
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;padding:20px 22px">
+<h3 style="margin:0 0 10px;font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C">Scope of this first pass</h3>
+<div style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:#3C4A5C">
+<div style="display:flex;gap:9px;align-items:center"><span style="width:16px;height:16px;border-radius:3px;background:#E7F4EC;color:#1E6B45;font:700 11px/16px 'IBM Plex Mono',monospace;text-align:center;flex:none">✓</span>00 Read Me and Status</div>
+<div style="display:flex;gap:9px;align-items:center"><span style="width:16px;height:16px;border-radius:3px;background:#E7F4EC;color:#1E6B45;font:700 11px/16px 'IBM Plex Mono',monospace;text-align:center;flex:none">✓</span>01 Visual Foundations</div>
+<div style="display:flex;gap:9px;align-items:center"><span style="width:16px;height:16px;border-radius:3px;background:#E7F4EC;color:#1E6B45;font:700 11px/16px 'IBM Plex Mono',monospace;text-align:center;flex:none">✓</span>02 Component Library</div>
+<div style="display:flex;gap:9px;align-items:center"><span style="width:16px;height:16px;border-radius:3px;background:#E7F4EC;color:#1E6B45;font:700 11px/16px 'IBM Plex Mono',monospace;text-align:center;flex:none">✓</span>03 Navigation and Accounting Shell</div>
+<div style="display:flex;gap:9px;align-items:center"><span style="width:16px;height:16px;border-radius:3px;background:#E7F4EC;color:#1E6B45;font:700 11px/16px 'IBM Plex Mono',monospace;text-align:center;flex:none">✓</span>04 Journal Entry</div>
+<div style="margin-top:8px;padding-top:10px;border-top:1px dashed #DCE1E8;font-size:12.5px;color:#7A8494">Deferred to a later pass: GL Inquiry, GL Search, Trial Balance, Balance Sheet, Income Statement, Audit History, Organization Hierarchy, Role Templates.</div>
+</div>
+</div>
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;padding:20px 22px">
+<h3 style="margin:0 0 10px;font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C">Known assumptions</h3>
+<ol style="margin:0;padding-left:18px;font-size:13px;line-height:1.65;color:#3C4A5C">
+<li>Users are trained, frequent, desktop Accounting staff at a North American dealership group.</li>
+<li>A user may be scoped to more than one legal entity and store within one dealership group.</li>
+<li>Journal balancing, period status and posting eligibility are decided server-side.</li>
+<li>Posted journals are immutable; correction happens through reversal, not edit.</li>
+<li>Every workflow transition is auditable and attributable to a user and timestamp.</li>
+</ol>
+<div style="margin-top:10px;font:11px 'IBM Plex Mono',monospace;color:#8A5A00;background:#FFF6E0;border:1px solid #EBD49A;border-radius:3px;padding:7px 9px;line-height:1.5">Assumptions are stated, not silently applied. Each one that affects behaviour has a matching entry in the decision register.</div>
+</div>
+</div>
+
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;padding:0;overflow:hidden">
+<div style="background:#1E3A5C;color:#fff;padding:10px 18px;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;display:flex;justify-content:space-between;align-items:center"><span>Open questions blocking implementation</span><span style="font:500 11px 'IBM Plex Mono',monospace;opacity:.75">17 open</span></div>
+<div style="padding:16px 18px;font-size:12.5px;color:#5A6675;line-height:1.55">Full register with owners and blocking status is in <a href="#s06">Decision Register</a>. Summary: <strong style="color:#3C4A5C;font-weight:600">6 product</strong>, <strong style="color:#3C4A5C;font-weight:600">5 accounting SME</strong>, <strong style="color:#3C4A5C;font-weight:600">6 API / platform</strong>.</div>
+</div>
+</section>
+
+<section id="s01" style="scroll-margin-top:70px;margin-bottom:64px">
+<div style="display:flex;align-items:baseline;gap:14px;padding-bottom:12px;border-bottom:2px solid #1E3A5C;margin-bottom:26px">
+<span style="font:600 13px 'IBM Plex Mono',monospace;color:#0B5CAB">01</span>
+<h2 style="margin:0;font-size:24px;font-weight:600;letter-spacing:-.01em">Visual Foundations</h2>
+</div>
+
+<div style="display:grid;grid-template-columns:340px 1fr;gap:18px;margin-bottom:18px">
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;padding:20px 22px">
+<h3 style="margin:0 0 12px;font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C">Canvas &amp; grid</h3>
+<div style="display:flex;flex-direction:column;gap:9px;font-size:12.5px;color:#3C4A5C">
+<div style="display:flex;justify-content:space-between;gap:12px;border-bottom:1px dotted #E4E8EE;padding-bottom:7px"><span style="color:#5A6675">Minimum supported width</span><b style="font:500 12px 'IBM Plex Mono',monospace">1280 px</b></div>
+<div style="display:flex;justify-content:space-between;gap:12px;border-bottom:1px dotted #E4E8EE;padding-bottom:7px"><span style="color:#5A6675">Design width</span><b style="font:500 12px 'IBM Plex Mono',monospace">1440 px</b></div>
+<div style="display:flex;justify-content:space-between;gap:12px;border-bottom:1px dotted #E4E8EE;padding-bottom:7px"><span style="color:#5A6675">Content max-width</span><b style="font:500 12px 'IBM Plex Mono',monospace">1360 px</b></div>
+<div style="display:flex;justify-content:space-between;gap:12px;border-bottom:1px dotted #E4E8EE;padding-bottom:7px"><span style="color:#5A6675">Nav rail expanded / collapsed</span><b style="font:500 12px 'IBM Plex Mono',monospace">232 / 56 px</b></div>
+<div style="display:flex;justify-content:space-between;gap:12px;border-bottom:1px dotted #E4E8EE;padding-bottom:7px"><span style="color:#5A6675">Page gutter</span><b style="font:500 12px 'IBM Plex Mono',monospace">24 px</b></div>
+<div style="display:flex;justify-content:space-between;gap:12px;border-bottom:1px dotted #E4E8EE;padding-bottom:7px"><span style="color:#5A6675">Column grid</span><b style="font:500 12px 'IBM Plex Mono',monospace">12 col / 16 gutter</b></div>
+<div style="display:flex;justify-content:space-between;gap:12px"><span style="color:#5A6675">Spacing scale</span><b style="font:500 12px 'IBM Plex Mono',monospace">4 · 8 · 12 · 16 · 24 · 32</b></div>
+</div>
+</div>
+
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;padding:20px 22px">
+<h3 style="margin:0 0 14px;font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C">Colour</h3>
+<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px">
+<div><div style="height:46px;border-radius:4px;background:linear-gradient(160deg,#4E2578,#331452);border:1px solid rgba(0,0,0,.08)"></div><div style="font-size:11px;font-weight:600;margin-top:6px">Nav rail</div><div style="font:11px 'IBM Plex Mono',monospace;color:#7A8494">#43206B</div></div>
+<div><div style="height:46px;border-radius:4px;background:#1E3A5C"></div><div style="font-size:11px;font-weight:600;margin-top:6px">Section head</div><div style="font:11px 'IBM Plex Mono',monospace;color:#7A8494">#1E3A5C</div></div>
+<div><div style="height:46px;border-radius:4px;background:#0B5CAB"></div><div style="font-size:11px;font-weight:600;margin-top:6px">Primary action</div><div style="font:11px 'IBM Plex Mono',monospace;color:#7A8494">#0B5CAB</div></div>
+<div><div style="height:46px;border-radius:4px;background:#fff;border:1px solid #DCE1E8"></div><div style="font-size:11px;font-weight:600;margin-top:6px">Work surface</div><div style="font:11px 'IBM Plex Mono',monospace;color:#7A8494">#FFFFFF</div></div>
+<div><div style="height:46px;border-radius:4px;background:#E9EDF2;border:1px solid #DCE1E8"></div><div style="font-size:11px;font-weight:600;margin-top:6px">Page ground</div><div style="font:11px 'IBM Plex Mono',monospace;color:#7A8494">#E9EDF2</div></div>
+<div><div style="height:46px;border-radius:4px;background:#DCE1E8"></div><div style="font-size:11px;font-weight:600;margin-top:6px">Hairline</div><div style="font:11px 'IBM Plex Mono',monospace;color:#7A8494">#DCE1E8</div></div>
+<div><div style="height:46px;border-radius:4px;background:#E7F4EC;border:1px solid #B6DCC4"></div><div style="font-size:11px;font-weight:600;margin-top:6px">Success / Posted</div><div style="font:11px 'IBM Plex Mono',monospace;color:#7A8494">#1E6B45</div></div>
+<div><div style="height:46px;border-radius:4px;background:#FDECEA;border:1px solid #F0C0BB"></div><div style="font-size:11px;font-weight:600;margin-top:6px">Error</div><div style="font:11px 'IBM Plex Mono',monospace;color:#7A8494">#B3261E</div></div>
+<div><div style="height:46px;border-radius:4px;background:#FFF6E0;border:1px solid #EBD49A"></div><div style="font-size:11px;font-weight:600;margin-top:6px">Warning / Draft</div><div style="font:11px 'IBM Plex Mono',monospace;color:#7A8494">#8A5A00</div></div>
+<div><div style="height:46px;border-radius:4px;background:#EEF3FA;border:1px solid #C6D8EE"></div><div style="font-size:11px;font-weight:600;margin-top:6px">Info / Validated</div><div style="font:11px 'IBM Plex Mono',monospace;color:#7A8494">#0B5CAB</div></div>
+<div><div style="height:46px;border-radius:4px;background:#16202E"></div><div style="font-size:11px;font-weight:600;margin-top:6px">Text</div><div style="font:11px 'IBM Plex Mono',monospace;color:#7A8494">#16202E</div></div>
+<div><div style="height:46px;border-radius:4px;background:#5A6675"></div><div style="font-size:11px;font-weight:600;margin-top:6px">Muted text</div><div style="font:11px 'IBM Plex Mono',monospace;color:#7A8494">#5A6675</div></div>
+</div>
+<p style="margin:14px 0 0;font-size:12.5px;line-height:1.55;color:#5A6675">Colour carries meaning only. Purple is navigation, navy is structure, blue is action, and the three semantic families are reserved for status and validation. No decorative accents, no gradients on work surfaces, no chart palette in R0.</p>
+</div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px">
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;padding:20px 22px">
+<h3 style="margin:0 0 14px;font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C">Typography</h3>
+<div style="display:flex;flex-direction:column;gap:12px">
+<div style="display:grid;grid-template-columns:1fr 150px;align-items:baseline;gap:12px;border-bottom:1px dotted #E4E8EE;padding-bottom:10px"><span style="font-size:22px;font-weight:600;letter-spacing:-.01em">Journal Entry</span><span style="font:11px 'IBM Plex Mono',monospace;color:#7A8494;text-align:right">Page title · 22/600</span></div>
+<div style="display:grid;grid-template-columns:1fr 150px;align-items:baseline;gap:12px;border-bottom:1px dotted #E4E8EE;padding-bottom:10px"><span style="font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#1E3A5C">Journal Lines</span><span style="font:11px 'IBM Plex Mono',monospace;color:#7A8494;text-align:right">Section head · 12/600 caps</span></div>
+<div style="display:grid;grid-template-columns:1fr 150px;align-items:baseline;gap:12px;border-bottom:1px dotted #E4E8EE;padding-bottom:10px"><span style="font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#5A6675">Document number</span><span style="font:11px 'IBM Plex Mono',monospace;color:#7A8494;text-align:right">Field label · 11/600 caps</span></div>
+<div style="display:grid;grid-template-columns:1fr 150px;align-items:baseline;gap:12px;border-bottom:1px dotted #E4E8EE;padding-bottom:10px"><span style="font-size:13px">Dealer trade — unit 4471</span><span style="font:11px 'IBM Plex Mono',monospace;color:#7A8494;text-align:right">Body / cell · 13/400</span></div>
+<div style="display:grid;grid-template-columns:1fr 150px;align-items:baseline;gap:12px;border-bottom:1px dotted #E4E8EE;padding-bottom:10px"><span style="font:500 13px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums">24,500.00</span><span style="font:11px 'IBM Plex Mono',monospace;color:#7A8494;text-align:right">Money · mono 13/500 tnum</span></div>
+<div style="display:grid;grid-template-columns:1fr 150px;align-items:baseline;gap:12px"><span style="font-size:12px;color:#5A6675">Posted by C. Sampangi · Jul 24, 2026 4:12 PM</span><span style="font:11px 'IBM Plex Mono',monospace;color:#7A8494;text-align:right">Meta · 12/400</span></div>
+</div>
+<p style="margin:14px 0 0;font-size:12.5px;line-height:1.55;color:#5A6675">IBM Plex Sans for interface text, IBM Plex Mono for all account numbers, document numbers and monetary values. Minimum interface size is 11px and only for uppercase labels; no body text below 12px.</p>
+</div>
+
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;padding:20px 22px">
+<h3 style="margin:0 0 14px;font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C">Surfaces, borders &amp; density</h3>
+<div style="display:flex;flex-direction:column;gap:9px;font-size:12.5px;color:#3C4A5C">
+<div style="display:flex;justify-content:space-between;gap:12px;border-bottom:1px dotted #E4E8EE;padding-bottom:7px"><span style="color:#5A6675">Work surface</span><b style="font:500 12px 'IBM Plex Mono',monospace">#FFF · 1px #DCE1E8 · r4</b></div>
+<div style="display:flex;justify-content:space-between;gap:12px;border-bottom:1px dotted #E4E8EE;padding-bottom:7px"><span style="color:#5A6675">Elevation</span><b style="font:500 12px 'IBM Plex Mono',monospace">0 1px 2px rgba(20,32,48,.08)</b></div>
+<div style="display:flex;justify-content:space-between;gap:12px;border-bottom:1px dotted #E4E8EE;padding-bottom:7px"><span style="color:#5A6675">Table row height</span><b style="font:500 12px 'IBM Plex Mono',monospace">34 px</b></div>
+<div style="display:flex;justify-content:space-between;gap:12px;border-bottom:1px dotted #E4E8EE;padding-bottom:7px"><span style="color:#5A6675">Cell padding</span><b style="font:500 12px 'IBM Plex Mono',monospace">6 / 10 px</b></div>
+<div style="display:flex;justify-content:space-between;gap:12px;border-bottom:1px dotted #E4E8EE;padding-bottom:7px"><span style="color:#5A6675">Input height</span><b style="font:500 12px 'IBM Plex Mono',monospace">32 px</b></div>
+<div style="display:flex;justify-content:space-between;gap:12px;border-bottom:1px dotted #E4E8EE;padding-bottom:7px"><span style="color:#5A6675">Button height</span><b style="font:500 12px 'IBM Plex Mono',monospace">32 px (28 compact)</b></div>
+<div style="display:flex;justify-content:space-between;gap:12px"><span style="color:#5A6675">Corner radius</span><b style="font:500 12px 'IBM Plex Mono',monospace">3 px controls · 4 px surfaces</b></div>
+</div>
+<p style="margin:14px 0 0;font-size:12.5px;line-height:1.55;color:#5A6675">One border weight (1px) at one strength. Cards do not nest more than one level. Row separators inside tables are the only horizontal rules on a work surface.</p>
+</div>
+</div>
+
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;padding:20px 22px;margin-bottom:18px">
+<h3 style="margin:0 0 6px;font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C">Financial presentation rules</h3>
+<p style="margin:0 0 16px;font-size:12.5px;color:#5A6675">These rules are non-negotiable across every Accounting screen.</p>
+<div style="display:grid;grid-template-columns:1.15fr 1fr;gap:22px">
+<div>
+<div style="border:1px solid #DCE1E8;border-radius:4px;overflow:hidden">
+<table style="width:100%;border-collapse:collapse;font-size:13px">
+<thead><tr style="background:#1E3A5C;color:#fff">
+<th style="text-align:left;padding:7px 10px;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase">Account</th>
+<th style="text-align:left;padding:7px 10px;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase">Description</th>
+<th style="text-align:right;padding:7px 10px;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;width:110px">Debit</th>
+<th style="text-align:right;padding:7px 10px;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;width:110px">Credit</th>
+</tr></thead>
+<tbody>
+<tr style="border-bottom:1px solid #EDF0F4"><td style="padding:6px 10px;font:500 12.5px 'IBM Plex Mono',monospace">1200-01</td><td style="padding:6px 10px">Accounts Receivable — Vehicle</td><td style="padding:6px 10px;text-align:right;font:500 13px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums">24,500.00</td><td style="padding:6px 10px;text-align:right;font:400 13px 'IBM Plex Mono',monospace;color:#AEB6C2">—</td></tr>
+<tr style="border-bottom:1px solid #EDF0F4;background:#FBFCFD"><td style="padding:6px 10px;font:500 12.5px 'IBM Plex Mono',monospace">4100-00</td><td style="padding:6px 10px">Vehicle Sales — New</td><td style="padding:6px 10px;text-align:right;font:400 13px 'IBM Plex Mono',monospace;color:#AEB6C2">—</td><td style="padding:6px 10px;text-align:right;font:500 13px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums">24,500.00</td></tr>
+<tr style="border-bottom:1px solid #EDF0F4"><td style="padding:6px 10px;font:500 12.5px 'IBM Plex Mono',monospace">6300-14</td><td style="padding:6px 10px">Policy Adjustment — Service</td><td style="padding:6px 10px;text-align:right;font:400 13px 'IBM Plex Mono',monospace;color:#AEB6C2">—</td><td style="padding:6px 10px;text-align:right;font:500 13px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;color:#B3261E">(1,250.00)</td></tr>
+<tr style="background:#F3F6F9;border-top:2px solid #1E3A5C"><td style="padding:8px 10px;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C" colspan="2">Totals — 3 lines</td><td style="padding:8px 10px;text-align:right;font:600 13.5px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums">24,500.00</td><td style="padding:8px 10px;text-align:right;font:600 13.5px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums">23,250.00</td></tr>
+</tbody>
+</table>
+</div>
+<div style="margin-top:8px;font-size:12px;color:#7A8494;line-height:1.5">Specimen only. Debits left column, credits right column, both right-aligned on a shared decimal grid; empty side renders an em dash, never a zero. Negative values are parenthesised and red, never minus-signed.</div>
+</div>
+<div style="display:flex;flex-direction:column;gap:11px;font-size:12.5px;line-height:1.55;color:#3C4A5C">
+<div><b style="font-weight:600">Monetary alignment.</b> Right-aligned, tabular mono, two decimals always, thousands separated. Column width is fixed so decimals stack across every row and the totals footer.</div>
+<div><b style="font-weight:600">Debit &amp; credit.</b> Two dedicated columns, never one signed column. A line carries a value in exactly one of them; the UI blocks entry in both.</div>
+<div><b style="font-weight:600">Totals &amp; variance.</b> Totals footer is pinned to the bottom of the lines table and stays visible while lines scroll. Variance shows an absolute amount plus which side is short. Variance of zero is stated as <b style="font-weight:600">In balance</b>, not left blank.</div>
+<div><b style="font-weight:600">Status colour.</b> Draft amber · Validated blue · Posted green · Reversed slate. Status appears as a badge beside the page title and as a row treatment in any journal list.</div>
+<div><b style="font-weight:600">Validation colour.</b> Error red is reserved for backend-rejected states. Client-side hints (a field left empty, an unbalanced running total) use amber and never claim the journal has failed validation.</div>
+<div><b style="font-weight:600">Focus.</b> 2px #0B5CAB outline with 1px offset on every interactive element, including table cells in edit mode. Focus is never removed, only restyled.</div>
+</div>
+</div>
+</div>
+
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;padding:20px 22px">
+<h3 style="margin:0 0 12px;font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C">Accessibility expectations</h3>
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;font-size:12.5px;line-height:1.55;color:#3C4A5C">
+<div><b style="font-weight:600">Contrast</b><p style="margin:3px 0 0;color:#5A6675">WCAG 2.2 AA. Body text ≥ 4.5:1, uppercase labels ≥ 4.5:1, non-text UI boundaries ≥ 3:1. Status is never colour-only — every badge carries its word.</p></div>
+<div><b style="font-weight:600">Keyboard</b><p style="margin:3px 0 0;color:#5A6675">Whole journal completable without a mouse. Logical tab order down the line grid, Enter to commit a cell, Escape to cancel, no keyboard traps in the account lookup.</p></div>
+<div><b style="font-weight:600">Screen reader</b><p style="margin:3px 0 0;color:#5A6675">Lines table uses real table semantics with scoped headers. Totals footer is a live region. Validation banners announce assertively and receive focus.</p></div>
+<div><b style="font-weight:600">Motion &amp; zoom</b><p style="margin:3px 0 0;color:#5A6675">No animation beyond 150ms state transitions; honours reduced-motion. Layout survives 200% browser zoom at 1280px with horizontal scroll on the lines table only.</p></div>
+</div>
+</div>
+</section>
+
+<section id="s02" style="scroll-margin-top:70px;margin-bottom:64px">
+<div style="display:flex;align-items:baseline;gap:14px;padding-bottom:12px;border-bottom:2px solid #1E3A5C;margin-bottom:12px">
+<span style="font:600 13px 'IBM Plex Mono',monospace;color:#0B5CAB">02</span>
+<h2 style="margin:0;font-size:24px;font-weight:600;letter-spacing:-.01em">Component Library</h2>
+</div>
+<p style="margin:0 0 24px;max-width:820px;font-size:13.5px;line-height:1.6;color:#4A5666">Twenty-six components, each with the states that apply to it. Permission-denied behaviour is specified per component: an action the user may never perform is <b style="font-weight:600">hidden</b>; an action they may perform but not right now is <b style="font-weight:600">disabled with a reason</b>.</p>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px">
+
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;overflow:hidden">
+<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid #EDF0F4"><span style="font-size:12.5px;font-weight:600">Page header</span><span style="font:11px 'IBM Plex Mono',monospace;color:#7A8494">AccountingPageHeader · Breadcrumb · AuditHistoryLink</span></div>
+<div style="padding:18px">
+<div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:#8A94A3;margin-bottom:8px">Default</div>
+<div style="border:1px solid #DCE1E8;border-radius:4px;padding:14px 16px;margin-bottom:16px">
+<div style="display:flex;align-items:center;gap:7px;font-size:12px;color:#5A6675;margin-bottom:8px"><a href="#s03" style="color:#0B5CAB">Accounting</a><span style="color:#B9C0CA">/</span><a href="#s03" style="color:#0B5CAB">General Ledger</a><span style="color:#B9C0CA">/</span><span style="color:#3C4A5C;font-weight:500">Journal Entry</span></div>
+<div style="display:flex;align-items:center;justify-content:space-between;gap:16px">
+<div style="display:flex;align-items:center;gap:12px"><h4 style="margin:0;font-size:22px;font-weight:600;letter-spacing:-.01em">Journal Entry</h4><span style="font:600 10.5px 'IBM Plex Mono',monospace;letter-spacing:.05em;text-transform:uppercase;padding:4px 8px;border-radius:3px;background:#FFF6E0;color:#8A5A00;border:1px solid #EBD49A">Draft</span></div>
+<div style="display:flex;gap:8px"><button style="height:32px;padding:0 14px;border-radius:3px;border:1px solid #C3CBD6;background:#fff;color:#3C4A5C;font-size:13px;font-weight:500;cursor:pointer" style-hover="background:#F3F6F9;border-color:#9BA6B4">Save Draft</button><button style="height:32px;padding:0 14px;border-radius:3px;border:1px solid #0B5CAB;background:#0B5CAB;color:#fff;font-size:13px;font-weight:600;cursor:pointer" style-hover="background:#094C90;border-color:#094C90">Validate</button></div>
+</div>
+</div>
+<div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:#8A94A3;margin-bottom:8px">Read-only (posted) + audit link</div>
+<div style="border:1px solid #DCE1E8;border-radius:4px;padding:14px 16px;background:#FBFCFD">
+<div style="display:flex;align-items:center;justify-content:space-between;gap:16px">
+<div style="display:flex;align-items:center;gap:12px"><h4 style="margin:0;font-size:22px;font-weight:600;letter-spacing:-.01em;color:#3C4A5C">Journal Entry</h4><span style="font:600 10.5px 'IBM Plex Mono',monospace;letter-spacing:.05em;text-transform:uppercase;padding:4px 8px;border-radius:3px;background:#E7F4EC;color:#1E6B45;border:1px solid #B6DCC4">Posted</span><span style="font:12px 'IBM Plex Mono',monospace;color:#7A8494">JE-2026-07-00418</span></div>
+<div style="display:flex;align-items:center;gap:14px"><a href="#s04" style="font-size:12.5px;font-weight:500;display:inline-flex;align-items:center;gap:6px"><span style="width:13px;height:13px;border:1.5px solid currentColor;border-radius:50%;display:inline-block"></span>Audit history</a><button style="height:32px;padding:0 14px;border-radius:3px;border:1px solid #B3261E;background:#fff;color:#B3261E;font-size:13px;font-weight:600;cursor:pointer" style-hover="background:#FDECEA">Reverse</button></div>
+</div>
+</div>
+</div>
+</div>
+
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;overflow:hidden">
+<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid #EDF0F4"><span style="font-size:12.5px;font-weight:600">Buttons</span><span style="font:11px 'IBM Plex Mono',monospace;color:#7A8494">PrimaryButton · SecondaryButton · DestructiveButton</span></div>
+<div style="padding:18px">
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px 12px">
+<div><div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:#8A94A3;margin-bottom:7px">Default</div><button style="height:32px;padding:0 14px;border-radius:3px;border:1px solid #0B5CAB;background:#0B5CAB;color:#fff;font-size:13px;font-weight:600;cursor:pointer;width:100%">Post</button></div>
+<div><div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:#8A94A3;margin-bottom:7px">Hover</div><button style="height:32px;padding:0 14px;border-radius:3px;border:1px solid #094C90;background:#094C90;color:#fff;font-size:13px;font-weight:600;cursor:pointer;width:100%">Post</button></div>
+<div><div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:#8A94A3;margin-bottom:7px">Focus</div><button style="height:32px;padding:0 14px;border-radius:3px;border:1px solid #0B5CAB;background:#0B5CAB;color:#fff;font-size:13px;font-weight:600;cursor:pointer;width:100%;outline:2px solid #0B5CAB;outline-offset:2px">Post</button></div>
+<div><div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:#8A94A3;margin-bottom:7px">Disabled</div><button disabled="{{ true }}" style="height:32px;padding:0 14px;border-radius:3px;border:1px solid #0B5CAB;background:#0B5CAB;color:#fff;font-size:13px;font-weight:600;width:100%">Post</button></div>
+<div><div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:#8A94A3;margin-bottom:7px">Loading</div><button disabled="{{ true }}" style="height:32px;padding:0 14px;border-radius:3px;border:1px solid #0B5CAB;background:#0B5CAB;color:#fff;font-size:13px;font-weight:600;width:100%;display:flex;align-items:center;justify-content:center;gap:8px"><span style="width:12px;height:12px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:inline-block"></span>Posting</button></div>
+<div><div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:#8A94A3;margin-bottom:7px">Permission denied</div><div style="height:32px;border-radius:3px;border:1px dashed #C3CBD6;background:#F7F9FB;color:#8A94A3;font-size:11.5px;display:flex;align-items:center;justify-content:center;text-align:center">hidden — not rendered</div></div>
+</div>
+<div style="height:1px;background:#EDF0F4;margin:16px 0"></div>
+<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end">
+<div><div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:#8A94A3;margin-bottom:7px">Secondary</div><button style="height:32px;padding:0 14px;border-radius:3px;border:1px solid #C3CBD6;background:#fff;color:#3C4A5C;font-size:13px;font-weight:500;cursor:pointer" style-hover="background:#F3F6F9;border-color:#9BA6B4">Save Draft</button></div>
+<div><div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:#8A94A3;margin-bottom:7px">Secondary disabled</div><button disabled="{{ true }}" style="height:32px;padding:0 14px;border-radius:3px;border:1px solid #C3CBD6;background:#fff;color:#3C4A5C;font-size:13px;font-weight:500">Save Draft</button></div>
+<div><div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:#8A94A3;margin-bottom:7px">Destructive</div><button style="height:32px;padding:0 14px;border-radius:3px;border:1px solid #B3261E;background:#fff;color:#B3261E;font-size:13px;font-weight:600;cursor:pointer" style-hover="background:#FDECEA">Reverse</button></div>
+<div><div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:#8A94A3;margin-bottom:7px">Destructive confirm</div><button style="height:32px;padding:0 14px;border-radius:3px;border:1px solid #B3261E;background:#B3261E;color:#fff;font-size:13px;font-weight:600;cursor:pointer" style-hover="background:#961E17">Reverse journal</button></div>
+</div>
+<p style="margin:14px 0 0;font-size:12px;line-height:1.55;color:#5A6675">One primary action per surface. Disabled buttons always carry a tooltip stating why (<i>“Validation must pass before posting”</i>). Destructive outline promotes to solid only inside a confirmation dialog.</p>
+</div>
+</div>
+</div>
+
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;overflow:hidden;margin-bottom:18px">
+<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid #EDF0F4"><span style="font-size:12.5px;font-weight:600">Context selectors</span><span style="font:11px 'IBM Plex Mono',monospace;color:#7A8494">DealershipSelector · LegalEntitySelector · StoreSelector · DepartmentSelector · FiscalPeriodSelector · AccountingContextBar</span></div>
+<div style="padding:18px">
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px 14px">
+<div><div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:#8A94A3;margin-bottom:7px">Default</div><label style="display:block;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#5A6675;margin-bottom:4px">Legal entity</label><div style="height:32px;border:1px solid #C3CBD6;border-radius:3px;background:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 10px;font-size:13px"><span>01 — Kunes Auto Group LLC</span><span style="color:#7A8494;font-size:10px">▼</span></div></div>
+<div><div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:#8A94A3;margin-bottom:7px">Hover</div><label style="display:block;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#5A6675;margin-bottom:4px">Store</label><div style="height:32px;border:1px solid #9BA6B4;border-radius:3px;background:#FBFCFD;display:flex;align-items:center;justify-content:space-between;padding:0 10px;font-size:13px"><span>01 — Delvan Chevrolet</span><span style="color:#5A6675;font-size:10px">▼</span></div></div>
+<div><div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:#8A94A3;margin-bottom:7px">Focus / open</div><label style="display:block;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#5A6675;margin-bottom:4px">Department</label><div style="height:32px;border:1px solid #0B5CAB;border-radius:3px;background:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 10px;font-size:13px;outline:2px solid #0B5CAB;outline-offset:1px"><span>20 — New Vehicle</span><span style="color:#0B5CAB;font-size:10px">▲</span></div></div>
+<div><div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:#8A94A3;margin-bottom:7px">Disabled</div><label style="display:block;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#8A94A3;margin-bottom:4px">Dealership</label><div style="height:32px;border:1px solid #DCE1E8;border-radius:3px;background:#F3F5F8;display:flex;align-items:center;justify-content:space-between;padding:0 10px;font-size:13px;color:#8A94A3"><span>Kunes Auto Group</span><span style="font-size:10px">▼</span></div></div>
+<div><div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:#8A94A3;margin-bottom:7px">Error</div><label style="display:block;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#B3261E;margin-bottom:4px">Legal entity</label><div style="height:32px;border:1px solid #B3261E;border-radius:3px;background:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 10px;font-size:13px"><span style="color:#8A94A3">Select an entity</span><span style="color:#B3261E;font-size:10px">▼</span></div><div style="font-size:11.5px;color:#B3261E;margin-top:4px">Required before lines can be entered</div></div>
+<div><div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:#8A94A3;margin-bottom:7px">Read-only</div><label style="display:block;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#5A6675;margin-bottom:4px">Fiscal period</label><div style="height:32px;display:flex;align-items:center;font-size:13px;font-weight:500;border-bottom:1px solid #EDF0F4">2026-07 · Open</div></div>
+<div><div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:#8A94A3;margin-bottom:7px">Loading</div><label style="display:block;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#5A6675;margin-bottom:4px">Store</label><div style="height:32px;border:1px solid #DCE1E8;border-radius:3px;background:#F3F5F8;animation:pulse 1.4s ease-in-out infinite"></div></div>
+<div><div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:#8A94A3;margin-bottom:7px">Permission denied</div><label style="display:block;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#5A6675;margin-bottom:4px">Legal entity</label><div style="height:32px;display:flex;align-items:center;gap:7px;font-size:13px;color:#3C4A5C;border-bottom:1px solid #EDF0F4">01 — Kunes Auto Group LLC<span style="font:10px 'IBM Plex Mono',monospace;color:#8A94A3;border:1px solid #DCE1E8;border-radius:2px;padding:1px 5px">locked to scope</span></div></div>
+</div>
+<div style="height:1px;background:#EDF0F4;margin:18px 0 14px"></div>
+<div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:#8A94A3;margin-bottom:8px">AccountingContextBar — assembled</div>
+<div style="display:flex;align-items:stretch;border:1px solid #DCE1E8;border-radius:4px;background:#F7F9FB;overflow:hidden">
+<div style="padding:9px 16px;border-right:1px solid #DCE1E8"><div style="font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:#7A8494">Dealership</div><div style="font-size:13px;font-weight:500;margin-top:2px">Kunes Auto Group</div></div>
+<div style="padding:9px 16px;border-right:1px solid #DCE1E8"><div style="font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:#7A8494">Legal entity</div><div style="font-size:13px;font-weight:500;margin-top:2px">01 — Kunes Auto Group LLC</div></div>
+<div style="padding:9px 16px;border-right:1px solid #DCE1E8"><div style="font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:#7A8494">Store</div><div style="font-size:13px;font-weight:500;margin-top:2px">01 — Delvan Chevrolet</div></div>
+<div style="padding:9px 16px;border-right:1px solid #DCE1E8"><div style="font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:#7A8494">Department</div><div style="font-size:13px;font-weight:500;margin-top:2px">20 — New Vehicle</div></div>
+<div style="padding:9px 16px;flex:1"><div style="font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:#7A8494">Fiscal period</div><div style="font-size:13px;font-weight:500;margin-top:2px;display:flex;align-items:center;gap:7px">2026-07<span style="font:600 10px 'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.05em;padding:2px 6px;border-radius:2px;background:#E7F4EC;color:#1E6B45;border:1px solid #B6DCC4">Open</span></div></div>
+<button style="align-self:center;margin-right:12px;height:28px;padding:0 12px;border-radius:3px;border:1px solid #C3CBD6;background:#fff;color:#3C4A5C;font-size:12.5px;font-weight:500;cursor:pointer" style-hover="background:#F3F6F9;border-color:#9BA6B4">Change context</button>
+</div>
+<p style="margin:12px 0 0;font-size:12px;line-height:1.55;color:#5A6675">The bar is read-only display plus one explicit “Change context” affordance. Changing context on a dirty draft prompts to save or discard first. Selectors are populated from the user's assigned scope — options outside scope are never listed.</p>
+</div>
+</div>
+
+<div style="display:grid;grid-template-columns:1.1fr 1fr;gap:18px;margin-bottom:18px">
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;overflow:hidden">
+<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid #EDF0F4"><span style="font-size:12.5px;font-weight:600">Account lookup</span><span style="font:11px 'IBM Plex Mono',monospace;color:#7A8494">AccountLookup</span></div>
+<div style="padding:18px">
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+<div>
+<div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:#8A94A3;margin-bottom:7px">Open with results</div>
+<div style="height:32px;border:1px solid #0B5CAB;border-radius:3px 3px 0 0;background:#fff;display:flex;align-items:center;padding:0 10px;font:500 13px 'IBM Plex Mono',monospace">1200<span style="width:1px;height:15px;background:#0B5CAB;margin-left:1px"></span></div>
+<div style="border:1px solid #0B5CAB;border-top:none;border-radius:0 0 3px 3px;box-shadow:0 4px 10px rgba(20,32,48,.1);background:#fff">
+<div style="padding:6px 10px;border-bottom:1px solid #EDF0F4;background:#EEF3FA;display:flex;justify-content:space-between;font-size:13px"><span style="font:500 12.5px 'IBM Plex Mono',monospace">1200-01</span><span style="color:#3C4A5C">A/R — Vehicle</span></div>
+<div style="padding:6px 10px;border-bottom:1px solid #EDF0F4;display:flex;justify-content:space-between;font-size:13px"><span style="font:500 12.5px 'IBM Plex Mono',monospace">1200-02</span><span style="color:#3C4A5C">A/R — Service</span></div>
+<div style="padding:6px 10px;display:flex;justify-content:space-between;font-size:13px"><span style="font:500 12.5px 'IBM Plex Mono',monospace">1200-05</span><span style="color:#3C4A5C">A/R — Parts</span></div>
+</div>
+</div>
+<div>
+<div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:#8A94A3;margin-bottom:7px">Empty result</div>
+<div style="height:32px;border:1px solid #0B5CAB;border-radius:3px 3px 0 0;background:#fff;display:flex;align-items:center;padding:0 10px;font:500 13px 'IBM Plex Mono',monospace">9987-44</div>
+<div style="border:1px solid #0B5CAB;border-top:none;border-radius:0 0 3px 3px;box-shadow:0 4px 10px rgba(20,32,48,.1);background:#fff;padding:16px 12px;text-align:center">
+<div style="font-size:12.5px;font-weight:600;color:#3C4A5C">No account matches “9987-44”</div>
+<div style="font-size:12px;color:#5A6675;margin-top:4px;line-height:1.5">Within entity 01, store 01. Accounts outside your scope are not searched.</div>
+<button style="margin-top:10px;height:28px;padding:0 12px;border-radius:3px;border:1px solid #C3CBD6;background:#fff;color:#3C4A5C;font-size:12.5px;font-weight:500;cursor:pointer" style-hover="background:#F3F6F9">Clear and browse chart of accounts</button>
+</div>
+</div>
+<div>
+<div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:#8A94A3;margin-bottom:7px">Default / read-only / error</div>
+<div style="display:flex;flex-direction:column;gap:8px">
+<div style="height:32px;border:1px solid #C3CBD6;border-radius:3px;background:#fff;display:flex;align-items:center;padding:0 10px;font-size:13px;color:#8A94A3">Account number or name</div>
+<div style="height:32px;display:flex;align-items:center;font:500 13px 'IBM Plex Mono',monospace;border-bottom:1px solid #EDF0F4">1200-01</div>
+<div><div style="height:32px;border:1px solid #B3261E;border-radius:3px;background:#fff;display:flex;align-items:center;padding:0 10px;font:500 13px 'IBM Plex Mono',monospace">1200-99</div><div style="font-size:11.5px;color:#B3261E;margin-top:4px">Account is inactive for this period</div></div>
+</div>
+</div>
+<div>
+<div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:#8A94A3;margin-bottom:7px">Loading / disabled</div>
+<div style="display:flex;flex-direction:column;gap:8px">
+<div style="height:32px;border:1px solid #C3CBD6;border-radius:3px;background:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 10px;font-size:13px;color:#5A6675">Searching…<span style="width:12px;height:12px;border:2px solid #DCE1E8;border-top-color:#0B5CAB;border-radius:50%;animation:spin .7s linear infinite;display:inline-block"></span></div>
+<div style="height:32px;border:1px solid #DCE1E8;border-radius:3px;background:#F3F5F8;display:flex;align-items:center;padding:0 10px;font-size:13px;color:#8A94A3">Select an entity first</div>
+</div>
+<p style="margin:9px 0 0;font-size:11.5px;line-height:1.5;color:#5A6675">Typeahead searches number and name, minimum 2 characters, 250ms debounce, arrow keys to move, Enter to select, Escape to close and restore the prior value.</p>
+</div>
+</div>
+</div>
+</div>
+
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;overflow:hidden">
+<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid #EDF0F4"><span style="font-size:12.5px;font-weight:600">Status &amp; validation</span><span style="font:11px 'IBM Plex Mono',monospace;color:#7A8494">StatusBadge · ValidationBanner</span></div>
+<div style="padding:18px">
+<div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:#8A94A3;margin-bottom:8px">StatusBadge</div>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+<span style="font:600 10.5px 'IBM Plex Mono',monospace;letter-spacing:.05em;text-transform:uppercase;padding:4px 8px;border-radius:3px;background:#FFF6E0;color:#8A5A00;border:1px solid #EBD49A">Draft</span>
+<span style="font:600 10.5px 'IBM Plex Mono',monospace;letter-spacing:.05em;text-transform:uppercase;padding:4px 8px;border-radius:3px;background:#EEF3FA;color:#0B5CAB;border:1px solid #C6D8EE">Validated</span>
+<span style="font:600 10.5px 'IBM Plex Mono',monospace;letter-spacing:.05em;text-transform:uppercase;padding:4px 8px;border-radius:3px;background:#E7F4EC;color:#1E6B45;border:1px solid #B6DCC4">Posted</span>
+<span style="font:600 10.5px 'IBM Plex Mono',monospace;letter-spacing:.05em;text-transform:uppercase;padding:4px 8px;border-radius:3px;background:#EDEFF3;color:#4A5666;border:1px solid #D3D8E0">Reversed</span>
+</div>
+<div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:#8A94A3;margin-bottom:8px">ValidationBanner</div>
+<div style="display:flex;flex-direction:column;gap:10px">
+<div style="display:flex;gap:10px;padding:11px 13px;border:1px solid #F0C0BB;background:#FDECEA;border-radius:4px"><span style="flex:none;width:17px;height:17px;border-radius:50%;background:#B3261E;color:#fff;font:700 11px/17px 'IBM Plex Sans';text-align:center">!</span><div><div style="font-size:12.5px;font-weight:600;color:#B3261E">Validation failed — journal is out of balance</div><div style="font-size:12.5px;color:#3C4A5C;margin-top:2px;line-height:1.5">Total debits 24,500.00 do not equal total credits 24,000.00. Difference of 500.00 on the credit side.</div></div></div>
+<div style="display:flex;gap:10px;padding:11px 13px;border:1px solid #B6DCC4;background:#E7F4EC;border-radius:4px"><span style="flex:none;width:17px;height:17px;border-radius:50%;background:#1E6B45;color:#fff;font:700 11px/17px 'IBM Plex Sans';text-align:center">✓</span><div><div style="font-size:12.5px;font-weight:600;color:#1E6B45">Validation passed</div><div style="font-size:12.5px;color:#3C4A5C;margin-top:2px;line-height:1.5">All lines accepted. Fiscal period 2026-07 is open. This journal is eligible to post.</div></div></div>
+<div style="display:flex;gap:10px;padding:11px 13px;border:1px solid #C6D8EE;background:#EEF3FA;border-radius:4px"><span style="flex:none;width:17px;height:17px;border-radius:50%;background:#0B5CAB;color:#fff;font:700 11px/17px 'IBM Plex Sans';text-align:center">i</span><div><div style="font-size:12.5px;font-weight:600;color:#0B5CAB">Draft not yet validated</div><div style="font-size:12.5px;color:#3C4A5C;margin-top:2px;line-height:1.5">Running totals are shown for usability only. Posting eligibility is decided by the backend.</div></div></div>
+</div>
+<p style="margin:12px 0 0;font-size:12px;line-height:1.55;color:#5A6675">Banner text is rendered from the backend payload, never composed client-side. When the backend returns line-level detail, each affected line number becomes a link that focuses that row.</p>
+</div>
+</div>
+</div>
+
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;overflow:hidden;margin-bottom:18px">
+<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid #EDF0F4"><span style="font-size:12.5px;font-weight:600">Financial table</span><span style="font:11px 'IBM Plex Mono',monospace;color:#7A8494">FinancialDataTable · MoneyCell · DebitCreditCell · TotalsFooter · AddLineButton · RemoveLineAction</span></div>
+<div style="padding:18px">
+<div style="display:grid;grid-template-columns:1fr 300px;gap:20px">
+<div>
+<div style="border:1px solid #DCE1E8;border-radius:4px;overflow:hidden">
+<table style="width:100%;border-collapse:collapse;font-size:13px">
+<thead><tr style="background:#1E3A5C;color:#fff">
+<th style="text-align:left;padding:7px 10px;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;width:40px">#</th>
+<th style="text-align:left;padding:7px 10px;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;width:110px">Account</th>
+<th style="text-align:left;padding:7px 10px;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase">Description</th>
+<th style="text-align:right;padding:7px 10px;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;width:110px">Debit</th>
+<th style="text-align:right;padding:7px 10px;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;width:110px">Credit</th>
+<th style="text-align:center;padding:7px 10px;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;width:64px">Actions</th>
+</tr></thead>
+<tbody>
+<tr style="border-bottom:1px solid #EDF0F4"><td style="padding:6px 10px;font:12.5px 'IBM Plex Mono',monospace;color:#7A8494">1</td><td style="padding:6px 10px;font:500 12.5px 'IBM Plex Mono',monospace">1200-01</td><td style="padding:6px 10px">Accounts Receivable — Vehicle</td><td style="padding:6px 10px;text-align:right;font:500 13px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums">24,500.00</td><td style="padding:6px 10px;text-align:right;font:400 13px 'IBM Plex Mono',monospace;color:#AEB6C2">—</td><td style="padding:6px 10px;text-align:center"><button style="width:24px;height:24px;border-radius:3px;border:1px solid transparent;background:transparent;color:#7A8494;font-size:14px;cursor:pointer" style-hover="border-color:#F0C0BB;background:#FDECEA;color:#B3261E">×</button></td></tr>
+<tr style="border-bottom:1px solid #EDF0F4;background:#F7FAFD"><td style="padding:6px 10px;font:12.5px 'IBM Plex Mono',monospace;color:#7A8494">2</td><td style="padding:6px 10px"><span style="display:inline-flex;align-items:center;height:24px;padding:0 7px;border:1px solid #0B5CAB;border-radius:3px;background:#fff;font:500 12.5px 'IBM Plex Mono',monospace;outline:2px solid #0B5CAB;outline-offset:1px">4100-00</span></td><td style="padding:6px 10px">Vehicle Sales — New</td><td style="padding:6px 10px;text-align:right;font:400 13px 'IBM Plex Mono',monospace;color:#AEB6C2">—</td><td style="padding:6px 10px;text-align:right;font:500 13px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums">24,500.00</td><td style="padding:6px 10px;text-align:center"><button style="width:24px;height:24px;border-radius:3px;border:1px solid #F0C0BB;background:#FDECEA;color:#B3261E;font-size:14px;cursor:pointer">×</button></td></tr>
+<tr style="border-bottom:1px solid #EDF0F4;background:#FDF3F2"><td style="padding:6px 10px;font:12.5px 'IBM Plex Mono',monospace;color:#B3261E">3</td><td style="padding:6px 10px"><span style="display:inline-flex;align-items:center;height:24px;padding:0 7px;border:1px solid #B3261E;border-radius:3px;background:#fff;font:500 12.5px 'IBM Plex Mono',monospace">—</span></td><td style="padding:6px 10px;color:#B3261E;font-size:12.5px">Account required</td><td style="padding:6px 10px;text-align:right;font:500 13px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums">1,250.00</td><td style="padding:6px 10px;text-align:right;font:400 13px 'IBM Plex Mono',monospace;color:#AEB6C2">—</td><td style="padding:6px 10px;text-align:center"><button style="width:24px;height:24px;border-radius:3px;border:1px solid transparent;background:transparent;color:#7A8494;font-size:14px;cursor:pointer">×</button></td></tr>
+<tr style="border-bottom:1px solid #EDF0F4;background:#FBFCFD"><td style="padding:6px 10px;font:12.5px 'IBM Plex Mono',monospace;color:#AEB6C2">4</td><td style="padding:6px 10px" colspan="4"><div style="height:14px;width:70%;border-radius:2px;background:#EDF0F4;animation:pulse 1.4s ease-in-out infinite"></div></td><td></td></tr>
+<tr style="background:#F3F6F9;border-top:2px solid #1E3A5C"><td style="padding:8px 10px;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C" colspan="3">Totals — 4 lines</td><td style="padding:8px 10px;text-align:right;font:600 13.5px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums">25,750.00</td><td style="padding:8px 10px;text-align:right;font:600 13.5px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums">24,500.00</td><td></td></tr>
+<tr style="background:#F3F6F9"><td style="padding:0 10px 8px;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#B3261E" colspan="3">Variance — credit side short</td><td style="padding:0 10px 8px;text-align:right" colspan="2"><span style="font:600 13.5px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;color:#B3261E">1,250.00</span></td><td></td></tr>
+</tbody>
+</table>
+<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-top:1px solid #DCE1E8;background:#fff">
+<div style="display:flex;gap:8px"><button style="height:28px;padding:0 11px;border-radius:3px;border:1px dashed #9BA6B4;background:#fff;color:#0B5CAB;font-size:12.5px;font-weight:600;cursor:pointer" style-hover="border-color:#0B5CAB;background:#F5F9FD">+ Add line</button><button style="height:28px;padding:0 11px;border-radius:3px;border:1px solid #DCE1E8;background:#fff;color:#5A6675;font-size:12.5px;font-weight:500;cursor:pointer" style-hover="background:#F3F6F9">Duplicate line</button></div>
+<span style="font-size:11.5px;color:#8A94A3">Duplicate shown only where the backend supports line copy · <span style="font:10.5px 'IBM Plex Mono',monospace;color:#8A5A00">API_CONFIRMATION_REQUIRED</span></span>
+</div>
+</div>
+<p style="margin:10px 0 0;font-size:12px;line-height:1.55;color:#5A6675">Row 2 shows an active edit cell, row 3 a line-level error, row 4 a loading skeleton. Row striping is off; separation is by hairline only so amounts stay legible in long journals.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:12px">
+<div><div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:#8A94A3;margin-bottom:6px">MoneyCell states</div><div style="border:1px solid #DCE1E8;border-radius:4px;overflow:hidden;font-size:13px">
+<div style="display:flex;justify-content:space-between;padding:6px 10px;border-bottom:1px solid #EDF0F4"><span style="color:#5A6675;font-size:12px">Value</span><span style="font:500 13px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums">24,500.00</span></div>
+<div style="display:flex;justify-content:space-between;padding:6px 10px;border-bottom:1px solid #EDF0F4"><span style="color:#5A6675;font-size:12px">Empty side</span><span style="font:13px 'IBM Plex Mono',monospace;color:#AEB6C2">—</span></div>
+<div style="display:flex;justify-content:space-between;padding:6px 10px;border-bottom:1px solid #EDF0F4"><span style="color:#5A6675;font-size:12px">Negative</span><span style="font:500 13px 'IBM Plex Mono',monospace;color:#B3261E">(1,250.00)</span></div>
+<div style="display:flex;justify-content:space-between;padding:6px 10px;border-bottom:1px solid #EDF0F4"><span style="color:#5A6675;font-size:12px">Editing</span><span style="display:inline-flex;align-items:center;height:24px;padding:0 6px;border:1px solid #0B5CAB;border-radius:3px;font:500 13px 'IBM Plex Mono',monospace;outline:2px solid #0B5CAB;outline-offset:1px">24,500.00</span></div>
+<div style="display:flex;justify-content:space-between;padding:6px 10px;border-bottom:1px solid #EDF0F4"><span style="color:#5A6675;font-size:12px">Invalid</span><span style="display:inline-flex;align-items:center;height:24px;padding:0 6px;border:1px solid #B3261E;border-radius:3px;font:500 13px 'IBM Plex Mono',monospace;color:#B3261E">24,5OO</span></div>
+<div style="display:flex;justify-content:space-between;padding:6px 10px"><span style="color:#5A6675;font-size:12px">Read-only</span><span style="font:500 13px 'IBM Plex Mono',monospace;color:#3C4A5C">24,500.00</span></div>
+</div></div>
+<div><div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:#8A94A3;margin-bottom:6px">DebitCreditCell rule</div><p style="margin:0;font-size:12px;line-height:1.55;color:#5A6675">Entering a value on one side clears the other and announces the change. Both sides populated is rejected at the cell, before submit. Blank both sides is allowed while drafting and reported by the backend on validate.</p></div>
+</div>
+</div>
+</div>
+</div>
+
+<div style="display:grid;grid-template-columns:1.4fr 1fr;gap:18px;margin-bottom:18px">
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;overflow:hidden">
+<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid #EDF0F4"><span style="font-size:12.5px;font-weight:600">Screen states</span><span style="font:11px 'IBM Plex Mono',monospace;color:#7A8494">LoadingState · EmptyState · ErrorState · UnauthorizedState</span></div>
+<div style="padding:18px;display:grid;grid-template-columns:1fr 1fr;gap:14px">
+<div style="border:1px solid #DCE1E8;border-radius:4px;padding:22px 16px;text-align:center"><div style="width:22px;height:22px;margin:0 auto 10px;border:2.5px solid #DCE1E8;border-top-color:#0B5CAB;border-radius:50%;animation:spin .7s linear infinite"></div><div style="font-size:12.5px;font-weight:600">Loading journal…</div><div style="font-size:12px;color:#5A6675;margin-top:3px">Skeleton rows replace the table after 400ms</div></div>
+<div style="border:1px solid #DCE1E8;border-radius:4px;padding:22px 16px;text-align:center"><div style="width:26px;height:26px;margin:0 auto 10px;border:1.5px dashed #B9C0CA;border-radius:3px"></div><div style="font-size:12.5px;font-weight:600">No journal lines yet</div><div style="font-size:12px;color:#5A6675;margin-top:3px;line-height:1.5">Add the first line to begin</div><button style="margin-top:10px;height:28px;padding:0 12px;border-radius:3px;border:1px solid #0B5CAB;background:#0B5CAB;color:#fff;font-size:12.5px;font-weight:600;cursor:pointer">+ Add line</button></div>
+<div style="border:1px solid #F0C0BB;background:#FDECEA;border-radius:4px;padding:22px 16px;text-align:center"><div style="width:22px;height:22px;margin:0 auto 10px;border-radius:50%;background:#B3261E;color:#fff;font:700 13px/22px 'IBM Plex Sans'">!</div><div style="font-size:12.5px;font-weight:600;color:#B3261E">Journal could not be loaded</div><div style="font-size:12px;color:#3C4A5C;margin-top:3px;line-height:1.5">Backend error message is shown verbatim, with a correlation id</div><button style="margin-top:10px;height:28px;padding:0 12px;border-radius:3px;border:1px solid #C3CBD6;background:#fff;color:#3C4A5C;font-size:12.5px;font-weight:500;cursor:pointer">Retry</button></div>
+<div style="border:1px solid #DCE1E8;border-radius:4px;padding:22px 16px;text-align:center;background:#F7F9FB"><div style="width:22px;height:22px;margin:0 auto 10px;border:2px solid #7A8494;border-radius:50%"></div><div style="font-size:12.5px;font-weight:600">You don't have access to Journal Entry</div><div style="font-size:12px;color:#5A6675;margin-top:3px;line-height:1.5">Contact your Accounting administrator. Nav item is hidden, not disabled.</div></div>
+</div>
+</div>
+
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;overflow:hidden">
+<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid #EDF0F4"><span style="font-size:12.5px;font-weight:600">Confirmation dialog</span><span style="font:11px 'IBM Plex Mono',monospace;color:#7A8494">ConfirmationDialog</span></div>
+<div style="padding:18px">
+<div style="border:1px solid #C3CBD6;border-radius:5px;box-shadow:0 8px 24px rgba(20,32,48,.16);overflow:hidden;background:#fff">
+<div style="padding:14px 18px;border-bottom:1px solid #EDF0F4"><div style="font-size:15px;font-weight:600">Reverse journal JE-2026-07-00418?</div></div>
+<div style="padding:14px 18px;font-size:13px;line-height:1.6;color:#3C4A5C">This creates an offsetting entry in fiscal period 2026-07. The original journal stays on the ledger. This cannot be undone.
+<div style="margin-top:11px;border:1px solid #DCE1E8;border-radius:3px;overflow:hidden">
+<div style="display:flex;justify-content:space-between;padding:5px 10px;border-bottom:1px solid #EDF0F4;font-size:12.5px"><span style="color:#5A6675">Total debit</span><span style="font:500 12.5px 'IBM Plex Mono',monospace">24,500.00</span></div>
+<div style="display:flex;justify-content:space-between;padding:5px 10px;font-size:12.5px"><span style="color:#5A6675">Total credit</span><span style="font:500 12.5px 'IBM Plex Mono',monospace">24,500.00</span></div>
+</div>
+</div>
+<div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;background:#F7F9FB;border-top:1px solid #EDF0F4"><button style="height:32px;padding:0 14px;border-radius:3px;border:1px solid #C3CBD6;background:#fff;color:#3C4A5C;font-size:13px;font-weight:500;cursor:pointer" style-hover="background:#F3F6F9">Cancel</button><button style="height:32px;padding:0 14px;border-radius:3px;border:1px solid #B3261E;background:#B3261E;color:#fff;font-size:13px;font-weight:600;cursor:pointer" style-hover="background:#961E17">Reverse journal</button></div>
+</div>
+<p style="margin:12px 0 0;font-size:12px;line-height:1.55;color:#5A6675">Focus moves to the dialog and is trapped; Escape cancels; the destructive button is never the default focus target. The dialog restates the amounts being affected.</p>
+</div>
+</div>
+</div>
+
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;overflow:hidden">
+<div style="background:#1E3A5C;color:#fff;padding:10px 18px;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase">Component state coverage</div>
+<table style="width:100%;border-collapse:collapse;font-size:12.5px">
+<thead><tr style="background:#F3F6F9;border-bottom:1px solid #DCE1E8">
+<th style="text-align:left;padding:7px 12px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C">Component</th>
+<th style="padding:7px 6px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C">Default</th>
+<th style="padding:7px 6px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C">Hover</th>
+<th style="padding:7px 6px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C">Focus</th>
+<th style="padding:7px 6px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C">Disabled</th>
+<th style="padding:7px 6px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C">Error</th>
+<th style="padding:7px 6px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C">Read-only</th>
+<th style="padding:7px 6px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C">Loading</th>
+<th style="text-align:left;padding:7px 12px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C">Permission denied</th>
+</tr></thead>
+<tbody>
+<sc-for list="{{ matrix }}" as="row" hint-placeholder-count="26">
+<tr style="border-bottom:1px solid #EDF0F4">
+<td style="padding:6px 12px;font:500 12px 'IBM Plex Mono',monospace">{{ row.name }}</td>
+<td style="padding:6px 6px;text-align:center;color:#5A6675">{{ row.d }}</td>
+<td style="padding:6px 6px;text-align:center;color:#5A6675">{{ row.h }}</td>
+<td style="padding:6px 6px;text-align:center;color:#5A6675">{{ row.f }}</td>
+<td style="padding:6px 6px;text-align:center;color:#5A6675">{{ row.dis }}</td>
+<td style="padding:6px 6px;text-align:center;color:#5A6675">{{ row.e }}</td>
+<td style="padding:6px 6px;text-align:center;color:#5A6675">{{ row.r }}</td>
+<td style="padding:6px 6px;text-align:center;color:#5A6675">{{ row.l }}</td>
+<td style="padding:6px 12px;color:#5A6675">{{ row.p }}</td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+</section>
+
+<section id="s03" style="scroll-margin-top:70px;margin-bottom:64px">
+<div style="display:flex;align-items:baseline;gap:14px;padding-bottom:12px;border-bottom:2px solid #1E3A5C;margin-bottom:12px">
+<span style="font:600 13px 'IBM Plex Mono',monospace;color:#0B5CAB">03</span>
+<h2 style="margin:0;font-size:24px;font-weight:600;letter-spacing:-.01em">Navigation and Accounting Shell</h2>
+</div>
+<p style="margin:0 0 24px;max-width:820px;font-size:13.5px;line-height:1.6;color:#4A5666">The existing application shell is retained: purple rail, white top bar, dealership context at top right. Only the Accounting section of the rail is restructured. No change is proposed to the platform-level shell outside this module.</p>
+
+<div style="display:grid;grid-template-columns:1fr 300px;gap:18px;margin-bottom:18px">
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;overflow:hidden">
+<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid #EDF0F4"><span style="font-size:12.5px;font-weight:600">Shell — expanded navigation, Journal Entry selected</span><span style="font:11px 'IBM Plex Mono',monospace;color:#7A8494">1360 × 620 · rail 232px</span></div>
+<div style="padding:18px;background:#F3F5F8">
+<div style="display:flex;border:1px solid #C3CBD6;border-radius:4px;overflow:hidden;background:#fff;height:520px">
+<div style="width:232px;flex:none;background:linear-gradient(170deg,#4E2578,#331452);display:flex;flex-direction:column">
+<div style="height:52px;display:flex;align-items:center;gap:9px;padding:0 14px;border-bottom:1px solid rgba(255,255,255,.13)"><span style="width:18px;height:18px;background:#fff;transform:rotate(45deg);border-radius:3px;display:inline-block"></span><span style="color:#fff;font-size:14px;font-weight:600;letter-spacing:.03em">AutoMate</span></div>
+<div style="padding:14px 0;overflow:hidden">
+<div style="padding:0 14px 7px;font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.13em;text-transform:uppercase;color:rgba(255,255,255,.45)">Accounting</div>
+<div style="display:flex;align-items:center;gap:10px;padding:8px 14px;color:rgba(255,255,255,.82);font-size:13px" style-hover="background:rgba(255,255,255,.09);color:#fff"><span style="width:14px;height:14px;border:1.5px solid currentColor;border-radius:2px;flex:none"></span>Overview</div>
+<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;color:#fff;font-size:13px;font-weight:600;background:rgba(255,255,255,.08)"><span style="display:flex;align-items:center;gap:10px"><span style="width:14px;height:14px;border:1.5px solid currentColor;border-radius:50%;flex:none"></span>General Ledger</span><span style="font-size:9px;opacity:.7">▲</span></div>
+<a href="#s04" style="display:flex;align-items:center;gap:10px;padding:7px 14px 7px 38px;font-size:13px;font-weight:600;color:#fff;background:rgba(255,255,255,.16);border-left:3px solid #fff;text-decoration:none">Journal Entry</a>
+<div style="padding:7px 14px 7px 41px;font-size:13px;color:rgba(255,255,255,.72)" style-hover="background:rgba(255,255,255,.09);color:#fff">GL Inquiry</div>
+<div style="padding:7px 14px 7px 41px;font-size:13px;color:rgba(255,255,255,.72)" style-hover="background:rgba(255,255,255,.09);color:#fff">GL Search</div>
+<div style="padding:7px 14px 7px 41px;font-size:13px;color:rgba(255,255,255,.72)" style-hover="background:rgba(255,255,255,.09);color:#fff">Trial Balance</div>
+<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;color:rgba(255,255,255,.82);font-size:13px" style-hover="background:rgba(255,255,255,.09);color:#fff"><span style="display:flex;align-items:center;gap:10px"><span style="width:14px;height:14px;border:1.5px solid currentColor;flex:none;transform:rotate(45deg)"></span>Financial Reports</span><span style="font-size:9px;opacity:.7">▼</span></div>
+<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;color:rgba(255,255,255,.82);font-size:13px" style-hover="background:rgba(255,255,255,.09);color:#fff"><span style="display:flex;align-items:center;gap:10px"><span style="width:14px;height:10px;border-top:1.5px solid currentColor;border-bottom:1.5px solid currentColor;flex:none"></span>Organization Setup</span><span style="font-size:9px;opacity:.7">▼</span></div>
+<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;color:rgba(255,255,255,.82);font-size:13px" style-hover="background:rgba(255,255,255,.09);color:#fff"><span style="display:flex;align-items:center;gap:10px"><span style="width:14px;height:14px;border:1.5px solid currentColor;border-radius:2px 2px 7px 7px;flex:none"></span>Security and Roles</span><span style="font-size:9px;opacity:.7">▼</span></div>
+<div style="display:flex;align-items:center;gap:10px;padding:8px 14px;color:rgba(255,255,255,.82);font-size:13px" style-hover="background:rgba(255,255,255,.09);color:#fff"><span style="width:14px;height:14px;border:1.5px solid currentColor;border-radius:2px;flex:none;position:relative"></span>Audit</div>
+</div>
+<div style="margin-top:auto;padding:12px 14px;border-top:1px solid rgba(255,255,255,.13);display:flex;align-items:center;gap:9px;color:rgba(255,255,255,.6);font-size:12px"><span style="width:14px;height:14px;border:1.5px solid currentColor;border-radius:50%;flex:none"></span>Collapse</div>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;min-width:0">
+<div style="height:52px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 18px;border-bottom:1px solid #DCE1E8;background:#fff">
+<div style="display:flex;align-items:center;gap:10px;font-size:13px;color:#5A6675"><span style="color:#7A8494">AutoMate · Dealer Platform</span><span style="width:1px;height:16px;background:#DCE1E8"></span><span style="font-weight:600;color:#16202E">Accounting</span></div>
+<div style="display:flex;align-items:center;gap:14px">
+<span style="width:16px;height:16px;border:1.5px solid #5A6675;border-radius:50%;display:inline-block"></span>
+<span style="width:16px;height:16px;border:1.5px solid #5A6675;border-radius:2px;display:inline-block"></span>
+<div style="height:30px;display:flex;align-items:center;gap:8px;padding:0 11px;border:1px solid #C3CBD6;border-radius:3px;font-size:13px">Kunes Auto Group<span style="color:#7A8494;font-size:10px">▼</span></div>
+<span style="width:28px;height:28px;border-radius:50%;background:#0B5CAB;color:#fff;font:600 11px/28px 'IBM Plex Sans';text-align:center">SA</span>
+</div>
+</div>
+<div style="padding:16px 20px;border-bottom:1px solid #DCE1E8;background:#fff">
+<div style="display:flex;align-items:center;gap:7px;font-size:12px;color:#5A6675;margin-bottom:9px"><span style="color:#0B5CAB">Accounting</span><span style="color:#B9C0CA">/</span><span style="color:#0B5CAB">General Ledger</span><span style="color:#B9C0CA">/</span><span style="color:#3C4A5C;font-weight:500">Journal Entry</span></div>
+<div style="display:flex;align-items:center;justify-content:space-between;gap:16px">
+<div style="display:flex;align-items:center;gap:12px"><h4 style="margin:0;font-size:22px;font-weight:600;letter-spacing:-.01em">Journal Entry</h4><span style="font:600 10.5px 'IBM Plex Mono',monospace;letter-spacing:.05em;text-transform:uppercase;padding:4px 8px;border-radius:3px;background:#FFF6E0;color:#8A5A00;border:1px solid #EBD49A">Draft</span></div>
+<div style="display:flex;gap:8px"><button style="height:32px;padding:0 14px;border-radius:3px;border:1px solid #C3CBD6;background:#fff;color:#3C4A5C;font-size:13px;font-weight:500;cursor:pointer">Save Draft</button><button style="height:32px;padding:0 14px;border-radius:3px;border:1px solid #0B5CAB;background:#0B5CAB;color:#fff;font-size:13px;font-weight:600;cursor:pointer">Validate</button></div>
+</div>
+</div>
+<div style="display:flex;align-items:stretch;border-bottom:1px solid #DCE1E8;background:#F7F9FB;font-size:12.5px">
+<div style="padding:8px 16px;border-right:1px solid #DCE1E8"><div style="font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:#7A8494">Legal entity</div><div style="font-weight:500;margin-top:2px">01 — Kunes Auto Group LLC</div></div>
+<div style="padding:8px 16px;border-right:1px solid #DCE1E8"><div style="font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:#7A8494">Store</div><div style="font-weight:500;margin-top:2px">01 — Delvan Chevrolet</div></div>
+<div style="padding:8px 16px;border-right:1px solid #DCE1E8"><div style="font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:#7A8494">Department</div><div style="font-weight:500;margin-top:2px">20 — New Vehicle</div></div>
+<div style="padding:8px 16px"><div style="font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:#7A8494">Fiscal period</div><div style="font-weight:500;margin-top:2px">2026-07 · Open</div></div>
+</div>
+<div style="flex:1;background:#E9EDF2;padding:16px 20px;display:flex;flex-direction:column;gap:12px">
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:4px;height:78px;display:flex;align-items:center;padding:0 14px;font-size:12px;color:#8A94A3;font-family:'IBM Plex Mono',monospace">Journal header — entry date · source · document no. · reference · memo</div>
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:4px;flex:1;display:flex;align-items:center;justify-content:center;font-size:12px;color:#8A94A3;font-family:'IBM Plex Mono',monospace">Journal lines table + pinned totals footer</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;overflow:hidden">
+<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid #EDF0F4"><span style="font-size:12.5px;font-weight:600">Collapsed</span><span style="font:11px 'IBM Plex Mono',monospace;color:#7A8494">56px</span></div>
+<div style="padding:18px;background:#F3F5F8">
+<div style="display:flex;border:1px solid #C3CBD6;border-radius:4px;overflow:hidden;background:#fff;height:340px">
+<div style="width:56px;flex:none;background:linear-gradient(170deg,#4E2578,#331452);display:flex;flex-direction:column;align-items:center;padding-top:0">
+<div style="height:52px;display:flex;align-items:center;justify-content:center;width:100%;border-bottom:1px solid rgba(255,255,255,.13)"><span style="width:18px;height:18px;background:#fff;transform:rotate(45deg);border-radius:3px;display:inline-block"></span></div>
+<div style="display:flex;flex-direction:column;gap:4px;padding:12px 0;width:100%;align-items:center">
+<div style="width:36px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:3px" style-hover="background:rgba(255,255,255,.12)"><span style="width:14px;height:14px;border:1.5px solid rgba(255,255,255,.8);border-radius:2px"></span></div>
+<div style="width:36px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:3px;background:rgba(255,255,255,.18);position:relative"><span style="position:absolute;left:-10px;width:3px;height:22px;background:#fff;border-radius:0 2px 2px 0"></span><span style="width:14px;height:14px;border:1.5px solid #fff;border-radius:50%"></span></div>
+<div style="width:36px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:3px" style-hover="background:rgba(255,255,255,.12)"><span style="width:13px;height:13px;border:1.5px solid rgba(255,255,255,.8);transform:rotate(45deg)"></span></div>
+<div style="width:36px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:3px" style-hover="background:rgba(255,255,255,.12)"><span style="width:14px;height:10px;border-top:1.5px solid rgba(255,255,255,.8);border-bottom:1.5px solid rgba(255,255,255,.8)"></span></div>
+<div style="width:36px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:3px" style-hover="background:rgba(255,255,255,.12)"><span style="width:14px;height:14px;border:1.5px solid rgba(255,255,255,.8);border-radius:2px 2px 7px 7px"></span></div>
+</div>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;min-width:0">
+<div style="height:52px;border-bottom:1px solid #DCE1E8;display:flex;align-items:center;padding:0 14px;font-size:12.5px;font-weight:600">Accounting</div>
+<div style="padding:12px 14px;border-bottom:1px solid #DCE1E8"><div style="font-size:11px;color:#5A6675;margin-bottom:6px">Accounting / General Ledger / <b style="font-weight:500">Journal Entry</b></div><div style="font-size:17px;font-weight:600">Journal Entry</div></div>
+<div style="flex:1;background:#E9EDF2"></div>
+</div>
+</div>
+<div style="margin-top:12px;padding:10px 12px;border:1px solid #DCE1E8;border-radius:4px;background:#fff;font-size:12px;line-height:1.55;color:#5A6675">Collapsing keeps the selected-item marker and shows labels in a hover flyout. State persists per user. Breadcrumb becomes the primary wayfinding when collapsed.</div>
+</div>
+</div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;padding:20px 22px">
+<h3 style="margin:0 0 12px;font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C">Proposed Accounting navigation</h3>
+<div style="font:12.5px/1.9 'IBM Plex Mono',monospace;color:#3C4A5C">
+<div>Accounting</div>
+<div style="color:#5A6675">├─ Overview<span style="color:#AEB6C2"> · Financial Dashboard, Command Center, Group Dashboard</span></div>
+<div>├─ General Ledger</div>
+<div style="padding-left:14px;color:#0B5CAB;font-weight:600">│&nbsp;&nbsp;├─ Journal Entry&nbsp;&nbsp;<span style="font:10px 'IBM Plex Mono',monospace;background:#EEF3FA;border:1px solid #C6D8EE;border-radius:2px;padding:1px 5px">R0 scope</span></div>
+<div style="padding-left:14px;color:#8A94A3">│&nbsp;&nbsp;├─ GL Inquiry</div>
+<div style="padding-left:14px;color:#8A94A3">│&nbsp;&nbsp;├─ GL Search</div>
+<div style="padding-left:14px;color:#8A94A3">│&nbsp;&nbsp;└─ Trial Balance</div>
+<div style="color:#8A94A3">├─ Financial Reports · Balance Sheet, Income Statement</div>
+<div style="color:#8A94A3">├─ Organization Setup · Legal Entities, Stores, Departments</div>
+<div style="color:#8A94A3">├─ Security and Roles · Users, Role Templates</div>
+<div style="color:#8A94A3">└─ Audit · Audit History</div>
+</div>
+<p style="margin:12px 0 0;font-size:12px;line-height:1.55;color:#5A6675">Grey items are named and placed but not designed in R0. Trial Balance sits under General Ledger rather than Financial Reports because it is a working-balance tool, not a published statement — <span style="font:10.5px 'IBM Plex Mono',monospace;color:#8A5A00">SME_DECISION_REQUIRED</span>.</p>
+</div>
+
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;padding:20px 22px">
+<h3 style="margin:0 0 12px;font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C">Shell anatomy</h3>
+<div style="display:flex;flex-direction:column;gap:10px;font-size:12.5px;line-height:1.55;color:#3C4A5C">
+<div style="display:grid;grid-template-columns:130px 1fr;gap:12px"><b style="font-weight:600">Top bar · 52px</b><span style="color:#5A6675">Platform identity, module name, global search, notifications, dealership-group selector, user. Unchanged from the current shell.</span></div>
+<div style="display:grid;grid-template-columns:130px 1fr;gap:12px"><b style="font-weight:600">Nav rail</b><span style="color:#5A6675">232px expanded / 56px collapsed. One section open at a time; selected leaf marked with a 3px white bar and solid tint.</span></div>
+<div style="display:grid;grid-template-columns:130px 1fr;gap:12px"><b style="font-weight:600">Breadcrumb · 12px</b><span style="color:#5A6675">Always three levels for GL screens. Last crumb is the current page and is not a link.</span></div>
+<div style="display:grid;grid-template-columns:130px 1fr;gap:12px"><b style="font-weight:600">Title area</b><span style="color:#5A6675">Page title, status badge, document number when assigned. Left aligned, single row.</span></div>
+<div style="display:grid;grid-template-columns:130px 1fr;gap:12px"><b style="font-weight:600">Action area</b><span style="color:#5A6675">Right aligned, workflow actions only, maximum one primary. Never wraps — overflow moves into a “More” menu at 1280px.</span></div>
+<div style="display:grid;grid-template-columns:130px 1fr;gap:12px"><b style="font-weight:600">Context bar</b><span style="color:#5A6675">Sticky under the header. Present on every Accounting screen with identical field order.</span></div>
+<div style="display:grid;grid-template-columns:130px 1fr;gap:12px"><b style="font-weight:600">Work area</b><span style="color:#5A6675">Page ground with white surfaces. Vertical scroll happens here, never on the shell.</span></div>
+</div>
+</div>
+</div>
+</section>
+
+<section id="s04" style="scroll-margin-top:70px;margin-bottom:64px">
+<div style="display:flex;align-items:baseline;gap:14px;padding-bottom:12px;border-bottom:2px solid #1E3A5C;margin-bottom:12px">
+<span style="font:600 13px 'IBM Plex Mono',monospace;color:#0B5CAB">04</span>
+<h2 style="margin:0;font-size:24px;font-weight:600;letter-spacing:-.01em">Journal Entry</h2>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px">
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;padding:20px 22px">
+<h3 style="margin:0 0 12px;font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C">Current-screen assessment</h3>
+<div style="display:flex;flex-direction:column;gap:9px;font-size:12.5px;line-height:1.55;color:#3C4A5C">
+<div style="display:grid;grid-template-columns:16px 1fr;gap:9px"><span style="color:#B3261E;font-weight:700">1</span><span><b style="font-weight:600">Workflow is plain text.</b> Draft / Validate / Post / Reverse read as a numbered list rather than actionable controls, so the current state of the journal is never visible.</span></div>
+<div style="display:grid;grid-template-columns:16px 1fr;gap:9px"><span style="color:#B3261E;font-weight:700">2</span><span><b style="font-weight:600">No status object.</b> Nothing on screen says whether this journal is a draft, validated, posted or reversed.</span></div>
+<div style="display:grid;grid-template-columns:16px 1fr;gap:9px"><span style="color:#B3261E;font-weight:700">3</span><span><b style="font-weight:600">Context is unlabelled input boxes.</b> Entity, store, department and period sit in a row of bare fields with no grouping, units or open/closed indication.</span></div>
+<div style="display:grid;grid-template-columns:16px 1fr;gap:9px"><span style="color:#B3261E;font-weight:700">4</span><span><b style="font-weight:600">Cross-screen navigation is a sentence of links</b> separated by middots, below the content, competing with the workflow itself.</span></div>
+<div style="display:grid;grid-template-columns:16px 1fr;gap:9px"><span style="color:#B3261E;font-weight:700">5</span><span><b style="font-weight:600">No visual hierarchy or work surface.</b> Content floats on the page ground; the eye has no entry point and the page reads as an unstyled form.</span></div>
+<div style="display:grid;grid-template-columns:16px 1fr;gap:9px"><span style="color:#B3261E;font-weight:700">6</span><span><b style="font-weight:600">No table conventions.</b> Money is not right-aligned or tabular, debit and credit are not visually paired, and totals are not pinned.</span></div>
+<div style="display:grid;grid-template-columns:16px 1fr;gap:9px"><span style="color:#B3261E;font-weight:700">7</span><span><b style="font-weight:600">Empty and error states are undefined.</b> The screen renders the same regardless of whether data loaded, failed or is forbidden.</span></div>
+<div style="display:grid;grid-template-columns:16px 1fr;gap:9px"><span style="color:#1E6B45;font-weight:700">✓</span><span><b style="font-weight:600">What is already right:</b> the workflow itself, the field set, the filter set and the backend validation behaviour. All are preserved unchanged.</span></div>
+</div>
+</div>
+
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;overflow:hidden">
+<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid #EDF0F4"><span style="font-size:12.5px;font-weight:600">Low-fidelity layout</span><span style="font:11px 'IBM Plex Mono',monospace;color:#7A8494">zoning · 1360px</span></div>
+<div style="padding:18px;background:#F3F5F8">
+<div style="border:1px solid #C3CBD6;background:#fff;border-radius:4px;overflow:hidden;font-family:'IBM Plex Mono',monospace">
+<div style="display:flex">
+<div style="width:54px;background:#E4E1EA;border-right:1px solid #DCE1E8;min-height:392px;display:flex;align-items:flex-start;justify-content:center;padding-top:12px;font-size:9px;color:#7A6E80;writing-mode:vertical-rl">NAV</div>
+<div style="flex:1;padding:12px;display:flex;flex-direction:column;gap:8px">
+<div style="height:26px;background:#EDF0F4;border:1px dashed #C3CBD6;display:flex;align-items:center;padding:0 9px;font-size:10px;color:#7A8494">Breadcrumb · Accounting / General Ledger / Journal Entry</div>
+<div style="height:40px;background:#EDF0F4;border:1px dashed #C3CBD6;display:flex;align-items:center;justify-content:space-between;padding:0 9px;font-size:10px;color:#7A8494"><span>Title + status badge + document no.</span><span>Save Draft · Validate · Post · Reverse</span></div>
+<div style="height:34px;background:#E6EDF4;border:1px dashed #B5C6D8;display:flex;align-items:center;padding:0 9px;font-size:10px;color:#5A7590">Context bar · dealership · entity · store · dept · fiscal period</div>
+<div style="height:30px;background:#FBF3E0;border:1px dashed #E0CC9C;display:flex;align-items:center;padding:0 9px;font-size:10px;color:#8A5A00">Validation banner — appears here, above the header, when returned</div>
+<div style="height:60px;background:#EDF0F4;border:1px dashed #C3CBD6;display:grid;grid-template-columns:repeat(5,1fr);gap:6px;padding:8px;font-size:9.5px;color:#7A8494"><div style="border:1px solid #DCE1E8;background:#fff;display:flex;align-items:center;justify-content:center">entry date</div><div style="border:1px solid #DCE1E8;background:#fff;display:flex;align-items:center;justify-content:center">source</div><div style="border:1px solid #DCE1E8;background:#fff;display:flex;align-items:center;justify-content:center">doc no.</div><div style="border:1px solid #DCE1E8;background:#fff;display:flex;align-items:center;justify-content:center">reference</div><div style="border:1px solid #DCE1E8;background:#fff;display:flex;align-items:center;justify-content:center">memo</div></div>
+<div style="flex:1;background:#EDF0F4;border:1px dashed #C3CBD6;padding:8px;display:flex;flex-direction:column;gap:5px;font-size:9.5px;color:#7A8494">
+<div style="height:18px;background:#D6DEE7;display:flex;align-items:center;padding:0 8px">#  account  description  store  dept  DEBIT  CREDIT  line memo  actions</div>
+<div style="height:16px;background:#fff;border:1px solid #E4E8EE"></div>
+<div style="height:16px;background:#fff;border:1px solid #E4E8EE"></div>
+<div style="height:16px;background:#fff;border:1px solid #E4E8EE"></div>
+<div style="height:16px;border:1px dashed #B9C0CA;display:flex;align-items:center;padding:0 8px;color:#0B5CAB">+ add line</div>
+<div style="height:22px;background:#D6DEE7;border-top:2px solid #1E3A5C;display:flex;align-items:center;justify-content:flex-end;gap:22px;padding:0 8px;color:#1E3A5C;font-weight:600">TOTAL DR · TOTAL CR · VARIANCE  ← pinned</div>
+</div>
+<div style="height:24px;background:#EDF0F4;border:1px dashed #C3CBD6;display:flex;align-items:center;padding:0 9px;font-size:10px;color:#7A8494">Related · GL Inquiry · Trial Balance · Audit History</div>
+</div>
+</div>
+</div>
+<p style="margin:12px 0 0;font-size:12px;line-height:1.55;color:#5A6675">Reading order is state → context → header → lines → totals. Totals never scroll out of view; the banner always sits above the fold so a rejected post is impossible to miss.</p>
+</div>
+</div>
+</div>
+
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;overflow:hidden;margin-bottom:18px">
+<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 18px;border-bottom:1px solid #EDF0F4">
+<div><div style="font-size:13px;font-weight:600">High-fidelity Journal Entry — all required states</div><div style="font-size:12px;color:#7A8494;margin-top:2px">Select a state to render it. Every state below is a required deliverable.</div></div>
+<div style="font:600 11px 'IBM Plex Mono',monospace;color:#0B5CAB;background:#EEF3FA;border:1px solid #C6D8EE;border-radius:3px;padding:5px 9px">{{ stateLabel }}</div>
+</div>
+<div style="padding:12px 18px;background:#F7F9FB;border-bottom:1px solid #DCE1E8;display:flex;flex-wrap:wrap;gap:16px">
+<sc-for list="{{ chipGroups }}" as="g" hint-placeholder-count="6">
+<div style="display:flex;flex-direction:column;gap:6px">
+<div style="font:600 9.5px 'IBM Plex Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:#8A94A3">{{ g.group }}</div>
+<div style="display:flex;gap:6px;flex-wrap:wrap">
+<sc-for list="{{ g.items }}" as="it" hint-placeholder-count="3">
+<button onClick="{{ it.onClick }}" style="height:27px;padding:0 10px;border-radius:3px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid {{ it.bd }};background:{{ it.bg }};color:{{ it.fg }}">{{ it.label }}</button>
+</sc-for>
+</div>
+</div>
+</sc-for>
+</div>
+
+<div style="padding:20px;background:#F3F5F8">
+<div style="position:relative;border:1px solid #C3CBD6;border-radius:4px;overflow:hidden;background:#E9EDF2;min-height:660px;display:flex;flex-direction:column">
+
+<div style="height:52px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 18px;border-bottom:1px solid #DCE1E8;background:#fff">
+<div style="display:flex;align-items:center;gap:10px;font-size:13px;color:#5A6675"><span style="width:16px;height:16px;background:#43206B;transform:rotate(45deg);border-radius:2px;display:inline-block"></span><span style="color:#7A8494">AutoMate · Dealer Platform</span><span style="width:1px;height:16px;background:#DCE1E8"></span><span style="font-weight:600;color:#16202E">Accounting</span></div>
+<div style="display:flex;align-items:center;gap:12px"><div style="height:30px;display:flex;align-items:center;gap:8px;padding:0 11px;border:1px solid #C3CBD6;border-radius:3px;font-size:13px">Kunes Auto Group<span style="color:#7A8494;font-size:10px">▼</span></div><span style="width:28px;height:28px;border-radius:50%;background:#0B5CAB;color:#fff;font:600 11px/28px 'IBM Plex Sans';text-align:center">SA</span></div>
+</div>
+
+<div style="padding:14px 20px 13px;border-bottom:1px solid #DCE1E8;background:#fff">
+<div style="display:flex;align-items:center;gap:7px;font-size:12px;color:#5A6675;margin-bottom:9px"><a href="#s03">Accounting</a><span style="color:#B9C0CA">/</span><a href="#s03">General Ledger</a><span style="color:#B9C0CA">/</span><span style="color:#3C4A5C;font-weight:500">Journal Entry</span></div>
+<div style="display:flex;align-items:center;justify-content:space-between;gap:16px">
+<div style="display:flex;align-items:center;gap:12px">
+<h4 style="margin:0;font-size:22px;font-weight:600;letter-spacing:-.01em">Journal Entry</h4>
+<span style="font:600 10.5px 'IBM Plex Mono',monospace;letter-spacing:.05em;text-transform:uppercase;padding:4px 8px;border-radius:3px;background:{{ badgeBg }};color:{{ badgeFg }};border:1px solid {{ badgeBd }}">{{ status }}</span>
+<span style="font:12px 'IBM Plex Mono',monospace;color:#7A8494">{{ docNo }}</span>
+</div>
+<div style="display:flex;align-items:center;gap:8px">
+<sc-if value="{{ readOnly }}" hint-placeholder-val="{{ false }}"><a href="#handoff" style="font-size:12.5px;font-weight:500;margin-right:6px">Audit history</a></sc-if>
+<button disabled="{{ cantSave }}" style="height:32px;padding:0 14px;border-radius:3px;border:1px solid #C3CBD6;background:#fff;color:#3C4A5C;font-size:13px;font-weight:500;cursor:pointer" style-hover="background:#F3F6F9;border-color:#9BA6B4">Save Draft</button>
+<button disabled="{{ cantValidate }}" style="height:32px;padding:0 14px;border-radius:3px;border:1px solid #C3CBD6;background:#fff;color:#3C4A5C;font-size:13px;font-weight:500;cursor:pointer" style-hover="background:#F3F6F9;border-color:#9BA6B4">Validate</button>
+<sc-if value="{{ canReverse }}" hint-placeholder-val="{{ false }}"><button style="height:32px;padding:0 14px;border-radius:3px;border:1px solid #B3261E;background:#fff;color:#B3261E;font-size:13px;font-weight:600;cursor:pointer" style-hover="background:#FDECEA">Reverse</button></sc-if>
+<sc-if value="{{ cantReverse }}" hint-placeholder-val="{{ true }}"><button disabled="{{ cantPost }}" title="Validation must pass before posting" style="height:32px;padding:0 14px;border-radius:3px;border:1px solid #0B5CAB;background:#0B5CAB;color:#fff;font-size:13px;font-weight:600;cursor:pointer" style-hover="background:#094C90;border-color:#094C90">Post</button></sc-if>
+</div>
+</div>
+</div>
+
+<div style="display:flex;align-items:stretch;border-bottom:1px solid #DCE1E8;background:#F7F9FB;font-size:12.5px">
+<div style="padding:8px 16px;border-right:1px solid #DCE1E8"><div style="font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:#7A8494">Dealership</div><div style="font-weight:500;margin-top:2px">Kunes Auto Group</div></div>
+<div style="padding:8px 16px;border-right:1px solid #DCE1E8"><div style="font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:#7A8494">Legal entity</div><div style="font-weight:500;margin-top:2px">01 — Kunes Auto Group LLC</div></div>
+<div style="padding:8px 16px;border-right:1px solid #DCE1E8"><div style="font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:#7A8494">Store</div><div style="font-weight:500;margin-top:2px">01 — Delvan Chevrolet</div></div>
+<div style="padding:8px 16px;border-right:1px solid #DCE1E8"><div style="font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:#7A8494">Department</div><div style="font-weight:500;margin-top:2px">20 — New Vehicle</div></div>
+<div style="padding:8px 16px;border-right:1px solid #DCE1E8"><div style="font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:#7A8494">Fiscal period</div><div style="font-weight:500;margin-top:2px">{{ period }}</div></div>
+<div style="flex:1;display:flex;align-items:center;justify-content:flex-end;padding:0 14px"><button style="height:28px;padding:0 12px;border-radius:3px;border:1px solid #C3CBD6;background:#fff;color:#3C4A5C;font-size:12.5px;font-weight:500;cursor:pointer;white-space:nowrap;flex:none" style-hover="background:#F3F6F9;border-color:#9BA6B4">Change context</button></div>
+</div>
+
+<div style="flex:1;padding:16px 20px;display:flex;flex-direction:column;gap:12px">
+
+<sc-if value="{{ hasBanner }}" hint-placeholder-val="{{ true }}">
+<div style="display:flex;gap:10px;padding:11px 13px;border-radius:4px;border:1px solid {{ bannerBd }};background:{{ bannerBg }}">
+<span style="flex:none;width:17px;height:17px;border-radius:50%;color:#fff;font:700 11px/17px 'IBM Plex Sans';text-align:center;background:{{ bannerFg }}">{{ bannerMark }}</span>
+<div style="flex:1">
+<div style="font-size:12.5px;font-weight:600;color:{{ bannerFg }}">{{ bannerTitle }}</div>
+<div style="font-size:12.5px;color:#3C4A5C;margin-top:2px;line-height:1.5">{{ bannerMsg }}</div>
+<sc-if value="{{ bannerApi }}" hint-placeholder-val="{{ false }}"><div style="margin-top:6px;font:10.5px 'IBM Plex Mono',monospace;color:#8A5A00;background:#FFF6E0;border:1px solid #EBD49A;border-radius:2px;padding:3px 7px;display:inline-block">API_CONFIRMATION_REQUIRED — {{ bannerCode }}</div></sc-if>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ showNoEntity }}" hint-placeholder-val="{{ false }}">
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:4px;padding:56px 20px;text-align:center;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center">
+<div style="width:30px;height:30px;border:1.5px dashed #B9C0CA;border-radius:3px;margin-bottom:14px"></div>
+<div style="font-size:15px;font-weight:600">Select a legal entity to begin</div>
+<div style="font-size:13px;color:#5A6675;margin-top:5px;max-width:420px;line-height:1.55">A journal cannot be created until the entity, store and department are known. The chart of accounts and fiscal calendar are scoped to that selection.</div>
+<button style="margin-top:14px;height:32px;padding:0 14px;border-radius:3px;border:1px solid #0B5CAB;background:#0B5CAB;color:#fff;font-size:13px;font-weight:600;cursor:pointer">Choose entity</button>
+</div>
+</sc-if>
+
+<sc-if value="{{ showUnauth }}" hint-placeholder-val="{{ false }}">
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:4px;padding:56px 20px;text-align:center;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center">
+<div style="width:30px;height:30px;border:2px solid #7A8494;border-radius:50%;margin-bottom:14px"></div>
+<div style="font-size:15px;font-weight:600">You don't have permission to view journal entries</div>
+<div style="font-size:13px;color:#5A6675;margin-top:5px;max-width:460px;line-height:1.55">Your role does not include Journal Entry access for entity 01. Contact your Accounting administrator to request it.</div>
+<div style="margin-top:12px;font:10.5px 'IBM Plex Mono',monospace;color:#8A5A00;background:#FFF6E0;border:1px solid #EBD49A;border-radius:2px;padding:4px 8px">API_CONFIRMATION_REQUIRED — permission key for Journal Entry read</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ showApiError }}" hint-placeholder-val="{{ false }}">
+<div style="background:#fff;border:1px solid #F0C0BB;border-radius:4px;padding:56px 20px;text-align:center;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center">
+<div style="width:28px;height:28px;border-radius:50%;background:#B3261E;color:#fff;font:700 16px/28px 'IBM Plex Sans';margin-bottom:14px">!</div>
+<div style="font-size:15px;font-weight:600;color:#B3261E">The journal could not be loaded</div>
+<div style="font-size:13px;color:#3C4A5C;margin-top:5px;max-width:480px;line-height:1.55">The Accounting service did not respond. Nothing has been saved or posted. The backend message is displayed verbatim when one is returned.</div>
+<div style="margin-top:10px;font:11px 'IBM Plex Mono',monospace;color:#7A8494">correlation-id: 4f2c-88ae-01d7</div>
+<div style="display:flex;gap:8px;margin-top:14px"><button style="height:32px;padding:0 14px;border-radius:3px;border:1px solid #0B5CAB;background:#0B5CAB;color:#fff;font-size:13px;font-weight:600;cursor:pointer">Retry</button><button style="height:32px;padding:0 14px;border-radius:3px;border:1px solid #C3CBD6;background:#fff;color:#3C4A5C;font-size:13px;font-weight:500;cursor:pointer">Back to General Ledger</button></div>
+</div>
+</sc-if>
+
+<sc-if value="{{ showLoading }}" hint-placeholder-val="{{ false }}">
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:4px;padding:16px;flex:1">
+<div style="display:flex;gap:10px;margin-bottom:16px"><div style="height:32px;flex:1;background:#EDF0F4;border-radius:3px;animation:pulse 1.4s ease-in-out infinite"></div><div style="height:32px;flex:1;background:#EDF0F4;border-radius:3px;animation:pulse 1.4s ease-in-out infinite"></div><div style="height:32px;flex:1;background:#EDF0F4;border-radius:3px;animation:pulse 1.4s ease-in-out infinite"></div><div style="height:32px;flex:2;background:#EDF0F4;border-radius:3px;animation:pulse 1.4s ease-in-out infinite"></div></div>
+<div style="height:30px;background:#1E3A5C;border-radius:3px 3px 0 0;opacity:.25"></div>
+<div style="display:flex;flex-direction:column;gap:6px;padding-top:8px">
+<div style="height:20px;background:#EDF0F4;border-radius:2px;animation:pulse 1.4s ease-in-out infinite"></div>
+<div style="height:20px;background:#EDF0F4;border-radius:2px;animation:pulse 1.4s .15s ease-in-out infinite"></div>
+<div style="height:20px;background:#EDF0F4;border-radius:2px;animation:pulse 1.4s .3s ease-in-out infinite"></div>
+<div style="height:20px;background:#EDF0F4;border-radius:2px;animation:pulse 1.4s .45s ease-in-out infinite"></div>
+</div>
+<div style="display:flex;align-items:center;gap:9px;margin-top:16px;font-size:12.5px;color:#5A6675"><span style="width:14px;height:14px;border:2px solid #DCE1E8;border-top-color:#0B5CAB;border-radius:50%;animation:spin .7s linear infinite;display:inline-block"></span>Loading journal JE-2026-07-00418…</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ showForm }}" hint-placeholder-val="{{ true }}">
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:4px">
+<div style="padding:9px 14px;border-bottom:1px solid #EDF0F4;font-size:11.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#1E3A5C">Journal header</div>
+<div style="padding:13px 14px;display:grid;grid-template-columns:150px 170px 190px 1fr 1.4fr;gap:13px">
+<div><label style="display:block;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#5A6675;margin-bottom:4px">Entry date</label><div style="height:32px;border-radius:3px;display:flex;align-items:center;padding:0 10px;font:500 13px 'IBM Plex Mono',monospace;border:1px solid {{ cellBorder }};background:{{ cellBg }}">2026-07-24</div></div>
+<div><label style="display:block;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#5A6675;margin-bottom:4px">Source</label><div style="height:32px;border-radius:3px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;font-size:13px;border:1px solid {{ cellBorder }};background:{{ cellBg }}">Manual journal<span style="color:#7A8494;font-size:10px">{{ caret }}</span></div></div>
+<div><label style="display:block;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#5A6675;margin-bottom:4px">Document number</label><div style="height:32px;display:flex;align-items:center;font:500 13px 'IBM Plex Mono',monospace;color:#3C4A5C">{{ docNo }}</div></div>
+<div><label style="display:block;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#5A6675;margin-bottom:4px">Reference</label><div style="height:32px;border-radius:3px;display:flex;align-items:center;padding:0 10px;font-size:13px;border:1px solid {{ cellBorder }};background:{{ cellBg }}">DT-4471</div></div>
+<div><label style="display:block;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#5A6675;margin-bottom:4px">Memo</label><div style="height:32px;border-radius:3px;display:flex;align-items:center;padding:0 10px;font-size:13px;border:1px solid {{ cellBorder }};background:{{ cellBg }}">Dealer trade to Delvan Chevrolet — unit 4471</div></div>
+</div>
+</div>
+
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:4px;flex:1;display:flex;flex-direction:column;position:relative">
+<div style="padding:9px 14px;border-bottom:1px solid #EDF0F4;display:flex;align-items:center;justify-content:space-between"><span style="font-size:11.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#1E3A5C">Journal lines</span><span style="font-size:11.5px;color:#7A8494">{{ lineCount }} lines</span></div>
+<table style="width:100%;border-collapse:collapse;font-size:13px">
+<thead><tr style="background:#1E3A5C;color:#fff">
+<th style="text-align:left;padding:7px 10px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;width:44px">#</th>
+<th style="text-align:left;padding:7px 10px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;width:118px">Account</th>
+<th style="text-align:left;padding:7px 10px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase">Account description</th>
+<th style="text-align:left;padding:7px 10px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;width:66px">Store</th>
+<th style="text-align:left;padding:7px 10px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;width:128px">Department</th>
+<th style="text-align:right;padding:7px 10px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;width:118px">Debit</th>
+<th style="text-align:right;padding:7px 10px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;width:118px">Credit</th>
+<th style="text-align:left;padding:7px 10px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;width:210px">Line memo</th>
+<th style="text-align:center;padding:7px 10px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;width:62px">Actions</th>
+</tr></thead>
+<tbody>
+<sc-for list="{{ lines }}" as="line" hint-placeholder-count="2">
+<tr style="border-bottom:1px solid #EDF0F4">
+<td style="padding:6px 10px;font:12.5px 'IBM Plex Mono',monospace;color:#7A8494">{{ line.n }}</td>
+<td style="padding:6px 10px"><div style="height:26px;border-radius:3px;display:flex;align-items:center;padding:0 7px;font:500 12.5px 'IBM Plex Mono',monospace;border:1px solid {{ cellBorder }};background:{{ cellBg }}">{{ line.acctTxt }}</div></td>
+<td style="padding:6px 10px;color:#3C4A5C">{{ line.descTxt }}</td>
+<td style="padding:6px 10px;font:12.5px 'IBM Plex Mono',monospace;color:#5A6675">{{ line.store }}</td>
+<td style="padding:6px 10px;color:#5A6675;font-size:12.5px">{{ line.deptTxt }}</td>
+<td style="padding:6px 10px;text-align:right"><div style="height:26px;border-radius:3px;display:flex;align-items:center;justify-content:flex-end;padding:0 7px;font:500 13px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;border:1px solid {{ cellBorder }};background:{{ cellBg }};color:{{ line.drColor }}">{{ line.drTxt }}</div></td>
+<td style="padding:6px 10px;text-align:right"><div style="height:26px;border-radius:3px;display:flex;align-items:center;justify-content:flex-end;padding:0 7px;font:500 13px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;border:1px solid {{ cellBorder }};background:{{ cellBg }};color:{{ line.crColor }}">{{ line.crTxt }}</div></td>
+<td style="padding:6px 10px"><div style="height:26px;border-radius:3px;display:flex;align-items:center;padding:0 7px;font-size:12.5px;color:#3C4A5C;border:1px solid {{ cellBorder }};background:{{ cellBg }};overflow:hidden;white-space:nowrap;text-overflow:ellipsis">{{ line.memoTxt }}</div></td>
+<td style="padding:6px 10px;text-align:center"><sc-if value="{{ editable }}" hint-placeholder-val="{{ true }}"><button title="Remove line" style="width:24px;height:24px;border-radius:3px;border:1px solid transparent;background:transparent;color:#7A8494;font-size:14px;cursor:pointer" style-hover="border-color:#F0C0BB;background:#FDECEA;color:#B3261E">×</button></sc-if></td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+<sc-if value="{{ editable }}" hint-placeholder-val="{{ true }}">
+<div style="padding:8px 10px;border-bottom:1px solid #EDF0F4;display:flex;gap:8px">
+<button style="height:28px;padding:0 11px;border-radius:3px;border:1px dashed #9BA6B4;background:#fff;color:#0B5CAB;font-size:12.5px;font-weight:600;cursor:pointer" style-hover="border-color:#0B5CAB;background:#F5F9FD">+ Add line</button>
+<button style="height:28px;padding:0 11px;border-radius:3px;border:1px solid #DCE1E8;background:#fff;color:#5A6675;font-size:12.5px;font-weight:500;cursor:pointer" style-hover="background:#F3F6F9">Duplicate selected</button>
+</div>
+</sc-if>
+<div style="margin-top:auto;border-top:2px solid #1E3A5C;background:#F3F6F9;display:flex;align-items:center;justify-content:flex-end;gap:0;padding:0">
+<div style="flex:1;padding:10px 14px;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C">Totals — displayed for usability; posting eligibility is decided by the backend</div>
+<div style="padding:8px 14px;border-left:1px solid #DCE1E8;text-align:right;min-width:150px"><div style="font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#7A8494">Total debit</div><div style="font:600 14px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;margin-top:2px">{{ totalDebit }}</div></div>
+<div style="padding:8px 14px;border-left:1px solid #DCE1E8;text-align:right;min-width:150px"><div style="font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#7A8494">Total credit</div><div style="font:600 14px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;margin-top:2px">{{ totalCredit }}</div></div>
+<div style="padding:8px 14px;border-left:1px solid #DCE1E8;text-align:right;min-width:170px"><div style="font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#7A8494">Variance · {{ varianceNote }}</div><div style="font:600 14px 'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;margin-top:2px;color:{{ varianceColor }}">{{ variance }}</div></div>
+</div>
+
+<sc-if value="{{ showLookup }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;top:78px;left:64px;width:340px;border:1px solid #0B5CAB;border-radius:3px;box-shadow:0 8px 20px rgba(20,32,48,.18);background:#fff;z-index:5">
+<div style="height:30px;border-bottom:1px solid #EDF0F4;display:flex;align-items:center;padding:0 9px;font:500 13px 'IBM Plex Mono',monospace">9987-44</div>
+<div style="padding:18px 14px;text-align:center">
+<div style="font-size:12.5px;font-weight:600;color:#3C4A5C">No account matches “9987-44”</div>
+<div style="font-size:12px;color:#5A6675;margin-top:4px;line-height:1.5">Searched active accounts in entity 01 / store 01. Accounts outside your scope are not returned.</div>
+<div style="display:flex;gap:8px;justify-content:center;margin-top:11px"><button style="height:28px;padding:0 12px;border-radius:3px;border:1px solid #C3CBD6;background:#fff;color:#3C4A5C;font-size:12.5px;font-weight:500;cursor:pointer">Browse chart of accounts</button><button style="height:28px;padding:0 12px;border-radius:3px;border:1px solid #C3CBD6;background:#fff;color:#3C4A5C;font-size:12.5px;font-weight:500;cursor:pointer">Clear</button></div>
+</div>
+</div>
+</sc-if>
+</div>
+
+<div style="display:flex;align-items:center;gap:16px;padding:2px 2px 0"><span style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#7A8494">Related</span><a href="#s06" style="font-size:12.5px">GL Inquiry</a><a href="#s07" style="font-size:12.5px">Trial Balance</a><a href="#handoff" style="font-size:12.5px">Audit History</a></div>
+</sc-if>
+</div>
+
+<sc-if value="{{ hasDialog }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;inset:0;background:rgba(15,23,35,.42);display:flex;align-items:center;justify-content:center;z-index:20">
+<div style="width:460px;border-radius:5px;box-shadow:0 12px 34px rgba(20,32,48,.3);overflow:hidden;background:#fff">
+<sc-if value="{{ dialogPost }}" hint-placeholder-val="{{ true }}">
+<div style="padding:15px 18px;border-bottom:1px solid #EDF0F4;font-size:15px;font-weight:600">Post this journal to the general ledger?</div>
+<div style="padding:15px 18px;font-size:13px;line-height:1.6;color:#3C4A5C">Posting writes 2 lines to period 2026-07 for entity 01 / store 01. Posted journals are read-only and can only be corrected by reversal.
+<div style="margin-top:11px;border:1px solid #DCE1E8;border-radius:3px;overflow:hidden">
+<div style="display:flex;justify-content:space-between;padding:5px 10px;border-bottom:1px solid #EDF0F4;font-size:12.5px"><span style="color:#5A6675">Total debit</span><span style="font:500 12.5px 'IBM Plex Mono',monospace">{{ totalDebit }}</span></div>
+<div style="display:flex;justify-content:space-between;padding:5px 10px;font-size:12.5px"><span style="color:#5A6675">Total credit</span><span style="font:500 12.5px 'IBM Plex Mono',monospace">{{ totalCredit }}</span></div>
+</div>
+</div>
+<div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;background:#F7F9FB;border-top:1px solid #EDF0F4"><button onClick="{{ closeDialog }}" style="height:32px;padding:0 14px;border-radius:3px;border:1px solid #C3CBD6;background:#fff;color:#3C4A5C;font-size:13px;font-weight:500;cursor:pointer">Cancel</button><button onClick="{{ confirmPost }}" style="height:32px;padding:0 14px;border-radius:3px;border:1px solid #0B5CAB;background:#0B5CAB;color:#fff;font-size:13px;font-weight:600;cursor:pointer">Post journal</button></div>
+</sc-if>
+<sc-if value="{{ dialogReverse }}" hint-placeholder-val="{{ false }}">
+<div style="padding:15px 18px;border-bottom:1px solid #EDF0F4;font-size:15px;font-weight:600">Reverse journal {{ docNo }}?</div>
+<div style="padding:15px 18px;font-size:13px;line-height:1.6;color:#3C4A5C">This creates an offsetting entry. The original journal stays on the ledger and both remain visible in audit history. This cannot be undone.
+<div style="margin-top:11px;border:1px solid #DCE1E8;border-radius:3px;overflow:hidden">
+<div style="display:flex;justify-content:space-between;padding:5px 10px;border-bottom:1px solid #EDF0F4;font-size:12.5px"><span style="color:#5A6675">Reversal period</span><span style="font:500 12.5px 'IBM Plex Mono',monospace">2026-07 · Open</span></div>
+<div style="display:flex;justify-content:space-between;padding:5px 10px;font-size:12.5px"><span style="color:#5A6675">Amount reversed</span><span style="font:500 12.5px 'IBM Plex Mono',monospace">{{ totalDebit }}</span></div>
+</div>
+</div>
+<div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;background:#F7F9FB;border-top:1px solid #EDF0F4"><button onClick="{{ closeDialog }}" style="height:32px;padding:0 14px;border-radius:3px;border:1px solid #C3CBD6;background:#fff;color:#3C4A5C;font-size:13px;font-weight:500;cursor:pointer">Cancel</button><button onClick="{{ confirmReverse }}" style="height:32px;padding:0 14px;border-radius:3px;border:1px solid #B3261E;background:#B3261E;color:#fff;font-size:13px;font-weight:600;cursor:pointer">Reverse journal</button></div>
+</sc-if>
+</div>
+</div>
+</sc-if>
+
+</div>
+</div>
+</div>
+</div>
+
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;overflow:hidden">
+<div style="background:#1E3A5C;color:#fff;padding:10px 18px;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase">Current versus proposed</div>
+<table style="width:100%;border-collapse:collapse;font-size:12.5px">
+<thead><tr style="background:#F3F6F9;border-bottom:1px solid #DCE1E8"><th style="text-align:left;padding:7px 14px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C;width:170px">Area</th><th style="text-align:left;padding:7px 14px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C">Current</th><th style="text-align:left;padding:7px 14px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C">Proposed</th><th style="text-align:left;padding:7px 14px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C;width:130px">Change type</th></tr></thead>
+<tbody>
+<sc-for list="{{ gaps }}" as="g" hint-placeholder-count="12">
+<tr style="border-bottom:1px solid #EDF0F4"><td style="padding:7px 14px;font-weight:600">{{ g.area }}</td><td style="padding:7px 14px;color:#5A6675">{{ g.cur }}</td><td style="padding:7px 14px;color:#3C4A5C">{{ g.next }}</td><td style="padding:7px 14px"><span style="font:600 10px 'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.04em;padding:2px 6px;border-radius:2px;border:1px solid {{ g.bd }};background:{{ g.bg }};color:{{ g.fg }}">{{ g.type }}</span></td></tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+<div id="handoff" style="scroll-margin-top:70px;background:#fff;border:1px solid #DCE1E8;border-radius:5px;overflow:hidden;margin-top:18px">
+<div style="background:#1E3A5C;color:#fff;padding:10px 18px;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase">Journal Entry — implementation handoff</div>
+<div style="padding:4px 18px 16px">
+<sc-for list="{{ jeHandoff }}" as="h" hint-placeholder-count="16">
+<div style="display:grid;grid-template-columns:210px 1fr;gap:16px;padding:9px 0;border-bottom:1px solid #F1F4F7">
+<span style="font-size:12px;font-weight:600;color:#1E3A5C">{{ h.k }}</span>
+<span>
+<sc-if value="{{ h.plain }}" hint-placeholder-val="{{ true }}"><span style="font-size:12.5px;line-height:1.55;color:#3C4A5C">{{ h.v }}</span></sc-if>
+<sc-if value="{{ h.flag }}" hint-placeholder-val="{{ false }}"><span style="font:11.5px/1.55 'IBM Plex Mono',monospace;color:#8A5A00;background:#FFF6E0;border:1px solid #EBD49A;border-radius:3px;padding:3px 7px;display:inline-block">{{ h.v }}</span></sc-if>
+</span>
+</div>
+</sc-for>
+</div>
+</div>
+</section>
+
+<sc-for list="{{ reports }}" as="rep" hint-placeholder-count="5">
+<section id="{{ rep.id }}" style="scroll-margin-top:70px;margin-bottom:64px">
+<div style="display:flex;align-items:baseline;gap:14px;padding-bottom:12px;border-bottom:2px solid #1E3A5C;margin-bottom:12px">
+<span style="font:600 13px 'IBM Plex Mono',monospace;color:#0B5CAB">{{ rep.num }}</span>
+<h2 style="margin:0;font-size:24px;font-weight:600;letter-spacing:-.01em">{{ rep.title }}</h2>
+<span style="font:11.5px 'IBM Plex Mono',monospace;color:#7A8494">{{ rep.route }}</span>
+</div>
+<p style="margin:0 0 16px;max-width:900px;font-size:13.5px;line-height:1.6;color:#4A5666;text-wrap:pretty">{{ rep.intro }}</p>
+
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;overflow:hidden;margin-bottom:18px">
+<div style="padding:11px 18px;background:#F7F9FB;border-bottom:1px solid #DCE1E8;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+<span style="font:600 9.5px 'IBM Plex Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:#8A94A3;margin-right:4px">States</span>
+<sc-for list="{{ rep.chips }}" as="ch" hint-placeholder-count="7">
+<button onClick="{{ ch.onClick }}" style="height:27px;padding:0 10px;border-radius:3px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid {{ ch.bd }};background:{{ ch.bg }};color:{{ ch.fg }}">{{ ch.label }}</button>
+</sc-for>
+</div>
+<div style="padding:20px;background:#F3F5F8">
+<dc-import name="ReportScreen" cfg="{{ rep.cfg }}" state-key="{{ rep.key }}" hint-size="100%,780px"></dc-import>
+</div>
+</div>
+
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;overflow:hidden">
+<div style="background:#1E3A5C;color:#fff;padding:10px 18px;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase">{{ rep.title }} — implementation handoff</div>
+<div style="padding:4px 18px 16px">
+<sc-for list="{{ rep.handoff }}" as="h" hint-placeholder-count="15">
+<div style="display:grid;grid-template-columns:210px 1fr;gap:16px;padding:9px 0;border-bottom:1px solid #F1F4F7">
+<span style="font-size:12px;font-weight:600;color:#1E3A5C">{{ h.k }}</span>
+<span>
+<sc-if value="{{ h.plain }}" hint-placeholder-val="{{ true }}"><span style="font-size:12.5px;line-height:1.55;color:#3C4A5C">{{ h.v }}</span></sc-if>
+<sc-if value="{{ h.flag }}" hint-placeholder-val="{{ false }}"><span style="font:11.5px/1.55 'IBM Plex Mono',monospace;color:#8A5A00;background:#FFF6E0;border:1px solid #EBD49A;border-radius:3px;padding:3px 7px;display:inline-block">{{ h.v }}</span></sc-if>
+</span>
+</div>
+</sc-for>
+</div>
+</div>
+</section>
+</sc-for>
+
+<section id="decisions" style="scroll-margin-top:70px;margin-bottom:64px">
+<div style="display:flex;align-items:baseline;gap:14px;padding-bottom:12px;border-bottom:2px solid #1E3A5C;margin-bottom:12px">
+<h2 style="margin:0;font-size:24px;font-weight:600;letter-spacing:-.01em">Product and SME decision register</h2>
+</div>
+<p style="margin:0 0 18px;max-width:860px;font-size:13.5px;line-height:1.6;color:#4A5666">Every item below blocks something. None has been silently assumed in the designs — where a decision is missing, the screen shows the flag rather than an invented answer.</p>
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;overflow:hidden">
+<table style="width:100%;border-collapse:collapse;font-size:12.5px">
+<thead><tr style="background:#F3F6F9;border-bottom:1px solid #DCE1E8">
+<th style="text-align:left;padding:8px 14px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C;width:100px">Owner</th>
+<th style="text-align:left;padding:8px 14px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C;width:250px">Label</th>
+<th style="text-align:left;padding:8px 14px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C">Question</th>
+<th style="text-align:left;padding:8px 14px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#1E3A5C;width:170px">Blocks</th>
+</tr></thead>
+<tbody>
+<sc-for list="{{ decisionRows }}" as="d" hint-placeholder-count="18">
+<tr style="border-bottom:1px solid #EDF0F4">
+<td style="padding:7px 14px"><span style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.05em;padding:3px 7px;border-radius:2px;border:1px solid {{ d.bd }};background:{{ d.bg }};color:{{ d.fg }}">{{ d.owner }}</span></td>
+<td style="padding:7px 14px;font:10.5px 'IBM Plex Mono',monospace;color:#5A6675">{{ d.id }}</td>
+<td style="padding:7px 14px;color:#3C4A5C">{{ d.q }}</td>
+<td style="padding:7px 14px;color:#5A6675">{{ d.impact }}</td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+</section>
+
+<section id="readiness" style="scroll-margin-top:70px;margin-bottom:40px">
+<div style="display:flex;align-items:baseline;gap:14px;padding-bottom:12px;border-bottom:2px solid #B3261E;margin-bottom:12px">
+<h2 style="margin:0;font-size:24px;font-weight:600;letter-spacing:-.01em">Readiness matrix</h2>
+</div>
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;overflow:hidden;margin-bottom:16px">
+<table style="width:100%;border-collapse:collapse;font-size:12.5px">
+<thead><tr style="background:#1E3A5C;color:#fff">
+<th style="text-align:left;padding:9px 14px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase">Section</th>
+<th style="padding:9px 10px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;width:130px">Primary screen</th>
+<th style="padding:9px 10px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;width:130px">All states</th>
+<th style="padding:9px 10px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;width:130px">API mapping</th>
+<th style="padding:9px 10px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;width:150px">Permission mapping</th>
+<th style="padding:9px 10px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;width:110px">Product open</th>
+<th style="padding:9px 10px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;width:100px">SME open</th>
+<th style="text-align:left;padding:9px 14px;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;width:260px">Ready for implementation</th>
+</tr></thead>
+<tbody>
+<sc-for list="{{ readinessRows }}" as="r" hint-placeholder-count="6">
+<tr style="border-bottom:1px solid #EDF0F4">
+<td style="padding:8px 14px;font-weight:600">{{ r.sec }}</td>
+<td style="padding:8px 10px;text-align:center"><span style="font:600 10px 'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.05em;padding:3px 8px;border-radius:2px;border:1px solid {{ r.prim.bd }};background:{{ r.prim.bg }};color:{{ r.prim.fg }}">{{ r.prim.t }}</span></td>
+<td style="padding:8px 10px;text-align:center"><span style="font:600 10px 'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.05em;padding:3px 8px;border-radius:2px;border:1px solid {{ r.states.bd }};background:{{ r.states.bg }};color:{{ r.states.fg }}">{{ r.states.t }}</span></td>
+<td style="padding:8px 10px;text-align:center"><span style="font:600 10px 'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.05em;padding:3px 8px;border-radius:2px;border:1px solid {{ r.api.bd }};background:{{ r.api.bg }};color:{{ r.api.fg }}">{{ r.api.t }}</span></td>
+<td style="padding:8px 10px;text-align:center"><span style="font:600 10px 'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.05em;padding:3px 8px;border-radius:2px;border:1px solid {{ r.perm.bd }};background:{{ r.perm.bg }};color:{{ r.perm.fg }}">{{ r.perm.t }}</span></td>
+<td style="padding:8px 10px;text-align:center;font:500 12.5px 'IBM Plex Mono',monospace">{{ r.prod }}</td>
+<td style="padding:8px 10px;text-align:center;font:500 12.5px 'IBM Plex Mono',monospace">{{ r.sme }}</td>
+<td style="padding:8px 14px"><span style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.04em;padding:3px 7px;border-radius:2px;background:#FDECEA;color:#B3261E;border:1px solid #F0C0BB">{{ r.verdict }}</span></td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+<div style="background:#fff;border:1px solid #DCE1E8;border-radius:5px;padding:18px 22px">
+<div style="font-size:13px;font-weight:600;margin-bottom:8px">Why nothing is marked ready</div>
+<p style="margin:0 0 12px;font-size:13px;line-height:1.6;color:#3C4A5C;max-width:900px">Design and state coverage are complete for sections 04–09. No section can be marked <span style="font:11px 'IBM Plex Mono',monospace">READY_FOR_IMPLEMENTATION</span> because API mapping and permission mapping are unresolved everywhere — endpoint names, permission keys, audit event names and error codes have not been supplied, and inventing them would violate the source-of-truth rule. Once the Story Contract and certified API behaviour are attached, the mappings can be filled in without changing a single screen.</p>
+<div style="display:flex;flex-wrap:wrap;gap:8px">
+<span style="font:600 10.5px 'IBM Plex Mono',monospace;letter-spacing:.04em;padding:5px 9px;border-radius:3px;background:#FFF6E0;color:#8A5A00;border:1px solid #EBD49A">JOURNAL_ENTRY_DESIGN_IN_PROGRESS</span>
+<span style="font:600 10.5px 'IBM Plex Mono',monospace;letter-spacing:.04em;padding:5px 9px;border-radius:3px;background:#EEF3FA;color:#0B5CAB;border:1px solid #C6D8EE">PRODUCT_REVIEW_REQUIRED</span>
+<span style="font:600 10.5px 'IBM Plex Mono',monospace;letter-spacing:.04em;padding:5px 9px;border-radius:3px;background:#EEF3FA;color:#0B5CAB;border:1px solid #C6D8EE">SME_REVIEW_REQUIRED</span>
+<span style="font:600 10.5px 'IBM Plex Mono',monospace;letter-spacing:.04em;padding:5px 9px;border-radius:3px;background:#FDECEA;color:#B3261E;border:1px solid #F0C0BB">NOT_YET_READY_FOR_IMPLEMENTATION</span>
+</div>
+</div>
+</section>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1520,&quot;height&quot;:1000}}">
+class Component extends DCLogic {
+  state = { key: 'balanced_draft', navCollapsed: false };
+
+  money(v) {
+    if (v === null || v === undefined) return null;
+    return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  baseLines() {
+    return [
+      { n: '1', acct: '1200-01', desc: 'Accounts Receivable — Vehicle', store: '01', dept: '20 New Vehicle', dr: 24500, cr: null, memo: 'Dealer trade — unit 4471' },
+      { n: '2', acct: '4100-00', desc: 'Vehicle Sales — New', store: '01', dept: '20 New Vehicle', dr: null, cr: 24500, memo: 'Dealer trade — unit 4471' }
+    ];
+  }
+
+  emptyLines() {
+    return [
+      { n: '1', acct: '', desc: '', store: '01', dept: '', dr: null, cr: null, memo: '' },
+      { n: '2', acct: '', desc: '', store: '01', dept: '', dr: null, cr: null, memo: '' }
+    ];
+  }
+
+  config() {
+    const B = this.baseLines();
+    const unbal = [B[0], Object.assign({}, B[1], { cr: 24000 })];
+    const rev = [
+      { n: '1', acct: '1200-01', desc: 'Accounts Receivable — Vehicle', store: '01', dept: '20 New Vehicle', dr: null, cr: 24500, memo: 'Reversal of JE-2026-07-00418' },
+      { n: '2', acct: '4100-00', desc: 'Vehicle Sales — New', store: '01', dept: '20 New Vehicle', dr: 24500, cr: null, memo: 'Reversal of JE-2026-07-00418' }
+    ];
+    const c = {
+      new_draft: { label: 'New draft', group: 'Authoring', status: 'Draft', lines: this.emptyLines(), doc: 'Assigned on save', banner: null, dirty: false },
+      balanced_draft: { label: 'Draft · 2 balanced lines', group: 'Authoring', status: 'Draft', lines: B, banner: { kind: 'info', title: 'Draft not yet validated', msg: 'Running totals are shown for usability only. The journal is not eligible to post until backend validation succeeds.' } },
+      unbalanced: { label: 'Unbalanced — validation error', group: 'Validation', status: 'Draft', lines: unbal, banner: { kind: 'error', title: 'Validation failed — journal is out of balance', msg: 'Total debits 24,500.00 do not equal total credits 24,000.00. Difference of 500.00 on the credit side.', code: 'Rule + message string returned by the validation endpoint', api: true } },
+      validated: { label: 'Validation passed', group: 'Validation', status: 'Validated', lines: B, banner: { kind: 'success', title: 'Validation passed', msg: 'All lines accepted. Fiscal period 2026-07 is open. This journal is eligible to post.' } },
+      post_confirm: { label: 'Posting confirmation', group: 'Posting', status: 'Validated', lines: B, banner: { kind: 'success', title: 'Validation passed', msg: 'All lines accepted. Fiscal period 2026-07 is open. This journal is eligible to post.' }, dialog: 'post' },
+      posted: { label: 'Posted — read only', group: 'Posting', status: 'Posted', lines: B, readOnly: true, doc: 'JE-2026-07-00418', banner: { kind: 'success', title: 'Journal posted to the general ledger', msg: 'Posted by C. Sampangi on Jul 24, 2026 at 4:12 PM. Posted journals cannot be edited — use Reverse to correct.' } },
+      reverse_confirm: { label: 'Reversal confirmation', group: 'Reversal', status: 'Posted', lines: B, readOnly: true, doc: 'JE-2026-07-00418', banner: { kind: 'success', title: 'Journal posted to the general ledger', msg: 'Posted by C. Sampangi on Jul 24, 2026 at 4:12 PM. Posted journals cannot be edited — use Reverse to correct.' }, dialog: 'reverse' },
+      reversed: { label: 'Reversed journal', group: 'Reversal', status: 'Reversed', lines: rev, readOnly: true, doc: 'JE-2026-07-00463', banner: { kind: 'neutral', title: 'Reversing entry for JE-2026-07-00418', msg: 'Created by C. Sampangi on Jul 26, 2026 at 9:03 AM. Both the original and the reversal remain on the ledger.' } },
+      loading: { label: 'Loading', group: 'System', status: 'Draft', lines: B, mode: 'loading' },
+      api_error: { label: 'API error', group: 'System', status: 'Draft', lines: B, mode: 'error' },
+      unauthorized: { label: 'Unauthorized', group: 'System', status: 'Draft', lines: B, mode: 'unauth' },
+      no_entity: { label: 'No entity selected', group: 'Context', status: 'Draft', lines: B, mode: 'noentity' },
+      closed_period: { label: 'Closed fiscal period', group: 'Context', status: 'Draft', lines: B, period: '2026-06 · Closed', periodClosed: true, banner: { kind: 'error', title: 'Fiscal period 2026-06 is closed', msg: 'Posting is blocked for closed periods. Select an open period, or request a period reopen from your controller.', code: 'Closed-period rule + message returned by the validation endpoint', api: true } },
+      lookup_empty: { label: 'Account lookup — empty result', group: 'Context', status: 'Draft', lines: this.emptyLines(), lookup: true }
+    };
+    return c;
+  }
+
+  t_(t, o) { return Object.assign({ t }, o || {}); }
+  m_(t, o) { return Object.assign({ t, mono: true }, o || {}); }
+  n_(t, o) { return Object.assign({ t, mono: true, align: 'right', fw: '500' }, o || {}); }
+  dash_() { return { t: '—', mono: true, align: 'right', color: '#AEB6C2' }; }
+  sec_(t) { return { t, fw: '600', fs: '11px', tt: 'uppercase', ls: '.05em', color: '#1E3A5C' }; }
+
+  cfgGlSearch() {
+    const R = (doc, date, acct, desc, dr, cr, st) => ({
+      click: true,
+      cells: [this.m_(doc, { color: '#0B5CAB' }), this.m_(date), this.m_(acct), this.t_(desc), this.t_('01', { mono: true, color: '#5A6675' }), this.t_('20', { mono: true, color: '#5A6675' }),
+        dr ? this.n_(dr) : this.dash_(), cr ? this.n_(cr) : this.dash_(), this.t_(st, { fs: '12px', color: '#5A6675' })]
+    });
+    const rows = [
+      R('JE-2026-07-00418', '2026-07-24', '1200-01', 'Dealer trade — unit 4471', '24,500.00', null, 'Posted'),
+      R('JE-2026-07-00418', '2026-07-24', '4100-00', 'Dealer trade — unit 4471', null, '24,500.00', 'Posted'),
+      R('JE-2026-07-00402', '2026-07-21', '1200-01', 'Retail delivery — unit 4468', '38,910.00', null, 'Posted'),
+      R('JE-2026-07-00402', '2026-07-21', '4100-00', 'Retail delivery — unit 4468', null, '38,910.00', 'Posted'),
+      R('JE-2026-07-00397', '2026-07-19', '1200-02', 'RO 118342 — customer pay', '842.16', null, 'Posted'),
+      R('JE-2026-07-00381', '2026-07-16', '1200-01', 'Fleet invoice 22-118', '61,400.00', null, 'Posted'),
+      R('JE-2026-07-00374', '2026-07-15', '1200-05', 'Parts counter ticket 90233', '1,204.55', null, 'Posted'),
+      R('JE-2026-07-00366', '2026-07-12', '1200-01', 'Dealer trade — unit 4455', null, '19,250.00', 'Reversed')
+    ];
+    const drawer = {
+      title: 'JE-2026-07-00418 · line 1', sub: 'Accounts Receivable — Vehicle · posted 2026-07-24',
+      action: 'Open in GL Inquiry',
+      note: 'API_CONFIRMATION_REQUIRED — fields returned by the search-result detail payload. Nothing here is computed in the UI.',
+      rows: [
+        { k: 'Document number', v: 'JE-2026-07-00418', mono: true },
+        { k: 'Entry date', v: '2026-07-24', mono: true },
+        { k: 'Account', v: '1200-01', mono: true },
+        { k: 'Account description', v: 'Accounts Receivable — Vehicle' },
+        { k: 'Store / department', v: '01 / 20', mono: true },
+        { k: 'Debit', v: '24,500.00', mono: true },
+        { k: 'Credit', v: '—', mono: true },
+        { k: 'Line memo', v: 'Dealer trade — unit 4471' },
+        { k: 'Source', v: 'Manual journal' },
+        { k: 'Posted by', v: 'C. Sampangi · Jul 24, 2026 4:12 PM' },
+        { k: 'Journal status', v: 'Posted' }
+      ]
+    };
+    return {
+      title: 'GL Search', crumb2: 'General Ledger', asOf: 'Period 2026-07', badge: 'Read only',
+      primaryAction: 'Search', filterAction: 'Search', tableTitle: 'Matching journal lines',
+      resultNote: 'Search runs server-side across posted and draft journals in scope',
+      filters: [
+        { label: 'Keyword', value: 'dealer trade', w: '200px' },
+        { label: 'Account', value: '1200-01', w: '130px', mono: true, type: 'select' },
+        { label: 'Date from', value: '2026-07-01', w: '130px', mono: true },
+        { label: 'Date to', value: '2026-07-31', w: '130px', mono: true },
+        { label: 'Source', value: 'All sources', w: '150px', type: 'select' },
+        { label: 'Amount from', value: '0.00', w: '120px', mono: true },
+        { label: 'Amount to', value: 'Any', w: '120px', mono: true, placeholder: true }
+      ],
+      columns: [
+        { label: 'Document', w: '160px' }, { label: 'Date', w: '104px' }, { label: 'Account', w: '96px' },
+        { label: 'Description' }, { label: 'Store', w: '62px' }, { label: 'Dept', w: '62px' },
+        { label: 'Debit', align: 'right', w: '118px' }, { label: 'Credit', align: 'right', w: '118px' }, { label: 'Status', w: '92px' }
+      ],
+      related: ['GL Inquiry', 'Journal Entry', 'Trial Balance'],
+      drawer,
+      states: [
+        { key: 'primary', label: 'Primary · populated', rows, tableMeta: '8 of 8 results · sorted by date desc' },
+        { key: 'loading', label: 'Loading', mode: 'loading', loadingText: 'Searching journal lines in entity 01…' },
+        { key: 'empty', label: 'No results', mode: 'empty', emptyTitle: 'No journal lines match this search', emptyMsg: 'No results for “dealer trade” between 2026-07-01 and 2026-07-31 in entity 01 / store 01. Widen the date range or clear the account filter.' },
+        { key: 'error', label: 'Structural error', mode: 'error', errorTitle: 'Search could not be completed', errorMsg: 'The date range is invalid: “Date to” is earlier than “Date from”. Correct the range and search again.', errorCode: 'API_CONFIRMATION_REQUIRED — error code and message returned for an invalid range' },
+        { key: 'unauth', label: 'Unauthorized', mode: 'unauth', unauthTitle: 'You do not have access to GL Search', unauthMsg: 'Your role does not include ledger search for entity 01. The nav item is hidden for users without this permission; this state appears only on a deep link.' },
+        { key: 'export', label: 'Export', rows, tableMeta: '8 of 8 results', exportOpen: true },
+        { key: 'drawer', label: 'Drill-down drawer', rows, tableMeta: '8 of 8 results', drawerOpen: true }
+      ]
+    };
+  }
+
+  cfgGlInquiry() {
+    const R = (date, doc, src, desc, dr, cr, bal, click) => ({
+      click: !!click,
+      cells: [this.m_(date), this.m_(doc, { color: '#0B5CAB' }), this.t_(src, { fs: '12.5px', color: '#5A6675' }), this.t_(desc),
+        dr ? this.n_(dr) : this.dash_(), cr ? this.n_(cr) : this.dash_(), this.n_(bal, { fw: '600' })]
+    });
+    const open = { bg: '#F7F9FB', bb: '#DCE1E8', cells: [this.t_('', {}), this.t_('', {}), this.t_('', {}), this.sec_('Opening balance · 2026-07-01'), this.dash_(), this.dash_(), this.n_('412,880.44', { fw: '600' })] };
+    const rows = [open,
+      R('2026-07-12', 'JE-2026-07-00366', 'Manual journal', 'Dealer trade — unit 4455', null, '19,250.00', '393,630.44', true),
+      R('2026-07-15', 'JE-2026-07-00374', 'Parts invoice', 'Parts counter ticket 90233', '1,204.55', null, '394,834.99', true),
+      R('2026-07-16', 'JE-2026-07-00381', 'Fleet billing', 'Fleet invoice 22-118', '61,400.00', null, '456,234.99', true),
+      R('2026-07-19', 'JE-2026-07-00397', 'Service RO', 'RO 118342 — customer pay', '842.16', null, '457,077.15', true),
+      R('2026-07-21', 'JE-2026-07-00402', 'Vehicle delivery', 'Retail delivery — unit 4468', '38,910.00', null, '495,987.15', true),
+      R('2026-07-24', 'JE-2026-07-00418', 'Manual journal', 'Dealer trade — unit 4471', '24,500.00', null, '520,487.15', true)
+    ];
+    return {
+      title: 'GL Inquiry', crumb2: 'General Ledger', asOf: 'Account 1200-01 · period 2026-07', badge: 'Read only',
+      primaryAction: 'Run inquiry', filterAction: 'Run inquiry', tableTitle: 'Account activity — 1200-01 Accounts Receivable — Vehicle',
+      resultNote: 'Balances are returned by the ledger service; the UI does not re-derive them',
+      filters: [
+        { label: 'Account', value: '1200-01', w: '150px', mono: true, type: 'select' },
+        { label: 'Period from', value: '2026-07', w: '120px', mono: true },
+        { label: 'Period to', value: '2026-07', w: '120px', mono: true },
+        { label: 'Store', value: '01 — Delvan Chevrolet', w: '190px', type: 'select' },
+        { label: 'Department', value: '20 — New Vehicle', w: '170px', type: 'select' },
+        { label: 'Source', value: 'All sources', w: '150px', type: 'select' }
+      ],
+      columns: [
+        { label: 'Date', w: '104px' }, { label: 'Document', w: '160px' }, { label: 'Source', w: '140px' },
+        { label: 'Description' }, { label: 'Debit', align: 'right', w: '118px' },
+        { label: 'Credit', align: 'right', w: '118px' }, { label: 'Running balance', align: 'right', w: '150px' }
+      ],
+      footer: { label: 'Period activity — 6 transactions', cells: [
+        { label: 'Opening', value: '412,880.44', w: '150px' },
+        { label: 'Total debit', value: '126,856.71', w: '150px' },
+        { label: 'Total credit', value: '19,250.00', w: '150px' },
+        { label: 'Closing', value: '520,487.15', w: '160px', color: '#1E3A5C' }
+      ] },
+      related: ['GL Search', 'Trial Balance', 'Journal Entry', 'Audit History'],
+      drawer: {
+        title: 'JE-2026-07-00418', sub: 'Manual journal · posted 2026-07-24 · period 2026-07',
+        action: 'Open journal entry',
+        note: 'API_CONFIRMATION_REQUIRED — whether the inquiry detail payload returns full journal lines or only the matching line.',
+        rows: [
+          { k: 'Document number', v: 'JE-2026-07-00418', mono: true },
+          { k: 'Status', v: 'Posted' },
+          { k: 'Entry date', v: '2026-07-24', mono: true },
+          { k: 'Line 1 · 1200-01', v: 'Dr 24,500.00', mono: true },
+          { k: 'Line 2 · 4100-00', v: 'Cr 24,500.00', mono: true },
+          { k: 'Reference', v: 'DT-4471' },
+          { k: 'Memo', v: 'Dealer trade to Delvan Chevrolet — unit 4471' },
+          { k: 'Posted by', v: 'C. Sampangi · Jul 24, 2026 4:12 PM' }
+        ]
+      },
+      states: [
+        { key: 'primary', label: 'Primary · populated', rows, tableMeta: '6 transactions · running balance in account order' },
+        { key: 'loading', label: 'Loading', mode: 'loading', loadingText: 'Loading activity for account 1200-01…' },
+        { key: 'empty', label: 'No activity', mode: 'empty', emptyTitle: 'No activity for this account in 2026-07', emptyMsg: 'Account 1200-01 has an opening balance of 412,880.44 and no transactions in the selected period, store and department.' },
+        { key: 'error', label: 'Structural error', mode: 'error', errorTitle: 'Inquiry could not be produced', errorMsg: 'The selected period range crosses a fiscal year boundary. Run one fiscal year at a time, or use Trial Balance for a year-end view.', errorCode: 'API_CONFIRMATION_REQUIRED — error code for cross-year range' },
+        { key: 'unauth', label: 'Unauthorized', mode: 'unauth', unauthTitle: 'You do not have access to this account', unauthMsg: 'Account 1200-01 is outside your assigned store and department scope. Accounts outside scope are not listed in the account selector.' },
+        { key: 'export', label: 'Export', rows, tableMeta: '6 transactions', exportOpen: true },
+        { key: 'drawer', label: 'Journal drill-down', rows, tableMeta: '6 transactions', drawerOpen: true }
+      ]
+    };
+  }
+
+  cfgTrialBalance() {
+    const R = (acct, desc, type, open, dr, cr, endDr, endCr) => ({
+      click: true,
+      cells: [this.m_(acct, { color: '#0B5CAB' }), this.t_(desc), this.t_(type, { fs: '12px', color: '#5A6675' }),
+        this.n_(open), dr ? this.n_(dr) : this.dash_(), cr ? this.n_(cr) : this.dash_(),
+        endDr ? this.n_(endDr, { fw: '600' }) : this.dash_(), endCr ? this.n_(endCr, { fw: '600' }) : this.dash_()]
+    });
+    const rows = [
+      R('1000-00', 'Cash — operating', 'Asset', '288,140.22', '412,006.18', '355,912.40', '344,234.00', null),
+      R('1200-01', 'Accounts Receivable — Vehicle', 'Asset', '412,880.44', '126,856.71', '19,250.00', '520,487.15', null),
+      R('1200-02', 'Accounts Receivable — Service', 'Asset', '58,204.10', '31,880.55', '28,004.19', '62,080.46', null),
+      R('1300-00', 'Inventory — New Vehicles', 'Asset', '2,914,500.00', '618,200.00', '702,410.00', '2,830,290.00', null),
+      R('2000-00', 'Accounts Payable', 'Liability', '184,220.66', '92,140.00', '141,880.34', null, '233,961.00'),
+      R('2400-00', 'Floor Plan Payable', 'Liability', '2,610,000.00', '702,410.00', '618,200.00', null, '2,525,790.00'),
+      R('3000-00', 'Retained Earnings', 'Equity', '640,118.02', '0.00', '0.00', null, '640,118.02'),
+      R('4100-00', 'Vehicle Sales — New', 'Revenue', '1,884,220.00', '0.00', '318,410.00', null, '2,202,630.00'),
+      R('5100-00', 'Cost of Sales — New Vehicles', 'COGS', '1,702,880.00', '288,140.00', '0.00', '1,991,020.00', null),
+      R('6300-14', 'Policy Adjustment — Service', 'Expense', '18,402.55', '3,110.00', '1,250.00', '20,262.55', null)
+    ];
+    return {
+      title: 'Trial Balance', crumb2: 'General Ledger', asOf: 'As of 2026-07', badge: 'Certified',
+      primaryAction: 'Run Trial Balance', filterAction: 'Run Trial Balance', tableTitle: 'Trial balance — entity 01, as of 2026-07',
+      resultNote: 'Balances are certified by the ledger service and are not recalculated in the UI',
+      filters: [
+        { label: 'Entity / company', value: '01', w: '110px', mono: true, type: 'select' },
+        { label: 'Store', value: 'All stores', w: '170px', type: 'select' },
+        { label: 'Department', value: 'All departments', w: '180px', type: 'select' },
+        { label: 'As of (YYYY-MM)', value: '2026-07', w: '150px', mono: true },
+        { label: 'Suppress zero balances', value: 'Yes', w: '160px', type: 'select' }
+      ],
+      columns: [
+        { label: 'Account', w: '104px' }, { label: 'Description' }, { label: 'Type', w: '92px' },
+        { label: 'Opening', align: 'right', w: '134px' }, { label: 'Period debit', align: 'right', w: '128px' },
+        { label: 'Period credit', align: 'right', w: '128px' }, { label: 'Ending debit', align: 'right', w: '134px' }, { label: 'Ending credit', align: 'right', w: '134px' }
+      ],
+      footer: { label: 'Totals — 10 accounts · zero balances suppressed', cells: [
+        { label: 'Total debit', value: '5,768,374.16', w: '170px' },
+        { label: 'Total credit', value: '5,768,374.16', w: '170px' },
+        { label: 'Difference', value: '0.00', w: '150px', color: '#1E6B45' }
+      ] },
+      related: ['GL Inquiry', 'Balance Sheet', 'Income Statement', 'GL Search'],
+      drawer: {
+        title: '1200-01 · Accounts Receivable — Vehicle', sub: 'Asset · entity 01 · as of 2026-07',
+        action: 'Open in GL Inquiry',
+        note: 'API_CONFIRMATION_REQUIRED — whether account-level drill-down is served by the trial-balance payload or requires a separate inquiry call.',
+        rows: [
+          { k: 'Opening balance', v: '412,880.44', mono: true },
+          { k: 'Period debit', v: '126,856.71', mono: true },
+          { k: 'Period credit', v: '19,250.00', mono: true },
+          { k: 'Ending balance', v: '520,487.15', mono: true },
+          { k: 'Transactions', v: '6', mono: true },
+          { k: 'Normal balance', v: 'Debit' },
+          { k: 'Last posted', v: '2026-07-24 · JE-2026-07-00418' }
+        ]
+      },
+      states: [
+        { key: 'primary', label: 'Primary · in balance', rows, tableMeta: '10 accounts · in balance', banner: { kind: 'success', title: 'Trial balance is in balance as of 2026-07', msg: 'Total debits equal total credits. The balance check is performed by the ledger service, not by this screen.' } },
+        { key: 'loading', label: 'Loading', mode: 'loading', loadingText: 'Building trial balance for entity 01 as of 2026-07…' },
+        { key: 'empty', label: 'No balances', mode: 'empty', emptyTitle: 'No accounts to display', emptyMsg: 'Every account in entity 01 / store 01 has a zero balance as of 2026-07 and “Suppress zero balances” is on. Turn it off to see all accounts.' },
+        { key: 'error', label: 'Out of balance', mode: 'data', badge: 'Unbalanced', rows, tableMeta: '10 accounts · out of balance', banner: { kind: 'error', title: 'Trial balance is out of balance as of 2026-07', msg: 'Total debits 5,768,374.16 do not equal total credits 5,767,124.16. Difference of 1,250.00. Contact your controller before relying on downstream statements.', tag: 'API_CONFIRMATION_REQUIRED — out-of-balance rule, message text and whether downstream reports are blocked' }, footer: { label: 'Totals — 10 accounts · out of balance', cells: [
+          { label: 'Total debit', value: '5,768,374.16', w: '170px' },
+          { label: 'Total credit', value: '5,767,124.16', w: '170px' },
+          { label: 'Difference', value: '1,250.00', w: '150px', color: '#B3261E' }
+        ] } },
+        { key: 'unauth', label: 'Unauthorized', mode: 'unauth', unauthTitle: 'You do not have access to Trial Balance', unauthMsg: 'Trial Balance is restricted to roles with entity-level financial read. Store-scoped users see GL Inquiry instead.' },
+        { key: 'export', label: 'Export', rows, tableMeta: '10 accounts · in balance', exportOpen: true },
+        { key: 'drawer', label: 'Account drill-down', rows, tableMeta: '10 accounts', drawerOpen: true }
+      ]
+    };
+  }
+
+  cfgBalanceSheet() {
+    const H = (t) => ({ bg: '#F3F6F9', bb: '#DCE1E8', cells: [this.sec_(t), this.dash_(), this.dash_(), this.dash_()] });
+    const L = (name, cur, prior, chg, click) => ({ click: !!click, cells: [this.t_(name), this.n_(cur), this.n_(prior), this.n_(chg, { color: chg.indexOf('(') === 0 ? '#B3261E' : '#16202E' })] });
+    const S = (name, cur, prior, chg) => ({ bg: '#FBFCFD', bb: '#C3CBD6', cells: [this.t_(name, { fw: '600' }), this.n_(cur, { fw: '600' }), this.n_(prior, { fw: '600' }), this.n_(chg, { fw: '600' })] });
+    const rows = [
+      H('Assets · current'),
+      L('Cash — operating', '344,234.00', '288,140.22', '56,093.78', true),
+      L('Accounts receivable — vehicle', '520,487.15', '412,880.44', '107,606.71', true),
+      L('Accounts receivable — service', '62,080.46', '58,204.10', '3,876.36', true),
+      L('Inventory — new vehicles', '2,830,290.00', '2,914,500.00', '(84,210.00)', true),
+      S('Total current assets', '3,757,091.61', '3,673,724.76', '83,366.85'),
+      H('Liabilities'),
+      L('Accounts payable', '233,961.00', '184,220.66', '49,740.34', true),
+      L('Floor plan payable', '2,525,790.00', '2,610,000.00', '(84,210.00)', true),
+      S('Total liabilities', '2,759,751.00', '2,794,220.66', '(34,469.66)'),
+      H('Equity'),
+      L('Retained earnings', '640,118.02', '640,118.02', '0.00', true),
+      L('Current period earnings', '357,222.59', '239,386.08', '117,836.51', true),
+      S('Total equity', '997,340.61', '879,504.10', '117,836.51')
+    ];
+    return {
+      title: 'Balance Sheet', crumb2: 'Financial Reports', asOf: 'As of 2026-07', badge: 'Certified',
+      primaryAction: 'Run report', filterAction: 'Run report', tableTitle: 'Balance sheet — entity 01, as of 2026-07',
+      resultNote: 'Statement lines and groupings are returned by the reporting service',
+      filters: [
+        { label: 'Entity / company', value: '01', w: '110px', mono: true, type: 'select' },
+        { label: 'Store', value: 'All stores', w: '170px', type: 'select' },
+        { label: 'As of (YYYY-MM)', value: '2026-07', w: '150px', mono: true },
+        { label: 'Comparative', value: 'Prior period', w: '160px', type: 'select' },
+        { label: 'Rounding', value: 'None', w: '130px', type: 'select' }
+      ],
+      columns: [
+        { label: 'Line' }, { label: 'As of 2026-07', align: 'right', w: '170px' },
+        { label: 'Prior period', align: 'right', w: '170px' }, { label: 'Change', align: 'right', w: '150px' }
+      ],
+      footer: { label: 'Balance check — assets versus liabilities and equity', cells: [
+        { label: 'Total assets', value: '3,757,091.61', w: '180px' },
+        { label: 'Liabilities + equity', value: '3,757,091.61', w: '190px' },
+        { label: 'Difference', value: '0.00', w: '150px', color: '#1E6B45' }
+      ] },
+      related: ['Trial Balance', 'Income Statement', 'GL Inquiry'],
+      drawer: {
+        title: 'Accounts receivable — vehicle', sub: 'Balance sheet line · as of 2026-07 · entity 01',
+        action: 'Open in GL Inquiry',
+        note: 'API_CONFIRMATION_REQUIRED — which accounts roll into each statement line, and whether the mapping is returned with the report or held in report configuration.',
+        rows: [
+          { k: 'Statement line', v: 'Accounts receivable — vehicle' },
+          { k: 'Contributing accounts', v: '1200-01', mono: true },
+          { k: 'As of 2026-07', v: '520,487.15', mono: true },
+          { k: 'Prior period', v: '412,880.44', mono: true },
+          { k: 'Change', v: '107,606.71', mono: true },
+          { k: 'Source', v: 'Certified trial balance 2026-07' }
+        ]
+      },
+      states: [
+        { key: 'primary', label: 'Primary · populated', rows, tableMeta: 'Comparative: prior period', banner: { kind: 'warn', title: 'Comparative and rounding options are not yet confirmed', msg: 'Prior-period and change columns are shown as a proposal. They must not ship until the certified report contract confirms they are supplied by the backend.', tag: 'PRODUCT_DECISION_REQUIRED + API_CONFIRMATION_REQUIRED — comparative columns, rounding, and consolidated multi-entity view' } },
+        { key: 'loading', label: 'Loading', mode: 'loading', loadingText: 'Producing balance sheet for entity 01 as of 2026-07…' },
+        { key: 'empty', label: 'No data', mode: 'empty', emptyTitle: 'No balance sheet available for 2026-07', emptyMsg: 'Entity 01 has no certified balances for the selected period. Confirm the period is closed and the trial balance has been produced.' },
+        { key: 'error', label: 'Structural error', mode: 'error', errorTitle: 'Balance sheet does not balance', errorMsg: 'Total assets do not equal liabilities plus equity for 2026-07. The statement is suppressed rather than shown with a difference, because a published statement must never appear reconciled when it is not.', errorCode: 'SME_DECISION_REQUIRED — suppress the statement or show it with an explicit difference line' },
+        { key: 'unauth', label: 'Unauthorized', mode: 'unauth', unauthTitle: 'You do not have access to the Balance Sheet', unauthMsg: 'Published financial statements are restricted to entity-level financial roles.' },
+        { key: 'export', label: 'Export', rows, tableMeta: 'Comparative: prior period', exportOpen: true },
+        { key: 'drawer', label: 'Line drill-down', rows, tableMeta: 'Comparative: prior period', drawerOpen: true }
+      ]
+    };
+  }
+
+  cfgIncomeStatement() {
+    const H = (t) => ({ bg: '#F3F6F9', bb: '#DCE1E8', cells: [this.sec_(t), this.dash_(), this.dash_(), this.dash_()] });
+    const L = (name, cur, ytd, pct, click) => ({ click: !!click, cells: [this.t_(name), this.n_(cur), this.n_(ytd), this.n_(pct, { color: '#5A6675' })] });
+    const S = (name, cur, ytd, pct) => ({ bg: '#FBFCFD', bb: '#C3CBD6', cells: [this.t_(name, { fw: '600' }), this.n_(cur, { fw: '600' }), this.n_(ytd, { fw: '600' }), this.n_(pct, { fw: '600', color: '#5A6675' })] });
+    const rows = [
+      H('Revenue'),
+      L('Vehicle sales — new', '318,410.00', '2,202,630.00', '72.4', true),
+      L('Vehicle sales — used', '84,220.00', '602,118.00', '19.2', true),
+      L('Service and parts', '36,908.44', '288,441.10', '8.4', true),
+      S('Total revenue', '439,538.44', '3,093,189.10', '100.0'),
+      H('Cost of sales'),
+      L('Cost of sales — new vehicles', '288,140.00', '1,991,020.00', '65.6', true),
+      L('Cost of sales — used vehicles', '71,880.00', '512,440.00', '16.4', true),
+      S('Gross profit', '79,518.44', '589,729.10', '18.1'),
+      H('Operating expenses'),
+      L('Personnel', '41,220.00', '288,540.00', '9.4', true),
+      L('Advertising', '8,410.00', '58,870.00', '1.9', true),
+      L('Policy adjustment — service', '1,860.00', '20,262.55', '0.4', true),
+      S('Net income', '28,028.44', '222,056.55', '6.4')
+    ];
+    return {
+      title: 'Income Statement', crumb2: 'Financial Reports', asOf: 'Period 2026-07', badge: 'Certified',
+      primaryAction: 'Run report', filterAction: 'Run report', tableTitle: 'Income statement — entity 01, period 2026-07',
+      resultNote: 'Statement lines, groupings and totals are returned by the reporting service',
+      filters: [
+        { label: 'Entity / company', value: '01', w: '110px', mono: true, type: 'select' },
+        { label: 'Store', value: 'All stores', w: '170px', type: 'select' },
+        { label: 'Department', value: 'All departments', w: '180px', type: 'select' },
+        { label: 'Period (YYYY-MM)', value: '2026-07', w: '150px', mono: true },
+        { label: 'Comparative', value: 'Year to date', w: '160px', type: 'select' }
+      ],
+      columns: [
+        { label: 'Line' }, { label: 'Period 2026-07', align: 'right', w: '170px' },
+        { label: 'Year to date', align: 'right', w: '170px' }, { label: '% of revenue', align: 'right', w: '140px' }
+      ],
+      footer: { label: 'Net income — period 2026-07', cells: [
+        { label: 'Total revenue', value: '439,538.44', w: '170px' },
+        { label: 'Total expense', value: '411,510.00', w: '170px' },
+        { label: 'Net income', value: '28,028.44', w: '160px', color: '#1E6B45' }
+      ] },
+      related: ['Trial Balance', 'Balance Sheet', 'GL Inquiry'],
+      drawer: {
+        title: 'Vehicle sales — new', sub: 'Income statement line · period 2026-07 · entity 01',
+        action: 'Open in GL Inquiry',
+        note: 'API_CONFIRMATION_REQUIRED — year-to-date definition (fiscal versus calendar year, and whether YTD is supplied by the service or must be requested per period). The UI must not derive it.',
+        rows: [
+          { k: 'Statement line', v: 'Vehicle sales — new' },
+          { k: 'Contributing accounts', v: '4100-00', mono: true },
+          { k: 'Period 2026-07', v: '318,410.00', mono: true },
+          { k: 'Year to date', v: '2,202,630.00', mono: true },
+          { k: '% of revenue', v: '72.4', mono: true },
+          { k: 'Source', v: 'Certified trial balance 2026-07' }
+        ]
+      },
+      states: [
+        { key: 'primary', label: 'Primary · populated', rows, tableMeta: 'Comparative: year to date', banner: { kind: 'warn', title: 'Year-to-date and % of revenue are unconfirmed', msg: 'Both columns are shown as a proposal only. Year-to-date behaviour and any percentage calculation must come from the reporting service — this screen will not compute them.', tag: 'API_CONFIRMATION_REQUIRED — YTD definition · SME_DECISION_REQUIRED — whether % of revenue is a certified figure' } },
+        { key: 'loading', label: 'Loading', mode: 'loading', loadingText: 'Producing income statement for entity 01, period 2026-07…' },
+        { key: 'empty', label: 'No data', mode: 'empty', emptyTitle: 'No income statement available for 2026-07', emptyMsg: 'No certified revenue or expense activity was returned for entity 01 in the selected period, store and department.' },
+        { key: 'error', label: 'Structural error', mode: 'error', errorTitle: 'Income statement could not be produced', errorMsg: 'One or more revenue accounts are not mapped to a statement line for entity 01. An unmapped account would silently drop from the statement, so the report is suppressed.', errorCode: 'API_CONFIRMATION_REQUIRED — unmapped-account error code and the list of offending accounts' },
+        { key: 'unauth', label: 'Unauthorized', mode: 'unauth', unauthTitle: 'You do not have access to the Income Statement', unauthMsg: 'Published financial statements are restricted to entity-level financial roles.' },
+        { key: 'export', label: 'Export', rows, tableMeta: 'Comparative: year to date', exportOpen: true },
+        { key: 'drawer', label: 'Line drill-down', rows, tableMeta: 'Comparative: year to date', drawerOpen: true }
+      ]
+    };
+  }
+
+  handoffFor(id) {
+    const H = {
+      s05: [
+        ['Route', '/accounting/general-ledger/search'],
+        ['Component hierarchy', 'AccountingShell › AccountingPageHeader › Breadcrumb › AccountingContextBar › SearchFilterBar › FinancialDataTable › ResultDrawer'],
+        ['Reusable components', 'AccountingPageHeader, Breadcrumb, AccountingContextBar, LegalEntity/Store/Department/FiscalPeriodSelector, AccountLookup, FinancialDataTable, MoneyCell, DebitCreditCell, StatusBadge, EmptyState, ErrorState, UnauthorizedState, LoadingState, ExportMenu, DetailDrawer'],
+        ['Fields & types', 'keyword: text · account: lookup · dateFrom/dateTo: date (YYYY-MM-DD) · source: select · amountFrom/amountTo: decimal(2)'],
+        ['Table columns', 'document, date, account, description, store, department, debit, credit, status'],
+        ['Filter behaviour', 'Server-side; submit on Search or Enter; filters persist per user per session; account list is scope-filtered; date range validated before submit'],
+        ['Action states', 'Search (default/loading/disabled while invalid) · Reset filters · Export (menu) · row click opens drawer'],
+        ['API mapping', 'API_CONFIRMATION_REQUIRED — search endpoint, request shape, pagination model, max result size'],
+        ['Permission mapping', 'API_CONFIRMATION_REQUIRED — permission key for ledger search; nav item hidden when absent'],
+        ['Audit events', 'API_CONFIRMATION_REQUIRED — whether search and export are audited events'],
+        ['Error codes', 'API_CONFIRMATION_REQUIRED — invalid range, result-limit exceeded, timeout'],
+        ['Accessibility', 'Filter bar is a labelled form region; results table has scoped headers; result count announced politely; drawer traps focus and returns it to the originating row'],
+        ['Responsive', '≥1280px full column set; 1280–1440 hides Store/Dept columns into the drawer; table scrolls horizontally, never the shell'],
+        ['Playwright', 'search returns rows · empty result renders EmptyState · invalid range blocks submit · row click opens drawer · Escape closes drawer and restores focus · unauthorized deep link renders UnauthorizedState · export menu opens and closes'],
+        ['Current vs proposed', 'Current: no dedicated search surface. Proposed: first-class search with drill-through into GL Inquiry.']
+      ],
+      s06: [
+        ['Route', '/accounting/general-ledger/inquiry'],
+        ['Component hierarchy', 'AccountingShell › AccountingPageHeader › Breadcrumb › AccountingContextBar › InquiryFilterBar › FinancialDataTable(runningBalance) › TotalsFooter › JournalDrawer'],
+        ['Reusable components', 'Same shell and table set as GL Search, plus TotalsFooter and AuditHistoryLink'],
+        ['Fields & types', 'account: lookup (required) · periodFrom/periodTo: month (YYYY-MM) · store: select · department: select · source: select'],
+        ['Table columns', 'date, document, source, description, debit, credit, runningBalance'],
+        ['Filter behaviour', 'Account is required before the inquiry runs; period defaults to the context period; changing context resets the account'],
+        ['Action states', 'Run inquiry (default/loading/disabled without account) · Export · row click opens journal drawer · Open journal entry from drawer'],
+        ['API mapping', 'API_CONFIRMATION_REQUIRED — inquiry endpoint; opening balance, running balance and closing balance must be supplied, not derived in the UI'],
+        ['Permission mapping', 'API_CONFIRMATION_REQUIRED — account-level read scope'],
+        ['Audit events', 'API_CONFIRMATION_REQUIRED'],
+        ['Error codes', 'API_CONFIRMATION_REQUIRED — cross-fiscal-year range, account out of scope, no opening balance available'],
+        ['Accessibility', 'Running-balance column marked as a calculated column for screen readers; totals footer is a live region'],
+        ['Responsive', 'Source column collapses first; running balance and money columns never collapse'],
+        ['Playwright', 'inquiry loads with opening/closing balances · running balance matches supplied values · drawer opens journal · link to Journal Entry preserves context · empty period renders EmptyState'],
+        ['Current vs proposed', 'Current: link-only navigation with no defined result view. Proposed: account activity with supplied opening, activity and closing balances.']
+      ],
+      s07: [
+        ['Route', '/accounting/general-ledger/trial-balance'],
+        ['Component hierarchy', 'AccountingShell › AccountingPageHeader › AccountingContextBar › TrialBalanceFilterBar › FinancialDataTable › TotalsFooter › AccountDrawer'],
+        ['Reusable components', 'Shell set, FinancialDataTable, MoneyCell, TotalsFooter, ValidationBanner, ExportMenu, DetailDrawer'],
+        ['Fields & types', 'entity: select · store: select · department: select · asOf: month (YYYY-MM) · suppressZeroBalances: boolean'],
+        ['Table columns', 'account, description, type, opening, periodDebit, periodCredit, endingDebit, endingCredit'],
+        ['Filter behaviour', 'Matches the filters already present in the current screen: entity, store, department, as-of period, suppress zero balances. No new filters introduced.'],
+        ['Action states', 'Run Trial Balance (default/loading) · Export · row click opens account drawer'],
+        ['API mapping', 'API_CONFIRMATION_REQUIRED — trial-balance endpoint and whether the in-balance check is returned as a flag'],
+        ['Permission mapping', 'API_CONFIRMATION_REQUIRED — entity-level financial read'],
+        ['Audit events', 'API_CONFIRMATION_REQUIRED — whether producing or exporting a trial balance is audited'],
+        ['Error codes', 'API_CONFIRMATION_REQUIRED — out-of-balance code, and whether it blocks Balance Sheet and Income Statement'],
+        ['Accessibility', 'Balance status announced assertively; account column is a link with an accessible name including the description'],
+        ['Responsive', 'Type column collapses first; the eight-column money grid keeps a fixed decimal alignment at all widths'],
+        ['Playwright', 'in-balance renders success banner · out-of-balance renders error banner and red difference · suppress-zero toggle changes row count · drill-down opens GL Inquiry with account and period preserved'],
+        ['Current vs proposed', 'Current: filters and a Run action with no result presentation. Proposed: full certified balance grid with a stated balance check.']
+      ],
+      s08: [
+        ['Route', '/accounting/financial-reports/balance-sheet'],
+        ['Component hierarchy', 'AccountingShell › AccountingPageHeader › AccountingContextBar › ReportFilterBar › StatementTable(grouped) › BalanceCheckFooter › LineDrawer'],
+        ['Reusable components', 'Shell set, StatementTable (FinancialDataTable with group headers and subtotal rows), MoneyCell, ExportMenu, DetailDrawer, ValidationBanner'],
+        ['Fields & types', 'entity: select · store: select · asOf: month · comparative: select · rounding: select'],
+        ['Table columns', 'line, currentPeriod, priorPeriod, change'],
+        ['Filter behaviour', 'Comparative and rounding are proposals only and must be gated on the certified report contract'],
+        ['Action states', 'Run report · Export · row click opens line drawer'],
+        ['API mapping', 'API_CONFIRMATION_REQUIRED — statement endpoint, line hierarchy, account-to-line mapping, comparative support'],
+        ['Permission mapping', 'API_CONFIRMATION_REQUIRED — published-statement read'],
+        ['Audit events', 'API_CONFIRMATION_REQUIRED'],
+        ['Error codes', 'API_CONFIRMATION_REQUIRED — does-not-balance, unmapped account, period not closed'],
+        ['Accessibility', 'Group headers use row-header semantics; subtotal rows are announced as subtotals; the balance check is a live region'],
+        ['Responsive', 'Comparative columns collapse first; the current-period column never collapses'],
+        ['Playwright', 'statement renders grouped lines and subtotals · balance check reports equality · unbalanced payload suppresses the statement · drill-down opens GL Inquiry'],
+        ['Current vs proposed', 'Current: linked but not designed. Proposed: grouped statement with an explicit balance check and drill-down.']
+      ],
+      s09: [
+        ['Route', '/accounting/financial-reports/income-statement'],
+        ['Component hierarchy', 'AccountingShell › AccountingPageHeader › AccountingContextBar › ReportFilterBar › StatementTable(grouped) › NetIncomeFooter › LineDrawer'],
+        ['Reusable components', 'Identical to Balance Sheet — same StatementTable, filters, export and drawer'],
+        ['Fields & types', 'entity: select · store: select · department: select · period: month · comparative: select'],
+        ['Table columns', 'line, currentPeriod, yearToDate, percentOfRevenue'],
+        ['Filter behaviour', 'Same pattern as Balance Sheet; department slicing added because operating expenses are departmental'],
+        ['Action states', 'Run report · Export · row click opens line drawer'],
+        ['API mapping', 'API_CONFIRMATION_REQUIRED — statement endpoint, YTD definition and whether percentages are certified'],
+        ['Permission mapping', 'API_CONFIRMATION_REQUIRED — published-statement read'],
+        ['Audit events', 'API_CONFIRMATION_REQUIRED'],
+        ['Error codes', 'API_CONFIRMATION_REQUIRED — unmapped revenue or expense account, period not closed'],
+        ['Accessibility', 'Same as Balance Sheet; percentage column carries a unit in its accessible name'],
+        ['Responsive', 'YTD and percentage collapse first'],
+        ['Playwright', 'revenue, cost of sales and expense groups render with subtotals · gross profit and net income match supplied values · unmapped-account payload suppresses the statement · YTD column hidden when not supplied'],
+        ['Current vs proposed', 'Current: linked but not designed. Proposed: grouped statement sharing every pattern with the Balance Sheet.']
+      ]
+    };
+    return (H[id] || []).map((r) => ({ k: r[0], v: r[1], flag: r[1].indexOf('REQUIRED') >= 0, plain: r[1].indexOf('REQUIRED') < 0 }));
+  }
+
+  jeHandoff() {
+    return [
+      ['Route', '/accounting/general-ledger/journal-entry/:journalId?'],
+      ['Component hierarchy', 'AccountingShell › AccountingPageHeader(Breadcrumb, StatusBadge, WorkflowActions) › AccountingContextBar › ValidationBanner › JournalHeaderForm › JournalLinesTable(DebitCreditCell, MoneyCell, AccountLookup, RemoveLineAction, AddLineButton) › TotalsFooter › RelatedLinks › ConfirmationDialog'],
+      ['Reusable components', 'Every component in section 02 except the report-only ExportMenu'],
+      ['Form fields & types', 'entryDate: date (YYYY-MM-DD, required) · source: select · documentNumber: read-only string assigned by backend · reference: text (max length API_CONFIRMATION_REQUIRED) · memo: text'],
+      ['Line fields & types', 'lineNumber: read-only int · account: lookup (required) · accountDescription: read-only, resolved from account · store: select · department: select · debit: decimal(2) · credit: decimal(2) · lineMemo: text'],
+      ['Table columns', 'lineNumber, account, accountDescription, store, department, debit, credit, lineMemo, actions'],
+      ['Button states', 'Save Draft — enabled while editable, disabled when posted or reversed. Validate — enabled while editable. Post — disabled until the backend reports validation passed; tooltip states why. Reverse — visible only on a posted journal and only with reverse permission.'],
+      ['Validation messages', 'Rendered verbatim from the backend payload. The UI never composes accounting messages. Line-level detail links focus the offending row. API_CONFIRMATION_REQUIRED — payload shape for rule id, message, affected line numbers and amounts.'],
+      ['API mapping', 'API_CONFIRMATION_REQUIRED — load draft, save draft, validate, post, reverse, and account lookup endpoints'],
+      ['Permission mapping', 'API_CONFIRMATION_REQUIRED — journal read, journal create/edit, post, reverse, audit read'],
+      ['Audit events', 'API_CONFIRMATION_REQUIRED — event names for draft saved, validated, posted, reversed, and whether viewing is audited'],
+      ['Keyboard', 'Tab moves cell to cell across the line grid; Enter commits a cell and moves down; Escape cancels the cell edit; Alt+A adds a line; Alt+Delete removes the focused line after confirmation; account lookup supports arrow keys and Escape'],
+      ['Responsive', 'Desktop-first, minimum 1280px. Below 1440px the line-memo column truncates with a tooltip; money, account and action columns never collapse. The totals footer stays pinned at all widths.'],
+      ['Accessibility', 'Lines are a real table with scoped headers; the totals footer is an aria-live region; validation banners are assertive and receive focus; the confirmation dialog traps focus and returns it to the invoking button'],
+      ['Browser test scenarios', 'balanced draft saves · unbalanced journal is rejected with the backend message · validation pass enables Post · post confirmation writes and renders read-only · posted journal cannot be edited · reverse creates and links a reversing entry · closed period blocks posting · account lookup empty result · unauthorized deep link · API failure preserves entered lines'],
+      ['Current vs proposed', 'See the comparison table above — 14 mapped gaps, none of which change accounting behaviour.']
+    ].map((r) => ({ k: r[0], v: r[1], flag: r[1].indexOf('REQUIRED') >= 0, plain: r[1].indexOf('REQUIRED') < 0 }));
+  }
+
+  reports() {
+    const defs = [
+      { id: 's05', num: '05', cfg: this.cfgGlSearch(), intro: 'Find any journal line across the ledger, then open it where the work happens. GL Search is the entry point of the connected journey: a result drills through to GL Inquiry with account and period preserved.' },
+      { id: 's06', num: '06', cfg: this.cfgGlInquiry(), intro: 'Account activity for one account and period, with opening, movement and closing balances supplied by the ledger service. Reconciles against Trial Balance and drills back into the originating journal.' },
+      { id: 's07', num: '07', cfg: this.cfgTrialBalance(), intro: 'The balance foundation. Filters are exactly those already present in the current screen. The in-balance check is stated explicitly because Balance Sheet and Income Statement depend on it.' },
+      { id: 's08', num: '08', cfg: this.cfgBalanceSheet(), intro: 'Published position statement built on the certified trial balance. Same shell, same table, same money rules — only the grouping differs.' },
+      { id: 's09', num: '09', cfg: this.cfgIncomeStatement(), intro: 'Published performance statement. Deliberately identical to the Balance Sheet in every pattern: filters, grouping, export, drill-down.' }
+    ];
+    const sel = this.state.reportKeys || {};
+    return defs.map((d) => {
+      const key = sel[d.id] || 'primary';
+      return {
+        id: d.id, num: d.num, title: d.cfg.title, intro: d.intro, cfg: d.cfg, key,
+        route: this.handoffFor(d.id)[0].v,
+        chips: d.cfg.states.map((s) => ({
+          label: s.label, bg: s.key === key ? '#1E3A5C' : '#fff', fg: s.key === key ? '#fff' : '#3C4A5C', bd: s.key === key ? '#1E3A5C' : '#DCE1E8',
+          onClick: () => this.setState((st) => ({ reportKeys: Object.assign({}, st.reportKeys, { [d.id]: s.key }) }))
+        })),
+        handoff: this.handoffFor(d.id)
+      };
+    });
+  }
+
+  readiness() {
+    const y = { t: 'Yes', bg: '#E7F4EC', fg: '#1E6B45', bd: '#B6DCC4' };
+    const n = { t: 'No', bg: '#FDECEA', fg: '#B3261E', bd: '#F0C0BB' };
+    const p = { t: 'Partial', bg: '#FFF6E0', fg: '#8A5A00', bd: '#EBD49A' };
+    const cell = (v) => ({ t: v.t, bg: v.bg, fg: v.fg, bd: v.bd });
+    const row = (sec, prim, states, api, perm, prod, sme) => ({
+      sec, prim: cell(prim), states: cell(states), api: cell(api), perm: cell(perm),
+      prod: String(prod), sme: String(sme),
+      verdict: 'NOT_READY_FOR_IMPLEMENTATION'
+    });
+    return [
+      row('04 Journal Entry', y, y, n, n, 6, 5),
+      row('05 GL Search', y, y, n, n, 2, 1),
+      row('06 GL Inquiry', y, y, n, n, 1, 2),
+      row('07 Trial Balance', y, y, n, n, 1, 2),
+      row('08 Balance Sheet', y, y, n, n, 2, 2),
+      row('09 Income Statement', y, y, n, n, 2, 2)
+    ];
+  }
+
+  decisions() {
+    const D = (owner, id, q, impact) => ({ owner, id, q, impact });
+    return [
+      D('PRODUCT', 'PRODUCT_DECISION_REQUIRED', 'Is duplicate-line supported on journal entry, and does it copy amounts or account only?', 'Line actions'),
+      D('PRODUCT', 'PRODUCT_DECISION_REQUIRED', 'Can a draft journal be saved with an unbalanced or incomplete line set?', 'Save Draft behaviour'),
+      D('PRODUCT', 'PRODUCT_DECISION_REQUIRED', 'Does changing entity, store or department discard an unsaved draft, or carry it?', 'Context bar'),
+      D('PRODUCT', 'PRODUCT_DECISION_REQUIRED', 'Is there a journal list / worklist screen that Journal Entry is reached from?', 'Navigation'),
+      D('PRODUCT', 'PRODUCT_DECISION_REQUIRED', 'Do we ship comparative (prior period) columns on the Balance Sheet in R1?', 'Balance Sheet'),
+      D('PRODUCT', 'PRODUCT_DECISION_REQUIRED', 'Which export formats are offered, and is export permission separate from read?', 'All reports'),
+      D('SME', 'SME_DECISION_REQUIRED', 'Confirm debit/credit column order and the em-dash convention for the empty side.', 'Visual foundation'),
+      D('SME', 'SME_DECISION_REQUIRED', 'Confirm that negative amounts are parenthesised rather than minus-signed throughout.', 'Visual foundation'),
+      D('SME', 'SME_DECISION_REQUIRED', 'Does Trial Balance belong under General Ledger or Financial Reports?', 'Navigation'),
+      D('SME', 'SME_DECISION_REQUIRED', 'When the trial balance is out of balance, must Balance Sheet and Income Statement be suppressed?', 'Reports'),
+      D('SME', 'SME_DECISION_REQUIRED', 'Is “% of revenue” a certified figure or a UI convenience that should be removed?', 'Income Statement'),
+      D('SME', 'SME_DECISION_REQUIRED', 'Is reversal always posted to the current open period, or to the original period when still open?', 'Journal Entry'),
+      D('API', 'API_CONFIRMATION_REQUIRED', 'Endpoint names, request and response shapes for journal draft, validate, post and reverse.', 'Journal Entry'),
+      D('API', 'API_CONFIRMATION_REQUIRED', 'Exact validation rule identifiers and message strings returned on failure.', 'Journal Entry'),
+      D('API', 'API_CONFIRMATION_REQUIRED', 'Permission key names for journal read, create, post, reverse and audit read.', 'All screens'),
+      D('API', 'API_CONFIRMATION_REQUIRED', 'Audit event names emitted for save, validate, post and reverse.', 'All screens'),
+      D('API', 'API_CONFIRMATION_REQUIRED', 'Year-to-date definition — fiscal or calendar, and whether it is supplied per line.', 'Income Statement'),
+      D('API', 'API_CONFIRMATION_REQUIRED', 'Account-to-statement-line mapping source for both published statements.', 'Reports')
+    ].map((d) => ({
+      owner: d.owner, id: d.id, q: d.q, impact: d.impact,
+      bg: d.owner === 'PRODUCT' ? '#EEF3FA' : (d.owner === 'SME' ? '#FFF6E0' : '#F3F5F8'),
+      fg: d.owner === 'PRODUCT' ? '#0B5CAB' : (d.owner === 'SME' ? '#8A5A00' : '#4A5666'),
+      bd: d.owner === 'PRODUCT' ? '#C6D8EE' : (d.owner === 'SME' ? '#EBD49A' : '#D3D8E0')
+    }));
+  }
+
+  gaps() {
+    const T = { visual: { bg: '#EEF3FA', fg: '#0B5CAB', bd: '#C6D8EE', t: 'Visual only' }, ux: { bg: '#F3F5F8', fg: '#4A5666', bd: '#D3D8E0', t: 'UX structure' }, fe: { bg: '#FFF6E0', fg: '#8A5A00', bd: '#EBD49A', t: 'Frontend work' } };
+    const g = (area, cur, next, k) => ({ area, cur, next, type: T[k].t, bg: T[k].bg, fg: T[k].fg, bd: T[k].bd });
+    return [
+      g('Workflow', 'Draft / Validate / Post / Reverse listed as numbered plain text', 'Status badge plus enabled/disabled workflow buttons in the page header', 'fe'),
+      g('Journal status', 'Not displayed', 'StatusBadge — Draft, Validated, Posted, Reversed', 'fe'),
+      g('Context', 'Row of unlabelled inputs', 'AccountingContextBar with labelled entity, store, department and period + open/closed indicator', 'fe'),
+      g('Journal header', 'Bare fields, no grouping', 'Labelled five-field header block on a work surface; document number read-only until assigned', 'visual'),
+      g('Lines table', 'Unstyled rows, no column semantics', 'FinancialDataTable with navy header, fixed money columns and inline cell editing', 'fe'),
+      g('Money', 'Default left-aligned text', 'Right-aligned tabular mono, 2dp, em dash for the empty side, parenthesised negatives', 'visual'),
+      g('Totals', 'Not shown', 'Pinned TotalsFooter with total debit, total credit and variance with direction', 'fe'),
+      g('Validation', 'Message location undefined', 'ValidationBanner above the header, rendered from the backend payload, focus moved to it', 'fe'),
+      g('Posting', 'Immediate action', 'ConfirmationDialog restating period, line count and amounts', 'fe'),
+      g('Posted journal', 'Editable-looking', 'Read-only rendering: borders removed, line actions hidden, Reverse replaces Post', 'fe'),
+      g('Reversal', 'Undefined confirmation', 'Destructive ConfirmationDialog plus link between original and reversing entry', 'fe'),
+      g('Related links', 'Sentence of middot-separated links', 'Labelled Related row under the table with consistent placement across GL screens', 'visual'),
+      g('Empty / error / unauthorized', 'Not implemented', 'Dedicated LoadingState, ErrorState, UnauthorizedState and no-entity states', 'fe'),
+      g('Keyboard', 'Browser default only', 'Full grid keyboard model: Tab, Enter to commit, Escape to cancel, Alt+A to add a line', 'fe')
+    ];
+  }
+
+  matrix() {
+    const Y = '●', N = '·';
+    const r = (name, s, p) => ({ name, d: s[0] ? Y : N, h: s[1] ? Y : N, f: s[2] ? Y : N, dis: s[3] ? Y : N, e: s[4] ? Y : N, r: s[5] ? Y : N, l: s[6] ? Y : N, p });
+    return [
+      r('AccountingPageHeader', [1,0,0,0,0,1,1], 'Actions filtered by permission; title always shown'),
+      r('Breadcrumb', [1,1,1,0,0,1,0], 'Unreachable ancestors render as plain text'),
+      r('DealershipSelector', [1,1,1,1,1,1,1], 'Single-dealership users see static text'),
+      r('LegalEntitySelector', [1,1,1,1,1,1,1], 'Locked to assigned scope'),
+      r('StoreSelector', [1,1,1,1,1,1,1], 'Locked to assigned scope'),
+      r('DepartmentSelector', [1,1,1,1,1,1,1], 'Locked to assigned scope'),
+      r('FiscalPeriodSelector', [1,1,1,1,1,1,1], 'Closed periods listed but not selectable'),
+      r('AccountingContextBar', [1,0,0,1,1,1,1], '“Change context” hidden without multi-scope'),
+      r('AccountLookup', [1,1,1,1,1,1,1], 'Searches only in-scope chart of accounts'),
+      r('FinancialDataTable', [1,1,1,0,1,1,1], 'Falls back to read-only rendering'),
+      r('DebitCreditCell', [1,1,1,1,1,1,0], 'Read-only when journal not editable'),
+      r('MoneyCell', [1,0,1,1,1,1,1], 'Read-only when journal not editable'),
+      r('TotalsFooter', [1,0,0,0,1,1,1], 'Always visible — totals are never hidden'),
+      r('StatusBadge', [1,0,0,0,0,1,1], 'Always visible'),
+      r('ValidationBanner', [1,0,1,0,1,1,1], 'Always visible when returned by backend'),
+      r('LoadingState', [1,0,0,0,0,0,1], 'n/a'),
+      r('EmptyState', [1,0,0,0,0,1,0], 'Primary CTA hidden without create permission'),
+      r('ErrorState', [1,0,1,0,1,0,0], 'n/a'),
+      r('UnauthorizedState', [1,0,0,0,0,1,0], 'This is the permission-denied surface'),
+      r('AddLineButton', [1,1,1,1,0,1,1], 'Hidden when journal is not editable'),
+      r('RemoveLineAction', [1,1,1,1,0,1,0], 'Hidden when journal is not editable'),
+      r('DuplicateLineAction', [1,1,1,1,0,1,0], 'Hidden unless backend supports line copy'),
+      r('PrimaryButton', [1,1,1,1,0,0,1], 'Hidden when the action is never permitted'),
+      r('SecondaryButton', [1,1,1,1,0,0,1], 'Hidden when the action is never permitted'),
+      r('DestructiveButton', [1,1,1,1,0,0,1], 'Hidden without reverse permission'),
+      r('ConfirmationDialog', [1,0,1,1,1,0,1], 'Never opens if the action is not permitted'),
+      r('AuditHistoryLink', [1,1,1,1,0,1,0], 'Hidden without audit-read permission')
+    ];
+  }
+
+  renderVals() {
+    const cfg = this.config();
+    const key = this.state.key;
+    const s = cfg[key] || cfg.balanced_draft;
+    const lines = s.lines.map((l) => Object.assign({}, l, {
+      drTxt: this.money(l.dr) || '—',
+      crTxt: this.money(l.cr) || '—',
+      drEmpty: l.dr === null || l.dr === undefined,
+      crEmpty: l.cr === null || l.cr === undefined,
+      acctTxt: l.acct || '— select —',
+      descTxt: l.desc || '',
+      deptTxt: l.dept || '—',
+      memoTxt: l.memo || '',
+      drColor: (l.dr === null || l.dr === undefined) ? '#AEB6C2' : '#16202E',
+      crColor: (l.cr === null || l.cr === undefined) ? '#AEB6C2' : '#16202E'
+    }));
+    const td = s.lines.reduce((a, l) => a + (l.dr || 0), 0);
+    const tc = s.lines.reduce((a, l) => a + (l.cr || 0), 0);
+    const v = Math.abs(td - tc);
+    const badgeMap = {
+      Draft: { bg: '#FFF6E0', fg: '#8A5A00', bd: '#EBD49A' },
+      Validated: { bg: '#EEF3FA', fg: '#0B5CAB', bd: '#C6D8EE' },
+      Posted: { bg: '#E7F4EC', fg: '#1E6B45', bd: '#B6DCC4' },
+      Reversed: { bg: '#EDEFF3', fg: '#4A5666', bd: '#D3D8E0' }
+    };
+    const bannerMap = {
+      error: { bg: '#FDECEA', bd: '#F0C0BB', fg: '#B3261E', mark: '!' },
+      success: { bg: '#E7F4EC', bd: '#B6DCC4', fg: '#1E6B45', mark: '✓' },
+      info: { bg: '#EEF3FA', bd: '#C6D8EE', fg: '#0B5CAB', mark: 'i' },
+      neutral: { bg: '#F3F5F8', bd: '#D3D8E0', fg: '#4A5666', mark: '↺' }
+    };
+    const b = s.banner ? Object.assign({}, s.banner, bannerMap[s.banner.kind]) : null;
+    const badge = badgeMap[s.status];
+    const mode = s.mode || null;
+    const groups = ['Authoring', 'Validation', 'Posting', 'Reversal', 'System', 'Context'];
+    const chips = groups.map((g) => ({
+      group: g,
+      items: Object.keys(cfg).filter((k) => cfg[k].group === g).map((k) => ({
+        key: k,
+        label: cfg[k].label,
+        bg: k === key ? '#1E3A5C' : '#fff',
+        fg: k === key ? '#fff' : '#3C4A5C',
+        bd: k === key ? '#1E3A5C' : '#DCE1E8',
+        onClick: () => this.setState({ key: k })
+      }))
+    }));
+    const ro = !!s.readOnly;
+    const posted = s.status === 'Posted' || s.status === 'Reversed';
+    return {
+      chipGroups: chips,
+      stateLabel: s.label,
+      stateKey: key,
+      status: s.status,
+      badgeBg: badge.bg, badgeFg: badge.fg, badgeBd: badge.bd,
+      lines,
+      lineCount: String(s.lines.length),
+      totalDebit: this.money(td), totalCredit: this.money(tc),
+      variance: this.money(v),
+      inBalance: v === 0,
+      varianceNote: v === 0 ? 'In balance' : (td > tc ? 'Credit side short' : 'Debit side short'),
+      varianceColor: v === 0 ? '#1E6B45' : '#B3261E',
+      banner: b, hasBanner: !!b,
+      bannerBg: b ? b.bg : '#fff', bannerBd: b ? b.bd : '#fff', bannerFg: b ? b.fg : '#000',
+      bannerMark: b ? b.mark : '', bannerTitle: b ? b.title : '', bannerMsg: b ? b.msg : '',
+      bannerCode: b ? b.code : null, bannerApi: b ? !!b.api : false,
+      docNo: s.doc || 'JE-2026-07-00418 (draft)',
+      period: s.period || '2026-07 · Open',
+      periodClosed: !!s.periodClosed,
+      readOnly: ro,
+      editable: !ro,
+      showForm: !mode,
+      showLoading: mode === 'loading',
+      showApiError: mode === 'error',
+      showUnauth: mode === 'unauth',
+      showNoEntity: mode === 'noentity',
+      showLookup: !!s.lookup,
+      dialogPost: s.dialog === 'post',
+      dialogReverse: s.dialog === 'reverse',
+      hasDialog: !!s.dialog,
+      canSave: !ro && !mode,
+      canValidate: !ro && !mode,
+      canPost: key === 'validated' || key === 'post_confirm',
+      cantPost: !(key === 'validated' || key === 'post_confirm'),
+      canReverse: posted && s.status !== 'Reversed',
+      cantReverse: !(posted && s.status !== 'Reversed'),
+      cantSave: ro || !!mode,
+      cantValidate: ro || !!mode,
+      matrix: this.matrix(),
+      gaps: this.gaps(),
+      reports: this.reports(),
+      readinessRows: this.readiness(),
+      decisionRows: this.decisions(),
+      jeHandoff: this.jeHandoff(),
+      caret: '▼',
+      cellBorder: ro ? 'transparent' : '#DCE1E8',
+      cellBg: ro ? 'transparent' : '#fff',
+      navCollapsed: this.state.navCollapsed,
+      toggleNav: () => this.setState((st) => ({ navCollapsed: !st.navCollapsed })),
+      closeDialog: () => this.setState({ key: this.state.key === 'post_confirm' ? 'validated' : 'posted' }),
+      confirmPost: () => this.setState({ key: 'posted' }),
+      confirmReverse: () => this.setState({ key: 'reversed' })
+    };
+  }
+}
+</script>
+</body>
+</html>
