@@ -25,9 +25,17 @@ export function verifyJWT(token: string, secret: string): JWTPayload {
 
   const [headerB64, payloadB64, signatureB64] = parts;
   const signatureInput = `${headerB64}.${payloadB64}`;
-  const expectedSignature = base64UrlEncode(
-    crypto.createHmac('sha256', secret).update(signatureInput).digest('binary'),
-  );
+  // FINAL-R0 defect fix: digest('binary') returns a latin1-encoded binary
+  // string, but base64UrlEncode's Buffer.from(data) defaults to utf-8 --
+  // reinterpreting any byte >= 0x80 and corrupting the encoded signature.
+  // This silently rejected every real HS256 JWT signed by the standard
+  // `jsonwebtoken` library (used by auth-service's real login/service-token
+  // issuance) everywhere this hand-rolled verifier ran (tenant-service,
+  // coa-service, audit-service), turning all real cross-service
+  // authorization into "Invalid JWT signature" 401s. digest('base64url')
+  // avoids the string-encoding round-trip entirely and matches the JWT
+  // spec's unpadded base64url signature encoding exactly.
+  const expectedSignature = crypto.createHmac('sha256', secret).update(signatureInput).digest('base64url');
 
   if (signatureB64 !== expectedSignature) {
     throw new Error('Invalid JWT signature');
@@ -52,9 +60,8 @@ export function createServiceToken(serviceId: string, secret: string): string {
     iat: Math.floor(Date.now() / 1000),
     exp: Math.floor(Date.now() / 1000) + 3600,
   }));
-  const signature = base64UrlEncode(
-    crypto.createHmac('sha256', secret).update(`${header}.${payload}`).digest('binary'),
-  );
+  // See verifyJWT above: digest('base64url') directly, not base64UrlEncode(digest('binary')).
+  const signature = crypto.createHmac('sha256', secret).update(`${header}.${payload}`).digest('base64url');
   return `${header}.${payload}.${signature}`;
 }
 

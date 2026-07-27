@@ -163,7 +163,7 @@ describe('authMiddleware — authentication bypass closure', () => {
       iat: Math.floor(Date.now() / 1000) - 7200,
       exp: Math.floor(Date.now() / 1000) - 3600, // expired one hour ago
     }));
-    const signature = b64url(crypto.createHmac('sha256', SECRET).update(`${header}.${payload}`).digest('binary'));
+    const signature = crypto.createHmac('sha256', SECRET).update(`${header}.${payload}`).digest('base64url');
     const expiredToken = `${header}.${payload}.${signature}`;
 
     const reply = makeReply();
@@ -185,7 +185,7 @@ describe('authMiddleware — authentication bypass closure', () => {
       iat: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + 3600,
     }));
-    const signature = b64url(crypto.createHmac('sha256', SECRET).update(`${header}.${payload}`).digest('binary'));
+    const signature = crypto.createHmac('sha256', SECRET).update(`${header}.${payload}`).digest('base64url');
     const token = `${header}.${payload}.${signature}`;
     void jwtLib;
 
