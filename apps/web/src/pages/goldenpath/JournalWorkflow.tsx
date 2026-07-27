@@ -163,7 +163,33 @@ export default function JournalWorkflow() {
       </section>
 
       {draftId && <p data-testid="journal-draft-status">Draft {draftId} — status: {draftStatus}</p>}
-      {validation && <p data-testid="journal-validation-result">Validation pass: {String(validation.pass)}</p>}
+      {validation && (
+        // BR013-1 fix: render the real backend-provided validation reason(s)
+        // and amounts instead of only the pass/fail boolean. All numbers and
+        // messages below (rule, message, lineIndex, deltaDr, deltaCr) come
+        // straight from the coa-service /validate response
+        // (draft-service.ts's ValidationResult) -- the browser performs no
+        // validation math of its own.
+        <div data-testid="journal-validation-result" style={{ marginTop: 8 }}>
+          <p>Validation pass: {String(validation.pass)}</p>
+          {!validation.pass && Array.isArray(validation.errors) && validation.errors.length > 0 && (
+            <ul data-testid="journal-validation-errors">
+              {validation.errors.map((e: any, idx: number) => (
+                <li key={idx} data-testid="journal-validation-error">
+                  {e.lineIndex !== undefined ? `Line ${e.lineIndex + 1}: ` : ''}
+                  {e.message ?? e.rule}
+                  {e.rule && e.message ? ` (${e.rule})` : ''}
+                </li>
+              ))}
+            </ul>
+          )}
+          {(validation.deltaDr !== undefined || validation.deltaCr !== undefined) && (
+            <p data-testid="journal-validation-delta">
+              Debits ({Number(validation.deltaDr ?? 0).toFixed(2)}) must equal credits ({Number(validation.deltaCr ?? 0).toFixed(2)})
+            </p>
+          )}
+        </div>
+      )}
       {journal && (
         <div data-testid="journal-view" style={{ marginTop: 16, border: '1px solid #ddd', padding: 12 }}>
           <div>Journal {journal.journalNumber} — status {journal.status} — {journal.totalDebits} DR / {journal.totalCredits} CR</div>

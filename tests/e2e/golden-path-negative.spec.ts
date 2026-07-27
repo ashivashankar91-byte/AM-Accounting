@@ -98,14 +98,16 @@ test.describe('Golden R0 — journal control-plane negatives (coa-service)', () 
     await expect(page.getByTestId('journal-draft-status')).toBeVisible({ timeout: 10_000 });
     await page.getByTestId('journal-validate').click();
     await expect(page.getByTestId('journal-validation-result')).toContainText('false', { timeout: 10_000 });
-    // Real defect/gap found while writing this test: JournalWorkflow.tsx's
-    // validation-result element only ever renders "Validation pass: {bool}"
-    // -- the real BR013-1 rule/message returned by the API is discarded
-    // and never shown to the user. Confirmed the real rule via curl
-    // (`{"rule":"BR013-1","message":"Debits (50.00) must equal credits
-    // (40.00)..."}`) separately from this UI proof rather than asserting
-    // on UI text that does not exist. This UI gap is flagged in the
-    // closure report rather than silently worked around.
+    // BR013-1 fix (Phase 3 full release certification): JournalWorkflow.tsx
+    // now renders the real backend-provided validation failure reason and
+    // amounts (rule/message per error, plus the real deltaDr/deltaCr) --
+    // it no longer only shows "Validation pass: {bool}", and it performs no
+    // validation math itself; every value below is echoed straight from the
+    // coa-service /validate response.
+    await expect(page.getByTestId('journal-validation-errors')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId('journal-validation-errors')).toContainText('BR013-1');
+    await expect(page.getByTestId('journal-validation-delta')).toContainText('50.00');
+    await expect(page.getByTestId('journal-validation-delta')).toContainText('40.00');
   });
 
   test('duplicate posting is real, correct idempotent behavior (not an error)', async ({ page }) => {
