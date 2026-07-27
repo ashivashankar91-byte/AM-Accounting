@@ -10,6 +10,7 @@ export const GL_PERMISSIONS = {
   LEDGER_MANAGE: 'gl.ledger.manage',
   ADMIN_MANAGE: 'gl.admin.manage',
   REPORT_TB_VIEW: 'report.tb.view',
+  REPORT_FS_VIEW: 'report.fs.view',
 } as const;
 
 export function getTenantId(request: any, statusCode = 400): TenantId {

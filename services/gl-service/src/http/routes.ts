@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { container } from 'tsyringe';
 import { GLService } from '../application/gl-service';
 import { StructuralImbalanceError, TrialBalanceService } from '../application/trial-balance-service';
+import { FSStructuralImbalanceError, FinancialStatementService, UnclassifiedAccountTypeError } from '../application/financial-statement-service';
 import { GLAccountType, authMiddleware, asTenantId } from '@amacc/shared-kernel';
 import { taxRoutes } from './tax-routes';
 import { report1099Routes } from './1099-routes';
@@ -137,6 +138,14 @@ function resolvePermission(method: string, url: string): string | null {
   if (url === '/fs/oem-mappings' && method === 'GET') return GL_PERMISSIONS.LEDGER_VIEW;
   if (url === '/fs/oem-statement/generate' && method === 'POST') return GL_PERMISSIONS.LEDGER_VIEW;
   if (url === '/reports/trial-balance') return GL_PERMISSIONS.REPORT_TB_VIEW;
+  if (
+    url === '/reports/balance-sheet' ||
+    url === '/reports/balance-sheet/export' ||
+    url === '/reports/income-statement' ||
+    url === '/reports/income-statement/export'
+  ) {
+    return GL_PERMISSIONS.REPORT_FS_VIEW;
+  }
   if (url === '/trial-balance' || url === '/periods' || url === '/periods/:year/:month') return GL_PERMISSIONS.LEDGER_VIEW;
   if (url === '/balance-sheet' || url === '/financial-statements/balance-sheet' || url === '/financial-statements/income-statement') return GL_PERMISSIONS.LEDGER_VIEW;
   if (url === '/income-statement' || url === '/cash-flow-statement' || url === '/financial-statements/consolidated') return GL_PERMISSIONS.LEDGER_VIEW;
@@ -167,12 +176,17 @@ function resolveAudit(method: string, url: string) {
   if (url.startsWith('/journal-entries')) {
     return { docType: 'JOURNAL_ENTRY', docId: (request: any) => String(request.params?.id ?? 'journal-entries') };
   }
+  if (url === '/reports/balance-sheet/export' || url === '/reports/income-statement/export') {
+    return { docType: 'GL_LEDGER_REPORT', docId: () => url, action: 'EXPORTED' as const };
+  }
   if (
     url === '/reports/trial-balance' ||
     url === '/trial-balance' ||
     url === '/balance-sheet' ||
+    url === '/reports/balance-sheet' ||
     url === '/financial-statements/balance-sheet' ||
     url === '/financial-statements/income-statement' ||
+    url === '/reports/income-statement' ||
     url === '/income-statement' ||
     url === '/cash-flow-statement' ||
     url === '/financial-statements/consolidated' ||
@@ -198,6 +212,7 @@ export async function glRoutes(app: FastifyInstance) {
 
   const svc = container.resolve<GLService>('GLService');
   const trialBalanceSvc = container.resolve(TrialBalanceService);
+  const financialStatementSvc = container.resolve(FinancialStatementService);
 
   // POST /accounts — Create GL account
   app.post('/accounts', async (request, reply) => {
@@ -664,6 +679,169 @@ export async function glRoutes(app: FastifyInstance) {
           crSum: error.crSum,
           delta: error.delta,
         });
+      }
+      throw error;
+    }
+  });
+
+  const FSQuerySchema = z.object({
+    entity: z.string().min(1).optional(),
+    company: z.string().min(1).optional(),
+    store: z.string().optional(),
+    dept: z.string().optional(),
+    asOf: z.string().regex(/^\d{4}-\d{2}$/),
+  });
+
+  function toCsv(rows: Array<Record<string, unknown>>, columns: string[]): string {
+    const escape = (v: unknown) => {
+      const s = String(v ?? '');
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lines = [columns.join(',')];
+    for (const row of rows) lines.push(columns.map((c) => escape(row[c])).join(','));
+    return lines.join('\n');
+  }
+
+  // GET /reports/balance-sheet — S227 Balance Sheet, built strictly on the
+  // real S014 trial balance (no independent ledger query, no independent
+  // rounding). Returns 500 STRUCTURAL_IMBALANCE (never a forced-balanced
+  // statement) or 500 UNCLASSIFIED_ACCOUNT_TYPE if an account cannot be
+  // safely classified.
+  app.get('/reports/balance-sheet', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const query = FSQuerySchema.parse(request.query);
+    const entity = query.entity ?? query.company;
+    if (!entity) {
+      return reply.status(400).send({ error: 'MISSING_ENTITY', message: 'entity query parameter is required' });
+    }
+    try {
+      const report = await financialStatementSvc.getBalanceSheet(tenantId, {
+        entity,
+        store: query.store,
+        dept: query.dept,
+        asOf: query.asOf,
+      });
+      return reply.send(report);
+    } catch (error) {
+      if (error instanceof FSStructuralImbalanceError) {
+        return reply.status(500).send({
+          error: error.code,
+          totalAssets: error.totalAssets,
+          totalLiabilitiesAndEquity: error.totalLiabilitiesAndEquity,
+          delta: error.delta,
+        });
+      }
+      if (error instanceof UnclassifiedAccountTypeError) {
+        return reply.status(500).send({ error: error.code, accounts: error.accounts });
+      }
+      if (error instanceof StructuralImbalanceError) {
+        return reply.status(500).send({ error: error.code, drSum: error.drSum, crSum: error.crSum, delta: error.delta });
+      }
+      throw error;
+    }
+  });
+
+  // GET /reports/balance-sheet/export — same data as above, as CSV.
+  // Deliberately a distinct route (not a ?format= flag on the view route)
+  // so a real, separate S007 EXPORTED audit event is emitted rather than
+  // reusing the VIEWED event for a different action.
+  app.get('/reports/balance-sheet/export', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const query = FSQuerySchema.parse(request.query);
+    const entity = query.entity ?? query.company;
+    if (!entity) {
+      return reply.status(400).send({ error: 'MISSING_ENTITY', message: 'entity query parameter is required' });
+    }
+    try {
+      const report = await financialStatementSvc.getBalanceSheet(tenantId, {
+        entity,
+        store: query.store,
+        dept: query.dept,
+        asOf: query.asOf,
+      });
+      const rows = [
+        ...report.assets.rows.map((r) => ({ ...r, section: 'ASSET' })),
+        ...report.liabilities.rows.map((r) => ({ ...r, section: 'LIABILITY' })),
+        ...report.equity.rows.map((r) => ({ ...r, section: 'EQUITY' })),
+        { accountCode: '', accountName: 'Current Period Net Income', accountType: 'EQUITY', amount: report.equity.currentEarnings, section: 'EQUITY' },
+      ];
+      const csv = toCsv(rows, ['section', 'accountCode', 'accountName', 'accountType', 'amount']);
+      reply.header('Content-Type', 'text/csv');
+      reply.header('Content-Disposition', `attachment; filename="balance-sheet-${query.asOf}.csv"`);
+      return reply.send(csv);
+    } catch (error) {
+      if (error instanceof FSStructuralImbalanceError) {
+        return reply.status(500).send({
+          error: error.code,
+          totalAssets: error.totalAssets,
+          totalLiabilitiesAndEquity: error.totalLiabilitiesAndEquity,
+          delta: error.delta,
+        });
+      }
+      if (error instanceof UnclassifiedAccountTypeError) {
+        return reply.status(500).send({ error: error.code, accounts: error.accounts });
+      }
+      throw error;
+    }
+  });
+
+  // GET /reports/income-statement — S227 Income Statement, built strictly
+  // on the real S014 trial balance. Net income here is derived by the
+  // identical formula used inside getBalanceSheet()'s current-earnings
+  // line (contract §6) — not a second, independently-derived value.
+  app.get('/reports/income-statement', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const query = FSQuerySchema.parse(request.query);
+    const entity = query.entity ?? query.company;
+    if (!entity) {
+      return reply.status(400).send({ error: 'MISSING_ENTITY', message: 'entity query parameter is required' });
+    }
+    try {
+      const report = await financialStatementSvc.getIncomeStatement(tenantId, {
+        entity,
+        store: query.store,
+        dept: query.dept,
+        asOf: query.asOf,
+      });
+      return reply.send(report);
+    } catch (error) {
+      if (error instanceof UnclassifiedAccountTypeError) {
+        return reply.status(500).send({ error: error.code, accounts: error.accounts });
+      }
+      if (error instanceof StructuralImbalanceError) {
+        return reply.status(500).send({ error: error.code, drSum: error.drSum, crSum: error.crSum, delta: error.delta });
+      }
+      throw error;
+    }
+  });
+
+  // GET /reports/income-statement/export — same data as above, as CSV.
+  app.get('/reports/income-statement/export', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const query = FSQuerySchema.parse(request.query);
+    const entity = query.entity ?? query.company;
+    if (!entity) {
+      return reply.status(400).send({ error: 'MISSING_ENTITY', message: 'entity query parameter is required' });
+    }
+    try {
+      const report = await financialStatementSvc.getIncomeStatement(tenantId, {
+        entity,
+        store: query.store,
+        dept: query.dept,
+        asOf: query.asOf,
+      });
+      const rows = [
+        ...report.revenue.rows.map((r) => ({ ...r, section: 'REVENUE' })),
+        ...report.expense.rows.map((r) => ({ ...r, section: 'EXPENSE' })),
+        { accountCode: '', accountName: 'Net Income', accountType: '', amount: report.netIncome, section: 'NET_INCOME' },
+      ];
+      const csv = toCsv(rows, ['section', 'accountCode', 'accountName', 'accountType', 'amount']);
+      reply.header('Content-Type', 'text/csv');
+      reply.header('Content-Disposition', `attachment; filename="income-statement-${query.asOf}.csv"`);
+      return reply.send(csv);
+    } catch (error) {
+      if (error instanceof UnclassifiedAccountTypeError) {
+        return reply.status(500).send({ error: error.code, accounts: error.accounts });
       }
       throw error;
     }
