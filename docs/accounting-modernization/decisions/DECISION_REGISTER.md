@@ -72,6 +72,7 @@ Uses a distinct `UXMAP-NN` prefix to avoid colliding with this file's own
 | UXMAP-20 | No drill-down from Balance Sheet or Income Statement line items | S227 | PRODUCT_DECISION_REQUIRED | OPEN |
 | UXMAP-21 | No percentage-of-revenue column on Income Statement | S227 (IS) | PRODUCT_DECISION_REQUIRED | OPEN |
 | UXMAP-22 | `KNOWN_LIMITATIONS_REGISTER.md` row 3 wording conflates BS-specific `STRUCTURAL_IMBALANCE` with Income Statement, where only `UNCLASSIFIED_ACCOUNT_TYPE` applies | S227 (IS) | PRODUCT_DECISION_REQUIRED | OPEN |
+| UXMAP-23 | Live-verified (2026-07-28): gl-service's Trial Balance and coa-service's Chart of Accounts share **zero overlapping account numbers** for tenant `1cf31f14…`'s legal entity, at every asOf checked (2026-01 empty, 2026-02 and 2026-03 both only have accounts 1000/4000, neither of which exists in coa-service). The TB→GL-Inquiry drill-through is correct code (UXMAP-03 fixed) but can never demonstrate a real successful match against current fixture data — every real run hits the honest "no account exists" gap, not a populated drill. Closing this requires either a coordinated gl-service `GLAccountPeriodBalance` fixture seed for an account/period that also exists in coa-service, or a real cross-ledger sync — both decisions, not a UI fix. | S014/S220/S222 | PRODUCT_DECISION_REQUIRED | OPEN |
 
 ---
 
