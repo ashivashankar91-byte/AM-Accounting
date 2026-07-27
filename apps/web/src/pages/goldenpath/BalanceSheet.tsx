@@ -28,8 +28,17 @@ interface StructuralImbalance {
 
 interface UnclassifiedError {
   error: 'UNCLASSIFIED_ACCOUNT_TYPE';
-  accountCode: string;
-  accountType: string;
+  // FINAL-R0 defect fix (Golden R0 closure, this pass): the real
+  // gl-service UnclassifiedAccountTypeError contract (financial-statement
+  // -service.ts) always returns a plural `accounts` array -- it supports
+  // reporting MULTIPLE unclassified accounts in one response, not a single
+  // top-level accountCode/accountType. The previous single-field shape here
+  // meant this banner ALWAYS rendered blank codes/types on every real
+  // occurrence of this error (verified live: "account  has account type ,
+  // which is not recognized..."), silently hiding which account(s) were
+  // actually the problem. Found live while writing this closure pass's
+  // negative-scenario Playwright coverage.
+  accounts: Array<{ accountCode: string; accountType: string }>;
 }
 
 function fmt(n: number): string {
@@ -150,7 +159,14 @@ export default function BalanceSheet() {
 
       {unclassified && (
         <div data-testid="bs-unclassified-banner" style={{ background: '#fef2f2', border: '1px solid #b91c1c', color: '#991b1b', padding: 12, marginTop: 12 }}>
-          <strong>UNCLASSIFIED_ACCOUNT_TYPE</strong> — account {unclassified.accountCode} has account type {unclassified.accountType}, which is not recognized by the approved Financial Statement Roll-Up Contract. The statement was not rendered.
+          <strong>UNCLASSIFIED_ACCOUNT_TYPE</strong> — {unclassified.accounts.length === 1 ? 'account' : 'accounts'}{' '}
+          {unclassified.accounts.map((a, i) => (
+            <span key={a.accountCode}>
+              {i > 0 && ', '}
+              {a.accountCode} (type {a.accountType || 'EMPTY'})
+            </span>
+          ))}{' '}
+          {unclassified.accounts.length === 1 ? 'is' : 'are'} not recognized by the approved Financial Statement Roll-Up Contract. The statement was not rendered.
         </div>
       )}
 

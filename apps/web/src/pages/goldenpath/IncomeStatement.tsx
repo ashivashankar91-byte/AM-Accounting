@@ -19,8 +19,10 @@ interface IncomeStatementReport {
 
 interface UnclassifiedError {
   error: 'UNCLASSIFIED_ACCOUNT_TYPE';
-  accountCode: string;
-  accountType: string;
+  // FINAL-R0 defect fix (Golden R0 closure, this pass): same real defect
+  // as BalanceSheet.tsx -- see that file's comment for the full rationale.
+  // The real gl-service contract always returns a plural `accounts` array.
+  accounts: Array<{ accountCode: string; accountType: string }>;
 }
 
 function fmt(n: number): string {
@@ -123,7 +125,14 @@ export default function IncomeStatement() {
 
       {unclassified && (
         <div data-testid="is-unclassified-banner" style={{ background: '#fef2f2', border: '1px solid #b91c1c', color: '#991b1b', padding: 12, marginTop: 12 }}>
-          <strong>UNCLASSIFIED_ACCOUNT_TYPE</strong> — account {unclassified.accountCode} has account type {unclassified.accountType}, which is not recognized by the approved Financial Statement Roll-Up Contract. The statement was not rendered.
+          <strong>UNCLASSIFIED_ACCOUNT_TYPE</strong> — {unclassified.accounts.length === 1 ? 'account' : 'accounts'}{' '}
+          {unclassified.accounts.map((a, i) => (
+            <span key={a.accountCode}>
+              {i > 0 && ', '}
+              {a.accountCode} (type {a.accountType || 'EMPTY'})
+            </span>
+          ))}{' '}
+          {unclassified.accounts.length === 1 ? 'is' : 'are'} not recognized by the approved Financial Statement Roll-Up Contract. The statement was not rendered.
         </div>
       )}
 
