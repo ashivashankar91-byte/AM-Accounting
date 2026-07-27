@@ -410,3 +410,22 @@ model Attachment {
   @@index([draftId])
   @@map("attachment")
 }
+
+/// S221 — GL Search. Persists a named, re-runnable search criteria set
+/// (contract field 12: "Save a search and re-run it later" / BR221-2).
+/// criteria is stored as JSON matching GLSearchCriteria (the same filter
+/// shape accepted by GET /inquiry/search) so re-running never drifts from
+/// the live query contract.
+model SavedGlSearch {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  createdBy String   @map("created_by")
+  name      String   @db.VarChar(120)
+  criteria  Json
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, createdBy, name])
+  @@index([tenantId, createdBy])
+  @@map("saved_gl_search")
+}
