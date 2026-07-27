@@ -49,6 +49,39 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
   }
 }
 
+// S227: CSV export endpoints return text/csv, not JSON — a lightweight
+// sibling of apiFetch that shares the same auth/tenant header resolution
+// but returns the raw response body instead of calling res.json().
+async function apiFetchRaw(path: string): Promise<string> {
+  const goldenPathToken = localStorage.getItem('goldenpath.accessToken');
+  const goldenPathTenantId = localStorage.getItem('goldenpath.tenantId');
+  const tenantId = goldenPathTenantId || localStorage.getItem('tenantId') || 'tenant-kunes';
+  const headers: Record<string, string> = {
+    'x-tenant-id': tenantId,
+    ...(goldenPathToken ? { Authorization: `Bearer ${goldenPathToken}` } : {}),
+  };
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${API_BASE}${path}`, { headers, signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const err = new Error(body.message ?? body.error ?? `API error ${res.status}`);
+      (err as any).status = res.status;
+      (err as any).body = body;
+      throw err;
+    }
+    return res.text();
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error(`Request timed out after ${API_TIMEOUT_MS / 1000}s — ${path}. Check that all services are running.`);
+    }
+    throw error;
+  }
+}
+
 // Tenant API
 export const tenantApi = {
   list: () => apiFetch<any[]>('/api/v1/tenants', { headers: { 'x-admin-api-key': 'amacc-admin-dev-key' } }),
@@ -865,4 +898,48 @@ export const goldenPathApi = {
   // not a guaranteed foreign-key relationship.
   getAccountActivity: (accountId: string, params?: string) =>
     apiFetch<any>(`/api/v1/coa/inquiry/accounts/${accountId}/activity${params ? `?${params}` : ''}`),
+
+  // S227 — Balance Sheet & Income Statement: consumes the real gl-service
+  // FinancialStatementService reports as-is (no client-side recomputation of
+  // any classification, contra-account sign, or net-income calculation).
+  // Same companyCode-slice caveat as getTrialBalance above (ADR-JL-001).
+  getBalanceSheet: (params: { entity: string; store?: string; dept?: string; asOf: string }) => {
+    const qs = new URLSearchParams({ entity: params.entity, asOf: params.asOf });
+    if (params.store) qs.set('store', params.store);
+    if (params.dept) qs.set('dept', params.dept);
+    return apiFetch<{
+      scope: { entity: string; store: string | null; dept: string | null; asOf: string };
+      assets: { rows: Array<{ accountCode: string; accountName: string; accountType: string; amount: number }>; total: number };
+      liabilities: { rows: Array<{ accountCode: string; accountName: string; accountType: string; amount: number }>; total: number };
+      equity: { rows: Array<{ accountCode: string; accountName: string; accountType: string; amount: number }>; total: number; currentEarnings: number };
+      totalLiabilitiesAndEquity: number;
+      excludedAccounts: Array<{ accountCode: string; accountType: string; reason: string }>;
+      reconciledToTrialBalance: { drSum: number; crSum: number };
+    }>(`/api/v1/gl/reports/balance-sheet?${qs.toString()}`);
+  },
+  exportBalanceSheet: (params: { entity: string; store?: string; dept?: string; asOf: string }) => {
+    const qs = new URLSearchParams({ entity: params.entity, asOf: params.asOf });
+    if (params.store) qs.set('store', params.store);
+    if (params.dept) qs.set('dept', params.dept);
+    return apiFetchRaw(`/api/v1/gl/reports/balance-sheet/export?${qs.toString()}`);
+  },
+  getIncomeStatement: (params: { entity: string; store?: string; dept?: string; asOf: string }) => {
+    const qs = new URLSearchParams({ entity: params.entity, asOf: params.asOf });
+    if (params.store) qs.set('store', params.store);
+    if (params.dept) qs.set('dept', params.dept);
+    return apiFetch<{
+      scope: { entity: string; store: string | null; dept: string | null; asOf: string };
+      revenue: { rows: Array<{ accountCode: string; accountName: string; accountType: string; amount: number }>; total: number };
+      expense: { rows: Array<{ accountCode: string; accountName: string; accountType: string; amount: number }>; total: number };
+      netIncome: number;
+      excludedAccounts: Array<{ accountCode: string; accountType: string; reason: string }>;
+      reconciledToTrialBalance: { drSum: number; crSum: number };
+    }>(`/api/v1/gl/reports/income-statement?${qs.toString()}`);
+  },
+  exportIncomeStatement: (params: { entity: string; store?: string; dept?: string; asOf: string }) => {
+    const qs = new URLSearchParams({ entity: params.entity, asOf: params.asOf });
+    if (params.store) qs.set('store', params.store);
+    if (params.dept) qs.set('dept', params.dept);
+    return apiFetchRaw(`/api/v1/gl/reports/income-statement/export?${qs.toString()}`);
+  },
 };

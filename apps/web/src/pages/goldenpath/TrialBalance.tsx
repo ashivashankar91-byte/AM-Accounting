@@ -226,6 +226,10 @@ export default function TrialBalance() {
       )}
 
       <p style={{ marginTop: 24 }}>
+        <Link to="/golden-path/balance-sheet">Balance Sheet</Link>
+        {' · '}
+        <Link to="/golden-path/income-statement">Income Statement</Link>
+        {' · '}
         <Link to="/golden-path/journal">Back to Journal Workflow</Link>
       </p>
     </div>
