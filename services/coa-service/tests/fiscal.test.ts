@@ -40,7 +40,7 @@ function makePrisma() {
   const periods: any[] = [];
   const audits: any[] = [];
   const outbox: any[] = [];
-  return {
+  const client: any = {
     _calendars: calendars,
     _periods: periods,
     _audits: audits,
@@ -100,6 +100,10 @@ function makePrisma() {
     // promises, so just await them all.
     $transaction: async (ops: Promise<any>[]) => Promise.all(ops),
   };
+  client.$transaction = async (arg: any) =>
+    typeof arg === 'function' ? arg(client) : Promise.all(arg);
+  return client;
+
 }
 
 function makeEvents() {

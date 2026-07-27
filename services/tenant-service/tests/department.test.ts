@@ -42,7 +42,7 @@ const ACTIVE_DEPT = {
 const INACTIVE_DEPT = { ...ACTIVE_DEPT, status: 'INACTIVE', version: 2, deactivatedBy: 'admin', deactivationReason: 'Closed' };
 
 function makePrisma(overrides: Record<string, any> = {}) {
-  return {
+  const client: any = {
     department: {
       findMany:  async () => [ACTIVE_DEPT],
       count:     async () => 1,
@@ -64,7 +64,14 @@ function makePrisma(overrides: Record<string, any> = {}) {
       create: async () => ({}),
       ...overrides.tenantOutboxEvent,
     },
+    auditOutboxEvent: {
+      create: async () => ({}),
+      ...overrides.auditOutboxEvent,
+    },
   };
+  client.$transaction = async (arg: any) =>
+    typeof arg === 'function' ? arg(client) : Promise.all(arg);
+  return client;
 }
 
 function noopPublisher() { return { publish: async () => {} }; }

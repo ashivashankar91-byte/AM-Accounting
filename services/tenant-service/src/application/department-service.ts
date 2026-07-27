@@ -198,17 +198,24 @@ export class DepartmentService {
       throw new DepartmentConflictError('DUPLICATE_DEPARTMENT_NAME', `Department name "${dto.name}" already exists for this entity`);
     }
 
-    const dept = await this.prisma.department.create({
-      data: {
-        id:        crypto.randomUUID(),
-        tenantId:  dto.tenantId,
-        entityId:  dto.entityId,
-        code:      dto.code,
-        name:      dto.name,
-        canonical: false,
-        status:    'ACTIVE',
-        version:   1,
-      },
+    // S007 BR7-1/BR7-4 — department create + audit event are one atomic
+    // transaction. The tenantOutboxEvent domain-event write is a distinct,
+    // best-effort eventual-consistency mechanism and stays outside it.
+    const dept = await this.prisma.$transaction(async (tx) => {
+      const d = await tx.department.create({
+        data: {
+          id:        crypto.randomUUID(),
+          tenantId:  dto.tenantId,
+          entityId:  dto.entityId,
+          code:      dto.code,
+          name:      dto.name,
+          canonical: false,
+          status:    'ACTIVE',
+          version:   1,
+        },
+      });
+      await this._audit(dto.tenantId, 'Department', d.id, 'CREATE', null, d, actor, tx);
+      return d;
     });
 
     await this._writeOutbox(dto.tenantId, 'org.dept.created', dept.id, {
@@ -218,7 +225,6 @@ export class DepartmentService {
       actor:     'user',
       schemaV:   1,
     });
-    await this._audit(dto.tenantId, 'Department', dept.id, 'CREATE', null, dept, actor);
 
     return dept;
   }
@@ -253,14 +259,17 @@ export class DepartmentService {
       data.name = dto.name;
     }
 
-    const dept = await this.prisma.department.update({ where: { id }, data });
+    const dept = await this.prisma.$transaction(async (tx) => {
+      const d = await tx.department.update({ where: { id }, data });
+      await this._audit(tenantId, 'Department', id, 'UPDATE', current, d, actor, tx);
+      return d;
+    });
 
     await this._writeOutbox(tenantId, 'org.dept.updated', id, {
       deptCode: dept.code,
       changes:  Object.keys(data).filter(k => k !== 'version'),
       schemaV:  1,
     });
-    await this._audit(tenantId, 'Department', id, 'UPDATE', current, dept, actor);
 
     return dept;
   }
@@ -282,15 +291,19 @@ export class DepartmentService {
       );
     }
 
-    const dept = await this.prisma.department.update({
-      where: { id },
-      data: {
-        status:             'INACTIVE',
-        version:            current.version + 1,
-        deactivatedAt:      new Date(),
-        deactivatedBy:      dto.deactivatedBy,
-        deactivationReason: dto.reason,
-      },
+    const dept = await this.prisma.$transaction(async (tx) => {
+      const d = await tx.department.update({
+        where: { id },
+        data: {
+          status:             'INACTIVE',
+          version:            current.version + 1,
+          deactivatedAt:      new Date(),
+          deactivatedBy:      dto.deactivatedBy,
+          deactivationReason: dto.reason,
+        },
+      });
+      await this._audit(tenantId, 'Department', id, 'DEACTIVATE', current, d, dto.deactivatedBy, tx);
+      return d;
     });
 
     await this._writeOutbox(tenantId, 'org.dept.deactivated', id, {
@@ -299,7 +312,6 @@ export class DepartmentService {
       deactivatedBy: dto.deactivatedBy,
       schemaV:       1,
     });
-    await this._audit(tenantId, 'Department', id, 'DEACTIVATE', current, dept, dto.deactivatedBy);
 
     return dept;
   }
@@ -309,18 +321,15 @@ export class DepartmentService {
   private async _audit(
     tenantId: string, docType: string, docId: string, action: string,
     before: unknown, after: unknown, actor?: string,
+    tx: Pick<PrismaClient, 'auditOutboxEvent'> = this.prisma,
   ): Promise<void> {
-    try {
-      await this.prisma.auditOutboxEvent.create({
-        data: {
-          id: crypto.randomUUID(), tenantId, docType, docId, action,
-          before: (before ?? undefined) as any, after: (after ?? undefined) as any,
-          actor: actor ?? 'system',
-        },
-      });
-    } catch {
-      // Non-fatal: AuditPort write must not fail the business operation.
-    }
+    await tx.auditOutboxEvent.create({
+      data: {
+        id: crypto.randomUUID(), tenantId, docType, docId, action,
+        before: (before ?? undefined) as any, after: (after ?? undefined) as any,
+        actor: actor ?? 'system',
+      },
+    });
   }
 
   private async _writeOutbox(

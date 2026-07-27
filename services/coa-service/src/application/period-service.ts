@@ -146,16 +146,21 @@ export class PeriodService {
     }
 
     const before = { status: from, openedBy: period.openedBy, openedAt: period.openedAt };
-    const updated = await this.prisma.fiscalPeriod.update({
-      where: { id: period.id },
-      data: { status: 'OPEN', openedBy: dto.actor, openedAt: new Date() },
+    // S007 BR7-1/BR7-4 — period-open + audit event are one atomic
+    // transaction; an audit-write failure rolls back the period open.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.fiscalPeriod.update({
+        where: { id: period.id },
+        data: { status: 'OPEN', openedBy: dto.actor, openedAt: new Date() },
+      });
+      await this.audit(dto.tenantId, period.id, dto.actor, before, {
+        status: 'OPEN',
+        openedBy: dto.actor,
+        openedAt: u.openedAt,
+      }, tx);
+      return u;
     });
 
-    await this.audit(dto.tenantId, period.id, dto.actor, before, {
-      status: 'OPEN',
-      openedBy: dto.actor,
-      openedAt: updated.openedAt,
-    });
     await this.emitOpened(dto.tenantId, period.entityId, period.code, dto.actor);
 
     return {
@@ -193,23 +198,20 @@ export class PeriodService {
     actor: string,
     before: unknown,
     after: unknown,
+    tx: Pick<PrismaClient, 'auditOutboxEvent'> = this.prisma,
   ): Promise<void> {
-    try {
-      await this.prisma.auditOutboxEvent.create({
-        data: {
-          id: crypto.randomUUID(),
-          tenantId,
-          docType: 'fiscal_period',
-          docId,
-          action: 'OPEN',
-          before: (before ?? undefined) as any,
-          after: (after ?? undefined) as any,
-          actor,
-        },
-      });
-    } catch {
-      /* AuditPort write is non-fatal */
-    }
+    await tx.auditOutboxEvent.create({
+      data: {
+        id: crypto.randomUUID(),
+        tenantId,
+        docType: 'fiscal_period',
+        docId,
+        action: 'OPEN',
+        before: (before ?? undefined) as any,
+        after: (after ?? undefined) as any,
+        actor,
+      },
+    });
   }
 
   private async emitOpened(

@@ -46,7 +46,7 @@ function makePrisma(overrides: Partial<{
   updateMany: ReturnType<typeof vi.fn>;
   outboxCreate: ReturnType<typeof vi.fn>;
 }> = {}) {
-  return {
+  const client: any = {
     legalEntity: {
       findFirst:  overrides.findFirst  ?? vi.fn().mockResolvedValue(BASE_ENTITY),
       findMany:   overrides.findMany   ?? vi.fn().mockResolvedValue([BASE_ENTITY]),
@@ -58,7 +58,13 @@ function makePrisma(overrides: Partial<{
     tenantOutboxEvent: {
       create: overrides.outboxCreate ?? vi.fn().mockResolvedValue({}),
     },
+    auditOutboxEvent: {
+      create: vi.fn().mockResolvedValue({}),
+    },
   };
+  client.$transaction = async (arg: any) =>
+    typeof arg === 'function' ? arg(client) : Promise.all(arg);
+  return client;
 }
 
 function makeEventPublisher() {

@@ -131,16 +131,22 @@ export class FranchiseService {
 
     const effectiveFrom = this._parseDate(dto.effectiveFrom, 'effectiveFrom');
 
-    const franchise = await this.prisma.franchise.create({
-      data: {
-        id:            crypto.randomUUID(),
-        tenantId:      dto.tenantId,
-        storeId:       dto.storeId,
-        oemCode:       oem.oemCode,
-        dealerCode:    dto.dealerCode,
-        effectiveFrom,
-        version:       1,
-      },
+    // S007 BR7-1/BR7-4 — franchise create + audit event are one atomic
+    // transaction.
+    const franchise = await this.prisma.$transaction(async (tx) => {
+      const f = await tx.franchise.create({
+        data: {
+          id:            crypto.randomUUID(),
+          tenantId:      dto.tenantId,
+          storeId:       dto.storeId,
+          oemCode:       oem.oemCode,
+          dealerCode:    dto.dealerCode,
+          effectiveFrom,
+          version:       1,
+        },
+      });
+      await this._audit(dto.tenantId, 'Franchise', f.id, 'CREATE', null, f, dto.actor, tx);
+      return f;
     });
 
     await this._writeOutbox(dto.tenantId, 'org.franchise.created', franchise.id, {
@@ -153,7 +159,6 @@ export class FranchiseService {
       ts:            new Date().toISOString(),
       schemaV:       1,
     });
-    await this._audit(dto.tenantId, 'Franchise', franchise.id, 'CREATE', null, franchise, dto.actor);
 
     return franchise;
   }
@@ -190,7 +195,13 @@ export class FranchiseService {
       }
     }
 
-    const franchise = await this.prisma.franchise.update({ where: { id }, data });
+    // S007 BR7-1/BR7-4 — franchise update + audit event are one atomic
+    // transaction.
+    const franchise = await this.prisma.$transaction(async (tx) => {
+      const f = await tx.franchise.update({ where: { id }, data });
+      await this._audit(tenantId, 'Franchise', id, 'UPDATE', current, f, dto.actor, tx);
+      return f;
+    });
 
     await this._writeOutbox(tenantId, 'org.franchise.updated', id, {
       eventId:       crypto.randomUUID(),
@@ -203,7 +214,6 @@ export class FranchiseService {
       ts:            new Date().toISOString(),
       schemaV:       1,
     });
-    await this._audit(tenantId, 'Franchise', id, 'UPDATE', current, franchise, dto.actor);
 
     return franchise;
   }
@@ -243,18 +253,15 @@ export class FranchiseService {
   private async _audit(
     tenantId: string, docType: string, docId: string, action: string,
     before: unknown, after: unknown, actor?: string,
+    tx: Pick<PrismaClient, 'auditOutboxEvent'> = this.prisma,
   ): Promise<void> {
-    try {
-      await this.prisma.auditOutboxEvent.create({
-        data: {
-          id: crypto.randomUUID(), tenantId, docType, docId, action,
-          before: (before ?? undefined) as any, after: (after ?? undefined) as any,
-          actor: actor ?? 'system',
-        },
-      });
-    } catch {
-      // Non-fatal: AuditPort write must not fail the business operation.
-    }
+    await tx.auditOutboxEvent.create({
+      data: {
+        id: crypto.randomUUID(), tenantId, docType, docId, action,
+        before: (before ?? undefined) as any, after: (after ?? undefined) as any,
+        actor: actor ?? 'system',
+      },
+    });
   }
 
   private async _writeOutbox(

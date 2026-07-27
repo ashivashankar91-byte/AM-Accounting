@@ -77,7 +77,7 @@ function matchUser(u: any, where: any): boolean {
 }
 
 function makePrisma() {
-  return {
+  const client: any = {
     user: {
       findMany: async ({ where }: any) => state.users.filter((u: any) => matchUser(u, where ?? {})).map((u: any) => ({ ...u })),
       findFirst: async ({ where }: any) => {
@@ -125,6 +125,10 @@ function makePrisma() {
       create: async ({ data }: any) => { state.audit.push({ ...data }); return { ...data }; },
     },
   } as any;
+  client.$transaction = async (arg: any) =>
+    typeof arg === 'function' ? arg(client) : Promise.all(arg);
+  return client;
+
 }
 
 const publisher = { publish: async (e: any) => { published.push(e); } } as any;

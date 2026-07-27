@@ -103,23 +103,27 @@ export class FiscalCalendarService {
     });
 
     if (!existing) {
-      const created = await this.prisma.fiscalCalendar.create({
-        data: {
-          id: crypto.randomUUID(),
-          tenantId: dto.tenantId,
+      // S007 BR7-1/BR7-4 — create + audit event are one atomic transaction.
+      const result = await this.prisma.$transaction(async (tx) => {
+        const c = await tx.fiscalCalendar.create({
+          data: {
+            id: crypto.randomUUID(),
+            tenantId: dto.tenantId,
+            entityId: dto.entityId,
+            fyStartMonth: dto.fyStartMonth,
+            structure: dto.structure,
+            status: 'DEFINED',
+            actor: dto.actor,
+          },
+        });
+        await this.audit(dto.tenantId, 'CREATE', c.id, dto.actor, null, {
           entityId: dto.entityId,
           fyStartMonth: dto.fyStartMonth,
           structure: dto.structure,
-          status: 'DEFINED',
-          actor: dto.actor,
-        },
+        }, tx);
+        return c;
       });
-      await this.audit(dto.tenantId, 'CREATE', created.id, dto.actor, null, {
-        entityId: dto.entityId,
-        fyStartMonth: dto.fyStartMonth,
-        structure: dto.structure,
-      });
-      return { calendar: created, created: true };
+      return { calendar: result, created: true };
     }
 
     // Update path — blocked once any period has postings (BR208-4).
@@ -135,16 +139,24 @@ export class FiscalCalendarService {
     }
 
     const before = { fyStartMonth: existing.fyStartMonth, structure: existing.structure };
-    const updated = await this.prisma.fiscalCalendar.update({
-      where: { entityId: dto.entityId },
-      data: { fyStartMonth: dto.fyStartMonth, structure: dto.structure, actor: dto.actor },
-    });
-    if (changing) {
-      await this.audit(dto.tenantId, 'UPDATE', updated.id, dto.actor, before, {
-        fyStartMonth: dto.fyStartMonth,
-        structure: dto.structure,
-      });
-    }
+    // S007 BR7-1/BR7-4 — update + (conditional) audit event in one
+    // atomic transaction when the calendar actually changes.
+    const updated = changing
+      ? await this.prisma.$transaction(async (tx) => {
+          const u = await tx.fiscalCalendar.update({
+            where: { entityId: dto.entityId },
+            data: { fyStartMonth: dto.fyStartMonth, structure: dto.structure, actor: dto.actor },
+          });
+          await this.audit(dto.tenantId, 'UPDATE', u.id, dto.actor, before, {
+            fyStartMonth: dto.fyStartMonth,
+            structure: dto.structure,
+          }, tx);
+          return u;
+        })
+      : await this.prisma.fiscalCalendar.update({
+          where: { entityId: dto.entityId },
+          data: { fyStartMonth: dto.fyStartMonth, structure: dto.structure, actor: dto.actor },
+        });
     return { calendar: updated, created: false };
   }
 
@@ -180,31 +192,46 @@ export class FiscalCalendarService {
       calendar.structure as FiscalStructure,
     );
 
-    const created = await this.prisma.$transaction(
-      generated.map((p) =>
-        this.prisma.fiscalPeriod.create({
-          data: {
-            id: crypto.randomUUID(),
-            tenantId: dto.tenantId,
-            entityId: dto.entityId,
-            calendarId: calendar.id,
-            fiscalYear: dto.fiscalYear,
-            periodNumber: p.periodNumber,
-            code: p.code,
-            startDate: new Date(`${p.startDate}T00:00:00.000Z`),
-            endDate: new Date(`${p.endDate}T00:00:00.000Z`),
-            status: 'FUTURE',
-            adjustmentsOnly: p.adjustmentsOnly,
-          },
-        }),
-      ),
+    // S007 BR7-1/BR7-4 — period generation + audit event are one atomic
+    // transaction (batch form: periodCount is known statically as
+    // generated.length, so the audit row can be built ahead of time).
+    const periodCreates = generated.map((p) =>
+      this.prisma.fiscalPeriod.create({
+        data: {
+          id: crypto.randomUUID(),
+          tenantId: dto.tenantId,
+          entityId: dto.entityId,
+          calendarId: calendar.id,
+          fiscalYear: dto.fiscalYear,
+          periodNumber: p.periodNumber,
+          code: p.code,
+          startDate: new Date(`${p.startDate}T00:00:00.000Z`),
+          endDate: new Date(`${p.endDate}T00:00:00.000Z`),
+          status: 'FUTURE',
+          adjustmentsOnly: p.adjustmentsOnly,
+        },
+      }),
     );
-
-    await this.audit(dto.tenantId, 'GENERATE_YEAR', calendar.id, dto.actor, null, {
-      entityId: dto.entityId,
-      fiscalYear: dto.fiscalYear,
-      periodCount: created.length,
+    const auditCreate = this.prisma.auditOutboxEvent.create({
+      data: {
+        id: crypto.randomUUID(),
+        tenantId: dto.tenantId,
+        docType: 'fiscal_calendar',
+        docId: calendar.id,
+        action: 'GENERATE_YEAR',
+        before: undefined,
+        after: {
+          entityId: dto.entityId,
+          fiscalYear: dto.fiscalYear,
+          periodCount: generated.length,
+        } as any,
+        actor: dto.actor,
+      },
     });
+
+    const results = await this.prisma.$transaction([...periodCreates, auditCreate]);
+    const created = results.slice(0, generated.length) as unknown as Awaited<ReturnType<typeof this.prisma.fiscalPeriod.create>>[];
+
     await this.emitYearGenerated(dto, created.length);
 
     return { periods: created, periodCount: created.length };
@@ -259,23 +286,20 @@ export class FiscalCalendarService {
     actor: string,
     before: unknown,
     after: unknown,
+    tx: Pick<PrismaClient, 'auditOutboxEvent'> = this.prisma,
   ): Promise<void> {
-    try {
-      await this.prisma.auditOutboxEvent.create({
-        data: {
-          id: crypto.randomUUID(),
-          tenantId,
-          docType: 'fiscal_calendar',
-          docId,
-          action,
-          before: (before ?? undefined) as any,
-          after: (after ?? undefined) as any,
-          actor,
-        },
-      });
-    } catch {
-      // AuditPort write is non-fatal to the business operation.
-    }
+    await tx.auditOutboxEvent.create({
+      data: {
+        id: crypto.randomUUID(),
+        tenantId,
+        docType: 'fiscal_calendar',
+        docId,
+        action,
+        before: (before ?? undefined) as any,
+        after: (after ?? undefined) as any,
+        actor,
+      },
+    });
   }
 
   private async emitYearGenerated(dto: GenerateYearDTO, periodCount: number): Promise<void> {

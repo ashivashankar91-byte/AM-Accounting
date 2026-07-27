@@ -25,7 +25,7 @@ function makePrisma() {
   const gaps: any[] = [];
   const audits: any[] = [];
   const seqKey = (t: string, s: string, e: string, p: string) => `${t}::${s}::${e}::${p}`;
-  return {
+  const client: any = {
     _seqs: seqs,
     _gaps: gaps,
     _audits: audits,
@@ -67,6 +67,10 @@ function makePrisma() {
       return [{ claimed }];
     },
   };
+  client.$transaction = async (arg: any) =>
+    typeof arg === 'function' ? arg(client) : Promise.all(arg);
+  return client;
+
 }
 
 function makeEvents() {

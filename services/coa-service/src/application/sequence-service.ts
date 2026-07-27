@@ -139,22 +139,27 @@ export class SequenceService {
       throw new SequenceValidationError('MISSING_REASON', 'gap reason is required');
     }
     const expectedNumber = formatJournalNumber(sourceCode, dto.periodCode, dto.seq);
-    const row = await this.prisma.sequenceGapLog.create({
-      data: {
-        id: crypto.randomUUID(),
-        tenantId: dto.tenantId,
-        sourceCode,
-        entityId: dto.entityId,
-        periodCode: dto.periodCode,
+    // S007 BR7-1/BR7-4 — gap-log write + audit event are one atomic
+    // transaction; an audit-write failure rolls back the gap log.
+    const row = await this.prisma.$transaction(async (tx) => {
+      const r = await tx.sequenceGapLog.create({
+        data: {
+          id: crypto.randomUUID(),
+          tenantId: dto.tenantId,
+          sourceCode,
+          entityId: dto.entityId,
+          periodCode: dto.periodCode,
+          expectedNumber,
+          expectedSeq: dto.seq,
+          reason: dto.reason.trim(),
+          actor: dto.actor ?? null,
+        },
+      });
+      await this.audit(dto.tenantId, expectedNumber, dto.actor ?? 'system', 'GAP_LOGGED', null, {
         expectedNumber,
-        expectedSeq: dto.seq,
-        reason: dto.reason.trim(),
-        actor: dto.actor ?? null,
-      },
-    });
-    await this.audit(dto.tenantId, expectedNumber, dto.actor ?? 'system', 'GAP_LOGGED', null, {
-      expectedNumber,
-      reason: row.reason,
+        reason: r.reason,
+      }, tx);
+      return r;
     });
     return row;
   }
@@ -178,22 +183,19 @@ export class SequenceService {
     action: string,
     before: unknown,
     after: unknown,
+    tx: Pick<PrismaClient, 'auditOutboxEvent'> = this.prisma,
   ) {
-    try {
-      await this.prisma.auditOutboxEvent.create({
-        data: {
-          id: crypto.randomUUID(),
-          tenantId,
-          docType: 'journal_sequence',
-          docId,
-          action,
-          before: (before ?? undefined) as any,
-          after: (after ?? undefined) as any,
-          actor,
-        },
-      });
-    } catch {
-      /* AuditPort write is non-fatal */
-    }
+    await tx.auditOutboxEvent.create({
+      data: {
+        id: crypto.randomUUID(),
+        tenantId,
+        docType: 'journal_sequence',
+        docId,
+        action,
+        before: (before ?? undefined) as any,
+        after: (after ?? undefined) as any,
+        actor,
+      },
+    });
   }
 }
