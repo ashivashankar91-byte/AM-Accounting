@@ -75,10 +75,41 @@ async function login(page: any, tenantId: string, email: string, password: strin
   await page.getByTestId('login-submit').click();
 }
 
+// Test-repair (narrowly scoped, separate from S221 work): this suite
+// previously hardcoded '2026-01-20' as the posting/reversal entry date,
+// assuming periods 2026-01..03 would always be OPEN. In this long-lived
+// shared dev environment, which periods are OPEN drifts between runs (and
+// between concurrent sessions), so a hardcoded date periodically falls
+// outside every OPEN period and BR013-2 correctly rejects the post — a
+// real, working validation rule, not a bug to relax. Resolving the
+// currently OPEN period live, every run, and posting inside it keeps the
+// test honest without weakening BR013-2 in any way.
+async function resolveOpenPeriodEntryDate(page: any, request: any, tenantId: string): Promise<string> {
+  const [token, entityId] = await page.evaluate(() => [
+    localStorage.getItem('goldenpath.accessToken'),
+    localStorage.getItem('goldenpath.legalEntityId'),
+  ]);
+  const res = await request.get(`http://localhost:13100/api/v1/fiscal/periods?entity=${entityId}`, {
+    headers: { Authorization: `Bearer ${token}`, 'x-tenant-id': tenantId },
+  });
+  if (!res.ok()) {
+    throw new Error(`Could not resolve the open fiscal period for this run (status ${res.status()}) — cannot post without one.`);
+  }
+  const body = await res.json();
+  const open = (body.board ?? []).find((p: any) => p.status === 'OPEN');
+  if (!open) {
+    throw new Error('No OPEN fiscal period found for this entity — cannot post without one (BR013-2 preserved, not relaxed).');
+  }
+  // Mid-month, safely inside the period's real date range regardless of
+  // month length (28-31 days) — avoids hardcoding a specific day-of-month
+  // that could itself drift outside a shorter period.
+  return `${open.periodCode}-15`;
+}
+
 test.describe('Golden R0 — full 16-step browser journey (positive)', () => {
   test.setTimeout(120_000);
 
-  test('login -> entity -> org hierarchy -> role template -> fiscal -> journal -> GL Inquiry -> GL Search -> Trial Balance -> Balance Sheet -> Income Statement -> export -> reverse -> audit', async ({ page }) => {
+  test('login -> entity -> org hierarchy -> role template -> fiscal -> journal -> GL Inquiry -> GL Search -> Trial Balance -> Balance Sheet -> Income Statement -> export -> reverse -> audit', async ({ page, request }) => {
     // 1. Login (real gateway, real JWT).
     await login(page, TENANT_A, ADMIN_EMAIL, PASSWORD);
     await page.waitForURL(/\/golden-path\/select-entity/, { timeout: 15_000 });
@@ -122,6 +153,9 @@ test.describe('Golden R0 — full 16-step browser journey (positive)', () => {
       }
     }
     await expect(page.getByTestId('fiscal-continue')).toBeEnabled({ timeout: 15_000 });
+    // Resolve the real, currently OPEN period live rather than assuming a
+    // hardcoded date is still inside one (see resolveOpenPeriodEntryDate).
+    const entryDate = await resolveOpenPeriodEntryDate(page, request, TENANT_A);
     await page.getByTestId('fiscal-continue').click();
     await page.waitForURL(/\/golden-path\/coa/, { timeout: 10_000 });
 
@@ -143,11 +177,10 @@ test.describe('Golden R0 — full 16-step browser journey (positive)', () => {
     await expect(page.getByTestId('journal-line-0-account')).toBeVisible({ timeout: 10_000 });
     // Defect found in this test itself while running it live: the default
     // entry date on this page is `new Date()` (today's real wall-clock
-    // date), but only the periods opened just above (2026-01..03) are
-    // OPEN -- today's real date falls in a FUTURE period, so validation
-    // failed with `pass:false` until this explicit in-open-period date was
-    // set.
-    await page.getByTestId('journal-entry-date').fill('2026-01-20');
+    // date), which is not necessarily inside whichever period is OPEN right
+    // now -- entryDate is resolved live above (resolveOpenPeriodEntryDate),
+    // not hardcoded, so this stays correct as OPEN periods drift over time.
+    await page.getByTestId('journal-entry-date').fill(entryDate);
     await page.getByTestId('journal-memo').fill(uniqueMemo);
     await page.getByTestId('journal-line-0-account').selectOption({ label: `${acctNum} E2E Golden Path Expense` });
     await page.getByTestId('journal-line-0-store').selectOption({ index: 1 });
@@ -280,7 +313,9 @@ test.describe('Golden R0 — full 16-step browser journey (positive)', () => {
     // in-memory state.
     await page.goto(`${BASE}/golden-path/journal`);
     await expect(page.getByTestId('journal-line-0-account')).toBeVisible({ timeout: 10_000 });
-    await page.getByTestId('journal-entry-date').fill('2026-01-20');
+    // Same live-resolved entryDate as step 6 above -- BR013-2 applies
+    // identically to this second posting, not relaxed for the reversal setup.
+    await page.getByTestId('journal-entry-date').fill(entryDate);
     await page.getByTestId('journal-memo').fill(`${uniqueMemo}-REV`);
     await page.getByTestId('journal-line-0-account').selectOption({ label: `${acctNum} E2E Golden Path Expense` });
     await page.getByTestId('journal-line-0-store').selectOption({ index: 1 });
