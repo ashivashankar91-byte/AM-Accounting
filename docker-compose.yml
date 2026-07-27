@@ -1,6 +1,11 @@
 ﻿x-service-env: &service-env
-  DATABASE_URL: postgresql://amacc:amacc_dev@postgres:5432/amacc
-  RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+  # FINAL-R0 Priority 1 (R0_TRUST_BASELINE_RECERTIFICATION): parameterized
+  # via .env, defaulting to the amacc_app role (see
+  # infra/postgres/init/01-create-app-role.sql) so RLS is actually
+  # enforced at runtime -- never the amacc superuser, which
+  # unconditionally bypasses RLS regardless of policy/FORCE settings.
+  DATABASE_URL: ${DATABASE_URL:-postgresql://amacc_app:amacc_app_dev@postgres:5432/amacc}
+  RABBITMQ_URL: ${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672}
   REDIS_URL: redis://redis:6379
   NODE_ENV: development
   # FINAL-R0 Priority 0: authentication bypass is a separate, explicit opt-in
@@ -35,6 +40,11 @@ services:
       - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # FINAL-R0 Priority 1: auto-creates the least-privilege amacc_app role
+      # on first boot of a fresh volume (Postgres only runs initdb.d scripts
+      # when the data directory is empty). For an existing volume, run this
+      # SQL manually once against the amacc superuser.
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U amacc"]
       <<: *healthcheck
