@@ -2,11 +2,12 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { container } from 'tsyringe';
 import { GLService } from '../application/gl-service';
-import { TenantId, asTenantId, GLAccountType, authMiddleware } from '@amacc/shared-kernel';
+import { GLAccountType, authMiddleware, asTenantId } from '@amacc/shared-kernel';
 import { taxRoutes } from './tax-routes';
 import { report1099Routes } from './1099-routes';
 import { floorPlanRoutes } from './floor-plan-routes';
 import { withSerializableRetry } from '../lib/serializable-retry';
+import { attachRouteSecurity, getTenantId, GL_PERMISSIONS } from './security';
 
 const NORMAL_BALANCE_MAP: Record<string, 'DEBIT' | 'CREDIT'> = {
   ASSET: 'DEBIT',
@@ -127,19 +128,56 @@ const PeriodSchema = z.object({
   month: z.coerce.number().int().min(1).max(12),
 });
 
-/**
- * @trace-improvement COBOL was single-company — tenant was implicit.
- * @platform x-tenant-id header is REQUIRED. Defaulting to 'tenant-kunes' was a critical
- *   bug that could silently route any request to a specific tenant's data.
- */
-function getTenantId(request: any): TenantId {
-  const tenantId = request.headers['x-tenant-id'] as string | undefined;
-  if (!tenantId || tenantId.trim() === '') {
-    const err: any = new Error('Missing required header: x-tenant-id');
-    err.statusCode = 401;
-    throw err;
+function resolvePermission(method: string, url: string): string | null {
+  if (url.startsWith('/admin/')) return GL_PERMISSIONS.ADMIN_MANAGE;
+  if (url === '/fs/oem-mappings/:id' && method === 'PUT') return GL_PERMISSIONS.ADMIN_MANAGE;
+  if (url === '/fs/oem-mappings/bulk' && method === 'POST') return GL_PERMISSIONS.ADMIN_MANAGE;
+  if (url === '/fs/oem-mappings' && method === 'GET') return GL_PERMISSIONS.LEDGER_VIEW;
+  if (url === '/fs/oem-statement/generate' && method === 'POST') return GL_PERMISSIONS.LEDGER_VIEW;
+  if (url === '/trial-balance' || url === '/periods' || url === '/periods/:year/:month') return GL_PERMISSIONS.LEDGER_VIEW;
+  if (url === '/balance-sheet' || url === '/financial-statements/balance-sheet' || url === '/financial-statements/income-statement') return GL_PERMISSIONS.LEDGER_VIEW;
+  if (url === '/income-statement' || url === '/cash-flow-statement' || url === '/financial-statements/consolidated') return GL_PERMISSIONS.LEDGER_VIEW;
+  if (url === '/reports/expense-trend') return GL_PERMISSIONS.LEDGER_VIEW;
+  if (url.startsWith('/accounts') || url.startsWith('/journal-entries') || url.startsWith('/cash-receipts')) {
+    return method === 'GET' ? GL_PERMISSIONS.LEDGER_VIEW : GL_PERMISSIONS.LEDGER_MANAGE;
   }
-  return asTenantId(tenantId);
+  if (url === '/history/:id/clear' || url === '/ingest/dms-ro') return GL_PERMISSIONS.LEDGER_MANAGE;
+  if (url.startsWith('/intercompany')) {
+    if (url === '/intercompany/consolidated-trial-balance' || method === 'GET') return GL_PERMISSIONS.LEDGER_VIEW;
+    return GL_PERMISSIONS.LEDGER_MANAGE;
+  }
+  if (url.startsWith('/vehicle-transfers')) return method === 'GET' ? GL_PERMISSIONS.LEDGER_VIEW : GL_PERMISSIONS.LEDGER_MANAGE;
+  if (url.startsWith('/tax/')) {
+    if (url === '/tax/rates' || url === '/tax/liability-report') return GL_PERMISSIONS.LEDGER_VIEW;
+    return GL_PERMISSIONS.LEDGER_MANAGE;
+  }
+  if (url.startsWith('/1099/')) return method === 'GET' ? GL_PERMISSIONS.LEDGER_VIEW : GL_PERMISSIONS.LEDGER_MANAGE;
+  if (url.startsWith('/floor-plan/')) return method === 'GET' ? GL_PERMISSIONS.LEDGER_VIEW : GL_PERMISSIONS.LEDGER_MANAGE;
+  return null;
+}
+
+function resolveAudit(method: string, url: string) {
+  if (method !== 'GET' && !(method === 'POST' && url === '/fs/oem-statement/generate')) return null;
+  if (url === '/accounts' || url === '/accounts/:id' || url === '/accounts/:accountId/uncleared') {
+    return { docType: 'GL_ACCOUNT', docId: (request: any) => String(request.params?.id ?? request.params?.accountId ?? 'accounts') };
+  }
+  if (url.startsWith('/journal-entries')) {
+    return { docType: 'JOURNAL_ENTRY', docId: (request: any) => String(request.params?.id ?? 'journal-entries') };
+  }
+  if (
+    url === '/trial-balance' ||
+    url === '/balance-sheet' ||
+    url === '/financial-statements/balance-sheet' ||
+    url === '/financial-statements/income-statement' ||
+    url === '/income-statement' ||
+    url === '/cash-flow-statement' ||
+    url === '/financial-statements/consolidated' ||
+    url === '/reports/expense-trend' ||
+    url === '/fs/oem-statement/generate'
+  ) {
+    return { docType: 'GL_LEDGER_REPORT', docId: () => url };
+  }
+  return null;
 }
 
 export async function glRoutes(app: FastifyInstance) {
@@ -150,6 +188,9 @@ export async function glRoutes(app: FastifyInstance) {
     throw new Error('FATAL: AMACC_JWT_SECRET environment variable is not set. Set it before starting gl-service.');
   }
   app.addHook('preHandler', authMiddleware(JWT_SECRET));
+
+  const prisma = container.resolve<import('.prisma/gl-client').PrismaClient>('PrismaClient');
+  attachRouteSecurity(app, prisma as any, resolvePermission, resolveAudit, 401);
 
   const svc = container.resolve<GLService>('GLService');
 
@@ -653,8 +694,6 @@ export async function glRoutes(app: FastifyInstance) {
   });
 
   // ── Intercompany Transactions ─────────────────────
-
-  const prisma = container.resolve<import('.prisma/gl-client').PrismaClient>('PrismaClient');
 
   // POST /intercompany — Record an intercompany transaction (creates matching entries in both tenants)
   app.post('/intercompany', async (request, reply) => {

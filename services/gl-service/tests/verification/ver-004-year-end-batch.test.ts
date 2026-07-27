@@ -7,7 +7,7 @@
  * 3. Does NOT create gl_account_period_balances for year-end entries (isYearEnd skip flag)
  */
 
-import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
 describe('VER-004: Year-End Close (Fiscal Year Rollover)', () => {
   let tenantId: string;

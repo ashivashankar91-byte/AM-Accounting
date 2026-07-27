@@ -203,6 +203,24 @@ model OutboxEvent {
   @@index([createdAt])
 }
 
+model AuditOutboxEvent {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  docType     String    @map("doc_type")
+  docId       String    @map("doc_id")
+  action      String
+  before      Json?
+  after       Json?
+  actor       String
+  publishedAt DateTime? @map("published_at")
+  retryCount  Int       @default(0) @map("retry_count")
+  lastError   String?   @map("last_error")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([publishedAt, retryCount])
+  @@map("audit_outbox")
+}
+
 /// @cobol-origin jrn.fd — JR-BALANCE running balance per account/period/source
 /// @trace-cobol UPDATE-JOURNAL paragraph in tranpost.cbl
 /// Replaces JOURNAL-MF ISAM file. Eliminates risk of JRN balance overflow (INV-03).

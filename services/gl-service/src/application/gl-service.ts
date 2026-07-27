@@ -36,6 +36,7 @@ import {
   GLAccountType,
   JournalStatus,
   asTenantId,
+  setTenantContextOnConnection,
 } from '@amacc/shared-kernel';
 import { createEvent } from '@amacc/shared-kernel';
 import { GLValidationEngine } from '../domain/validation-engine';
@@ -43,6 +44,7 @@ import { computeUnitCount } from '../domain/unit-count';
 import { withSerializableRetry } from '../lib/serializable-retry';
 import { PrismaClient } from '.prisma/gl-client';
 import { Decimal } from '@prisma/client/runtime/library';
+import { appendAuditRowsTx } from '../infrastructure/audit';
 
 // ── Typed error classes ───────────────────────────────────────────────────────
 // @trace-cobol tranpost.cbl ERROR-DATE, NOFIND-STATUS, GL-ERROR-DIALOG-POP* paragraphs
@@ -529,6 +531,7 @@ export class GLService {
     };
 
     await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, tenantId);
       await tx.journalEntry.update({
         where: { id: entryId },
         data: { status: 'PENDING_REVIEW', agentReviewed: false },
@@ -540,6 +543,16 @@ export class GLService {
           payload: eventPayload as any,
           correlationId,
         },
+      });
+      await appendAuditRowsTx(tx, {
+        tenantId,
+        docType: 'JOURNAL_ENTRY',
+        docId: entryId,
+        action: 'SUBMITTED',
+        actor: postedBy,
+        before: { status: entry.status },
+        after: { status: 'PENDING_REVIEW', correlationId },
+        writeEventOutbox: false,
       });
     });
 
@@ -695,6 +708,16 @@ export class GLService {
             correlationId,
           },
         });
+        await appendAuditRowsTx(tx, {
+          tenantId,
+          docType: 'JOURNAL_ENTRY',
+          docId: entryId,
+          action: 'APPROVED_POSTED',
+          actor: approverId ?? 'GL_AGENT',
+          before: { status: entry.status },
+          after: { status: 'POSTED', totalDebits, totalCredits, lineCount: entry.lines.length, postedAt: postedAt.toISOString() },
+          writeEventOutbox: false,
+        });
     });
 
     try {
@@ -812,6 +835,7 @@ export class GLService {
     }));
 
     const reversalEntry = await (this.prisma as any).$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, tenantId);
       // Create reversal entry in DRAFT status
       const newEntry = await tx.journalEntry.create({
         data: {
@@ -843,6 +867,17 @@ export class GLService {
       await tx.historyTransaction.updateMany({
         where: { journalEntryId: entryId, tenantId },
         data: { revAdjFlag: 'R' },
+      });
+
+      await appendAuditRowsTx(tx, {
+        tenantId,
+        docType: 'JOURNAL_ENTRY',
+        docId: entryId,
+        action: 'REVERSED',
+        actor: reverserId,
+        before: { status: original.status },
+        after: { status: 'REVERSED', reversalEntryId: newEntry.id, reversalDate: reversalDate.toISOString(), reason },
+        eventType: 'journal_entry.reversed',
       });
 
       return newEntry;

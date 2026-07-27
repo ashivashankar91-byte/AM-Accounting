@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { TenantId } from '@amacc/shared-kernel';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../node_modules/.prisma/gl-client';
 import { Decimal } from '@prisma/client/runtime/library';
 
 describe('Floor Plan Financing API', () => {
@@ -12,6 +12,8 @@ describe('Floor Plan Financing API', () => {
   beforeEach(async () => {
     prisma = new PrismaClient();
     tenantId = 'test-tenant-floor-plan' as TenantId;
+    await (prisma as any).floorPlanUnit.deleteMany({ where: { tenantId } });
+    await prisma.gLAccount.deleteMany({ where: { tenantId } });
 
     // Create test GL accounts
     const liabilityAccount = await prisma.gLAccount.create({
@@ -39,6 +41,12 @@ describe('Floor Plan Financing API', () => {
     interestAccountId = interestAccount.id;
   });
 
+  afterEach(async () => {
+    await (prisma as any).floorPlanUnit.deleteMany({ where: { tenantId } });
+    await prisma.gLAccount.deleteMany({ where: { tenantId } });
+    await prisma.$disconnect();
+  });
+
   describe('POST /api/v1/gl/floor-plan/units', () => {
     it('should register a floored vehicle', async () => {
       const unit = await (prisma as any).floorPlanUnit.create({
@@ -60,7 +68,7 @@ describe('Floor Plan Financing API', () => {
       expect(unit).toBeDefined();
       expect(unit.vin).toBe('1HGCV41JXMN109186');
       expect(unit.status).toBe('ACTIVE');
-      expect(unit.advanceAmount).toBe('25000.00');
+      expect(unit.advanceAmount.toString()).toBe('25000');
     });
 
     it('should enforce VIN uniqueness per tenant', async () => {
@@ -132,7 +140,7 @@ describe('Floor Plan Financing API', () => {
       });
 
       expect(unit.status).toBe('ACTIVE');
-      expect(unit.accruedInterest).toBe('0.00');
+      expect(unit.accruedInterest.toString()).toBe('0');
     });
   });
 

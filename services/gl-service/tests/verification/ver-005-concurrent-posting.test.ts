@@ -6,7 +6,7 @@
  * $100 debit. Verify running_balance = $1000 (not less) and no unhandled 500 errors.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
 describe('VER-005: Concurrent Posting (SERIALIZABLE Isolation)', () => {
   let tenantId: string;
