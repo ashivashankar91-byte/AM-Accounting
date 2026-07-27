@@ -645,9 +645,8 @@
       "title": "Draft Journal",
       "layman": "A scratchpad for the accountant: start a manual journal, save it in any half-finished state, attach backup docs, come back later. Nothing hits the ledger yet.",
       "sprint": "Sprint 2 (CE-04, L1, P0)",
-      "status": "DONE_PENDING_INTEGRATION",
-      "usesStubs": true,
-      "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207",
+      "status": "DONE",
+      "usesStubs": false,
       "dependencies": [
         "S212",
         "S210"
@@ -676,15 +675,20 @@
         "tests": "12 new (tests/draft.test.ts); full coa-service suite 156 passed / 11 files",
         "runtime": "8 cases through gateway :3100 -> coa :3016: create empty 201; update half-finished unbalanced 200 v2 (no validation, BR214-1); GET faithful reload; add PDF attachment 201; oversize>25MB 422; list scoped; missing 404; no-tenant 400. DB: 2 revision rows (BR214-3), acct.je.draft.created/updated outbox, DRAFT_CREATED/UPDATED/ATTACHMENT_ADDED audit, 1 attachment row.",
         "migrationApplied": true
+      },
+      "finalR0Certification": {
+        "phase": "Final-R0 Foundation Completion \u2014 Batch C",
+        "status": "DONE",
+        "evidence": "Live-gateway certified (Final-R0 Batch C). CRITICAL defect found+fixed (commit 72c4fb4): interactive Prisma $transaction() writes ran with RLS tenant context unset on the transaction's own connection, causing a 100% reproducible 42501 violation on every draft write. Fixed by setting tenant context as the first statement inside each interactive transaction. Evidence: positive create (201), validation failure (400), unauthorized (401), cross-tenant denial (403), persistence+readback (GET + psql), audit (DRAFT_CREATED), centralized S207 authorization, migration reproducibility confirmed.",
+        "reference": "docs/accounting-modernization/stabilization/STORY_CERTIFICATION_MATRIX.csv"
       }
     },
     "S215": {
       "title": "Validate Manual JE",
       "layman": "A dry run before posting: click validate and see exactly what would stop this journal \u2014 out-of-balance amount, closed period, bad account \u2014 using the SAME rules the posting door uses, so validate and post can never disagree.",
       "sprint": "Sprint 2 (CE-04, L1, P0)",
-      "status": "DONE_PENDING_INTEGRATION",
-      "usesStubs": true,
-      "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207",
+      "status": "DONE",
+      "usesStubs": false,
       "dependencies": [
         "S013",
         "S214"
@@ -707,15 +711,20 @@
         "tests": "13 new (tests/validate.test.ts incl. 6-scenario BR215-2 parity suite); full coa-service suite 169 passed / 12 files",
         "runtime": "gateway :3100: unbalanced 200 pass:false BR013-1 delta 100/90; future-period 200 BR013-2; non-postable 200 BR013-4 lineIndex0; all-clear 200 pass:true -> status VALIDATED; edit resets to DRAFT clearing validation; unknown action 404; nonexistent-id:validate 404 DRAFT_NOT_FOUND. DB: validation_result JSONB persisted, 5 DRAFT_VALIDATED audit rows.",
         "migrationApplied": "n/a \u2014 reuses S214 validated_at/validation_result columns"
+      },
+      "finalR0Certification": {
+        "phase": "Final-R0 Foundation Completion \u2014 Batch C",
+        "status": "DONE",
+        "evidence": "Live-gateway certified (Final-R0 Batch C, same RLS-transaction fix applies): positive validate (200 pass:true on fully-dimensioned balanced draft), validation failure (200 pass:false, unbalanced + missing dimensions diagnosed via BR013-1/4/5), unauthorized (401), cross-tenant denial (403), persistence (DRAFT->VALIDATED), audit (DRAFT_VALIDATED), centralized S207 authorization, migration reproducibility confirmed.",
+        "reference": "docs/accounting-modernization/stabilization/STORY_CERTIFICATION_MATRIX.csv"
       }
     },
     "S216": {
       "title": "Post Manual JE (Direct-Post)",
       "layman": "The accountant hits Post on a validated draft and it goes straight to the ledger through the one true posting door, linking the draft to its posted journal. Approval routing is config-gated off in R0.",
       "sprint": "Sprint 2 (CE-04, L1, P0)",
-      "status": "DONE_PENDING_INTEGRATION",
-      "usesStubs": true,
-      "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207",
+      "status": "DONE",
+      "usesStubs": false,
       "dependencies": [
         "S013",
         "S214",
@@ -741,6 +750,12 @@
         "runtime": "gateway :3100: happy path -> 201 GJ-2026-01-000007 POSTED_LINKED; idempotent re-post 201 idempotent:true; unbalanced -> 422 POST_VALIDATION_FAILED (BR013-1); mode gate (ENTITY review) -> 422 POSTING_MODE_GATE 'routing requires S031' no journal. DB: draft POSTED_LINKED linked to journal, journal POSTED posted_by=dev-user balanced 250/250, acct.je.posted outbox, audit chain DRAFT_CREATED->VALIDATED->POSTED.",
         "migrationApplied": "20260724200000_link_draft_journal (indexes; no FK due to TEXT vs UUID id type mismatch, deferred)",
         "reconciliation": "je.posting_mode enum reconciled with existing S223 config (values direct|review); 'direct'->post, non-direct->APPROVAL_REQUIRED gate (routing requires S031). ENTITY scope beats TENANT (BR223-2 precedence)."
+      },
+      "finalR0Certification": {
+        "phase": "Final-R0 Foundation Completion \u2014 Batch C",
+        "status": "DONE",
+        "evidence": "Live-gateway certified (Final-R0 Batch C): positive post (201, real double-entry journal via shared PostingService), idempotent re-post (201, idempotent:true, no duplicate ledger row), validation failure (422 on un-remediated draft), unauthorized (401), cross-tenant denial (403), persistence (journal_entry POSTED) + view (balanced, immutable), audit (POSTED + DRAFT_POSTED), centralized S207 authorization, migration reproducibility confirmed.",
+        "reference": "docs/accounting-modernization/stabilization/STORY_CERTIFICATION_MATRIX.csv"
       }
     },
     "S217": {
@@ -825,9 +840,8 @@
       "title": "Void/Delete Draft JE",
       "layman": "Throw away an unposted draft cleanly (soft-delete + audit), keeping worklists tidy \u2014 but posted entries can never be deleted, only reversed. Admins can void someone else's draft with a reason.",
       "sprint": "Sprint 2 (CE-04, L1, P0)",
-      "status": "DONE_PENDING_INTEGRATION",
-      "usesStubs": true,
-      "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207",
+      "status": "DONE",
+      "usesStubs": false,
       "dependencies": [
         "S214"
       ],
@@ -852,6 +866,12 @@
         "runtime": "gateway :3100: own draft create->:void = 200 {status:VOIDED,idempotent:false}; repeat :void = 200 idempotent:true; GET /manual-journals/drafts excludes voided id. posted-linked draft (:post first to GJ-2026-01-000010) then :void -> 409 REVERSE_ONLY 'reverse only'. admin-any flow validated via seeded other-preparer draft: :void without reason -> 422 VOID_REASON_REQUIRED; with reason -> 200 VOIDED. DB: manual_je_draft status/voided_at/void_reason updated; coa_outbox_events je.draft.voided rows; audit_outbox DRAFT_VOIDED rows.",
         "migrationApplied": "20260724230000_manual_je_void_worklist_index (additive partial index on non-VOIDED worklist rows)",
         "knownLimitations": "Authz still uses S207 stub role-map in this service path; integration gate remains until real S007/S207 suites are rerun green."
+      },
+      "finalR0Certification": {
+        "phase": "Final-R0 Foundation Completion \u2014 Batch C",
+        "status": "DONE",
+        "evidence": "Live-gateway certified (Final-R0 Batch C): positive void (200, own draft), idempotent re-void (200, idempotent:true), business-rule denial (409 REVERSE_ONLY on a POSTED draft, correctly redirecting to S218), unauthorized (401), cross-tenant denial (403), persistence (VOIDED, voided_at), audit (DRAFT_VOIDED), centralized S207 authorization, migration reproducibility confirmed.",
+        "reference": "docs/accounting-modernization/stabilization/STORY_CERTIFICATION_MATRIX.csv"
       }
     }
   },
