@@ -224,6 +224,38 @@ describe('DepartmentService.seedCanonical', () => {
     await svc.seedCanonical(TENANT, ENTITY);
     expect(created).toHaveLength(0); // nothing created
   });
+
+  it('writes a CREATE audit event for every canonical department seeded (S007 BR7-1)', async () => {
+    const auditWrites: any[] = [];
+    const svc = makeSvc({
+      department: {
+        findFirst: async () => null,
+        create:    async ({ data }: any) => data,
+      },
+      auditOutboxEvent: {
+        create: async ({ data }: any) => { auditWrites.push(data); return data; },
+      },
+    });
+    await svc.seedCanonical(TENANT, ENTITY, 'onboarding-admin');
+    expect(auditWrites).toHaveLength(12);
+    expect(auditWrites.every((a) => a.docType === 'Department' && a.action === 'CREATE')).toBe(true);
+    expect(auditWrites.every((a) => a.actor === 'onboarding-admin')).toBe(true);
+  });
+
+  it('defaults the seed actor to system-seed when none is provided', async () => {
+    const auditWrites: any[] = [];
+    const svc = makeSvc({
+      department: {
+        findFirst: async () => null,
+        create:    async ({ data }: any) => data,
+      },
+      auditOutboxEvent: {
+        create: async ({ data }: any) => { auditWrites.push(data); return data; },
+      },
+    });
+    await svc.seedCanonical(TENANT, ENTITY);
+    expect(auditWrites.every((a) => a.actor === 'system-seed')).toBe(true);
+  });
 });
 
 // ── DepartmentService.create ─────────────────────────────────────────────────

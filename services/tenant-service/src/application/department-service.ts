@@ -132,31 +132,39 @@ export class DepartmentService {
 
   // ── seedCanonical ────────────────────────────────────────────────────────────
 
-  async seedCanonical(tenantId: string, entityId: string) {
+  async seedCanonical(tenantId: string, entityId: string, actor = 'system-seed') {
     for (const { code, name } of CANONICAL_DEPARTMENTS) {
       const existing = await this.prisma.department.findFirst({
         where: { entityId, code },
       });
       if (existing) continue; // idempotent — skip if already seeded
 
-      const dept = await this.prisma.department.create({
-        data: {
-          id:        crypto.randomUUID(),
-          tenantId,
-          entityId,
-          code,
-          name,
-          canonical: true,
-          status:    'ACTIVE',
-          version:   1,
-        },
+      // S007 BR7-1/BR7-4 — department create + audit event are one atomic
+      // transaction (this was a real gap: previously only the best-effort
+      // domain-event outbox write below was emitted, with no audit trail —
+      // see S007_WRITE_PATH_COVERAGE_CENSUS.md §5).
+      const dept = await this.prisma.$transaction(async (tx) => {
+        const d = await tx.department.create({
+          data: {
+            id:        crypto.randomUUID(),
+            tenantId,
+            entityId,
+            code,
+            name,
+            canonical: true,
+            status:    'ACTIVE',
+            version:   1,
+          },
+        });
+        await this._audit(tenantId, 'Department', d.id, 'CREATE', null, d, actor, tx);
+        return d;
       });
 
       await this._writeOutbox(tenantId, 'org.dept.created', dept.id, {
         entityId,
         deptCode: code,
         changes: { name, canonical: true, status: 'ACTIVE' },
-        actor:   'system-seed',
+        actor,
         schemaV: 1,
       });
     }

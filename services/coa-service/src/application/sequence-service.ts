@@ -25,6 +25,9 @@ export interface AllocateDTO {
   sourceCode: string;
   entityId: string;
   periodCode: string; // YYYY-MM
+  /** Defaults to 'system' for internal callers (e.g. the posting path) that
+   * don't have a request-scoped actor to thread through. */
+  actor?: string;
 }
 
 export interface AllocationResult {
@@ -74,58 +77,69 @@ export class SequenceService {
   async allocate(dto: AllocateDTO): Promise<AllocationResult> {
     const sourceCode = typeof dto.sourceCode === 'string' ? dto.sourceCode.trim().toUpperCase() : dto.sourceCode;
     this.validate(sourceCode, dto.periodCode);
+    const actor = dto.actor ?? 'system';
 
-    // Ensure the counter row exists (idempotent create; ignore unique-race).
-    const existing = await this.prisma.journalSequence.findUnique({
-      where: {
-        tenantId_sourceCode_entityId_periodCode: {
-          tenantId: dto.tenantId,
-          sourceCode,
-          entityId: dto.entityId,
-          periodCode: dto.periodCode,
-        },
-      },
-    });
-    if (!existing) {
-      try {
-        await this.prisma.journalSequence.create({
-          data: {
-            id: crypto.randomUUID(),
+    // S007 BR7-1/BR7-4 — the counter mutation and its audit event are one
+    // atomic transaction. Previously this method had NO audit call at all
+    // (a genuine write-path coverage gap flagged during the S007 write-path
+    // census: /journal-sequences/allocate is a real, permission-gated HTTP
+    // endpoint that mutates DB state with zero audit trail when called
+    // directly, not only as an internal step of an already-audited post).
+    return this.prisma.$transaction(async (tx) => {
+      // Ensure the counter row exists (idempotent create; ignore unique-race).
+      const existing = await tx.journalSequence.findUnique({
+        where: {
+          tenantId_sourceCode_entityId_periodCode: {
             tenantId: dto.tenantId,
             sourceCode,
             entityId: dto.entityId,
             periodCode: dto.periodCode,
-            nextSeq: 1,
           },
-        });
-      } catch {
-        /* concurrent create won the race — the row now exists; proceed to atomic claim */
+        },
+      });
+      if (!existing) {
+        try {
+          await tx.journalSequence.create({
+            data: {
+              id: crypto.randomUUID(),
+              tenantId: dto.tenantId,
+              sourceCode,
+              entityId: dto.entityId,
+              periodCode: dto.periodCode,
+              nextSeq: 1,
+            },
+          });
+        } catch {
+          /* concurrent create won the race — the row now exists; proceed to atomic claim */
+        }
       }
-    }
 
-    // Atomic claim: read-and-increment in one statement so concurrent callers
-    // never observe the same value (row-level lock via UPDATE ... RETURNING).
-    const rows = await this.prisma.$queryRawUnsafe<{ claimed: number }[]>(
-      `UPDATE journal_sequence
-         SET next_seq = next_seq + 1, updated_at = now()
-       WHERE tenant_id = $1 AND source_code = $2 AND entity_id = $3 AND period_code = $4
-       RETURNING (next_seq - 1) AS claimed`,
-      dto.tenantId,
-      sourceCode,
-      dto.entityId,
-      dto.periodCode,
-    );
-    if (!rows || rows.length === 0) {
-      throw new SequenceValidationError('SEQUENCE_NOT_FOUND', 'sequence counter row missing after upsert');
-    }
-    const seq = Number(rows[0].claimed);
-    return {
-      journalNumber: formatJournalNumber(sourceCode, dto.periodCode, seq),
-      seq,
-      sourceCode,
-      entityId: dto.entityId,
-      periodCode: dto.periodCode,
-    };
+      // Atomic claim: read-and-increment in one statement so concurrent callers
+      // never observe the same value (row-level lock via UPDATE ... RETURNING).
+      const rows = await tx.$queryRawUnsafe<{ claimed: number }[]>(
+        `UPDATE journal_sequence
+           SET next_seq = next_seq + 1, updated_at = now()
+         WHERE tenant_id = $1 AND source_code = $2 AND entity_id = $3 AND period_code = $4
+         RETURNING (next_seq - 1) AS claimed`,
+        dto.tenantId,
+        sourceCode,
+        dto.entityId,
+        dto.periodCode,
+      );
+      if (!rows || rows.length === 0) {
+        throw new SequenceValidationError('SEQUENCE_NOT_FOUND', 'sequence counter row missing after upsert');
+      }
+      const seq = Number(rows[0].claimed);
+      const result: AllocationResult = {
+        journalNumber: formatJournalNumber(sourceCode, dto.periodCode, seq),
+        seq,
+        sourceCode,
+        entityId: dto.entityId,
+        periodCode: dto.periodCode,
+      };
+      await this.audit(dto.tenantId, result.journalNumber, actor, 'ALLOCATED', null, result, tx);
+      return result;
+    });
   }
 
   /**

@@ -45,6 +45,7 @@ const AllocateSchema = z.object({
   sourceCode: z.string().min(1),
   entityId: z.string().min(1),
   periodCode: z.string().min(1),
+  actor: z.string().min(1).optional(),
 });
 
 const LogGapSchema = z.object({
@@ -76,6 +77,7 @@ export async function sequenceRoutes(app: FastifyInstance) {
         sourceCode: body.sourceCode,
         entityId: body.entityId,
         periodCode: body.periodCode,
+        actor: actorOf(request, body),
       });
       return reply.status(200).send(result);
     } catch (err) {

@@ -149,6 +149,25 @@ describe('SequenceService.allocate (BR213-1/2)', () => {
       svc.allocate({ tenantId: TENANT, sourceCode: 'GJ', entityId: ENTITY, periodCode: '2026/1' }),
     ).rejects.toBeInstanceOf(SequenceValidationError);
   });
+
+  it('S007 write-path coverage: allocate() writes an ALLOCATED audit event transactionally coupled to the counter claim (previously had none at all)', async () => {
+    const { svc, prisma } = setup();
+    const result = await svc.allocate({ tenantId: TENANT, sourceCode: 'GJ', entityId: ENTITY, periodCode: '2026-01', actor: 'alice' });
+    expect(prisma._audits).toHaveLength(1);
+    expect(prisma._audits[0]).toMatchObject({
+      tenantId: TENANT,
+      docType: 'journal_sequence',
+      docId: result.journalNumber,
+      action: 'ALLOCATED',
+      actor: 'alice',
+    });
+  });
+
+  it('defaults the audit actor to "system" for internal callers (e.g. the posting path) that omit one', async () => {
+    const { svc, prisma } = setup();
+    await svc.allocate({ tenantId: TENANT, sourceCode: 'GJ', entityId: ENTITY, periodCode: '2026-01' });
+    expect(prisma._audits[0].actor).toBe('system');
+  });
 });
 
 describe('SequenceService.logGap + gapReport (BR213-3)', () => {

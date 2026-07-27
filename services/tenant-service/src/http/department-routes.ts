@@ -112,7 +112,7 @@ export async function departmentRoutes(app: FastifyInstance) {
     const tenantId = getTenantId(request);
     const { entityId } = request.params as { entityId: string };
     try {
-      await svc.seedCanonical(tenantId, entityId);
+      await svc.seedCanonical(tenantId, entityId, request.user?.sub);
       const result = await svc.list({ tenantId, entityId });
       return reply.send(result);
     } catch (err) {
