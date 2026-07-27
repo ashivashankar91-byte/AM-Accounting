@@ -405,6 +405,127 @@ test.describe('Golden R0 — full 16-step browser journey (positive)', () => {
       body.endingBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace('-', ''),
     );
   });
+
+  // S221 GL Search + saved searches — the full 12-step persisted journey
+  // requested for the S221 checkpoint, driven against the real coa-service
+  // contract throughout (no mocked responses anywhere in this test).
+  test('GL Search (S221) — combined filters, drill-through, saved-search CRUD, duplicate-name conflict, unauthorized, cross-tenant', async ({ page, request }) => {
+    await login(page, TENANT_A, ADMIN_EMAIL, PASSWORD);
+    await page.waitForURL(/\/golden-path\/select-entity/, { timeout: 15_000 });
+    await expect(page.getByTestId('legal-entity-list')).toBeVisible({ timeout: 10_000 });
+    await page.getByTestId('select-entity-KUNES-01').click();
+    await page.waitForURL(/\/golden-path\/org-hierarchy/, { timeout: 10_000 });
+
+    // 1. Open GL Search.
+    await page.goto(`${BASE}/golden-path/gl-search`);
+    await expect(page.getByTestId('gls-run')).toBeVisible({ timeout: 10_000 });
+
+    // 2. Apply supported combined filters (source + date range — both real
+    // SearchQuerySchema fields, combined in one query).
+    await page.getByTestId('gls-source').fill('ADJ');
+    await page.getByTestId('gls-start-date').fill('2026-01-01');
+    await page.getByTestId('gls-end-date').fill('2026-01-31');
+
+    // 3. Confirm real results (network-level 200, real rows rendered).
+    const [searchResp] = await Promise.all([
+      page.waitForResponse((r) => /\/api\/v1\/coa\/inquiry\/search\?/.test(r.url())),
+      page.getByTestId('gls-run').click(),
+    ]);
+    expect(searchResp.status()).toBe(200);
+    await expect(page.getByTestId('gls-table')).toBeVisible({ timeout: 10_000 });
+    const rowCount = await page.locator('[data-testid^="gls-row-"]').count();
+    expect(rowCount).toBeGreaterThan(0);
+
+    // 4. Open a result in GL Inquiry — real drill-through, real S220 call.
+    const [inquiryResp] = await Promise.all([
+      page.waitForResponse((r) => /\/api\/v1\/coa\/inquiry\/accounts\/.+\/activity\?/.test(r.url())),
+      page.getByTestId('gls-open-inquiry-0').click(),
+    ]);
+    expect(inquiryResp.status()).toBe(200);
+    await page.waitForURL(/\/accounting\/inquiry\/gl\?accountId=/, { timeout: 10_000 });
+    await expect(page.getByTestId('gli-table').or(page.getByTestId('gli-empty'))).toBeVisible({ timeout: 10_000 });
+
+    // 5. Save the search.
+    await page.goto(`${BASE}/golden-path/gl-search`);
+    await page.getByTestId('gls-source').fill('ADJ');
+    await page.getByTestId('gls-start-date').fill('2026-01-01');
+    await page.getByTestId('gls-end-date').fill('2026-01-31');
+    await page.getByTestId('gls-run').click();
+    await expect(page.getByTestId('gls-table')).toBeVisible({ timeout: 10_000 });
+    const searchName = `E2E-Saved-${Date.now()}`;
+    await page.getByTestId('gls-save-name').fill(searchName);
+    await page.getByTestId('gls-save-button').click();
+    await expect(page.getByTestId('gls-save-success')).toBeVisible({ timeout: 10_000 });
+
+    // 6. Confirm it appears in the saved-search list.
+    const savedRow = page.locator('[data-testid^="gls-saved-row-"]').filter({ hasText: searchName });
+    await expect(savedRow).toBeVisible({ timeout: 10_000 });
+
+    // 7. Run the saved search and prove the criteria are restored (not just
+    // that results appear — the actual filter inputs are repopulated from
+    // the persisted criteria, verbatim from the server).
+    await page.getByTestId('gls-source').fill('');
+    await page.getByTestId('gls-start-date').fill('');
+    await page.getByTestId('gls-end-date').fill('');
+    await savedRow.locator('[data-testid^="gls-saved-run-"]').click();
+    await expect(page.getByTestId('gls-table')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId('gls-source')).toHaveValue('ADJ');
+    await expect(page.getByTestId('gls-start-date')).toHaveValue('2026-01-01');
+    await expect(page.getByTestId('gls-end-date')).toHaveValue('2026-01-31');
+
+    // 8. Attempt a duplicate name and verify the real 409 conflict state.
+    await page.getByTestId('gls-save-name').fill(searchName);
+    await page.getByTestId('gls-save-button').click();
+    await expect(page.getByTestId('gls-save-conflict')).toBeVisible({ timeout: 10_000 });
+
+    // 9. Delete the saved search with confirmation (two-step: request, then
+    // confirm — never a single click deletes).
+    await savedRow.locator('[data-testid^="gls-saved-delete-"]').click();
+    await expect(savedRow.locator('[data-testid^="gls-delete-confirm-panel-"]')).toBeVisible({ timeout: 10_000 });
+    await savedRow.locator('[data-testid^="gls-delete-confirm-yes-"]').click();
+    await expect(page.getByTestId('gls-delete-success')).toBeVisible({ timeout: 10_000 });
+
+    // 10. Confirm it no longer appears.
+    await expect(page.locator('[data-testid^="gls-saved-row-"]').filter({ hasText: searchName })).toHaveCount(0);
+
+    // 11. Verify unauthorized behavior — real HTTP call, no token, against
+    // the real gateway (not a mocked response).
+    const unauthResp = await request.get('http://localhost:13100/api/v1/coa/inquiry/search?sourceCode=ADJ', {
+      headers: { 'x-tenant-id': TENANT_A },
+    });
+    expect(unauthResp.status()).toBe(401);
+
+    // 12. Verify cross-tenant access is blocked — create a saved search as
+    // tenant A (real), then attempt to run/delete it as a real tenant B
+    // session; both must be denied without leaking existence.
+    const tenantAToken = await page.evaluate(() => localStorage.getItem('goldenpath.accessToken'));
+    const createResp = await request.post('http://localhost:13100/api/v1/coa/inquiry/searches', {
+      headers: { Authorization: `Bearer ${tenantAToken}`, 'x-tenant-id': TENANT_A },
+      data: { name: `E2E-XTenant-${Date.now()}`, criteria: { sourceCode: 'ADJ' } },
+    });
+    expect(createResp.status()).toBe(201);
+    const created = await createResp.json();
+
+    const tenantBLogin = await request.post('http://localhost:13100/api/v1/auth/login', {
+      data: { tenantId: TENANT_B, email: XT_EMAIL, password: PASSWORD },
+    });
+    expect(tenantBLogin.status()).toBe(200);
+    const tenantBToken = (await tenantBLogin.json()).accessToken;
+
+    const xtRun = await request.get(`http://localhost:13100/api/v1/coa/inquiry/searches/${created.id}/run`, {
+      headers: { Authorization: `Bearer ${tenantBToken}`, 'x-tenant-id': TENANT_B },
+    });
+    expect(xtRun.status()).toBe(404);
+    const xtDelete = await request.delete(`http://localhost:13100/api/v1/coa/inquiry/searches/${created.id}`, {
+      headers: { Authorization: `Bearer ${tenantBToken}`, 'x-tenant-id': TENANT_B },
+    });
+    expect(xtDelete.status()).toBe(404);
+
+    // Cleanup — delete the real fixture created for step 12 as its real owner.
+    await request.delete(`http://localhost:13100/api/v1/coa/inquiry/searches/${created.id}`, {
+      headers: { Authorization: `Bearer ${tenantAToken}`, 'x-tenant-id': TENANT_A },
+    });
+  });
 });
 
 test.describe('Golden R0 — negative scenarios (core)', () => {

@@ -39,6 +39,13 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
       (err as any).body = body;
       throw err;
     }
+    // S221: DELETE endpoints (e.g. deleteSavedSearch) return 204 No Content
+    // with an empty body -- calling res.json() on that throws a JSON parse
+    // error, which callers were catching as a false failure even though the
+    // delete had already succeeded server-side.
+    if (res.status === 204) {
+      return undefined as unknown as T;
+    }
     return res.json();
   } catch (error: any) {
     clearTimeout(timeoutId);
@@ -961,10 +968,51 @@ export const goldenPathApi = {
     apiFetch<any>('/api/v1/iam/role-templates:apply', { method: 'POST', body: JSON.stringify(data) }),
 
   // S221 — GL Search: consumes the real coa-service cross-account ledger
-  // search API (frozen S220 ActivityLineView contract) as-is.
-  searchGL: (params: Record<string, string | undefined>) => {
+  // search API (frozen S220 ActivityLineView contract, plus
+  // accountId/accountNumber, minus runningBalance) as-is. No `account`
+  // filter exists on the real SearchQuerySchema -- do not add one client-side.
+  searchGL: (params: Record<string, string | number | undefined>) => {
     const qs = new URLSearchParams();
-    Object.entries(params).forEach(([k, v]) => { if (v) qs.set(k, v); });
-    return apiFetch<{ criteria: any; results: any[] }>(`/api/v1/coa/inquiry/search?${qs.toString()}`);
+    Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== '') qs.set(k, String(v)); });
+    return apiFetch<{
+      criteria: Record<string, any>;
+      results: Array<{
+        journalEntryId: string; journalNumber: string; accountId: string; accountNumber: string;
+        entryDate: string; source: string; store: string; dept: string | null;
+        controlNumber: string | null; applyNumber: string | null; memo: string | null; dr: number; cr: number;
+      }>;
+      pagination: { page: number; pageSize: number; totalResults: number; totalPages: number };
+    }>(`/api/v1/coa/inquiry/search?${qs.toString()}`);
   },
+
+  // S221 — saved searches (BR221-2). User-scoped within tenant (SavedGlSearch
+  // is keyed by createdBy, resolved server-side from the JWT -- no actor
+  // field is ever sent from the browser). No update/edit endpoint exists;
+  // do not add one client-side.
+  saveSearch: (name: string, criteria: Record<string, string | number | undefined>) =>
+    apiFetch<{ id: string; name: string; criteria: Record<string, any>; createdAt: string; updatedAt: string }>(
+      '/api/v1/coa/inquiry/searches',
+      { method: 'POST', body: JSON.stringify({ name, criteria }) },
+    ),
+  listSavedSearches: () =>
+    apiFetch<{ results: Array<{ id: string; name: string; criteria: Record<string, any>; createdAt: string; updatedAt: string }> }>(
+      '/api/v1/coa/inquiry/searches',
+    ),
+  runSavedSearch: (id: string, page?: number, pageSize?: number) => {
+    const qs = new URLSearchParams();
+    if (page) qs.set('page', String(page));
+    if (pageSize) qs.set('pageSize', String(pageSize));
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return apiFetch<{
+      criteria: Record<string, any>;
+      results: Array<{
+        journalEntryId: string; journalNumber: string; accountId: string; accountNumber: string;
+        entryDate: string; source: string; store: string; dept: string | null;
+        controlNumber: string | null; applyNumber: string | null; memo: string | null; dr: number; cr: number;
+      }>;
+      pagination: { page: number; pageSize: number; totalResults: number; totalPages: number };
+    }>(`/api/v1/coa/inquiry/searches/${id}/run${suffix}`);
+  },
+  deleteSavedSearch: (id: string) =>
+    apiFetch<void>(`/api/v1/coa/inquiry/searches/${id}`, { method: 'DELETE' }),
 };

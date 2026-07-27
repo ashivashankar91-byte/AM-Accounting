@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
 import { goldenPathApi } from '../../api/client';
 import { EmptyState, ErrorState, LoadingState, MoneyCell, UnauthorizedState, formatMoney } from '../../components/goldenpath/shared';
@@ -62,11 +62,49 @@ export default function GLInquiry() {
   const [drillJournal, setDrillJournal] = useState<any>(null);
   const [drillError, setDrillError] = useState<string | null>(null);
 
+  const [searchParams] = useSearchParams();
+  const [deepLinkRun, setDeepLinkRun] = useState(false);
+
   useEffect(() => {
     if (!legalEntityId) return;
     goldenPathApi.listAccounts(legalEntityId).then((r) => setAccounts(r.accounts));
     goldenPathApi.listStores(legalEntityId).then((r) => setStores(r.items));
   }, [legalEntityId]);
+
+  // S221 "open result in GL Inquiry" deep link: GLSearch.tsx navigates here
+  // with ?accountId=&startDate=&endDate= (the search result row's real
+  // accountId and a real date window around its entryDate) — auto-selects
+  // the account and range and runs the real S220 query once, rather than
+  // requiring a second manual step.
+  useEffect(() => {
+    if (!legalEntityId || deepLinkRun) return;
+    const qpAccountId = searchParams.get('accountId');
+    if (!qpAccountId) return;
+    setDeepLinkRun(true);
+    setAccountId(qpAccountId);
+    const qpStart = searchParams.get('startDate');
+    const qpEnd = searchParams.get('endDate');
+    const params = new URLSearchParams();
+    if (qpStart && qpEnd) {
+      setRangeMode('CUSTOM');
+      setStartDate(qpStart);
+      setEndDate(qpEnd);
+      params.set('startDate', qpStart);
+      params.set('endDate', qpEnd);
+    } else {
+      params.set('preset', 'OPEN_MONTH');
+    }
+    params.set('page', '1');
+    setBusy(true);
+    goldenPathApi
+      .getAccountActivity(qpAccountId, params.toString())
+      .then((result) => setReport(result))
+      .catch((err: any) => {
+        if (err.status === 401 || err.status === 403) setUnauthorized(err.message);
+        else setError(err.message);
+      })
+      .finally(() => setBusy(false));
+  }, [legalEntityId, searchParams, deepLinkRun]);
 
   if (!legalEntityId) {
     return (
