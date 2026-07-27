@@ -100,6 +100,28 @@ Carry-forward integrations:
 - Real broker-backed event verification — validate outbox events over a live RabbitMQ broker (dev bus subscribe is currently a no-op in-memory stub); specifically broker-backed iam.user.deactivated fan-out to S206 auto-revoke.
 - DONE_PENDING_INTEGRATION closure gates — re-run each story's integration suite green against real S007/S207 services and record in completion evidence before flipping to full DONE: S201, S203, S204, S205, S206.
 
+### GOLDEN-R0-FLEET — PACKAGE_COMPLETE_WITH_PENDING_INTEGRATIONS
+
+Closed: 2026-07-27
+
+| ID | Title | Status |
+|---|---|---|
+| S202 | Dealer Group Hierarchy View & Maintenance | 🟡 DONE_PENDING_INTEGRATION |
+| S004A | Dealership Position Role Templates | 🟡 DONE_PENDING_INTEGRATION |
+| S224 | Document Audit History View | 🟡 DONE_PENDING_INTEGRATION |
+| S220 | GL Account Activity Inquiry | 🟡 DONE_PENDING_INTEGRATION |
+| S221 | GL Search | 🟡 DONE_PENDING_INTEGRATION |
+| S014 | Trial Balance API | 🟡 DONE_PENDING_INTEGRATION |
+| S222 | Trial Balance Screen & Export | 🟡 DONE_PENDING_INTEGRATION |
+| S227 | Balance Sheet and Income Statement | 🟡 DONE_PENDING_INTEGRATION |
+
+31/31 Golden R0 stories implemented. 23 DONE; 8 (S202, S004A, S224, S220, S221, S014, S222, S227) remain DONE_PENDING_INTEGRATION pending real Figma/UX/product sign-off (package-wide gate, not a technical gap for any of them). Phase 3 full release certification PASSED: fresh-database rebuild, full test matrix, 12/12 live Playwright Golden Path scenarios, financial reconciliation (TB/BS/IS), security/RLS/authz proofs. Phase 4 closed the BR013-1 frontend defect, the verifyChain() hash-walk defect, one S224 UX functional gap, and the legacy audit-chain treatment decision -- all real, disclosed, and fixed, not fabricated.
+
+Carry-forward integrations:
+- Real human Figma/UX/product review for S202, S004A, S224, S220, S221, S014, S222, S227 -- no reviewer/SME available in this environment; an engineering-led self-review packet was produced instead and does not substitute for real sign-off.
+- Real Accounting SME demonstration/acceptance -- not performed; only a demo script/environment can be prepared without a real SME.
+- Fresh-stack Playwright re-certification -- documented as an evidence-separation exception rather than a full fresh-stack cutover; see PHASE4_FRESH_STACK_PLAYWRIGHT_EXCEPTION.md.
+
 ## Integration gate status
 
 (Verbatim from `MODULE_STATE.json.integrationGateStatus` — this is the authoritative list of what remains before any DONE_PENDING_INTEGRATION or PARTIAL story can become DONE.)

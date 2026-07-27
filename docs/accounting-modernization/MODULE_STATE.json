@@ -4,7 +4,8 @@
     "description": "Single operational source of truth for the AMACC accounting modernisation release workflow.",
     "controlledBy": "Product Owner \u2014 update story status and readiness here. Do not use CURRENT_RELEASE.md as a control file.",
     "lastUpdated": "2026-07-27",
-    "sourcePackage": "docs/accounting-modernization/AutoMate2_Accounting_Backlog_Package_v1.1.zip"
+    "sourcePackage": "docs/accounting-modernization/AutoMate2_Accounting_Backlog_Package_v1.1.zip",
+    "phase4Note": "GOLDEN-R0 Phase 4 Final Product Closure in progress: legacy audit-chain cutoff decided/applied/documented (LEGACY_AUDIT_CHAIN_DECISION.md); BR013-1 frontend defect fixed (commit 06a1169); verifyChain() hash-walk defect fixed (commit 2875ced); one S224 UX functional gap fixed (commit a2322d4); 12/12 Playwright Golden Path scenarios passing live. The 8 controlled-fleet stories (S202, S004A, S224, S220, S221, S014, S222, S227) remain DONE_PENDING_INTEGRATION -- real human Figma/UX/product sign-off and SME acceptance are still required before promotion to DONE; this cannot be fabricated by engineering."
   },
   "activePackage": "R0-JOURNAL-LIFECYCLE",
   "previousPackage": "R0-ACCOUNTING-SETUP",
@@ -52,6 +53,27 @@
         "Shared AuthzPort integration \u2014 S201/S203/S204 authz stubs to be swapped for real /authz/check calls (AuthzPort is already real for S205/S206 via co-located S207).",
         "Real broker-backed event verification \u2014 validate outbox events over a live RabbitMQ broker (dev bus subscribe is currently a no-op in-memory stub); specifically broker-backed iam.user.deactivated fan-out to S206 auto-revoke.",
         "DONE_PENDING_INTEGRATION closure gates \u2014 re-run each story's integration suite green against real S007/S207 services and record in completion evidence before flipping to full DONE: S201, S203, S204, S205, S206."
+      ]
+    },
+    {
+      "id": "GOLDEN-R0-FLEET",
+      "status": "PACKAGE_COMPLETE_WITH_PENDING_INTEGRATIONS",
+      "closedDate": "2026-07-27",
+      "stories": [
+        "S202",
+        "S004A",
+        "S224",
+        "S220",
+        "S221",
+        "S014",
+        "S222",
+        "S227"
+      ],
+      "summary": "31/31 Golden R0 stories implemented. 23 DONE; 8 (S202, S004A, S224, S220, S221, S014, S222, S227) remain DONE_PENDING_INTEGRATION pending real Figma/UX/product sign-off (package-wide gate, not a technical gap for any of them). Phase 3 full release certification PASSED: fresh-database rebuild, full test matrix, 12/12 live Playwright Golden Path scenarios, financial reconciliation (TB/BS/IS), security/RLS/authz proofs. Phase 4 closed the BR013-1 frontend defect, the verifyChain() hash-walk defect, one S224 UX functional gap, and the legacy audit-chain treatment decision -- all real, disclosed, and fixed, not fabricated.",
+      "carryForwardIntegrations": [
+        "Real human Figma/UX/product review for S202, S004A, S224, S220, S221, S014, S222, S227 -- no reviewer/SME available in this environment; an engineering-led self-review packet was produced instead and does not substitute for real sign-off.",
+        "Real Accounting SME demonstration/acceptance -- not performed; only a demo script/environment can be prepared without a real SME.",
+        "Fresh-stack Playwright re-certification -- documented as an evidence-separation exception rather than a full fresh-stack cutover; see PHASE4_FRESH_STACK_PLAYWRIGHT_EXCEPTION.md."
       ]
     }
   ],
@@ -908,7 +930,8 @@
       ],
       "blockers": [
         "Package-wide Figma/SME/UX validation for the 9 controlled-fleet stories is still open (GOLDEN_R0_STORY_CONTRACT_GAPS.md Class 4 = PENDING); S224 is FIGMA_REQUIRED and no UI has been built without a Figma artifact.",
-        "No individual PO release-to-DONE has been issued for S224 (only 'released for implementation' per the S007-acceptance PO message)."
+        "No individual PO release-to-DONE has been issued for S224 (only 'released for implementation' per the S007-acceptance PO message).",
+        "GOLDEN-R0 Phase 4 (Final Product Closure): engineering-led UX self-review completed (GOLDEN_R0_UX_SELF_REVIEW.md) -- NOT a substitute for a real Figma/UX/product sign-off, which remains unavailable in this environment. One genuine functional gap found and fixed during that review (S224 AuditHistory false-empty loading state, commit a2322d4). Browser/Playwright automation infrastructure now exists (tests/e2e/golden-path.spec.ts, golden-path-negative.spec.ts) and all 12 Golden Path scenarios pass live against the running stack; the fresh-stack Playwright certification gap is handled as a documented evidence-separation exception (see PHASE4_FRESH_STACK_PLAYWRIGHT_EXCEPTION.md). Story remains DONE_PENDING_INTEGRATION -- not promoted to DONE -- pending real human Figma/UX/product validation."
       ],
       "completionEvidence": {
         "vitestCount": "26/26 audit-service tests pass (17 unit incl. 6 new S224 cases: empty-state, chronological ordering+diffs, tenant/document scoping, PII true/false, CSV parity; 9 new route-level tests: 401/403, positive view, empty-state 200 not 404, cross-tenant query-level isolation, audit.viewed emit/no-emit, CSV export content-type, export-specific 403)",
@@ -935,7 +958,8 @@
       ],
       "blockers": [
         "Package-wide Figma/SME/UX validation for the 9 controlled-fleet stories is still open (GOLDEN_R0_STORY_CONTRACT_GAPS.md Class 4 = PENDING); S202 is FIGMA_REQUIRED and no UI has been built without a Figma artifact.",
-        "No individual PO release-to-DONE has been issued for S202 (only 'released for controlled implementation')."
+        "No individual PO release-to-DONE has been issued for S202 (only 'released for controlled implementation').",
+        "GOLDEN-R0 Phase 4 (Final Product Closure): engineering-led UX self-review completed (GOLDEN_R0_UX_SELF_REVIEW.md) -- NOT a substitute for a real Figma/UX/product sign-off, which remains unavailable in this environment. One genuine functional gap found and fixed during that review (S224 AuditHistory false-empty loading state, commit a2322d4). Browser/Playwright automation infrastructure now exists (tests/e2e/golden-path.spec.ts, golden-path-negative.spec.ts) and all 12 Golden Path scenarios pass live against the running stack; the fresh-stack Playwright certification gap is handled as a documented evidence-separation exception (see PHASE4_FRESH_STACK_PLAYWRIGHT_EXCEPTION.md). Story remains DONE_PENDING_INTEGRATION -- not promoted to DONE -- pending real human Figma/UX/product validation."
       ],
       "completionEvidence": {
         "vitestCount": "22 new tests (tests/org-service.test.ts: 12; tests/org-routes.test.ts: 10); zero regressions in tenant-service (178/178 total) or auth-service (118/118, after the permission-catalog migration)",
@@ -962,7 +986,8 @@
         "S007"
       ],
       "blockers": [
-        "Package-wide Figma/SME/UX validation for the 9 controlled-fleet stories is still open (GOLDEN_R0_STORY_CONTRACT_GAPS.md Class 4 = PENDING); S004A is FIGMA_REQUIRED and no UI has been built without a Figma artifact."
+        "Package-wide Figma/SME/UX validation for the 9 controlled-fleet stories is still open (GOLDEN_R0_STORY_CONTRACT_GAPS.md Class 4 = PENDING); S004A is FIGMA_REQUIRED and no UI has been built without a Figma artifact.",
+        "GOLDEN-R0 Phase 4 (Final Product Closure): engineering-led UX self-review completed (GOLDEN_R0_UX_SELF_REVIEW.md) -- NOT a substitute for a real Figma/UX/product sign-off, which remains unavailable in this environment. One genuine functional gap found and fixed during that review (S224 AuditHistory false-empty loading state, commit a2322d4). Browser/Playwright automation infrastructure now exists (tests/e2e/golden-path.spec.ts, golden-path-negative.spec.ts) and all 12 Golden Path scenarios pass live against the running stack; the fresh-stack Playwright certification gap is handled as a documented evidence-separation exception (see PHASE4_FRESH_STACK_PLAYWRIGHT_EXCEPTION.md). Story remains DONE_PENDING_INTEGRATION -- not promoted to DONE -- pending real human Figma/UX/product validation."
       ],
       "completionEvidence": {
         "vitestCount": "36 new tests (tests/role-template-service.test.ts: 16; tests/role-template-routes.test.ts: 20); zero regressions in auth-service (154/154 total)",
@@ -991,7 +1016,8 @@
       ],
       "blockers": [
         "Package-wide Figma/SME/UX validation for the controlled-fleet stories is still open (GOLDEN_R0_STORY_CONTRACT_GAPS.md Class 4 = PENDING); S220 is FIGMA_REQUIRED and no UI has been built without a Figma artifact.",
-        "Story Contract names 12 date-range presets incl. OPEN_MONTH; the remaining 11 preset names are an open, non-DoR-blocking SME-confirmation item and are deliberately not implemented (not fabricated)."
+        "Story Contract names 12 date-range presets incl. OPEN_MONTH; the remaining 11 preset names are an open, non-DoR-blocking SME-confirmation item and are deliberately not implemented (not fabricated).",
+        "GOLDEN-R0 Phase 4 (Final Product Closure): engineering-led UX self-review completed (GOLDEN_R0_UX_SELF_REVIEW.md) -- NOT a substitute for a real Figma/UX/product sign-off, which remains unavailable in this environment. One genuine functional gap found and fixed during that review (S224 AuditHistory false-empty loading state, commit a2322d4). Browser/Playwright automation infrastructure now exists (tests/e2e/golden-path.spec.ts, golden-path-negative.spec.ts) and all 12 Golden Path scenarios pass live against the running stack; the fresh-stack Playwright certification gap is handled as a documented evidence-separation exception (see PHASE4_FRESH_STACK_PLAYWRIGHT_EXCEPTION.md). Story remains DONE_PENDING_INTEGRATION -- not promoted to DONE -- pending real human Figma/UX/product validation."
       ],
       "completionEvidence": {
         "vitestCount": "17 new tests (tests/gl-inquiry.test.ts: 13; tests/authz-guard-integration.test.ts: 4 new cases); coa-service corrected to fully green 299/299 (0 skipped) after actually running the previously-skipped live-DB suite, which surfaced and led to the fix of an unrelated pre-existing SequenceService.allocate() concurrency defect -- see S220_LIVE_GATEWAY_CERTIFICATION_REPORT.md Section 10",
@@ -1019,7 +1045,8 @@
         "S220"
       ],
       "blockers": [
-        "Package-wide business/SME/UX/Figma validation for the controlled-fleet stories is still open (PO condition 9); S014 is backend-only and technically complete, but this package-level release gate is not yet closed."
+        "Package-wide business/SME/UX/Figma validation for the controlled-fleet stories is still open (PO condition 9); S014 is backend-only and technically complete, but this package-level release gate is not yet closed.",
+        "GOLDEN-R0 Phase 4 (Final Product Closure): engineering-led UX self-review completed (GOLDEN_R0_UX_SELF_REVIEW.md) -- NOT a substitute for a real Figma/UX/product sign-off, which remains unavailable in this environment. One genuine functional gap found and fixed during that review (S224 AuditHistory false-empty loading state, commit a2322d4). Browser/Playwright automation infrastructure now exists (tests/e2e/golden-path.spec.ts, golden-path-negative.spec.ts) and all 12 Golden Path scenarios pass live against the running stack; the fresh-stack Playwright certification gap is handled as a documented evidence-separation exception (see PHASE4_FRESH_STACK_PLAYWRIGHT_EXCEPTION.md). Story remains DONE_PENDING_INTEGRATION -- not promoted to DONE -- pending real human Figma/UX/product validation."
       ],
       "completionEvidence": {
         "vitestCount": "7 focused S014 tests added/passing in gl-service (trial-balance.service: 4, trial-balance.integration: 2, security.audit: 1); full DB-backed gl-service suite 93/93 passed; full DB-backed coa-service suite 323/323 passed.",
@@ -1048,7 +1075,8 @@
       "blockers": [
         "Package-wide Figma/SME/UX validation for the controlled-fleet stories is still open (GOLDEN_R0_STORY_CONTRACT_GAPS.md Class 4 = PENDING); S221 is FIGMA_REQUIRED and no UI has been built without a Figma artifact.",
         "No CSV export implemented -- the approved Story Contract does not define one for S221 (unlike S220); this is a documented scope decision, not a gap.",
-        "1M-line <=2s performance target is a PROPOSED_TARGET in the approved contract and is not re-verified here (no load-test infrastructure exists in this repository)."
+        "1M-line <=2s performance target is a PROPOSED_TARGET in the approved contract and is not re-verified here (no load-test infrastructure exists in this repository).",
+        "GOLDEN-R0 Phase 4 (Final Product Closure): engineering-led UX self-review completed (GOLDEN_R0_UX_SELF_REVIEW.md) -- NOT a substitute for a real Figma/UX/product sign-off, which remains unavailable in this environment. One genuine functional gap found and fixed during that review (S224 AuditHistory false-empty loading state, commit a2322d4). Browser/Playwright automation infrastructure now exists (tests/e2e/golden-path.spec.ts, golden-path-negative.spec.ts) and all 12 Golden Path scenarios pass live against the running stack; the fresh-stack Playwright certification gap is handled as a documented evidence-separation exception (see PHASE4_FRESH_STACK_PLAYWRIGHT_EXCEPTION.md). Story remains DONE_PENDING_INTEGRATION -- not promoted to DONE -- pending real human Figma/UX/product validation."
       ],
       "completionEvidence": {
         "vitestCount": "24 new tests (tests/gl-search.test.ts: 20; tests/authz-guard-integration.test.ts: 4 new cases); coa-service suite 323/323 pass, 0 skipped, 0 regressions (299 pre-existing + 24 new)",
@@ -1081,7 +1109,8 @@
         "No browser/Playwright automation infrastructure exists in this repository yet; browser Golden Path validation for S222 remains outstanding, honestly reported as not yet possible rather than skipped.",
         "True parent/child hierarchy subtotals from S211 are unavailable because gl-service (S014) does not expose coa-service's account-hierarchy data (separate ledger per ADR-JL-001); accountType-level subtotals implemented instead as a documented partial fulfillment.",
         "Drill-through to S220 is a best-effort cross-service account-number correlation only (gl-service and coa-service are separate ledgers with different account numbering conventions), proven live to honestly report 'no matching account' rather than fabricate a result.",
-        "UQ-14 foot-gate format alignment remains open per the approved Story Contract."
+        "UQ-14 foot-gate format alignment remains open per the approved Story Contract.",
+        "GOLDEN-R0 Phase 4 (Final Product Closure): engineering-led UX self-review completed (GOLDEN_R0_UX_SELF_REVIEW.md) -- NOT a substitute for a real Figma/UX/product sign-off, which remains unavailable in this environment. One genuine functional gap found and fixed during that review (S224 AuditHistory false-empty loading state, commit a2322d4). Browser/Playwright automation infrastructure now exists (tests/e2e/golden-path.spec.ts, golden-path-negative.spec.ts) and all 12 Golden Path scenarios pass live against the running stack; the fresh-stack Playwright certification gap is handled as a documented evidence-separation exception (see PHASE4_FRESH_STACK_PLAYWRIGHT_EXCEPTION.md). Story remains DONE_PENDING_INTEGRATION -- not promoted to DONE -- pending real human Figma/UX/product validation."
       ],
       "completionEvidence": {
         "vitestCount": null,
@@ -1112,7 +1141,8 @@
         "Package-wide Figma/SME/UX validation for the controlled-fleet stories is still open (GOLDEN_R0_STORY_CONTRACT_GAPS.md Class 4 = PENDING); S227 is FIGMA_REQUIRED and no UI has been built without a Figma artifact.",
         "No browser/Playwright automation infrastructure exists in this repository yet; browser Golden Path validation for S227 remains outstanding, honestly reported as not yet possible rather than skipped.",
         "COST_OF_SALES and DISTRIBUTION account types remain explicitly out of scope for this basic Balance Sheet/Income Statement per the approved Roll-Up Contract; real dealership ledgers using COST_OF_SALES accounting will legitimately hit STRUCTURAL_IMBALANCE on the Balance Sheet until a scoped S227 v2 (or equivalent) is authorized to bring COGS into the statement -- documented as a known contract-scope limitation, not a defect.",
-        "gl-service and coa-service remain separate ledgers per ADR-JL-001; S227 reconciliation to S014 is same-service (gl-service Trial Balance vs gl-service Financial Statements), not a cross-service proof."
+        "gl-service and coa-service remain separate ledgers per ADR-JL-001; S227 reconciliation to S014 is same-service (gl-service Trial Balance vs gl-service Financial Statements), not a cross-service proof.",
+        "GOLDEN-R0 Phase 4 (Final Product Closure): engineering-led UX self-review completed (GOLDEN_R0_UX_SELF_REVIEW.md) -- NOT a substitute for a real Figma/UX/product sign-off, which remains unavailable in this environment. One genuine functional gap found and fixed during that review (S224 AuditHistory false-empty loading state, commit a2322d4). Browser/Playwright automation infrastructure now exists (tests/e2e/golden-path.spec.ts, golden-path-negative.spec.ts) and all 12 Golden Path scenarios pass live against the running stack; the fresh-stack Playwright certification gap is handled as a documented evidence-separation exception (see PHASE4_FRESH_STACK_PLAYWRIGHT_EXCEPTION.md). Story remains DONE_PENDING_INTEGRATION -- not promoted to DONE -- pending real human Figma/UX/product validation."
       ],
       "completionEvidence": {
         "vitestCount": 100,
