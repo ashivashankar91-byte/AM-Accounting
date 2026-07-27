@@ -157,6 +157,66 @@ export class RoleService {
     return this._toRoleView(role);
   }
 
+  // ── S004A support: materialize the real backing Role for a position template ──
+  // S004A ("Dealership Position Role Templates") must not create a parallel
+  // permission map: applying a template finds-or-creates a real, tenant-scoped
+  // Role keyed by the template's position slug and (re-)projects its exact
+  // permission set, so AuthzService.check() enforces it through the same S207
+  // path already proven for S206. The key is passed explicitly (not derived
+  // from the display name via _deriveKey) because template keys are fixed
+  // position slugs (e.g. OFFICE_MGR, SALESPERSON_RO) that do not always match
+  // what _deriveKey would compute from a human-friendly template name.
+  async ensureRoleForPositionTemplate(dto: {
+    tenantId: string; key: string; name: string; permissions: string[]; actor?: string;
+  }): Promise<RoleView> {
+    await this._assertPermissionsKnown(dto.permissions);
+    const existing = await this.prisma.role.findFirst({ where: { tenantId: dto.tenantId, key: dto.key } });
+    if (existing) {
+      if (existing.status !== 'ACTIVE') {
+        throw new RoleValidationError('ROLE_RETIRED', `Backing role for position ${dto.key} has been retired`);
+      }
+      const same = JSON.stringify([...existing.permissions].sort())
+        === JSON.stringify([...dto.permissions].sort());
+      if (same) return this._toRoleView(existing);
+      // Template permissions changed since the last apply: re-project so the
+      // backing role (and every user already assigned it) reflects the
+      // template's *current* permission set (AC: "permission set... takes
+      // effect"). This never touches other tenants' clones/roles.
+      return this.updateRole(dto.tenantId, existing.id, { permissions: dto.permissions, actor: dto.actor });
+    }
+
+    let role;
+    try {
+      role = await this.prisma.$transaction(async (tx) => {
+        const r = await tx.role.create({
+          data: {
+            id: randomUUID(), tenantId: dto.tenantId, key: dto.key, name: dto.name,
+            permissions: dto.permissions, builtIn: false, status: 'ACTIVE',
+          },
+        });
+        await this._projectRolePermissions(r.key, r.permissions, tx);
+        await this._audit(dto.tenantId, 'role', r.id, 'CREATE', null, this._toRoleView(r), dto.actor, tx);
+        return r;
+      });
+    } catch (err: any) {
+      if (err?.code === 'P2002') {
+        throw new RoleValidationError(
+          'ROLE_EXISTS',
+          `A role named "${dto.name}" already exists for this tenant under a different key`,
+        );
+      }
+      throw err;
+    }
+
+    await this._emit('iam.role.created', dto.tenantId, {
+      eventId: randomUUID(), roleId: role.id, roleKey: role.key,
+      scope: { tenantId: dto.tenantId }, actor: dto.actor ?? 'user',
+      ts: new Date().toISOString(), schemaV: 1,
+    });
+    this.authz.invalidateCache();
+    return this._toRoleView(role);
+  }
+
   async updateRole(tenantId: string, id: string, dto: UpdateRoleDTO): Promise<RoleView> {
     const current = await this.prisma.role.findFirst({ where: { id, tenantId } });
     if (!current) throw new RoleNotFoundError(id);
