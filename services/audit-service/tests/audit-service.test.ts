@@ -20,7 +20,7 @@ function sqlOf(strings: TemplateStringsArray): string {
 function fakePrisma(initial: any[] = []) {
   const rows = [...initial];
   // In-memory stand-in for the audit_chain_anchors bookkeeping table.
-  const anchors = new Map<string, { tailHash: string | null; tailAuditLogId: string | null }>();
+  const anchors = new Map<string, { tailHash: string | null; tailAuditLogId: string | null; chainVerifiedFrom?: Date | null }>();
 
   const auditLog = {
     create: vi.fn(async ({ data }: any) => {
@@ -50,6 +50,19 @@ function fakePrisma(initial: any[] = []) {
 
   const client: any = {
     auditLog,
+    __anchors: anchors, // test-only escape hatch, mirrors the existing pattern of mutating `stored[i]` in place for the broken-chain test above
+    // GOLDEN-R0 Phase 4: verifyChain() now reads the anchor row's
+    // chainVerifiedFrom (legacy-audit-row cutoff) via a real Prisma model
+    // call rather than $queryRaw. No test in this file sets a cutoff, so
+    // this always returns null/undefined -- every existing assertion here
+    // still verifies the whole partition from genesis, unchanged.
+    auditChainAnchor: {
+      findUnique: vi.fn(async ({ where }: any) => {
+        const anchor = anchors.get(where.partitionKey);
+        if (!anchor) return null;
+        return { partitionKey: where.partitionKey, ...anchor, chainVerifiedFrom: anchor.chainVerifiedFrom ?? null };
+      }),
+    },
     $queryRaw: vi.fn(async (strings: TemplateStringsArray, ...values: any[]) => {
       const sql = sqlOf(strings);
       if (sql.includes('SELECT tail_hash FROM audit_chain_anchors')) {
@@ -198,6 +211,51 @@ describe('AuditService — BR7-2 hash chain', () => {
     expect(result.ok).toBe(false);
     expect(result.brokenAt).toBe(stored[1].id);
     expect(result.reason).toMatch(/hashPrev/);
+  });
+
+  it('GOLDEN-R0 Phase 4: an explicit chainVerifiedFrom cutoff excludes pre-cutoff legacy rows (no hashPrev/hashSelf) from verification, and leaves post-cutoff chain integrity fully enforced', async () => {
+    // A legacy row predating hash-chaining: real ones found live in the
+    // amacc dev database have null hashPrev/hashSelf because they were
+    // written before this feature existed, not because anything was
+    // tampered with.
+    const legacyRow = {
+      id: 'legacy-1', partitionKey: '2026-07:t1', tenantId: 't1', eventType: 'legacy', entityType: 'X', entityId: '0',
+      actorType: 'USER', actorId: 'u', actorName: 'u', action: 'CREATE', occurredAt: new Date('2026-07-01T00:00:00.000Z'),
+      hashPrev: null, hashSelf: null,
+    };
+    const prisma = fakePrisma([legacyRow]);
+    const svc = new AuditService(prisma as any);
+    await svc.log({ tenantId: 't1', eventType: 'a', entityType: 'X', entityId: '1', actorType: 'USER', actorId: 'u', actorName: 'u', action: 'CREATE', occurredAt: new Date('2026-07-10T00:00:00.000Z') });
+    await svc.log({ tenantId: 't1', eventType: 'b', entityType: 'X', entityId: '2', actorType: 'USER', actorId: 'u', actorName: 'u', action: 'CREATE', occurredAt: new Date('2026-07-11T00:00:00.000Z') });
+
+    // Without a cutoff, the legacy row (no hashPrev/hashSelf, and not the
+    // real genesis) makes the partition report broken -- correctly, since
+    // there is genuinely no hash-chain proof covering it.
+    const withoutCutoff = await svc.verifyChain('2026-07:t1');
+    expect(withoutCutoff.ok).toBe(false);
+    expect(withoutCutoff.legacyExcluded ?? 0).toBe(0);
+
+    // Explicitly, deliberately set the cutoff to the first real chained
+    // row's timestamp (this is the one-time, disclosed operation described
+    // in LEGACY_AUDIT_CHAIN_DECISION.md, not something verifyChain infers
+    // on its own).
+    (prisma as any).__anchors.set('2026-07:t1', {
+      ...(prisma as any).__anchors.get('2026-07:t1'),
+      chainVerifiedFrom: new Date('2026-07-10T00:00:00.000Z'),
+    });
+
+    const withCutoff = await svc.verifyChain('2026-07:t1');
+    expect(withCutoff.ok).toBe(true);
+    expect(withCutoff.recordsChecked).toBe(2);
+    expect(withCutoff.legacyExcluded).toBe(1);
+
+    // A genuine break from the cutoff point forward is still caught.
+    const stored = await prisma.auditLog.findMany({ where: { partitionKey: '2026-07:t1' } });
+    const secondRealRow = stored.find((r: any) => r.id !== 'legacy-1' && r.hashPrev);
+    secondRealRow.hashPrev = 'tampered';
+    const withTamper = await svc.verifyChain('2026-07:t1');
+    expect(withTamper.ok).toBe(false);
+    expect(withTamper.legacyExcluded).toBe(1);
   });
 
   it('listPartitions returns every distinct partition key with at least one row', async () => {

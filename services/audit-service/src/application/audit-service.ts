@@ -132,6 +132,11 @@ export interface ChainVerifyResult {
   recordsChecked: number;
   brokenAt?: string;
   reason?: string;
+  /** Rows excluded from hash-chain verification because they predate this
+   * partition's chainVerifiedFrom cutoff (GOLDEN-R0 Phase 4 legacy-audit-row
+   * decision -- see AuditChainAnchor.chainVerifiedFrom). Always 0 unless a
+   * cutoff has been explicitly, deliberately set for this partition. */
+  legacyExcluded?: number;
 }
 
 export interface CreateAuditLogDTO {
@@ -239,8 +244,22 @@ export class AuditService {
    * A mismatch means the row (or the chain) was altered after the fact.
    */
   async verifyChain(partitionKey: string): Promise<ChainVerifyResult> {
-    const rows = await this.prisma.auditLog.findMany({ where: { partitionKey } });
-    if (rows.length === 0) return { ok: true, partitionKey, recordsChecked: 0 };
+    const allRows = await this.prisma.auditLog.findMany({ where: { partitionKey } });
+    if (allRows.length === 0) return { ok: true, partitionKey, recordsChecked: 0 };
+
+    // GOLDEN-R0 Phase 4 legacy-audit-row decision: an explicit, deliberately
+    // set per-partition cutoff (chainVerifiedFrom) excludes rows that
+    // predate this service's hash-chain feature from the continuity check
+    // below -- they were never assigned hashPrev/hashSelf and have no proof
+    // to check. This is never inferred automatically from missing hash
+    // values (that would silently paper over a genuine future break); it
+    // only takes effect when explicitly set via a logged operation. See
+    // LEGACY_AUDIT_CHAIN_DECISION.md.
+    const anchor = await this.prisma.auditChainAnchor.findUnique({ where: { partitionKey } });
+    const cutoff = anchor?.chainVerifiedFrom ?? null;
+    const rows = cutoff ? allRows.filter((r) => r.occurredAt >= cutoff) : allRows;
+    const legacyExcluded = allRows.length - rows.length;
+    if (rows.length === 0) return { ok: true, partitionKey, recordsChecked: 0, legacyExcluded };
 
     // FINAL-R0 defect fix (Golden R0 Phase 3 full release certification):
     // this used to order rows by `[{occurredAt:'asc'},{id:'asc'}]` and walk
@@ -269,6 +288,7 @@ export class AuditService {
           recordsChecked: 0,
           brokenAt: row.id,
           reason: 'fork detected: more than one record in this partition claims the same hashPrev',
+          legacyExcluded,
         };
       }
       byHashPrev.set(key, row);
@@ -281,6 +301,7 @@ export class AuditService {
         partitionKey,
         recordsChecked: 0,
         reason: 'no genesis record (hashPrev IS NULL) found for this partition',
+        legacyExcluded,
       };
     }
 
@@ -291,7 +312,7 @@ export class AuditService {
       checked += 1;
       visited.add(current.id);
       if ((current.hashPrev ?? null) !== expectedPrev) {
-        return { ok: false, partitionKey, recordsChecked: checked, brokenAt: current.id, reason: 'hashPrev does not match the prior record in this partition' };
+        return { ok: false, partitionKey, recordsChecked: checked, brokenAt: current.id, reason: 'hashPrev does not match the prior record in this partition', legacyExcluded };
       }
       const expectedSelf = computeHashSelf(current.hashPrev ?? null, chainableContent({
         tenantId: current.tenantId, eventType: current.eventType, entityType: current.entityType, entityId: current.entityId,
@@ -301,7 +322,7 @@ export class AuditService {
         sourceEventId: current.sourceEventId,
       }));
       if (current.hashSelf !== expectedSelf) {
-        return { ok: false, partitionKey, recordsChecked: checked, brokenAt: current.id, reason: 'stored hashSelf does not match recomputed hash of the record content' };
+        return { ok: false, partitionKey, recordsChecked: checked, brokenAt: current.id, reason: 'stored hashSelf does not match recomputed hash of the record content', legacyExcluded };
       }
       expectedPrev = current.hashSelf ?? null;
       current = current.hashSelf ? byHashPrev.get(current.hashSelf) : undefined;
@@ -321,10 +342,11 @@ export class AuditService {
         brokenAt: orphan?.id,
         reason: `chain walk reached ${checked} of ${rows.length} records in this partition -- ` +
           `record${orphan ? ` ${orphan.id}` : ''}'s hashPrev does not match any known prior record's hashSelf in this partition`,
+        legacyExcluded,
       };
     }
 
-    return { ok: true, partitionKey, recordsChecked: checked };
+    return { ok: true, partitionKey, recordsChecked: checked, legacyExcluded };
   }
 
   async getByEntity(entityType: string, entityId: string, tenantId?: string) {

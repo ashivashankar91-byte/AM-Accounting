@@ -70,6 +70,23 @@ model AuditChainAnchor {
   tailHash       String?  @map("tail_hash")
   tailAuditLogId String?  @map("tail_audit_log_id")
   updatedAt      DateTime @default(now()) @map("updated_at")
+  /// GOLDEN-R0 Phase 4 (PRODUCT_OWNER_DECISION legacy-audit-row treatment):
+  /// explicit pre-chain cutoff. NULL means every row in this partition is
+  /// expected to be hash-chained from genesis (the default, and the only
+  /// state a partition can ever be in once hash-chaining has been active
+  /// since its very first write). When set, verifyChain() treats every row
+  /// with occurredAt < chainVerifiedFrom as pre-existing, out-of-scope
+  /// legacy data (hashPrev/hashSelf never populated for it, because it was
+  /// written before this service's hash-chain feature existed) and verifies
+  /// hash-chain continuity only for rows from this timestamp forward. This
+  /// was chosen over (a) a controlled backfill, which would require
+  /// disabling this service's own immutability trigger to rewrite rows
+  /// already recorded as immutable -- an action indistinguishable from the
+  /// very tampering BR7-2 exists to detect, and (b) leaving the false
+  /// "broken" result unexplained. Never used to hide a genuine, newly
+  /// introduced chain break -- only set once, per partition, by an explicit,
+  /// logged, human-approved operation (see LEGACY_AUDIT_CHAIN_DECISION.md).
+  chainVerifiedFrom DateTime? @map("chain_verified_from")
 
   @@map("audit_chain_anchors")
 }
