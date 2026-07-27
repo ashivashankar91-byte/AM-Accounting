@@ -56,12 +56,21 @@ function makePrisma() {
           .filter((r) => (where.periodCode ? r.periodCode === where.periodCode : true)),
     },
     auditOutboxEvent: { create: async ({ data }: any) => (audits.push(data), data) },
-    // Atomic claim emulation: read-and-increment the matching seq row.
-    $queryRawUnsafe: async (_sql: string, tenantId: string, sourceCode: string, entityId: string, periodCode: string) => {
+    // Atomic upsert-and-claim emulation: models the real
+    // `INSERT ... ON CONFLICT DO UPDATE ... RETURNING (next_seq - 1)`
+    // statement, which either inserts a fresh row (nextSeq starts at 2,
+    // claims 1) or increments an existing row and claims the pre-increment
+    // value — matching sequence-service.ts's fix for the real live-DB
+    // concurrency defect (a separate find+create+update could abort the
+    // whole Postgres transaction on the losing side of a create race).
+    $queryRawUnsafe: async (_sql: string, id: string, tenantId: string, sourceCode: string, entityId: string, periodCode: string) => {
       const row = seqs.find(
         (r) => seqKey(r.tenantId, r.sourceCode, r.entityId, r.periodCode) === seqKey(tenantId, sourceCode, entityId, periodCode),
       );
-      if (!row) return [];
+      if (!row) {
+        seqs.push({ id, tenantId, sourceCode, entityId, periodCode, nextSeq: 2 });
+        return [{ claimed: 1 }];
+      }
       const claimed = row.nextSeq;
       row.nextSeq = row.nextSeq + 1;
       return [{ claimed }];

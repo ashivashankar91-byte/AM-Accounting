@@ -69,10 +69,27 @@ export class SequenceService {
    * Internal primitive consumed by the S013/S214 posting path. Immutable after post (BR213-2)
    * is enforced by the posting story: this only mints and never revises.
    *
-   * Atomicity: upsert the counter row if absent, then a single atomic
-   * `UPDATE ... SET next_seq = next_seq + 1 RETURNING next_seq` claims a value.
-   * Concurrent callers serialize on the row lock and receive distinct sequential numbers.
+   * Atomicity: a single `INSERT ... ON CONFLICT (...) DO UPDATE SET next_seq =
+   * next_seq + 1 ... RETURNING` claims a value whether or not the counter row
+   * already exists — one atomic statement, not a separate find+create+update.
+   * Concurrent callers serialize on Postgres's own conflict-resolution locking
+   * and receive distinct sequential numbers.
    * BR213-3 — resets per period naturally: a new periodCode gets its own counter row.
+   *
+   * Real defect fixed (found via the live-DB concurrency test, not a mock):
+   * the previous implementation did `findUnique` -> `create` (racy; on a
+   * cold row, N concurrent callers all observed no row and raced to insert)
+   * -> a separate `UPDATE ... RETURNING`. The `create()` unique-constraint
+   * violation for the 19 losing callers was caught by an empty `catch {}`,
+   * but catching the JS exception does not un-abort the underlying Postgres
+   * transaction: once one statement inside a transaction errors, Postgres
+   * aborts the whole transaction until an explicit ROLLBACK (or ROLLBACK TO
+   * SAVEPOINT), so every losing caller's subsequent `UPDATE ... RETURNING`
+   * failed with `25P02 current transaction is aborted`. A single atomic
+   * `INSERT ... ON CONFLICT DO UPDATE` removes the race entirely: there is
+   * no separate statement that can fail and abort the transaction, so every
+   * concurrent caller — whether racing to create the row or updating an
+   * existing one — always completes successfully.
    */
   async allocate(dto: AllocateDTO): Promise<AllocationResult> {
     const sourceCode = typeof dto.sourceCode === 'string' ? dto.sourceCode.trim().toUpperCase() : dto.sourceCode;
@@ -86,41 +103,18 @@ export class SequenceService {
     // endpoint that mutates DB state with zero audit trail when called
     // directly, not only as an internal step of an already-audited post).
     return this.prisma.$transaction(async (tx) => {
-      // Ensure the counter row exists (idempotent create; ignore unique-race).
-      const existing = await tx.journalSequence.findUnique({
-        where: {
-          tenantId_sourceCode_entityId_periodCode: {
-            tenantId: dto.tenantId,
-            sourceCode,
-            entityId: dto.entityId,
-            periodCode: dto.periodCode,
-          },
-        },
-      });
-      if (!existing) {
-        try {
-          await tx.journalSequence.create({
-            data: {
-              id: crypto.randomUUID(),
-              tenantId: dto.tenantId,
-              sourceCode,
-              entityId: dto.entityId,
-              periodCode: dto.periodCode,
-              nextSeq: 1,
-            },
-          });
-        } catch {
-          /* concurrent create won the race — the row now exists; proceed to atomic claim */
-        }
-      }
-
-      // Atomic claim: read-and-increment in one statement so concurrent callers
-      // never observe the same value (row-level lock via UPDATE ... RETURNING).
+      // Atomic upsert-and-claim in one statement: on first insert, next_seq
+      // starts at 2 and RETURNING (next_seq - 1) hands out 1; on conflict,
+      // next_seq is incremented and RETURNING (next_seq - 1) hands out the
+      // pre-increment value — identical claim semantics to the prior design,
+      // just without a separate statement that can abort the transaction.
       const rows = await tx.$queryRawUnsafe<{ claimed: number }[]>(
-        `UPDATE journal_sequence
-           SET next_seq = next_seq + 1, updated_at = now()
-         WHERE tenant_id = $1 AND source_code = $2 AND entity_id = $3 AND period_code = $4
+        `INSERT INTO journal_sequence (id, tenant_id, source_code, entity_id, period_code, next_seq, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, 2, now(), now())
+         ON CONFLICT (tenant_id, source_code, entity_id, period_code)
+         DO UPDATE SET next_seq = journal_sequence.next_seq + 1, updated_at = now()
          RETURNING (next_seq - 1) AS claimed`,
+        crypto.randomUUID(),
         dto.tenantId,
         sourceCode,
         dto.entityId,
