@@ -66,6 +66,7 @@ function makePrisma(seed: any[] = []) {
     },
     auditOutboxEvent: { create: async ({ data }: any) => (audits.push(data), data) },
     coaOutboxEvent: { create: async ({ data }: any) => (outbox.push(data), data) },
+    $executeRawUnsafe: async () => undefined,
   };
   client.$transaction = async (arg: any) =>
     typeof arg === 'function' ? arg(client) : Promise.all(arg);
@@ -131,11 +132,18 @@ describe('S209 domain — status vocabulary + transitions', () => {
     expect(PERIOD_STATUSES).toEqual(['FUTURE', 'OPEN', 'SOFT_CLOSED', 'HARD_CLOSED', 'LOCKED']);
   });
 
-  it('only FUTURE->OPEN is legal in this story (BR209-1)', () => {
+  it('the full S008 6-pair transition allowlist is legal; everything else is not', () => {
     expect(canTransition('FUTURE', 'OPEN')).toBe(true);
-    expect(canTransition('OPEN', 'SOFT_CLOSED')).toBe(false); // S008/R1
+    expect(canTransition('OPEN', 'SOFT_CLOSED')).toBe(true);
+    expect(canTransition('SOFT_CLOSED', 'OPEN')).toBe(true);
+    expect(canTransition('SOFT_CLOSED', 'HARD_CLOSED')).toBe(true);
+    expect(canTransition('HARD_CLOSED', 'OPEN')).toBe(true);
+    expect(canTransition('HARD_CLOSED', 'LOCKED')).toBe(true);
+    // LOCKED is terminal in S008 v1 -- no transition out, including back to OPEN.
     expect(canTransition('LOCKED', 'OPEN')).toBe(false);
     expect(canTransition('FUTURE', 'LOCKED')).toBe(false);
+    expect(canTransition('OPEN', 'HARD_CLOSED')).toBe(false);
+    expect(canTransition('FUTURE', 'SOFT_CLOSED')).toBe(false);
   });
 
   it('eligibility is postable only when OPEN', () => {

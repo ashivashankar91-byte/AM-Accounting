@@ -21,7 +21,7 @@ const LEGAL_TRANSITIONS: Record<PeriodStatus, PeriodStatus[]> = {
   FUTURE: ['OPEN'],
   OPEN: ['SOFT_CLOSED'],
   SOFT_CLOSED: ['OPEN', 'HARD_CLOSED'],
-  HARD_CLOSED: ['OPEN'],
+  HARD_CLOSED: ['OPEN', 'LOCKED'],
   LOCKED: [],
 };
 
