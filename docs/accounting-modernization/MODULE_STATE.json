@@ -1005,6 +1005,34 @@
         "reference": "docs/accounting-modernization/stabilization/STORY_CERTIFICATION_MATRIX.csv; S220_LIVE_GATEWAY_CERTIFICATION_REPORT.md"
       }
     },
+    "S014": {
+      "title": "Trial Balance API",
+      "layman": "A controller can request a footed trial balance for one entity, optionally narrowed to a store and department, as of a fiscal period; if the slice does not foot, the API returns a structural-imbalance error instead of silent bad numbers.",
+      "package": "GOLDEN-R0-FLEET",
+      "status": "DONE_PENDING_INTEGRATION",
+      "completedDate": null,
+      "usesStubs": false,
+      "dependencies": [
+        "S013",
+        "S207",
+        "S007",
+        "S220"
+      ],
+      "blockers": [
+        "Package-wide business/SME/UX/Figma validation for the controlled-fleet stories is still open (PO condition 9); S014 is backend-only and technically complete, but this package-level release gate is not yet closed."
+      ],
+      "completionEvidence": {
+        "vitestCount": "7 focused S014 tests added/passing in gl-service (trial-balance.service: 4, trial-balance.integration: 2, security.audit: 1); full DB-backed gl-service suite 93/93 passed; full DB-backed coa-service suite 323/323 passed.",
+        "playwrightCount": null,
+        "notes": "New `services/gl-service` route `GET /reports/trial-balance?entity&store&dept&asOf`, gated by real centralized S207 authz on `report.tb.view` and audited on successful reads per package-wide inquiry convention. Additive auth-service migration seeds catalog v1.8.0 + permission `report.tb.view` granted only to ADMIN/CONTROLLER/ACCOUNTANT. Additive gl-service schema/migrations add slice dimensions (`company_code`,`store_id`,`department_code`) to `GLAccountPeriodBalance` and `store_id` to `journal_lines`, with posting/projection updates keyed by the full slice. BR014-1 proven: successful slices foot, empty slice returns zeroed TB, and structural imbalance returns `500 {error:'STRUCTURAL_IMBALANCE',drSum,crSum,delta}`. PO-gated BR014-2 proof executed for real through `TrialBalanceService.compareProjectionToRebuild()` against migrated Postgres: entity=01/store=S1/dept=SRV/asOf=2026-02 yielded projection = rebuild = `drSum 1300 / crSum 1300 / delta 0`, with exact account ending-balance parity (`1000=1180`,`2000=1000`,`4000=300`,`5000=120`) and `mismatches=[]`. Required S220 reconciliation proven via an explicit like-for-like fixture using the real computation classes from both services: S014 `endingBalance` and S220 `GLInquiryService.getActivity().endingBalance` both returned `1230` for the same account/period math. Real defects found and fixed: lingering legacy unique index blocked per-slice projection rows (`20260728010006_drop_legacy_trial_balance_unique_gl_svc`); initial slice math incorrectly inherited unsliced opening balances (fixed so prior/current balances derive only from slice-filtered nets); first live audit proof showed zero audit rows because `attachRouteSecurity()` failed to normalize prefixed `/api/v1/gl/...` route URLs before audit matching (fixed with `normalizeRouteUrl()` and regression test `tests/security.audit.test.ts`). Fresh-database reproducibility verified: auth-service 15/15 migrations, coa-service 19/19, gl-service 33/33, all via `prisma migrate deploy`. Real live-gateway evidence captured 2026-07-27 on an isolated fully-migrated stack (`api-gateway:13120 -> gl-service:13020/auth-service:13021`, Postgres `:55530`) using a real login/JWT: 200 positive TB, 200 empty slice, 500 structural imbalance, 401 no-token, plus real `audit_outbox` proof showing 2 tenant-scoped `GL_LEDGER_REPORT` `VIEWED` rows for `/reports/trial-balance` with `published_at` set. See S014_LIVE_GATEWAY_CERTIFICATION_REPORT.md."
+      },
+      "stabilizationReconciliation": {
+        "phase": "Golden-R0 Controlled Fleet Implementation -- Lane A (Trial Balance)",
+        "priorStatus": "NOT_STARTED (new Golden-R0 fleet story; not part of the original 22 R0 stories)",
+        "promotedBecause": "The backend/API/authorization/tenant-slice/audit work is complete and evidenced against real migrated PostgreSQL with a real gateway/auth/gl runtime, and the explicit PO gating condition for S014 -- BR014-2 zero-variance rebuild equivalence between the live `GLAccountPeriodBalance` projection and an independent posted-journal rebuild -- was satisfied with exact matching numbers. Status remains capped at DONE_PENDING_INTEGRATION solely because the package-wide controlled-fleet business/UX/Figma release gate is still open, not because of a technical stub, missing proof, or unresolved defect.",
+        "reference": "docs/accounting-modernization/stabilization/STORY_CERTIFICATION_MATRIX.csv; S014_LIVE_GATEWAY_CERTIFICATION_REPORT.md"
+      }
+    },
     "S221": {
       "title": "GL Search",
       "layman": "A controller can search across every posted journal line in the ledger by amount, date range, source, memo, poster, or document reference -- not just one account at a time -- drill down into the matching journal, and save a search to re-run it later.",
