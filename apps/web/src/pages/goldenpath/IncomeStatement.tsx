@@ -15,7 +15,6 @@ interface IncomeStatementReport {
   expense: { rows: FSRow[]; total: number };
   netIncome: number;
   excludedAccounts: Array<{ accountCode: string; accountType: string; reason: string }>;
-  reconciledToTrialBalance: { drSum: number; crSum: number };
 }
 
 interface UnclassifiedError {
@@ -160,10 +159,17 @@ export default function IncomeStatement() {
                 <td colSpan={2}>Net Income</td>
                 <td style={{ textAlign: 'right', fontFamily: 'JetBrains Mono, monospace' }}>{fmt(report.netIncome)}</td>
               </tr>
-              <tr data-testid="is-reconciled-tb" style={{ color: '#555' }}>
-                <td colSpan={2}>Reconciled to Trial Balance (Dr / Cr)</td>
-                <td style={{ textAlign: 'right' }}>{fmt(report.reconciledToTrialBalance.drSum)} / {fmt(report.reconciledToTrialBalance.crSum)}</td>
-              </tr>
+              {/* Golden R0 closure defect fix: this row previously read
+                  report.reconciledToTrialBalance.drSum/crSum, a field the
+                  real gl-service IncomeStatementReport contract does not
+                  return (only BalanceSheetReport carries it) -- this threw
+                  "Cannot read properties of undefined (reading 'drSum')"
+                  and crashed the whole page every time a real Income
+                  Statement was run, caught live via Playwright. Net income
+                  ties to the Balance Sheet's current-period earnings line
+                  instead (see BalanceSheet.tsx bs-current-earnings), which
+                  is the real reconciliation point per the approved
+                  contract. */}
             </tbody>
           </table>
 
