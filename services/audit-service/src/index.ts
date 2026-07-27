@@ -176,7 +176,7 @@ async function bootstrap() {
     });
   }
 
-  await app.register(auditRoutes(auditService), { prefix: '/api/v1/audit' });
+  await app.register(auditRoutes(auditService, eventPublisher), { prefix: '/api/v1/audit' });
   app.get('/health', async () => ({ status: 'ok', service: 'audit-service' }));
 
   // BR7-2: periodic chain-verify job. Walks every known partition and, on

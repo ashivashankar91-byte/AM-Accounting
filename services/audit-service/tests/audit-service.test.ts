@@ -41,6 +41,9 @@ function fakePrisma(initial: any[] = []) {
     findMany: vi.fn(async ({ where }: any) => {
       let result = rows;
       if (where?.partitionKey) result = result.filter((r) => r.partitionKey === where.partitionKey);
+      if (where?.tenantId) result = result.filter((r) => r.tenantId === where.tenantId);
+      if (where?.entityType) result = result.filter((r) => r.entityType === where.entityType);
+      if (where?.entityId) result = result.filter((r) => r.entityId === where.entityId);
       return [...result].sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime() || (a.id < b.id ? -1 : 1));
     }),
   };
@@ -228,5 +231,83 @@ describe('AuditService — BR7-2 hash chain', () => {
     await svc.log({ tenantId: 't1', eventType: 'b', entityType: 'X', entityId: '2', actorType: 'USER', actorId: 'u', actorName: 'u', action: 'CREATE', occurredAt: new Date('2026-07-01T00:00:00.000Z') });
     const call0 = prisma.auditLog.create.mock.calls[1][0].data; // index 1: the first call (index 0) was the failed one
     expect(call0.hashPrev).toBeNull();
+  });
+});
+
+describe('AuditService.getDocumentHistory / historyContainsPii / documentHistoryToCsv (S224)', () => {
+  it('returns an empty array (not an error) for a document with zero events', async () => {
+    const prisma = fakePrisma();
+    const svc = new AuditService(prisma as any);
+    const events = await svc.getDocumentHistory('t1', 'ManualJeDraft', 'draft-does-not-exist');
+    expect(events).toEqual([]);
+  });
+
+  it('returns events in chronological (ascending) order with field-level diffs', async () => {
+    const prisma = fakePrisma();
+    const svc = new AuditService(prisma as any);
+    await svc.log({
+      tenantId: 't1', eventType: 'je.draft.created', entityType: 'ManualJeDraft', entityId: 'd1',
+      actorType: 'USER', actorId: 'u1', actorName: 'Alice', action: 'DRAFT_CREATED',
+      newState: { status: 'DRAFT', memo: 'first' }, occurredAt: new Date('2026-07-01T00:00:00.000Z'),
+    });
+    await svc.log({
+      tenantId: 't1', eventType: 'je.draft.updated', entityType: 'ManualJeDraft', entityId: 'd1',
+      actorType: 'USER', actorId: 'u2', actorName: 'Bob', action: 'DRAFT_UPDATED',
+      previousState: { status: 'DRAFT', memo: 'first' }, newState: { status: 'DRAFT', memo: 'second' },
+      occurredAt: new Date('2026-07-02T00:00:00.000Z'),
+    });
+
+    const events = await svc.getDocumentHistory('t1', 'ManualJeDraft', 'd1');
+    expect(events).toHaveLength(2);
+    expect(events[0].action).toBe('DRAFT_CREATED');
+    expect(events[1].action).toBe('DRAFT_UPDATED');
+    expect(events[1].fieldDiffs).toEqual([{ field: 'memo', before: 'first', after: 'second' }]);
+  });
+
+  it('is tenant- and document-scoped — never leaks another tenant/document\'s events', async () => {
+    const prisma = fakePrisma();
+    const svc = new AuditService(prisma as any);
+    await svc.log({ tenantId: 't1', eventType: 'a', entityType: 'X', entityId: 'd1', actorType: 'USER', actorId: 'u', actorName: 'u', action: 'CREATE' });
+    await svc.log({ tenantId: 't2', eventType: 'a', entityType: 'X', entityId: 'd1', actorType: 'USER', actorId: 'u', actorName: 'u', action: 'CREATE' });
+    await svc.log({ tenantId: 't1', eventType: 'a', entityType: 'X', entityId: 'd2', actorType: 'USER', actorId: 'u', actorName: 'u', action: 'CREATE' });
+
+    const events = await svc.getDocumentHistory('t1', 'X', 'd1');
+    expect(events).toHaveLength(1);
+  });
+
+  it('historyContainsPii is false when no diffed field matches a PII marker', async () => {
+    const prisma = fakePrisma();
+    const svc = new AuditService(prisma as any);
+    await svc.log({
+      tenantId: 't1', eventType: 'a', entityType: 'Department', entityId: 'd1', actorType: 'USER', actorId: 'u', actorName: 'u', action: 'CREATE',
+      newState: { name: 'Service', status: 'ACTIVE' },
+    });
+    const events = await svc.getDocumentHistory('t1', 'Department', 'd1');
+    expect(svc.historyContainsPii(events)).toBe(false);
+  });
+
+  it('historyContainsPii is true when a diffed field name matches a PII marker (BR224-3)', async () => {
+    const prisma = fakePrisma();
+    const svc = new AuditService(prisma as any);
+    await svc.log({
+      tenantId: 't1', eventType: 'a', entityType: 'User', entityId: 'u1', actorType: 'USER', actorId: 'admin', actorName: 'admin', action: 'CREATE',
+      newState: { name: 'Alice', email: 'alice@example.com' },
+    });
+    const events = await svc.getDocumentHistory('t1', 'User', 'u1');
+    expect(svc.historyContainsPii(events)).toBe(true);
+  });
+
+  it('documentHistoryToCsv produces one row per changed field, exact parity with the timeline', async () => {
+    const prisma = fakePrisma();
+    const svc = new AuditService(prisma as any);
+    await svc.log({
+      tenantId: 't1', eventType: 'a', entityType: 'X', entityId: 'd1', actorType: 'USER', actorId: 'u1', actorName: 'Alice', action: 'CREATE',
+      newState: { status: 'DRAFT', amount: 100 }, occurredAt: new Date('2026-07-01T00:00:00.000Z'),
+    });
+    const events = await svc.getDocumentHistory('t1', 'X', 'd1');
+    const csv = svc.documentHistoryToCsv(events);
+    const lines = csv.split('\n');
+    expect(lines[0]).toBe('timestamp,actor,action,eventType,field,before,after,reason');
+    expect(lines).toHaveLength(3); // header + 2 changed fields (status, amount)
   });
 });

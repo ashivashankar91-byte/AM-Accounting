@@ -67,6 +67,65 @@ function partitionKeyFor(tenantId: string, occurredAt: Date): string {
   return `${yyyy}-${mm}:${tenantId}`;
 }
 
+/**
+ * S224 BR224-2: human-readable field-level diff between an audit row's
+ * previousState and newState. Top-level keys only (matches the shallow
+ * before/after snapshots every write-path call site records — see
+ * S007_WRITE_PATH_COVERAGE_CENSUS.md).
+ */
+export interface FieldDiff {
+  field: string;
+  before: unknown;
+  after: unknown;
+}
+
+export interface DocumentHistoryEvent {
+  id: string;
+  ts: string;
+  actor: string;
+  action: string;
+  eventType: string;
+  fieldDiffs: FieldDiff[];
+  reason: string | null;
+}
+
+/**
+ * S224 BR224-3 ("PII views themselves emit audit events"): a fixed,
+ * conservative allowlist of field names treated as PII wherever they appear
+ * in a diffed field name (case-insensitive substring match), since audit
+ * rows from different services/entities do not share one schema. This is a
+ * deliberate, documented scoping decision, not an exhaustive PII classifier
+ * — extend this list, not the detection logic, as new PII-bearing fields
+ * are added to any in-scope service.
+ */
+const PII_FIELD_MARKERS = [
+  'ssn', 'taxid', 'ein', 'bankaccount', 'routingnumber', 'accountnumber',
+  'dob', 'dateofbirth', 'email', 'phone', 'address', 'driverlicense',
+  'passport', 'salary', 'wage', 'compensation', 'creditcard',
+];
+
+function isPiiField(fieldName: string): boolean {
+  const normalized = fieldName.toLowerCase();
+  return PII_FIELD_MARKERS.some((marker) => normalized.includes(marker));
+}
+
+/** Shallow top-level diff of two snapshot objects. Keys present in either
+ * side, added/removed/changed all surfaced uniformly. */
+function diffFields(before: unknown, after: unknown): FieldDiff[] {
+  const b = (before && typeof before === 'object') ? (before as Record<string, unknown>) : {};
+  const a = (after && typeof after === 'object') ? (after as Record<string, unknown>) : {};
+  const keys = new Set([...Object.keys(b), ...Object.keys(a)]);
+  const diffs: FieldDiff[] = [];
+  for (const key of keys) {
+    const bv = b[key];
+    const av = a[key];
+    if (stableStringify(bv) !== stableStringify(av)) {
+      diffs.push({ field: key, before: bv ?? null, after: av ?? null });
+    }
+  }
+  return diffs;
+}
+
 export interface ChainVerifyResult {
   ok: boolean;
   partitionKey: string;
@@ -248,5 +307,58 @@ export class AuditService {
       orderBy: { occurredAt: 'desc' },
       take: limit,
     });
+  }
+
+  /**
+   * S224 BR224-1: chronological (ascending) per-document event timeline with
+   * field-level diffs. Returns an empty array (never throws/404s) when a
+   * document has zero events — BR224's own exception workflow requires an
+   * empty state, not an error, for a document with no history.
+   */
+  async getDocumentHistory(tenantId: string, docType: string, docId: string): Promise<DocumentHistoryEvent[]> {
+    const rows = await this.prisma.auditLog.findMany({
+      where: { tenantId, entityType: docType, entityId: docId },
+      orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      ts: row.occurredAt.toISOString(),
+      actor: row.actorName || row.actorId,
+      action: row.action,
+      eventType: row.eventType,
+      fieldDiffs: diffFields(row.previousState, row.newState),
+      reason: row.reason ?? null,
+    }));
+  }
+
+  /** True if rendering this document's history would surface at least one
+   * PII-marked field diff (BR224-3 trigger for emitting audit.viewed). */
+  historyContainsPii(events: DocumentHistoryEvent[]): boolean {
+    return events.some((e) => e.fieldDiffs.some((d) => isPiiField(d.field)));
+  }
+
+  /** S224 BR224-4: per-document CSV export, exact parity with the on-screen
+   * timeline (same rows, same field-diff content, flattened to one column
+   * per changed field name/before/after triple per row). */
+  documentHistoryToCsv(events: DocumentHistoryEvent[]): string {
+    const header = 'timestamp,actor,action,eventType,field,before,after,reason';
+    const escape = (v: unknown) => {
+      const s = v === null || v === undefined ? '' : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lines: string[] = [header];
+    for (const e of events) {
+      if (e.fieldDiffs.length === 0) {
+        lines.push([e.ts, e.actor, e.action, e.eventType, '', '', '', e.reason ?? ''].map(escape).join(','));
+        continue;
+      }
+      for (const d of e.fieldDiffs) {
+        lines.push([e.ts, e.actor, e.action, e.eventType, d.field,
+          typeof d.before === 'object' ? JSON.stringify(d.before) : d.before,
+          typeof d.after === 'object' ? JSON.stringify(d.after) : d.after,
+          e.reason ?? ''].map(escape).join(','));
+      }
+    }
+    return lines.join('\n');
   }
 }

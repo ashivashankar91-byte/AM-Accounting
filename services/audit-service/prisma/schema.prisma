@@ -57,6 +57,9 @@ model AuditLog {
   @@index([occurredAt])
   @@index([tenantId, eventType])
   @@index([partitionKey])
+  /// S224 Document Audit History View: GET /audit/documents/:docType/:docId
+  /// filters by exactly these three columns, ordered by occurredAt.
+  @@index([tenantId, entityType, entityId, occurredAt], map: "audit_logs_tenant_entity_occurred_idx")
 }
 
 /// Mutable bookkeeping pointer to the current chain tail hash per partition.
