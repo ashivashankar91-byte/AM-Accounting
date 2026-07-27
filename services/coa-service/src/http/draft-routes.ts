@@ -15,6 +15,8 @@ import {
   DraftPostValidationError,
   DraftReverseOnlyError,
   DraftVoidReasonRequiredError,
+  AdjustingEntryPermissionError,
+  AdjustingEntryReasonRequiredError,
 } from '../application/draft-service';
 import { requireJePermission, JE_PERMISSIONS } from './journal-routes';
 
@@ -35,6 +37,7 @@ export const JE_DRAFT_PERMISSIONS = {
   VIEW_ALL: 'je.draft.view_all',
   VOID: 'je.draft.void',
   VOID_ANY: 'je.draft.void.any',
+  MARK_ADJUSTING: 'fiscal.je.mark_adjusting',
 } as const;
 
 // R0 Stabilization Phase 3: centralized through the real S207 AuthzService
@@ -73,10 +76,11 @@ function requireDraftReader() {
 async function actorOf(request: any, tenantId: string) {
   const client = container.resolve<AuthzClient>('AuthzClient');
   const userId = (request.user?.sub as string | undefined) ?? 'system';
-  const [viewAll, voidOwn, voidAny] = await Promise.all([
+  const [viewAll, voidOwn, voidAny, markAdjusting] = await Promise.all([
     client.check({ userId, permissionKey: JE_DRAFT_PERMISSIONS.VIEW_ALL, scope: { tenantId } }),
     client.check({ userId, permissionKey: JE_DRAFT_PERMISSIONS.VOID, scope: { tenantId } }),
     client.check({ userId, permissionKey: JE_DRAFT_PERMISSIONS.VOID_ANY, scope: { tenantId } }),
+    client.check({ userId, permissionKey: JE_DRAFT_PERMISSIONS.MARK_ADJUSTING, scope: { tenantId } }),
   ]);
   return {
     tenantId,
@@ -84,6 +88,7 @@ async function actorOf(request: any, tenantId: string) {
     canViewAll: viewAll.allow,
     canVoidOwn: voidOwn.allow,
     canVoidAny: voidAny.allow,
+    canMarkAdjusting: markAdjusting.allow,
   };
 }
 
@@ -98,7 +103,9 @@ function handleError(error: unknown, reply: any) {
     error instanceof DraftEngineUnavailableError ||
     error instanceof PostingModeGateError ||
     error instanceof DraftReverseOnlyError ||
-    error instanceof DraftVoidReasonRequiredError
+    error instanceof DraftVoidReasonRequiredError ||
+    error instanceof AdjustingEntryPermissionError ||
+    error instanceof AdjustingEntryReasonRequiredError
   ) {
     return reply.status((error as any).status).send({ error: (error as any).code, message: (error as any).message });
   }
@@ -138,6 +145,11 @@ const DraftSchema = z.object({
   sourceCode: z.string().nullable().optional(),
   memo: z.string().max(500).nullable().optional(),
   lines: z.array(LineSchema).optional(),
+  // S008 — per-draft adjusting-entry attribute. Permission (fiscal.je.mark_adjusting)
+  // and mandatory reason/correctionRef are enforced in DraftService, not here.
+  isAdjusting: z.boolean().nullable().optional(),
+  adjustingReason: z.string().max(500).nullable().optional(),
+  adjustingCorrectionRef: z.string().max(120).nullable().optional(),
 });
 
 const AttachmentSchema = z.object({
@@ -163,7 +175,9 @@ export async function draftRoutes(app: FastifyInstance) {
     try {
       const tenantId = getTenantId(request);
       const body = DraftSchema.parse(request.body ?? {});
-      const draft = await svc.create({ tenantId, preparer: (request.user?.sub as string) ?? 'system', ...body });
+      const preparer = (request.user?.sub as string) ?? 'system';
+      const actor = await actorOf(request, tenantId);
+      const draft = await svc.create({ tenantId, preparer, canMarkAdjusting: actor.canMarkAdjusting, ...body });
       return reply.status(201).send({ draftId: draft.id, status: draft.status, version: draft.version });
     } catch (err) {
       return handleError(err, reply);

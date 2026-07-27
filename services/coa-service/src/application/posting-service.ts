@@ -52,6 +52,13 @@ export interface PostJournalDTO {
   callerClass?: SourceClass; // default MANUAL
   postedBy?: string;
   draftId?: string | null; // S216 back-ref
+  // S008 — per-journal adjusting-entry attribute. Only meaningful (and only
+  // permitted through by the DB trigger) when the draft carries a matching
+  // AdjustingEntryAttestation row written by DraftService at
+  // fiscal.je.mark_adjusting-check time.
+  isAdjusting?: boolean;
+  adjustingReason?: string | null;
+  adjustingCorrectionRef?: string | null;
   // S218 reversal linkage (set by the reverse path):
   reversalOf?: string | null;
   reversalReason?: string | null;
@@ -115,6 +122,7 @@ export class PostingService {
       sourceCode: dto.sourceCode,
       memo: dto.memo ?? null,
       idempotencyKey: dto.idempotencyKey,
+      isAdjusting: dto.isAdjusting ?? false,
     };
 
     // ── Single rule source (shared with S215) ─────────────────────────────────
@@ -158,6 +166,9 @@ export class PostingService {
             reversalReason: dto.reversalReason ?? null,
             draftId: dto.draftId ?? null,
             postedBy,
+            isAdjusting: dto.isAdjusting ?? false,
+            adjustingReason: dto.adjustingReason ?? null,
+            adjustingCorrectionRef: dto.adjustingCorrectionRef ?? null,
           },
         });
 

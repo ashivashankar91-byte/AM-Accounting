@@ -34,6 +34,11 @@ export interface PostingHeaderInput {
   sourceCode: string;
   memo?: string | null;
   idempotencyKey: string;
+  // S008 — per-journal adjusting-entry attribute (not inferred from the
+  // period). Only relevant to BR013-2's SOFT_CLOSED exception below; the
+  // real authorization/attestation check happens at the DB trigger layer
+  // (enforce_period_postable) and in DraftService (fiscal.je.mark_adjusting).
+  isAdjusting?: boolean;
 }
 
 /** Resolved reference data the evaluator needs — loaded by the app layer. */
@@ -173,11 +178,21 @@ export function evaluate(
     });
   }
 
-  // BR013-2 — period eligibility: resolved and OPEN.
+  // BR013-2 — period eligibility: OPEN, or SOFT_CLOSED for an authorized
+  // adjusting entry (S008 v1). Mirrors domain/period-status.ts eligibility()
+  // and the enforce_period_postable() DB trigger — must never diverge from
+  // either (the DB trigger is the real backstop regardless of this check).
   if (!ctx.period) {
-    violations.push({ rule: 'BR013-2', field: 'date', diagnostic: `No open fiscal period contains date ${header.date}.` });
-  } else if (ctx.period.status !== 'OPEN') {
-    violations.push({ rule: 'BR013-2', field: 'date', diagnostic: `Period ${ctx.period.code} is ${ctx.period.status}; postings require an OPEN period.` });
+    violations.push({ rule: 'BR013-2', field: 'date', diagnostic: `No fiscal period contains date ${header.date}.` });
+  } else if (ctx.period.status !== 'OPEN' && !(ctx.period.status === 'SOFT_CLOSED' && header.isAdjusting)) {
+    violations.push({
+      rule: 'BR013-2',
+      field: 'date',
+      diagnostic:
+        ctx.period.status === 'SOFT_CLOSED'
+          ? `Period ${ctx.period.code} is SOFT_CLOSED; only an authorized adjusting entry (fiscal.je.mark_adjusting) may post here.`
+          : `Period ${ctx.period.code} is ${ctx.period.status}; postings require an OPEN period.`,
+    });
   }
 
   // BR013-3 — source valid + active + caller-class-matched.
