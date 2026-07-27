@@ -159,8 +159,11 @@ entries' lines).
 
 ## 8. Tests
 
-`services/coa-service`: **294/299 pass, 5 skipped** (live-db-only tests, unchanged from baseline), zero
-regressions against the pre-S220 baseline of 277/282.
+`services/coa-service`: **294/299 pass, 5 skipped** at the time this report was first written (live-db-only
+tests, `describe.skipIf(!LIVE_DATABASE_URL)`, unchanged from baseline), zero regressions against the
+pre-S220 baseline of 277/282. **This 5-skip figure was not represented as a fully green regression suite —
+see §10 addendum: those 5 tests were subsequently run for real (not skipped) and, in doing so, surfaced and
+led to the fix of a real, unrelated pre-existing concurrency defect in `SequenceService.allocate()`.**
 
 - `tests/gl-inquiry.test.ts` — **13 new tests**: beginning/period/ending balance + BR220-1 foot/cross-foot
   proof; BR013-7 REVERSED-entry-lines-still-count; zero-activity; store-filtered beginning balance
@@ -182,3 +185,42 @@ and a full positive/negative/edge-case live-gateway matrix all pass. **S220 back
 `DONE_PENDING_INTEGRATION`** — remaining gap to `DONE` is the required Figma/UX and browser validation
 (per PO condition 9) and the open, documented, non-blocking SME question on the remaining 11 date
 presets (§4).
+
+## 10. Addendum (2026-07-27, post-S220) — the 5 skipped tests were resolved, not just documented
+
+Per PO direction, the 5 tests under `tests/live-db/posting-live.test.ts` (conditionally skipped via
+`describe.skipIf(!LIVE_DATABASE_URL)` whenever no live database URL is supplied — a pre-existing gate from
+an earlier R0 phase, unrelated to S220 itself) were not left as an unexplained gap in the regression count.
+They were actually run against a fresh ephemeral Postgres 15 instance (`prisma migrate deploy`, 9/9
+coa-service migrations applied cleanly from empty), and doing so surfaced a real, previously-undetected
+defect:
+
+**Real defect found and fixed: `SequenceService.allocate()` was not safe under real Postgres concurrency.**
+The BR213-1 test (20 concurrent `allocate()` calls against a cold counter row) failed with
+`P2010`/`25P02 current transaction is aborted`. Root cause: the method did `findUnique` → `create` (racy —
+on a cold row every concurrent caller observes no row and races to insert) → a separate
+`UPDATE ... RETURNING` to claim a value. The 19 losing callers' `create()` unique-constraint violation was
+caught by an empty `catch {}`, but catching the JS exception does not un-abort the underlying Postgres
+transaction — once one statement in a transaction errors, Postgres aborts the whole transaction until an
+explicit `ROLLBACK`/`ROLLBACK TO SAVEPOINT`, so every losing caller's subsequent `UPDATE` failed too. This
+is a defect a mocked-Prisma unit test can never reproduce (JS is single-threaded; the fake never models a
+real aborted-transaction state) — it only surfaces against a genuinely concurrent Postgres connection,
+exactly why leaving these 5 tests permanently skipped would have been a real trust gap, not merely a
+documentation gap.
+
+**Fix:** replaced the two-statement find+create+update with a single atomic
+`INSERT ... ON CONFLICT (tenant_id, source_code, entity_id, period_code) DO UPDATE SET
+next_seq = next_seq + 1 ... RETURNING (next_seq - 1) AS claimed` — no statement in the sequence can fail
+and abort the transaction, so every concurrent caller (whether racing to create the row or updating an
+existing one) completes successfully with identical claim semantics to the original design. Updated
+`tests/sequence.test.ts`'s in-memory fake `$queryRawUnsafe` to match the new call signature/semantics (all
+13 sequence unit tests re-verified green).
+
+**Final, corrected regression result:** re-ran the full coa-service suite against the same fresh ephemeral
+Postgres 15 (`LIVE_DATABASE_URL` set, nothing skipped) **four consecutive times** to rule out flakiness in a
+freshly-fixed concurrency path: **299/299 pass, 0 skipped, 0 failed, all four runs** — genuinely green, not
+294/299-with-an-unexplained-skip. This defect and fix are unrelated to S220's own code (it lives in
+`sequence-service.ts`, not `gl-inquiry-service.ts`) but were only uncovered because the previously-skipped
+live-DB suite was actually executed while closing out S220's test-evidence gap; documented here rather than
+silently folded into a later story's evidence.
+
