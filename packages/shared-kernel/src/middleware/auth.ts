@@ -59,13 +59,31 @@ export function createServiceToken(serviceId: string, secret: string): string {
 }
 
 /**
+ * FINAL-R0 Priority 0 fix (AUTHENTICATION_BYPASS_CLOSURE): whether the
+ * synthetic-admin authentication bypass below may activate at all. This is
+ * intentionally NOT derived from NODE_ENV — `docker-compose.yml` (and most
+ * local/dev/CI runs) set NODE_ENV=development, and inferring bypass from that
+ * silently disabled real JWT verification for every "live-stack" test run,
+ * including ones that were certified as proving real unauthorized/tenant
+ * enforcement. The bypass now requires an explicit, separate opt-in flag that
+ * defaults to false/disabled whenever unset, misspelled, or set to anything
+ * other than the literal string 'true'. There is no NODE_ENV value — including
+ * 'development' — that enables it on its own.
+ */
+function isAuthBypassEnabled(): boolean {
+  return process.env['AUTH_BYPASS_ENABLED'] === 'true';
+}
+
+/**
  * Generic auth middleware — works with any framework that provides request/reply objects.
  * For Fastify: app.addHook('preHandler', authMiddleware(secret))
  */
 export function authMiddleware(secret: string) {
   return async function authenticate(request: any, reply: any) {
-    // Skip auth in development mode (no login UI yet)
-    if (process.env['NODE_ENV'] === 'development') {
+    // Explicit, opt-in test/dev bypass ONLY — never inferred from NODE_ENV.
+    // Default (AUTH_BYPASS_ENABLED unset or != 'true') is always fail-closed,
+    // in every environment, including local development.
+    if (isAuthBypassEnabled()) {
       request.user = {
         sub: 'dev-user',
         tenantId: request.headers?.['x-tenant-id'] || '*',

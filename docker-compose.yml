@@ -3,6 +3,12 @@
   RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
   REDIS_URL: redis://redis:6379
   NODE_ENV: development
+  # FINAL-R0 Priority 0: authentication bypass is a separate, explicit opt-in
+  # flag — NOT inferred from NODE_ENV. Standard/default compose runs (this
+  # file) must always fail-closed on JWT validation. Never set this to
+  # 'true' here; it exists only so an explicit test-only override file can
+  # turn it on deliberately.
+  AUTH_BYPASS_ENABLED: ${AUTH_BYPASS_ENABLED:-false}
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-sk-ant-placeholder}
   # AMACC_JWT_SECRET must be set in .env â€” no default allowed in production
   AMACC_JWT_SECRET: ${AMACC_JWT_SECRET:?AMACC_JWT_SECRET is required}
