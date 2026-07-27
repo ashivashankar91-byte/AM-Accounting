@@ -3,6 +3,7 @@ import { z } from 'zod';
 import * as jwt from 'jsonwebtoken';
 import * as bcrypt from 'bcryptjs';
 import { container } from 'tsyringe';
+import { RlsTenantContext } from '@amacc/shared-kernel';
 import {
   UserService,
   InvalidCredentialsError,
@@ -81,6 +82,14 @@ export async function authRoutes(app: FastifyInstance) {
       throw err;
     }
 
+    // FINAL-R0 defect fix: /login is pre-authentication -- there is no
+    // x-tenant-id header yet for tenantContextHook to have picked up, so the
+    // RLS-scoped user lookup below would otherwise run with no tenant context
+    // set and silently see zero rows (deny-by-default RLS), turning every
+    // login into a false "invalid credentials". The body's tenantId is the
+    // only trusted tenant signal available at this point in the auth flow.
+    RlsTenantContext.set(body.tenantId);
+
     const userService = container.resolve<UserService>('UserService');
     try {
       const result = await userService.login(body.tenantId, body.email, body.password);
@@ -113,6 +122,7 @@ export async function authRoutes(app: FastifyInstance) {
       if (err instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: err.issues });
       throw err;
     }
+    RlsTenantContext.set(body.tenantId); // pre-auth route; see /login comment above
     const userService = container.resolve<UserService>('UserService');
     await userService.logout(body.tenantId, body.sessionToken);
     return reply.status(200).send({ loggedOut: true });

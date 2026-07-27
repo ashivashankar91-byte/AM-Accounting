@@ -37,7 +37,7 @@ export interface GrantAssignmentDTO {
   tenantId:  string;
   userId:    string;
   roleId:    string;
-  entityId:  string;
+  entityId:  string | null;  // null = tenant-wide (platform/tenant admin) grant
   storeIds?: string[];       // omitted / empty with allStores=true → ALL
   allStores?: boolean;
   actor?:    string;
@@ -239,7 +239,12 @@ export class RoleService {
     if (!allStores && storeIds.length === 0) {
       throw new AssignmentScopeError('SCOPE_REQUIRED', 'Provide storeIds or set allStores = true');
     }
-    if (!allStores) await this._assertStoresInEntity(dto.entityId, storeIds);
+    if (!allStores) {
+      if (!dto.entityId) {
+        throw new AssignmentScopeError('ENTITY_REQUIRED', 'entityId is required for a store-scoped assignment');
+      }
+      await this._assertStoresInEntity(dto.entityId, storeIds);
+    }
 
     const assignment = await this.prisma.roleAssignment.create({
       data: {
@@ -378,10 +383,15 @@ export class RoleService {
     }
   }
 
-  private async _assertEntityInTenant(tenantId: string, entityId: string): Promise<void> {
-    if (!entityId) {
-      throw new AssignmentScopeError('ENTITY_REQUIRED', 'entityId is required');
-    }
+  private async _assertEntityInTenant(tenantId: string, entityId: string | null | undefined): Promise<void> {
+    // FINAL-R0 defect fix: entityId == null is the documented tenant-wide
+    // (platform/tenant admin) grant shape (schema.prisma RoleAssignment.entityId
+    // comment: "null = tenant-wide (platform/tenant admin)"). The previous
+    // unconditional "entityId required" check made that shape unreachable via
+    // the real grantAssignment() path, contradicting the schema's own contract
+    // and blocking legitimate tenant-admin bootstrap. Only validate membership
+    // when an entityId is actually supplied.
+    if (!entityId) return;
     const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
       SELECT "id" FROM "legal_entities" WHERE "id" = ${entityId} AND "tenant_id" = ${tenantId} LIMIT 1`;
     if (rows.length === 0) {
