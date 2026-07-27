@@ -873,6 +873,28 @@
         "evidence": "Live-gateway certified (Final-R0 Batch C): positive void (200, own draft), idempotent re-void (200, idempotent:true), business-rule denial (409 REVERSE_ONLY on a POSTED draft, correctly redirecting to S218), unauthorized (401), cross-tenant denial (403), persistence (VOIDED, voided_at), audit (DRAFT_VOIDED), centralized S207 authorization, migration reproducibility confirmed.",
         "reference": "docs/accounting-modernization/stabilization/STORY_CERTIFICATION_MATRIX.csv"
       }
+    },
+    "S007": {
+      "title": "Immutable Audit Log",
+      "layman": "Every accounting write leaves a permanent, tamper-evident record of who changed what and when.",
+      "package": "GOLDEN-R0-FLEET",
+      "status": "DONE",
+      "completedDate": "2026-07-27",
+      "usesStubs": false,
+      "dependencies": [],
+      "blockers": [],
+      "completionEvidence": {
+        "vitestCount": "11/11 audit-service unit tests + 5/5 live-database tests (fresh ephemeral Postgres, all 5 committed migrations applied from empty via prisma migrate deploy); zero regressions in coa-service (277/277), auth-service (118/118), tenant-service (156/156)",
+        "playwrightCount": null,
+        "census": "docs/accounting-modernization/S007_WRITE_PATH_COVERAGE_CENSUS.md \u2014 100% write-path coverage across the certified live stack (tenant-service, auth-service, coa-service, audit-service), enforced going forward by scripts/audit-write-path-census.js in .github/workflows/s007-audit-write-path-census.yml",
+        "notes": "BR7-1 (transactional coupling): all audit-outbox writes across the in-scope services verified transactionally coupled to their domain writes; 3 genuine gaps found and fixed this phase (journal-view-service.emitViewed, sequence-service.allocate, department-service.seedCanonical). BR7-2 (hash chain / tamper detection): implemented synchronously at insert time via audit_chain_anchors + generated partition_key; proven by mocked and live-database tests, plus a periodic chain-verify job publishing audit.chain.alert on any break. BR7-4 (rollback on audit failure): proven by dedicated fault-injection tests. Also found and fixed a pre-existing critical defect: the audit_logs immutability trigger (blocking UPDATE/DELETE) had never actually been applied by prisma migrate deploy in any real environment because its SQL file sat outside a proper migration folder \u2014 fixed via migration 20260727000002_make_auditlog_immutable, verified against a real database. BR7-3 (retention/WORM tiering) is explicitly PENDING UQ-15 per the approved Golden R0 Story Contract Definition of Done and does not block this DONE status."
+      },
+      "stabilizationReconciliation": {
+        "phase": "Golden-R0 Controlled Fleet Implementation",
+        "priorStatus": "NOT_STARTED (new Golden-R0 fleet story; not part of the original 22 R0 stories)",
+        "promotedBecause": "Real, transactionally-coupled audit writes across the certified live stack; hash-chain tamper detection proven on a fresh migrated database; a previously-undetected critical defect (immutability trigger never deployed) found and fixed; a CI-enforced regression census in place. S007 is a PO-approved AuditPort implementation and is a hard dependency for S224 (PO condition 6: 'S224 remains blocked until the real S007 capability is implemented and certified. No audit stub may be used to certify S224.').",
+        "reference": "docs/accounting-modernization/S007_WRITE_PATH_COVERAGE_CENSUS.md; commits 179a21a, e225dc9, fa4afb8 on golden-r0-fleet"
+      }
     }
   },
   "sequence": [
@@ -896,7 +918,8 @@
     "S204": "DONE",
     "S206": "DONE",
     "S205": "DONE \u2014 Final-R0: live-gateway certified. Real bcrypt login, jsonwebtoken-signed JWT + persisted session, session validation, authorized/denied access matrix (14 scenarios), and the failed-login audit gap closed (categorized DENIED events for USER_NOT_FOUND, INVALID_PASSWORD, TENANT_MISMATCH, ACCOUNT_DISABLED, ACCOUNT_LOCKED, no secrets exposed). See S205_CERTIFICATION_REPORT.md.",
-    "S207": "DONE \u2014 promoted in R0 Stabilization Phase 9; all 3 stubGate conditions met (tsc clean, real S007 audit sink draining iam.authz.denied, live-database + broker-backed verification both exist)"
+    "S207": "DONE \u2014 promoted in R0 Stabilization Phase 9; all 3 stubGate conditions met (tsc clean, real S007 audit sink draining iam.authz.denied, live-database + broker-backed verification both exist)",
+    "S007": "DONE \u2014 Golden-R0 Controlled Fleet: real transactional audit coupling across tenant-service/auth-service/coa-service/audit-service (3 gaps found and fixed), hash-chain tamper detection proven live-DB, write-path coverage census CI-enforced. Unblocks S224 per PO condition 6."
   },
   "stabilization": {
     "phase0CheckpointCommit": "8453d0f",
