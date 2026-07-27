@@ -15,7 +15,7 @@
 
 ## All R0 stories currently tracked in MODULE_STATE.json
 
-This table lists **every** story in MODULE_STATE.json's `stories` object (27 total), across every package — active and completed — so this file cannot silently omit a package the way it previously omitted R0-JOURNAL-LIFECYCLE.
+This table lists **every** story in MODULE_STATE.json's `stories` object (28 total), across every package — active and completed — so this file cannot silently omit a package the way it previously omitted R0-JOURNAL-LIFECYCLE.
 
 | ID | Title | Status |
 |---|---|---|
@@ -46,8 +46,9 @@ This table lists **every** story in MODULE_STATE.json's `stories` object (27 tot
 | S202 | Dealer Group Hierarchy View & Maintenance | 🟡 DONE_PENDING_INTEGRATION |
 | S004A | Dealership Position Role Templates | 🟡 DONE_PENDING_INTEGRATION |
 | S220 | GL Account Activity Inquiry | 🟡 DONE_PENDING_INTEGRATION |
+| S221 | GL Search | 🟡 DONE_PENDING_INTEGRATION |
 
-**Totals:** {"DONE":23,"DONE_PENDING_INTEGRATION":4} — 27/27 at DONE or DONE_PENDING_INTEGRATION.
+**Totals:** {"DONE":23,"DONE_PENDING_INTEGRATION":5} — 28/28 at DONE or DONE_PENDING_INTEGRATION.
 
 ## Completed packages
 

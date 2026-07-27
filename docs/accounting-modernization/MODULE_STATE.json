@@ -1004,6 +1004,35 @@
         "promotedBecause": "Backend/API/authorization/audit-evidence work is complete and evidenced against a real, freshly-migrated database with zero test regressions, and a genuine Decimal-to-cents serialization defect was found via the first live-gateway call (not by unit test alone) and fixed with a regression test added. Capped at DONE_PENDING_INTEGRATION (not DONE) solely because PO condition 9 requires business/Figma/UX validation before any controlled-fleet story reaches DONE, and that validation is still package-wide open -- this is a business/UX sign-off gap, not a technical stub-adapter gap.",
         "reference": "docs/accounting-modernization/stabilization/STORY_CERTIFICATION_MATRIX.csv; S220_LIVE_GATEWAY_CERTIFICATION_REPORT.md"
       }
+    },
+    "S221": {
+      "title": "GL Search",
+      "layman": "A controller can search across every posted journal line in the ledger by amount, date range, source, memo, poster, or document reference -- not just one account at a time -- drill down into the matching journal, and save a search to re-run it later.",
+      "package": "GOLDEN-R0-FLEET",
+      "status": "DONE_PENDING_INTEGRATION",
+      "completedDate": null,
+      "usesStubs": false,
+      "dependencies": [
+        "S207",
+        "S007",
+        "S220"
+      ],
+      "blockers": [
+        "Package-wide Figma/SME/UX validation for the controlled-fleet stories is still open (GOLDEN_R0_STORY_CONTRACT_GAPS.md Class 4 = PENDING); S221 is FIGMA_REQUIRED and no UI has been built without a Figma artifact.",
+        "No CSV export implemented -- the approved Story Contract does not define one for S221 (unlike S220); this is a documented scope decision, not a gap.",
+        "1M-line <=2s performance target is a PROPOSED_TARGET in the approved contract and is not re-verified here (no load-test infrastructure exists in this repository)."
+      ],
+      "completionEvidence": {
+        "vitestCount": "24 new tests (tests/gl-search.test.ts: 20; tests/authz-guard-integration.test.ts: 4 new cases); coa-service suite 323/323 pass, 0 skipped, 0 regressions (299 pre-existing + 24 new)",
+        "playwrightCount": null,
+        "notes": "Cross-account ledger search reusing the frozen S220 ActivityLineView result contract plus accountId/accountNumber, minus runningBalance (documented: not well-defined across a cross-account result set). Criteria: amount/amountRange with optional debit/credit direction, date range, sourceCode, memoContains (line-or-entry, case-insensitive), postedBy, docRef (mapped to controlNumber OR applyNumber -- documented, no literal docRef column exists). Fails closed (400 SEARCH_CRITERIA_REQUIRED) on a fully-empty search to avoid an unbounded full-ledger scan -- documented interpretation beyond the contract's literal over-broad-search language. New SavedGlSearch table (BR221-2): save/list/run/delete scoped to (tenantId, createdBy), duplicate name rejected 409, re-run preserves persisted criteria with an optional page/pageSize override. Real defect found and fixed pre-live (code review, not a live incident): an early buildWhere() draft combined every criterion's OR clause under one shared top-level OR key, which JS object-spread would have silently dropped all but the last-supplied criterion whenever more than one criterion was combined at once -- fixed via an AND array of independent OR clauses, with a dedicated regression test. New additive auth-service migration seeds inquiry.search (catalog v1.7.0) granted to ADMIN/CONTROLLER/ACCOUNTANT (CLERK excluded, same documented reason as S220). Centralized real S207 authorization; real S007 audit-on-search emitted unconditionally, transactionally coupled per BR7-1 (saved-search CRUD itself not separately audited -- it manages a definition, not ledger-data exposure; running a saved search always re-enters the audited search() path). Fresh-database migration reproducibility verified against an ephemeral Postgres 15 (19/19 coa-service migrations incl. the 2 new saved_gl_search/RLS migrations; RLS confirmed force-enabled with all 4 tenant-isolation policies). tsc --noEmit clean. Real live-gateway evidence captured 2026-07-27: 200 positive across sourceCode/memoContains/amount+direction/dateRange criteria against real 18-line ADJ ledger data, 400 no-criteria, 400 inverted-range, 401 no-token, 401 invalid-token, 403 unauthorized (scratch CLERK-role user, deleted after capture), 403 cross-tenant tenant-id mismatch, 200 cross-tenant own-tenant search returning 0 results (no leak), full 201/200/200/204/200/409 saved-search create/list/run-with-override/delete/list-after-delete/duplicate-name lifecycle. Real S007 audit confirmed via psql: 7 GL_SEARCH/SEARCHED audit_outbox rows (6 Tenant A + 1 Tenant B), all published, actor correctly attributed. Reconciled to S220: identical line-level amounts/account numbers/journal numbers for the same real ledger data, no discrepancy. See S221_LIVE_GATEWAY_CERTIFICATION_REPORT.md."
+      },
+      "stabilizationReconciliation": {
+        "phase": "Golden-R0 Controlled Fleet Implementation -- Lane A (GL Search, after S220)",
+        "priorStatus": "NOT_STARTED (new Golden-R0 fleet story; not part of the original 22 R0 stories)",
+        "promotedBecause": "Backend/API/authorization/audit-evidence work is complete and evidenced against a real, freshly-migrated database with zero test regressions, reusing S220's frozen result contract exactly as instructed, and a real multi-criterion AND-combination defect was caught and fixed before any live call. Capped at DONE_PENDING_INTEGRATION (not DONE) solely because PO condition 9 requires business/Figma/UX validation before any controlled-fleet story reaches DONE, and that validation is still package-wide open -- this is a business/UX sign-off gap, not a technical stub-adapter gap.",
+        "reference": "docs/accounting-modernization/stabilization/STORY_CERTIFICATION_MATRIX.csv; S221_LIVE_GATEWAY_CERTIFICATION_REPORT.md"
+      }
     }
   },
   "sequence": [
