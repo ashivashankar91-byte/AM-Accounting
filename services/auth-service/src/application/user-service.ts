@@ -68,6 +68,26 @@ export interface LoginResult {
   expiresAt:     string;
 }
 
+/** FINAL-R0 S205: request-scoped, non-secret metadata for a login attempt --
+ * used ONLY to enrich audit evidence. Never contains credential material. */
+export interface LoginAttemptContext {
+  correlationId?: string;
+  ipAddress?:     string;
+  headerTenantId?: string; // x-tenant-id header, if the caller sent one pre-auth
+}
+
+/** Machine-readable denial reason recorded on every failed login attempt
+ * (FINAL-R0 S205 audit-gap closure). Never returned to the API caller --
+ * the HTTP response stays the deliberately generic "Invalid email or
+ * password" / "Account is X" in all cases, so the audit category itself
+ * cannot be used to enumerate accounts. */
+export type LoginDenialReason =
+  | 'USER_NOT_FOUND'
+  | 'INVALID_PASSWORD'
+  | 'TENANT_MISMATCH'
+  | 'ACCOUNT_DISABLED'
+  | 'ACCOUNT_LOCKED';
+
 // ── Errors ────────────────────────────────────────────────────────────────────
 
 export class UserNotFoundError extends Error {
@@ -320,17 +340,51 @@ export class UserService {
   // FINAL-R0 S205: the previously-missing real login/session-issuance endpoint.
   // Deliberately generic errors (BR: never reveal whether an email exists).
   // Failed attempts flow through the existing recordFailedLogin lockout path.
-  async login(tenantId: string, email: string, password: string): Promise<LoginResult> {
+  //
+  // FINAL-R0 S205 audit-gap closure: every denied attempt now records an
+  // audit event (see _recordLoginDenied) BEFORE throwing, categorized by
+  // reason. The reason is never exposed in the thrown error / HTTP response
+  // -- only ever visible in the audit trail -- so this closes the evidence
+  // gap without weakening the existing anti-enumeration design.
+  async login(
+    tenantId: string, email: string, password: string, ctx: LoginAttemptContext = {},
+  ): Promise<LoginResult> {
     const normalized = email.trim().toLowerCase();
+
+    // A caller that already has a tenant context (e.g. a pre-selected tenant
+    // in the UI sending x-tenant-id alongside the login form body) but a
+    // mismatched body.tenantId is a distinguishable, non-RLS-bypassing
+    // denial category -- unlike "does this email exist in a DIFFERENT
+    // tenant", which RLS correctly makes indistinguishable from
+    // USER_NOT_FOUND (that indistinguishability is the whole point of
+    // tenant-scoped RLS and is preserved below).
+    if (ctx.headerTenantId && ctx.headerTenantId !== tenantId) {
+      await this._recordLoginDenied(tenantId, normalized, 'TENANT_MISMATCH', ctx);
+      throw new InvalidCredentialsError();
+    }
+
     const user = await this.prisma.user.findFirst({ where: { tenantId, email: normalized } });
-    if (!user) throw new InvalidCredentialsError();
+    if (!user) {
+      await this._recordLoginDenied(tenantId, normalized, 'USER_NOT_FOUND', ctx);
+      throw new InvalidCredentialsError();
+    }
 
-    if (user.status === 'INACTIVE') throw new AccountNotUsableError('INACTIVE');
-    if (user.status === 'LOCKED') throw new AccountNotUsableError('LOCKED');
+    if (user.status === 'INACTIVE') {
+      await this._recordLoginDenied(tenantId, normalized, 'ACCOUNT_DISABLED', ctx, user.id);
+      throw new AccountNotUsableError('INACTIVE');
+    }
+    if (user.status === 'LOCKED') {
+      await this._recordLoginDenied(tenantId, normalized, 'ACCOUNT_LOCKED', ctx, user.id);
+      throw new AccountNotUsableError('LOCKED');
+    }
 
-    if (!user.passwordHash) throw new InvalidCredentialsError();
+    if (!user.passwordHash) {
+      await this._recordLoginDenied(tenantId, normalized, 'INVALID_PASSWORD', ctx, user.id);
+      throw new InvalidCredentialsError();
+    }
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok) {
+      await this._recordLoginDenied(tenantId, normalized, 'INVALID_PASSWORD', ctx, user.id);
       await this.recordFailedLogin(tenantId, user.id);
       throw new InvalidCredentialsError();
     }
@@ -433,6 +487,42 @@ export class UserService {
     if (n.length < 1 || n.length > 80) {
       throw new UserValidationError('INVALID_DISPLAY_NAME', 'displayName must be 1–80 characters');
     }
+  }
+
+  // ── FINAL-R0 S205: failed-login audit trail ──────────────────────────────────
+  // Records EVERY denied login attempt (not just the ones that trip the
+  // lockout threshold). Never includes password, password hash, JWT, or
+  // session material -- only the normalized attempted email (an intentional,
+  // explicit exception; this is an identity reference, not credential
+  // material), a machine-readable denial category, non-secret request
+  // metadata, and the fixed outcome "DENIED". Uses the same fire-and-forget,
+  // exception-swallowing _audit() primitive as every other audit call in
+  // this service, so a broken/unreachable audit store can never turn a
+  // denial into an accidental allow (the caller always still throws
+  // immediately after this call, regardless of whether the audit write
+  // itself succeeded).
+  private async _recordLoginDenied(
+    tenantId: string,
+    attemptedEmail: string,
+    reason: LoginDenialReason,
+    ctx: LoginAttemptContext,
+    userId?: string,
+  ): Promise<void> {
+    await this._audit(
+      tenantId,
+      'user_login_attempt',
+      userId ?? `email:${attemptedEmail}`,
+      'LOGIN_DENIED',
+      null,
+      {
+        outcome: 'DENIED',
+        reason,
+        attemptedEmail,
+        correlationId: ctx.correlationId,
+        ipAddress: ctx.ipAddress,
+      },
+      'system',
+    );
   }
 
   // ── AuditPort (stub) + event helpers ────────────────────────────────────────

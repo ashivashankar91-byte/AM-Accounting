@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import * as jwt from 'jsonwebtoken';
 import * as bcrypt from 'bcryptjs';
+import { randomUUID } from 'crypto';
 import { container } from 'tsyringe';
 import { RlsTenantContext } from '@amacc/shared-kernel';
 import {
@@ -91,8 +92,14 @@ export async function authRoutes(app: FastifyInstance) {
     RlsTenantContext.set(body.tenantId);
 
     const userService = container.resolve<UserService>('UserService');
+    const correlationId = (request.headers['x-correlation-id'] as string | undefined) ?? randomUUID();
+    const ctx = {
+      correlationId,
+      ipAddress: request.ip as string | undefined,
+      headerTenantId: (request.headers['x-tenant-id'] as string | undefined)?.trim() || undefined,
+    };
     try {
-      const result = await userService.login(body.tenantId, body.email, body.password);
+      const result = await userService.login(body.tenantId, body.email, body.password, ctx);
       const accessToken = jwt.sign(
         { sub: result.user.id, tenantId: body.tenantId, sessionId: result.sessionId, scopes: ['read', 'write'] },
         JWT_SECRET!,

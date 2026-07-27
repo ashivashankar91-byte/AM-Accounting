@@ -25,6 +25,7 @@ import {
 
 const TENANT = 'tenant-a';
 const OTHER_TENANT = 'tenant-b';
+const THIRD_TENANT = 'tenant-c'; // has no user at all — genuine "not found in this tenant" case
 const RESET_TOKEN = 'plain-reset-token-abc';
 const RESET_HASH = createHash('sha256').update(RESET_TOKEN).digest('hex');
 
@@ -238,6 +239,102 @@ describe('S205 · login', () => {
     // OTHER_TENANT's user has no passwordHash set (fixture), so this is also a
     // credentials failure — proving tenant scoping (no cross-tenant row leak).
     await expect(svc.login(OTHER_TENANT, 'active@x.io', ACTIVE_PASSWORD)).rejects.toBeInstanceOf(InvalidCredentialsError);
+  });
+});
+
+// ── FINAL-R0 S205 audit-gap closure: every DENIED login attempt is now
+// recorded, categorized, and free of credential material. ──────────────────
+describe('S205 · failed-login audit trail (audit-gap closure)', () => {
+  function lastDenied() {
+    return [...state.audit].reverse().find((a: any) => a.action === 'LOGIN_DENIED');
+  }
+
+  it('incorrect password: records a DENIED/INVALID_PASSWORD audit event with the attempted email, no secrets', async () => {
+    const svc = makeSvc();
+    await expect(svc.login(TENANT, 'active@x.io', 'totally-wrong', { correlationId: 'corr-1', ipAddress: '10.0.0.5' }))
+      .rejects.toBeInstanceOf(InvalidCredentialsError);
+    const entry = lastDenied();
+    expect(entry).toMatchObject({
+      docType: 'user_login_attempt', docId: 'u-active', action: 'LOGIN_DENIED',
+      after: { outcome: 'DENIED', reason: 'INVALID_PASSWORD', attemptedEmail: 'active@x.io', correlationId: 'corr-1', ipAddress: '10.0.0.5' },
+    });
+  });
+
+  it('unknown user: records a DENIED/USER_NOT_FOUND audit event without revealing non-existence to the caller', async () => {
+    const svc = makeSvc();
+    await expect(svc.login(TENANT, 'nobody@x.io', 'whatever')).rejects.toBeInstanceOf(InvalidCredentialsError);
+    const entry = lastDenied();
+    expect(entry).toMatchObject({
+      docType: 'user_login_attempt', docId: 'email:nobody@x.io', action: 'LOGIN_DENIED',
+      after: { outcome: 'DENIED', reason: 'USER_NOT_FOUND', attemptedEmail: 'nobody@x.io' },
+    });
+  });
+
+  it('cross-tenant login denial: attempting a real user/password under a tenant that has no such user is audited as USER_NOT_FOUND (RLS-consistent — indistinguishable from a truly unknown email, by design)', async () => {
+    const svc = makeSvc();
+    await expect(svc.login(THIRD_TENANT, 'active@x.io', ACTIVE_PASSWORD)).rejects.toBeInstanceOf(InvalidCredentialsError);
+    const entry = lastDenied();
+    expect(entry).toMatchObject({
+      tenantId: THIRD_TENANT, action: 'LOGIN_DENIED',
+      after: { outcome: 'DENIED', reason: 'USER_NOT_FOUND', attemptedEmail: 'active@x.io' },
+    });
+  });
+
+  it('tenant-mismatch: a header tenant that disagrees with the login body tenant is audited as TENANT_MISMATCH, distinct from USER_NOT_FOUND', async () => {
+    const svc = makeSvc();
+    await expect(svc.login(TENANT, 'active@x.io', ACTIVE_PASSWORD, { headerTenantId: OTHER_TENANT }))
+      .rejects.toBeInstanceOf(InvalidCredentialsError);
+    const entry = lastDenied();
+    expect(entry).toMatchObject({ action: 'LOGIN_DENIED', after: { reason: 'TENANT_MISMATCH', outcome: 'DENIED' } });
+  });
+
+  it('disabled (INACTIVE) user: records a DENIED/ACCOUNT_DISABLED audit event', async () => {
+    const svc = makeSvc();
+    await expect(svc.login(TENANT, 'inactive@x.io', ACTIVE_PASSWORD)).rejects.toBeInstanceOf(AccountNotUsableError);
+    const entry = lastDenied();
+    expect(entry).toMatchObject({ docId: 'u-inactive', action: 'LOGIN_DENIED', after: { reason: 'ACCOUNT_DISABLED', outcome: 'DENIED' } });
+  });
+
+  it('locked account: records a DENIED/ACCOUNT_LOCKED audit event', async () => {
+    const svc = makeSvc();
+    await expect(svc.login(TENANT, 'locked@x.io', ACTIVE_PASSWORD)).rejects.toBeInstanceOf(AccountNotUsableError);
+    const entry = lastDenied();
+    expect(entry).toMatchObject({ docId: 'u-locked', action: 'LOGIN_DENIED', after: { reason: 'ACCOUNT_LOCKED', outcome: 'DENIED' } });
+  });
+
+  it('sensitive data absence: no denial audit event ever contains a password, password hash, JWT, or session token', async () => {
+    const svc = makeSvc();
+    await expect(svc.login(TENANT, 'active@x.io', 'totally-wrong-password-should-not-leak')).rejects.toBeInstanceOf(InvalidCredentialsError);
+    const entry = lastDenied();
+    const serialized = JSON.stringify(entry);
+    expect(serialized).not.toContain('totally-wrong-password-should-not-leak');
+    expect(serialized).not.toContain('passwordHash');
+    expect(serialized).not.toMatch(/\$2[aby]\$/); // bcrypt hash shape
+    expect(entry.after).not.toHaveProperty('password');
+    expect(entry.after).not.toHaveProperty('sessionToken');
+    expect(entry.after).not.toHaveProperty('accessToken');
+  });
+
+  it('repeated failed attempts correlate: distinct correlationIds thread through to distinct, independently retrievable audit rows', async () => {
+    const svc = makeSvc();
+    await expect(svc.login(TENANT, 'active@x.io', 'wrong-1', { correlationId: 'corr-A' })).rejects.toBeInstanceOf(InvalidCredentialsError);
+    await expect(svc.login(TENANT, 'active@x.io', 'wrong-2', { correlationId: 'corr-B' })).rejects.toBeInstanceOf(InvalidCredentialsError);
+    const denied = state.audit.filter((a: any) => a.action === 'LOGIN_DENIED');
+    expect(denied).toHaveLength(2);
+    expect(denied.map((d: any) => d.after.correlationId)).toEqual(['corr-A', 'corr-B']);
+    expect(denied.every((d: any) => d.after.reason === 'INVALID_PASSWORD')).toBe(true);
+  });
+
+  it('audit service (local outbox write) unavailable: a broken audit sink does not allow login to succeed nor throw a different error', async () => {
+    const svc = makeSvc();
+    // Simulate an unavailable/erroring local audit store (the outbox INSERT
+    // itself, prior to any network delivery) — _audit()'s try/catch must
+    // swallow this without changing the (already-decided) deny outcome.
+    (svc as any).prisma.auditOutboxEvent.create = async () => { throw new Error('outbox store unavailable'); };
+    await expect(svc.login(TENANT, 'active@x.io', 'totally-wrong')).rejects.toBeInstanceOf(InvalidCredentialsError);
+    // And, symmetrically, a broken audit sink must never turn a genuinely
+    // correct login into a failure, nor silently grant access on a bad one.
+    await expect(svc.login(TENANT, 'active@x.io', ACTIVE_PASSWORD)).resolves.toMatchObject({ user: { id: 'u-active' } });
   });
 });
 
