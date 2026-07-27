@@ -229,3 +229,22 @@ automatically rather than requiring another manual pass.
 - BR7-3 (retention/WORM tiering) remains explicitly `PENDING UQ-15` per the
   approved story contract's Definition of Done — this does **not** block R0
   completion of the log itself.
+
+## 11. GOLDEN-R0 Phase 4 addendum — S221 saved-search write-path finding
+
+After this census was first written, S221 (GL Search) added
+`GlSearchService.saveSearch()`/`.deleteSavedSearch()` (`savedGlSearch`
+domain writes) with a code comment asserting a "documented exemption" from
+audit coverage, but that exemption was never actually registered in this
+script's `ALLOWLIST` or in this markdown. Running the CI-enforced census
+during GOLDEN-R0 Phase 4's push/PR flow caught exactly this — the script
+did its job. Rather than register a debatable exemption, both methods were
+fixed to emit real, transactionally-coupled audit events (`GL_SAVED_SEARCH`
+doc type, `CREATED`/`DELETED` actions), consistent with every other
+domain-CRUD write in this fleet. `listSavedSearches()` remains unaudited as
+a pure read of the actor's own saved-search definitions, no different from
+any other unaudited list/GET in this fleet. Re-run of the census after the
+fix: 61/61 write-bearing methods, PASS, zero exemptions needed for this
+finding. `coa-service` full suite re-verified: 323/323 passing, `tsc
+--noEmit` clean.
+

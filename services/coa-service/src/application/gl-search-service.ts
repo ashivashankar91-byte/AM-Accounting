@@ -204,14 +204,44 @@ export class GLSearchService {
     if (existing) {
       throw new DuplicateSearchNameError(name);
     }
-    const row = await this.prisma.savedGlSearch.create({
-      data: {
-        id: crypto.randomUUID(),
-        tenantId,
-        createdBy: actor.userId,
-        name,
-        criteria: criteria as unknown as Prisma.InputJsonValue,
-      },
+    // S007 write-path coverage (audit-write-path-census.js finding, GOLDEN-R0
+    // Phase 4): a saved-search definition is still tenant-scoped, actor-owned
+    // domain data, so its create/delete are audited like every other CRUD
+    // write in this fleet, transactionally coupled per BR7-1 -- not exempted
+    // by a code comment alone.
+    const id = crypto.randomUUID();
+    const row = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.savedGlSearch.create({
+        data: {
+          id,
+          tenantId,
+          createdBy: actor.userId,
+          name,
+          criteria: criteria as unknown as Prisma.InputJsonValue,
+        },
+      });
+      await tx.coaOutboxEvent.create({
+        data: {
+          id: crypto.randomUUID(),
+          tenantId,
+          eventType: 'audit.saved_search.created',
+          aggregateId: id,
+          payload: { savedSearchId: id, name, createdBy: actor.userId, criteria } as any,
+        },
+      });
+      await tx.auditOutboxEvent.create({
+        data: {
+          id: crypto.randomUUID(),
+          tenantId,
+          docType: 'GL_SAVED_SEARCH',
+          docId: id,
+          action: 'CREATED',
+          before: null as any,
+          after: { name, criteria } as any,
+          actor: actor.userId,
+        },
+      });
+      return created;
     });
     return this.toSavedSearchView(row);
   }
@@ -227,7 +257,33 @@ export class GLSearchService {
   async deleteSavedSearch(tenantId: string, actor: SearchActor, id: string): Promise<void> {
     const row = await this.prisma.savedGlSearch.findFirst({ where: { id, tenantId, createdBy: actor.userId } });
     if (!row) throw new SavedSearchNotFoundError();
-    await this.prisma.savedGlSearch.delete({ where: { id: row.id } });
+    // S007 write-path coverage (audit-write-path-census.js finding, GOLDEN-R0
+    // Phase 4): same rationale as saveSearch() above -- the delete is
+    // audited, transactionally coupled to the domain write per BR7-1.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.savedGlSearch.delete({ where: { id: row.id } });
+      await tx.coaOutboxEvent.create({
+        data: {
+          id: crypto.randomUUID(),
+          tenantId,
+          eventType: 'audit.saved_search.deleted',
+          aggregateId: row.id,
+          payload: { savedSearchId: row.id, name: row.name, deletedBy: actor.userId } as any,
+        },
+      });
+      await tx.auditOutboxEvent.create({
+        data: {
+          id: crypto.randomUUID(),
+          tenantId,
+          docType: 'GL_SAVED_SEARCH',
+          docId: row.id,
+          action: 'DELETED',
+          before: { name: row.name, criteria: row.criteria } as any,
+          after: null as any,
+          actor: actor.userId,
+        },
+      });
+    });
   }
 
   /**
@@ -372,11 +428,16 @@ export class GLSearchService {
    * convention for read/inquiry stories (S220/S224) even though S221's
    * approved contract states "None specific beyond package-wide
    * convention" — documented, consistent inference, not a literal
-   * requirement. Saved-search CRUD (save/list/delete) is NOT separately
-   * audited: those actions manage a search *definition*, not ledger data
-   * exposure, and running a saved search always routes through this same
-   * `search()`/`emitAudited` path, so ledger-data exposure is always
-   * captured regardless of how the search was invoked.
+   * requirement. Saved-search create/delete (`saveSearch()`/
+   * `deleteSavedSearch()`) are separately audited inline at their own call
+   * sites (GOLDEN-R0 Phase 4 fix, following the audit-write-path-census.js
+   * finding that a code comment alone is not a registered exemption):
+   * CREATED/DELETED on doc type GL_SAVED_SEARCH. `listSavedSearches()`
+   * remains unaudited as a pure read of the actor's own definitions, no
+   * different from any other unaudited list/GET in this fleet. Running a
+   * saved search always routes through this same `search()`/`emitAudited`
+   * path, so ledger-data *exposure* is always captured regardless of how
+   * the search was invoked.
    */
   private async emitAudited(tenantId: string, actor: SearchActor, criteria: GLSearchCriteria, totalResults: number): Promise<void> {
     const payload = {
