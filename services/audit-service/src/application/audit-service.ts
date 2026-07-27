@@ -239,30 +239,91 @@ export class AuditService {
    * A mismatch means the row (or the chain) was altered after the fact.
    */
   async verifyChain(partitionKey: string): Promise<ChainVerifyResult> {
-    const rows = await this.prisma.auditLog.findMany({
-      where: { partitionKey },
-      orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
-    });
+    const rows = await this.prisma.auditLog.findMany({ where: { partitionKey } });
+    if (rows.length === 0) return { ok: true, partitionKey, recordsChecked: 0 };
+
+    // FINAL-R0 defect fix (Golden R0 Phase 3 full release certification):
+    // this used to order rows by `[{occurredAt:'asc'},{id:'asc'}]` and walk
+    // them in that order. `occurredAt` is a caller-supplied BUSINESS
+    // timestamp (not a write-order guarantee) and `id` is a random UUID, so
+    // two or more genuinely legitimate audit events sharing the same
+    // `occurredAt` (a real, ordinary occurrence -- confirmed live against a
+    // freshly migrated database, not merely a test artifact) sort in an
+    // ARBITRARY order that need not match the true insertion order recorded
+    // by AuditService.log()'s own audit_chain_anchors-backed hashPrev
+    // assignment (which IS correctly serialized via `FOR UPDATE` row
+    // locking). The result was a false-positive tamper detection
+    // (`ok:false`) against a completely untampered, correctly-chained
+    // partition, and in the tamper-detection test, an inaccurate
+    // `brokenAt` value -- both defeat the purpose of this BR7-2/BR7-4
+    // control. Fixed by reconstructing the chain by walking the actual
+    // hashPrev -> hashSelf linked list (the same structure the anchor table
+    // guarantees at write time) instead of trusting any timestamp/id sort.
+    const byHashPrev = new Map<string | null, (typeof rows)[number]>();
+    for (const row of rows) {
+      const key = row.hashPrev ?? null;
+      if (byHashPrev.has(key)) {
+        return {
+          ok: false,
+          partitionKey,
+          recordsChecked: 0,
+          brokenAt: row.id,
+          reason: 'fork detected: more than one record in this partition claims the same hashPrev',
+        };
+      }
+      byHashPrev.set(key, row);
+    }
+
+    let current = byHashPrev.get(null);
+    if (!current) {
+      return {
+        ok: false,
+        partitionKey,
+        recordsChecked: 0,
+        reason: 'no genesis record (hashPrev IS NULL) found for this partition',
+      };
+    }
 
     let expectedPrev: string | null = null;
     let checked = 0;
-    for (const row of rows) {
+    const visited = new Set<string>();
+    while (current) {
       checked += 1;
-      if ((row.hashPrev ?? null) !== expectedPrev) {
-        return { ok: false, partitionKey, recordsChecked: checked, brokenAt: row.id, reason: 'hashPrev does not match the prior record in this partition' };
+      visited.add(current.id);
+      if ((current.hashPrev ?? null) !== expectedPrev) {
+        return { ok: false, partitionKey, recordsChecked: checked, brokenAt: current.id, reason: 'hashPrev does not match the prior record in this partition' };
       }
-      const expectedSelf = computeHashSelf(row.hashPrev ?? null, chainableContent({
-        tenantId: row.tenantId, eventType: row.eventType, entityType: row.entityType, entityId: row.entityId,
-        actorType: row.actorType, actorId: row.actorId, actorName: row.actorName, action: row.action,
-        previousState: row.previousState, newState: row.newState, reason: row.reason, confidence: row.confidence,
-        metadata: row.metadata, occurredAt: row.occurredAt, ipAddress: row.ipAddress, sessionId: row.sessionId,
-        sourceEventId: row.sourceEventId,
+      const expectedSelf = computeHashSelf(current.hashPrev ?? null, chainableContent({
+        tenantId: current.tenantId, eventType: current.eventType, entityType: current.entityType, entityId: current.entityId,
+        actorType: current.actorType, actorId: current.actorId, actorName: current.actorName, action: current.action,
+        previousState: current.previousState, newState: current.newState, reason: current.reason, confidence: current.confidence,
+        metadata: current.metadata, occurredAt: current.occurredAt, ipAddress: current.ipAddress, sessionId: current.sessionId,
+        sourceEventId: current.sourceEventId,
       }));
-      if (row.hashSelf !== expectedSelf) {
-        return { ok: false, partitionKey, recordsChecked: checked, brokenAt: row.id, reason: 'stored hashSelf does not match recomputed hash of the record content' };
+      if (current.hashSelf !== expectedSelf) {
+        return { ok: false, partitionKey, recordsChecked: checked, brokenAt: current.id, reason: 'stored hashSelf does not match recomputed hash of the record content' };
       }
-      expectedPrev = row.hashSelf ?? null;
+      expectedPrev = current.hashSelf ?? null;
+      current = current.hashSelf ? byHashPrev.get(current.hashSelf) : undefined;
     }
+
+    if (checked !== rows.length) {
+      // The walk terminated before reaching every row in this partition --
+      // at least one record's hashPrev does not match any other record's
+      // hashSelf (a break, a deletion out-of-band, or a value overwritten
+      // by something other than AuditService.log()). Identify one such
+      // orphaned record for the caller rather than only reporting a count.
+      const orphan = rows.find((r) => !visited.has(r.id));
+      return {
+        ok: false,
+        partitionKey,
+        recordsChecked: checked,
+        brokenAt: orphan?.id,
+        reason: `chain walk reached ${checked} of ${rows.length} records in this partition -- ` +
+          `record${orphan ? ` ${orphan.id}` : ''}'s hashPrev does not match any known prior record's hashSelf in this partition`,
+      };
+    }
+
     return { ok: true, partitionKey, recordsChecked: checked };
   }
 
