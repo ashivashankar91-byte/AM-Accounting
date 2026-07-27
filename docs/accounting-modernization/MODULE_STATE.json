@@ -443,10 +443,9 @@
       "package": "R0-ACCOUNTING-SETUP",
       "epic": "CE-03",
       "sprint": 2,
-      "status": "DONE_PENDING_INTEGRATION",
+      "status": "DONE",
       "completedDate": "2026-07-24",
-      "usesStubs": true,
-      "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207",
+      "usesStubs": false,
       "dependencies": [
         "S200"
       ],
@@ -463,6 +462,12 @@
         "openapi": "services/coa-service/openapi/accounts.yaml",
         "doc": "docs/accounting-modernization/audit-results/S210-COMPLETION.md",
         "specDeviation": "Rewrote gl-service GLAccount (tenant-scoped) as entity-scoped gl_account per packet \u00a77 (S208 precedent)"
+      },
+      "finalR0Certification": {
+        "phase": "Final-R0 Foundation Completion \u2014 Batch B",
+        "status": "DONE",
+        "evidence": "Live-gateway certified (Final-R0 Batch B): positive create (201), duplicate conflict (409), validation failure (422 invalid type/normal-balance), unauthorized (401), cross-tenant denial (403), real persistence via psql (gl_account), audit_logs evidence (CREATE), centralized S207 authorization, migration reproducibility confirmed.",
+        "reference": "docs/accounting-modernization/stabilization/STORY_CERTIFICATION_MATRIX.csv"
       }
     },
     "S211": {
@@ -471,10 +476,9 @@
       "package": "R0-ACCOUNTING-SETUP",
       "epic": "CE-03",
       "sprint": 3,
-      "status": "DONE_PENDING_INTEGRATION",
+      "status": "DONE",
       "completedDate": "2026-07-24",
-      "usesStubs": true,
-      "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207",
+      "usesStubs": false,
       "dependencies": [
         "S210"
       ],
@@ -491,6 +495,12 @@
         "openapi": "services/coa-service/openapi/accounts.yaml (updated)",
         "doc": "docs/accounting-modernization/audit-results/S211-COMPLETION.md",
         "specDeviation": "single-parent parent_id tree chosen over legacy subtotal_group_1/2/3 columns (UQ-14: group cols are FS artifact, not totaling model)"
+      },
+      "finalR0Certification": {
+        "phase": "Final-R0 Foundation Completion \u2014 Batch B",
+        "status": "DONE",
+        "evidence": "Live-gateway certified (Final-R0 Batch B): child create under summary parent (201), /tree hierarchy proof, cycle detection (422), parent-must-be-summary rule (422), effective-dated reparent (200, version+parentEffectiveFrom), unauthorized (401), cross-tenant denial (403), audit_logs evidence (REPARENT), centralized S207 authorization, migration reproducibility confirmed.",
+        "reference": "docs/accounting-modernization/stabilization/STORY_CERTIFICATION_MATRIX.csv"
       }
     },
     "S010": {
@@ -564,10 +574,9 @@
       "package": "R0-ACCOUNTING-SETUP",
       "epic": "CE-03",
       "sprint": 2,
-      "status": "DONE_PENDING_INTEGRATION",
+      "status": "DONE",
       "completedDate": "2026-07-24",
-      "usesStubs": true,
-      "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207",
+      "usesStubs": false,
       "dependencies": [
         "S212",
         "S208"
@@ -583,6 +592,12 @@
         "event": "none new (numbers ride on acct.je.posted); GAP_LOGGED audit record",
         "runtime": "seq GJ 2026-01 000001..000003; 20 concurrent HTTP allocations -> 20 distinct (BR213-1 real PG); gap #4 logged, #5 continues (BR213-3); period reset 2026-02 -> 000001; gap-report returns gapped number; 422 invalid source/period; 400 empty-reason(zod)/missing-tenant; 422 MISSING_REASON(whitespace); gateway :3100 200; journal_sequence 3 counters; sequence_gap_log 1 row; audit 1 GAP_LOGGED",
         "specDeviation": "allocate/log-gap exposed as je.sequence.allocate-guarded HTTP handles (packet says internal-to-S013) so BR213-1 atomicity is runtime-verifiable now; S013 posting path will call allocate() in-process. Interim number format + non-reserving gap model pending UQ-12/19."
+      },
+      "finalR0Certification": {
+        "phase": "Final-R0 Foundation Completion \u2014 Batch B",
+        "status": "DONE",
+        "evidence": "Live-gateway certified (Final-R0 Batch B): sequential allocation (200, gapless counter backed by real Postgres unique constraint), format validation failure (422), unauthorized (401), cross-tenant denial (403), gap-logging + gap-report (201/200, BR213-3), real persistence via psql (journal_sequence.next_seq), audit_logs evidence (GAP_LOGGED), centralized S207 authorization, migration reproducibility confirmed.",
+        "reference": "docs/accounting-modernization/stabilization/STORY_CERTIFICATION_MATRIX.csv"
       }
     },
     "S013": {
