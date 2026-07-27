@@ -895,6 +895,30 @@
         "promotedBecause": "Real, transactionally-coupled audit writes across the certified live stack; hash-chain tamper detection proven on a fresh migrated database; a previously-undetected critical defect (immutability trigger never deployed) found and fixed; a CI-enforced regression census in place. S007 is a PO-approved AuditPort implementation and is a hard dependency for S224 (PO condition 6: 'S224 remains blocked until the real S007 capability is implemented and certified. No audit stub may be used to certify S224.').",
         "reference": "docs/accounting-modernization/S007_WRITE_PATH_COVERAGE_CENSUS.md; commits 179a21a, e225dc9, fa4afb8 on golden-r0-fleet"
       }
+    },
+    "S224": {
+      "title": "Document Audit History View",
+      "layman": "An auditor can open any accounting document and see its full change history in order, and export it.",
+      "package": "GOLDEN-R0-FLEET",
+      "status": "DONE_PENDING_INTEGRATION",
+      "completedDate": null,
+      "usesStubs": false,
+      "dependencies": ["S007"],
+      "blockers": [
+        "Package-wide Figma/SME/UX validation for the 9 controlled-fleet stories is still open (GOLDEN_R0_STORY_CONTRACT_GAPS.md Class 4 = PENDING); S224 is FIGMA_REQUIRED and no UI has been built without a Figma artifact.",
+        "No individual PO release-to-DONE has been issued for S224 (only 'released for implementation' per the S007-acceptance PO message)."
+      ],
+      "completionEvidence": {
+        "vitestCount": "26/26 audit-service tests pass (17 unit incl. 6 new S224 cases: empty-state, chronological ordering+diffs, tenant/document scoping, PII true/false, CSV parity; 9 new route-level tests: 401/403, positive view, empty-state 200 not 404, cross-tenant query-level isolation, audit.viewed emit/no-emit, CSV export content-type, export-specific 403)",
+        "playwrightCount": null,
+        "notes": "Real S007 dependency satisfied (no AuditPort stub \u2014 S007 is DONE/PO-accepted). GET /audit/documents/:docType/:docId and :export query the real audit_logs table by (tenantId, entityType, entityId) \u2014 docType/docId map to entityType/entityId per the existing AuditOutboxDrainer field mapping. Centralized S207 authorization (audit.view / audit.export permissions) via the same createAuthzGuard/HttpAuthzClient pattern used elsewhere in the fleet. BR224-3 audit.viewed emission on PII-marked field-diff render (conservative, documented PII_FIELD_MARKERS substring allowlist \u2014 no PII schema registry exists in-repo). BR224-4 CSV export. Fresh-database migration reproducibility verified: all 6 audit-service migrations (including a new additive (tenant_id, entity_type, entity_id, occurred_at) covering index for this endpoint) applied cleanly via prisma migrate deploy against an ephemeral, just-created Postgres 15 container \u2014 no prisma db push, no manually pre-created tables. tsc --noEmit clean. No frontend UI was built this phase (explicitly scoped out, not silently skipped): S224 is FIGMA_REQUIRED and package-wide Figma/SME/UX validation remains open."
+      },
+      "stabilizationReconciliation": {
+        "phase": "Golden-R0 Controlled Fleet Implementation",
+        "priorStatus": "NOT_STARTED (new Golden-R0 fleet story; not part of the original 22 R0 stories)",
+        "promotedBecause": "Backend/API/authorization/audit-evidence work is complete and evidenced against a real, freshly-migrated database with zero test regressions. Capped at DONE_PENDING_INTEGRATION (not DONE) solely because PO condition 9 requires business/Figma/UX validation before any controlled-fleet story reaches DONE, and that validation is still package-wide open \u2014 this is a business/UX sign-off gap, not a technical stub-adapter gap.",
+        "reference": "docs/accounting-modernization/stabilization/STORY_CERTIFICATION_MATRIX.csv; commits 9c05966, 9f5a4cf on golden-r0-fleet"
+      }
     }
   },
   "sequence": [
@@ -919,7 +943,8 @@
     "S206": "DONE",
     "S205": "DONE \u2014 Final-R0: live-gateway certified. Real bcrypt login, jsonwebtoken-signed JWT + persisted session, session validation, authorized/denied access matrix (14 scenarios), and the failed-login audit gap closed (categorized DENIED events for USER_NOT_FOUND, INVALID_PASSWORD, TENANT_MISMATCH, ACCOUNT_DISABLED, ACCOUNT_LOCKED, no secrets exposed). See S205_CERTIFICATION_REPORT.md.",
     "S207": "DONE \u2014 promoted in R0 Stabilization Phase 9; all 3 stubGate conditions met (tsc clean, real S007 audit sink draining iam.authz.denied, live-database + broker-backed verification both exist)",
-    "S007": "DONE \u2014 Golden-R0 Controlled Fleet: real transactional audit coupling across tenant-service/auth-service/coa-service/audit-service (3 gaps found and fixed), hash-chain tamper detection proven live-DB, write-path coverage census CI-enforced. Unblocks S224 per PO condition 6."
+    "S007": "DONE \u2014 Golden-R0 Controlled Fleet: real transactional audit coupling across tenant-service/auth-service/coa-service/audit-service (3 gaps found and fixed), hash-chain tamper detection proven live-DB, write-path coverage census CI-enforced. Unblocks S224 per PO condition 6.",
+    "S224": "DONE_PENDING_INTEGRATION \u2014 Golden-R0 Controlled Fleet: real S007 dependency satisfied (no stub); document-history GET+export endpoints implemented with centralized S207 authz, BR224-3 audit.viewed emission, fresh-database migration reproducibility verified. Capped below DONE pending package-wide Figma/SME/UX validation (PO condition 9), not a technical gap."
   },
   "stabilization": {
     "phase0CheckpointCommit": "8453d0f",
