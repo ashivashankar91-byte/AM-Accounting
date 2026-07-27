@@ -948,6 +948,33 @@
         "promotedBecause": "Backend/API/authorization/audit-evidence work is complete and evidenced against real, freshly-migrated databases with zero test regressions, and a genuine S224 authorization-catalog defect was found and fixed as a byproduct. Capped at DONE_PENDING_INTEGRATION (not DONE) solely because PO condition 9 requires business/Figma/UX validation before any controlled-fleet story reaches DONE, and that validation is still package-wide open -- this is a business/UX sign-off gap, not a technical stub-adapter gap.",
         "reference": "docs/accounting-modernization/stabilization/STORY_CERTIFICATION_MATRIX.csv; commits 7a042bb, d7626f6 on golden-r0-fleet; S202_LIVE_GATEWAY_CERTIFICATION_REPORT.md"
       }
+    },
+    "S004A": {
+      "title": "Dealership Position Role Templates",
+      "layman": "A security administrator can pick a ready-made job-position template (Cashier, Controller, etc.) and apply it to a user in one click instead of hand-picking permissions.",
+      "package": "GOLDEN-R0-FLEET",
+      "status": "DONE_PENDING_INTEGRATION",
+      "completedDate": null,
+      "usesStubs": false,
+      "dependencies": [
+        "S206",
+        "S207",
+        "S007"
+      ],
+      "blockers": [
+        "Package-wide Figma/SME/UX validation for the 9 controlled-fleet stories is still open (GOLDEN_R0_STORY_CONTRACT_GAPS.md Class 4 = PENDING); S004A is FIGMA_REQUIRED and no UI has been built without a Figma artifact."
+      ],
+      "completionEvidence": {
+        "vitestCount": "36 new tests (tests/role-template-service.test.ts: 16; tests/role-template-routes.test.ts: 20); zero regressions in auth-service (154/154 total)",
+        "playwrightCount": null,
+        "notes": "Real S206 role model + real S207 authorization + real S007 audit reused directly per explicit PO instruction -- no separate local permission map. New additive RoleTemplate/RoleTemplateAssignment tables with a novel hybrid RLS policy (global shipped rows have tenant_id NULL, visible to all tenants' SELECT but only mutable by the owning tenant on INSERT/UPDATE/DELETE). 9 global shipped position templates seeded from the real, already-existing permission catalog. New RoleService.ensureRoleForPositionTemplate() keys the backing Role explicitly by the contract's position slug, avoiding name-derivation mismatches (e.g. OFFICE_MGR). applyTemplate() delegates to real RoleService methods so S207 enforcement is identical to S206's already-certified path; concrete SoD control (no self-apply) implemented and tested. Real defect found and fixed pre-live-evidence: cloneTemplate() silently lost the source's permissions due to a `dto.permissions ?? source.permissions` fallback not triggering on an explicit empty array -- fixed and re-verified live. Fresh-database migration reproducibility verified: all 11 auth-service migrations applied cleanly against an ephemeral Postgres 15; cross-tenant RLS proven on all 4 verbs (SELECT/INSERT/UPDATE/DELETE) via a real non-superuser role. tsc --noEmit clean. Real live-gateway evidence captured 2026-07-27 covering the full scenario matrix (positive list/create/apply/clone, 401, 403 unauthorized, 404 cross-tenant get-by-id, 422 validation, 403 self-apply SoD, 409 deactivate-blocked, 403 immutable-global-edit, 204 revoke+deactivate) with real S007 audit rows confirmed via psql for every mutation. See S004A_LIVE_GATEWAY_CERTIFICATION_REPORT.md."
+      },
+      "stabilizationReconciliation": {
+        "phase": "Golden-R0 Controlled Fleet Implementation",
+        "priorStatus": "NOT_STARTED (new Golden-R0 fleet story; not part of the original 22 R0 stories)",
+        "promotedBecause": "Backend/API/authorization/audit-evidence work is complete and evidenced against a real, freshly-migrated database with zero test regressions, and a genuine clone-permission-loss defect was found (by unit test, before any live evidence was attempted) and fixed. Capped at DONE_PENDING_INTEGRATION (not DONE) solely because PO condition 9 requires business/Figma/UX validation before any controlled-fleet story reaches DONE, and that validation is still package-wide open -- this is a business/UX sign-off gap, not a technical stub-adapter gap.",
+        "reference": "docs/accounting-modernization/stabilization/STORY_CERTIFICATION_MATRIX.csv; S004A_LIVE_GATEWAY_CERTIFICATION_REPORT.md"
+      }
     }
   },
   "sequence": [
@@ -974,7 +1001,8 @@
     "S207": "DONE \u2014 promoted in R0 Stabilization Phase 9; all 3 stubGate conditions met (tsc clean, real S007 audit sink draining iam.authz.denied, live-database + broker-backed verification both exist)",
     "S007": "DONE \u2014 Golden-R0 Controlled Fleet: real transactional audit coupling across tenant-service/auth-service/coa-service/audit-service (3 gaps found and fixed), hash-chain tamper detection proven live-DB, write-path coverage census CI-enforced. Unblocks S224 per PO condition 6.",
     "S224": "DONE_PENDING_INTEGRATION \u2014 Golden-R0 Controlled Fleet: real S007 dependency satisfied (no stub); document-history GET+export endpoints implemented with centralized S207 authz, BR224-3 audit.viewed emission, fresh-database migration reproducibility verified. Capped below DONE pending package-wide Figma/SME/UX validation (PO condition 9), not a technical gap.",
-    "S202": "DONE_PENDING_INTEGRATION \u2014 Golden-R0 Controlled Fleet: real S007/S207 dependencies satisfied directly; org tree GET+reparent endpoints implemented with centralized S207 authz (org.tree.view/manage), effective-dated re-parent (BR202-2), cycle rejection (BR202-1), CSV export parity (BR202-3), fresh-database migration reproducibility verified for tenant-service and auth-service. Also fixed a real S224 authz-catalog defect found along the way. Capped below DONE pending package-wide Figma/SME/UX validation (PO condition 9), not a technical gap. Real-gateway evidence closed 2026-07-27 (see S202_LIVE_GATEWAY_CERTIFICATION_REPORT.md); remaining gap is Figma/UX validation only."
+    "S202": "DONE_PENDING_INTEGRATION \u2014 Golden-R0 Controlled Fleet: real S007/S207 dependencies satisfied directly; org tree GET+reparent endpoints implemented with centralized S207 authz (org.tree.view/manage), effective-dated re-parent (BR202-2), cycle rejection (BR202-1), CSV export parity (BR202-3), fresh-database migration reproducibility verified for tenant-service and auth-service. Also fixed a real S224 authz-catalog defect found along the way. Capped below DONE pending package-wide Figma/SME/UX validation (PO condition 9), not a technical gap. Real-gateway evidence closed 2026-07-27 (see S202_LIVE_GATEWAY_CERTIFICATION_REPORT.md); remaining gap is Figma/UX validation only.",
+    "S004A": "DONE_PENDING_INTEGRATION \u2014 Golden-R0 Controlled Fleet: real S206/S207/S007 dependencies satisfied directly (no local permission map). Role-template list/create/clone/update/deactivate/apply/revoke implemented; 9 global shipped position templates seeded; applyTemplate() delegates to the real S206 RoleService so S207 enforcement is identical to S206's certified path; SoD self-apply denial implemented and tested. A real clone-permission-loss defect was found by unit test and fixed before any live evidence was attempted. Fresh-database migration reproducibility verified (11/11 auth-service migrations); cross-tenant RLS proven on all 4 verbs. Capped below DONE pending package-wide Figma/SME/UX validation (PO condition 9), not a technical gap. Live-gateway evidence captured 2026-07-27 (see S004A_LIVE_GATEWAY_CERTIFICATION_REPORT.md)."
   },
   "stabilization": {
     "phase0CheckpointCommit": "8453d0f",
