@@ -44,6 +44,8 @@ import MobileApprovals from './pages/MobileApprovals';
 import GoldenPathLogin from './pages/goldenpath/Login';
 import GoldenPathProtectedRoute from './pages/goldenpath/ProtectedRoute';
 import GoldenPathSelectEntity from './pages/goldenpath/SelectEntity';
+import GoldenPathOrgHierarchy from './pages/goldenpath/OrgHierarchy';
+import GoldenPathRoleTemplates from './pages/goldenpath/RoleTemplates';
 import GoldenPathFiscalPeriod from './pages/goldenpath/FiscalPeriod';
 import GoldenPathChartOfAccounts from './pages/goldenpath/ChartOfAccounts';
 import GoldenPathJournalWorkflow from './pages/goldenpath/JournalWorkflow';
@@ -525,6 +527,11 @@ export default function App() {
                   audit history. Real JWT auth (S205), no mock/demo bypass. */}
               <Route path="/golden-path/login" element={<GoldenPathLogin />} />
               <Route path="/golden-path/select-entity" element={<GoldenPathProtectedRoute><GoldenPathSelectEntity /></GoldenPathProtectedRoute>} />
+              {/* S202/S004A — minimal Golden Path browser-journey screens,
+                  added for the Golden R0 final closure browser certification
+                  (steps 3/4 of the required 16-step journey). */}
+              <Route path="/golden-path/org-hierarchy" element={<GoldenPathProtectedRoute><GoldenPathOrgHierarchy /></GoldenPathProtectedRoute>} />
+              <Route path="/golden-path/role-templates" element={<GoldenPathProtectedRoute><GoldenPathRoleTemplates /></GoldenPathProtectedRoute>} />
               <Route path="/golden-path/fiscal" element={<GoldenPathProtectedRoute><GoldenPathFiscalPeriod /></GoldenPathProtectedRoute>} />
               <Route path="/golden-path/coa" element={<GoldenPathProtectedRoute><GoldenPathChartOfAccounts /></GoldenPathProtectedRoute>} />
               <Route path="/golden-path/journal" element={<GoldenPathProtectedRoute><GoldenPathJournalWorkflow /></GoldenPathProtectedRoute>} />

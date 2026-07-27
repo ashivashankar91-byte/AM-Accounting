@@ -23,7 +23,7 @@ export default function SelectEntity() {
 
   function pick(id: string) {
     selectLegalEntity(id);
-    navigate('/golden-path/fiscal');
+    navigate('/golden-path/org-hierarchy');
   }
 
   return (

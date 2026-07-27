@@ -942,4 +942,18 @@ export const goldenPathApi = {
     if (params.dept) qs.set('dept', params.dept);
     return apiFetchRaw(`/api/v1/gl/reports/income-statement/export?${qs.toString()}`);
   },
+
+  // S202 — Dealer Group Hierarchy: real tenant-service org tree (GROUP ->
+  // ENTITY -> STORE -> DEPARTMENT), consumed as-is, no client-side tree
+  // reconstruction.
+  getOrgTree: () => apiFetch<any>('/api/v1/org/tree'),
+
+  // S004A — Dealership Position Role Templates: list/apply only (the
+  // Golden Path browser journey applies an existing template; full
+  // create/clone/deactivate CRUD already has live-gateway backend evidence
+  // from the S004A certification and is not duplicated in this minimal
+  // screen).
+  listRoleTemplates: () => apiFetch<{ templates: any[] }>('/api/v1/iam/role-templates'),
+  applyRoleTemplate: (data: { templateId: string; userId: string; entityId: string; storeIds?: string[]; allStores?: boolean }) =>
+    apiFetch<any>('/api/v1/iam/role-templates:apply', { method: 'POST', body: JSON.stringify(data) }),
 };
