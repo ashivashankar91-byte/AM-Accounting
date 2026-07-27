@@ -69,3 +69,31 @@ export async function setTenantContextOnConnection(
 ): Promise<void> {
   await txLike.$executeRawUnsafe(`SELECT set_config('app.current_tenant_id', $1, false)`, tenantId ?? '');
 }
+
+/**
+ * S008 — sets the `app.current_actor` session variable the period-close and
+ * posting-path DB triggers require (enforce_period_transition() /
+ * enforce_period_postable(), see
+ * services/coa-service/prisma/migrations/20260728010000_s008_period_close_control).
+ *
+ * Deliberately uses `is_local := true` (true `SET LOCAL` semantics,
+ * automatically reset at transaction end regardless of commit/rollback) —
+ * NOT the `false` (session-scoped) choice `setTenantContextOnConnection`
+ * above makes. That existing choice is a disclosed, already-documented
+ * limitation of the tenant-id GUC under connection pooling; this actor GUC
+ * is more security-sensitive (an identity, not just a filter), so it
+ * deliberately does not repeat that tradeoff — a stale actor value must
+ * never be able to leak onto a different, unrelated transaction reusing the
+ * same pooled physical connection.
+ *
+ * Call as the FIRST statement inside every interactive
+ * `$transaction(async (tx) => { ... })` callback that may write to
+ * fiscal_period or journal_entry, using `tx` itself (same call-site
+ * convention as setTenantContextOnConnection).
+ */
+export async function setActorContextOnConnection(
+  txLike: { $executeRawUnsafe: (query: string, ...values: any[]) => Promise<any> },
+  actor: string | null | undefined,
+): Promise<void> {
+  await txLike.$executeRawUnsafe(`SELECT set_config('app.current_actor', $1, true)`, actor ?? '');
+}

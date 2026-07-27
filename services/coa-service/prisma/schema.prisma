@@ -107,14 +107,25 @@ model FiscalPeriod {
   code            String // YYYY-MM | YYYY-13
   startDate       DateTime @map("start_date") @db.Date
   endDate         DateTime @map("end_date") @db.Date
-  status          String   @default("FUTURE") // FUTURE | OPEN | SOFT_CLOSED | HARD_CLOSED | LOCKED (S209: FUTURE->OPEN only)
+  status          String   @default("FUTURE") // FUTURE | OPEN | SOFT_CLOSED | HARD_CLOSED | LOCKED
   adjustmentsOnly Boolean  @default(false) @map("adjustments_only")
   hasPostings     Boolean  @default(false) @map("has_postings")
   openedBy        String?  @map("opened_by")
   openedAt        DateTime? @map("opened_at")
+  // S008 — set/cleared by the enforce_period_transition() DB trigger, never
+  // directly by application code (see 20260728010000_s008_period_close_control).
+  // closedBy/closedAt reflect only the MOST RECENT close-family transition —
+  // cleared to NULL on reopen. Full history lives in FiscalPeriodTransition.
+  closedBy        String?  @map("closed_by")
+  closedAt        DateTime? @map("closed_at")
+  // lockedBy/lockedAt are write-once in normal operation: LOCKED is terminal
+  // in S008 v1 (no unlock path exists — see S008 Story Contract §LOCKED).
+  lockedBy        String?  @map("locked_by")
+  lockedAt        DateTime? @map("locked_at")
   createdAt       DateTime @default(now()) @map("created_at")
 
-  calendar FiscalCalendar @relation(fields: [calendarId], references: [id])
+  calendar    FiscalCalendar             @relation(fields: [calendarId], references: [id])
+  transitions FiscalPeriodTransition[]
 
   @@unique([entityId, code])
   @@unique([entityId, fiscalYear, periodNumber])
@@ -122,6 +133,52 @@ model FiscalPeriod {
   @@index([entityId, startDate, endDate])
   @@index([entityId, status])
   @@map("fiscal_period")
+}
+
+/// S008 — append-only period status-transition ledger. Written ONLY by the
+/// enforce_period_transition() trigger via the SECURITY DEFINER function
+/// record_period_transition() (never directly by amacc_app — see the S008
+/// migration for the full RLS/privilege hardening). Independent of, and in
+/// addition to, S007 audit events: this table protects against an
+/// application-code path that forgets to write an S007 event; it commits or
+/// rolls back atomically with its enclosing transaction, same as any other
+/// row (see S008 Story Contract §Atomicity — it is not an independent
+/// durability guarantee beyond normal transaction semantics).
+model FiscalPeriodTransition {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  entityId    String   @map("entity_id")
+  periodId    String   @map("period_id")
+  fromStatus  String   @map("from_status")
+  toStatus    String   @map("to_status")
+  actor       String
+  occurredAt  DateTime @default(now()) @map("occurred_at")
+
+  period FiscalPeriod @relation(fields: [periodId], references: [id])
+
+  @@index([tenantId, periodId, occurredAt])
+  @@map("fiscal_period_transition")
+}
+
+/// S008 — same-database attestation that a real, permission-checked
+/// fiscal.je.mark_adjusting decision was made for a given draft, verified by
+/// the enforce_period_postable() posting trigger before it will accept
+/// is_adjusting=true into a SOFT_CLOSED period. Written by the application
+/// (DraftService) at the moment the S207 check succeeds — a DB trigger
+/// cannot itself call the cross-service S207 permission check. See S008
+/// Story Contract §Adjusting-Entry Raw-SQL Control for the disclosed
+/// residual gap (a privileged raw-SQL session could still forge this row
+/// directly) and the accompanying risk-acceptance note.
+model AdjustingEntryAttestation {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  draftId         String   @unique @map("draft_id")
+  attestedBy      String   @map("attested_by")
+  reason          String
+  correctionRef   String?  @map("correction_ref")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@map("adjusting_entry_attestation")
 }
 
 /// Domain-event outbox for reliable delivery of coa-service events
@@ -285,6 +342,14 @@ model JournalEntry {
   postedBy       String   @map("posted_by")
   postedAt       DateTime @default(now()) @map("posted_at")
   createdAt      DateTime @default(now()) @map("created_at")
+  // S008 — per-journal adjusting-entry attribute (BR008-ADJ). Not inferred
+  // from the fiscal period; only settable by a preparer holding
+  // fiscal.je.mark_adjusting, verified against AdjustingEntryAttestation at
+  // posting time by the enforce_period_postable() trigger. Immutable once
+  // POSTED (enforced by the same trigger's BEFORE UPDATE guard).
+  isAdjusting        Boolean @default(false) @map("is_adjusting")
+  adjustingReason    String? @map("adjusting_reason") @db.VarChar(500)
+  adjustingCorrectionRef String? @map("adjusting_correction_ref") @db.VarChar(120)
 
   lines JournalLine[]
 
@@ -367,6 +432,14 @@ model ManualJeDraft {
   voidReason          String?   @map("void_reason") @db.VarChar(500)
   createdAt           DateTime  @default(now()) @map("created_at")
   updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at")
+  // S008 — draft-side mirror of the adjusting-entry attribute, carried
+  // through to JournalEntry.isAdjusting on post. Changing this flag OR
+  // adjustingReason on an already-VALIDATED draft resets it to DRAFT
+  // (BR008-ADJ-2: an attestation change invalidates prior validation,
+  // mirroring the existing line-edit invalidation rule).
+  isAdjusting            Boolean @default(false) @map("is_adjusting")
+  adjustingReason        String? @map("adjusting_reason") @db.VarChar(500)
+  adjustingCorrectionRef String? @map("adjusting_correction_ref") @db.VarChar(120)
 
   revisions   ManualJeDraftRevision[]
   attachments Attachment[]
