@@ -12,6 +12,7 @@ import { sourceRoutes } from './http/source-routes';
 import { sequenceRoutes } from './http/sequence-routes';
 import { journalRoutes } from './http/journal-routes';
 import { draftRoutes } from './http/draft-routes';
+import { glInquiryRoutes } from './http/gl-inquiry-routes';
 import { CoAService } from './application/coa-service';
 import { ConfigService } from './application/config-service';
 import { FiscalCalendarService } from './application/fiscal-service';
@@ -24,6 +25,7 @@ import { PostingService } from './application/posting-service';
 import { JournalViewService } from './application/journal-view-service';
 import { ReversalService } from './application/reversal-service';
 import { DraftService } from './application/draft-service';
+import { GLInquiryService } from './application/gl-inquiry-service';
 import { RabbitMQEventPublisher } from './infrastructure/event-publisher';
 import {
   IEventPublisher, HttpAuthzClient, AuthzClient,
@@ -94,6 +96,10 @@ async function bootstrap() {
   // S214: draft manual JE scratchpad (create/save any state + attachments).
   container.register('DraftService', { useClass: DraftService });
 
+  // S220: read-only GL account activity inquiry (beginning/period/ending
+  // balance, drill-down to S217, CSV export). Depends on AccountService.
+  container.register('GLInquiryService', { useClass: GLInquiryService });
+
   // Cache invalidation on config.changed (belt-and-braces; put() also invalidates
   // in-process). Keeps propagation within the <=60s target across replicas.
   try {
@@ -122,6 +128,8 @@ async function bootstrap() {
   await app.register(journalRoutes, { prefix: '/api/v1/coa' });
 
   await app.register(draftRoutes, { prefix: '/api/v1/coa' });
+
+  await app.register(glInquiryRoutes, { prefix: '/api/v1/coa' });
 
   await app.register(configRoutes, { prefix: '/api/v1/config' });
 
