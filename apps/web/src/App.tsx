@@ -51,6 +51,7 @@ import GoldenPathChartOfAccounts from './pages/goldenpath/ChartOfAccounts';
 import GoldenPathJournalWorkflow from './pages/goldenpath/JournalWorkflow';
 import GoldenPathAuditHistory from './pages/goldenpath/AuditHistory';
 import GoldenPathTrialBalance from './pages/goldenpath/TrialBalance';
+import GoldenPathGLSearch from './pages/goldenpath/GLSearch';
 import GoldenPathBalanceSheet from './pages/goldenpath/BalanceSheet';
 import GoldenPathIncomeStatement from './pages/goldenpath/IncomeStatement';
 import TrialBalance from './pages/TrialBalance';
@@ -541,6 +542,7 @@ export default function App() {
                   11 steps); a directly-reachable Controller reporting screen
                   consuming the real S014 gl-service API. */}
               <Route path="/golden-path/trial-balance" element={<GoldenPathProtectedRoute><GoldenPathTrialBalance /></GoldenPathProtectedRoute>} />
+              <Route path="/golden-path/gl-search" element={<GoldenPathProtectedRoute><GoldenPathGLSearch /></GoldenPathProtectedRoute>} />
               {/* S227 — Balance Sheet & Income Statement Screens. Same
                   reachability model as S222 above (direct Controller
                   reporting screens, not sequential Golden Path steps),

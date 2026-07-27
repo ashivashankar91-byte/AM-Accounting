@@ -226,6 +226,8 @@ export default function TrialBalance() {
       )}
 
       <p style={{ marginTop: 24 }}>
+        <Link to="/golden-path/gl-search">GL Search</Link>
+        {' · '}
         <Link to="/golden-path/balance-sheet">Balance Sheet</Link>
         {' · '}
         <Link to="/golden-path/income-statement">Income Statement</Link>

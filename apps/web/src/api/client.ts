@@ -956,4 +956,12 @@ export const goldenPathApi = {
   listRoleTemplates: () => apiFetch<{ templates: any[] }>('/api/v1/iam/role-templates'),
   applyRoleTemplate: (data: { templateId: string; userId: string; entityId: string; storeIds?: string[]; allStores?: boolean }) =>
     apiFetch<any>('/api/v1/iam/role-templates:apply', { method: 'POST', body: JSON.stringify(data) }),
+
+  // S221 — GL Search: consumes the real coa-service cross-account ledger
+  // search API (frozen S220 ActivityLineView contract) as-is.
+  searchGL: (params: Record<string, string | undefined>) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v) qs.set(k, v); });
+    return apiFetch<{ criteria: any; results: any[] }>(`/api/v1/coa/inquiry/search?${qs.toString()}`);
+  },
 };
