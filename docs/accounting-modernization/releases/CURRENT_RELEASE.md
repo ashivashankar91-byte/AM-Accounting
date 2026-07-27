@@ -15,7 +15,7 @@
 
 ## All R0 stories currently tracked in MODULE_STATE.json
 
-This table lists **every** story in MODULE_STATE.json's `stories` object (24 total), across every package — active and completed — so this file cannot silently omit a package the way it previously omitted R0-JOURNAL-LIFECYCLE.
+This table lists **every** story in MODULE_STATE.json's `stories` object (25 total), across every package — active and completed — so this file cannot silently omit a package the way it previously omitted R0-JOURNAL-LIFECYCLE.
 
 | ID | Title | Status |
 |---|---|---|
@@ -43,8 +43,9 @@ This table lists **every** story in MODULE_STATE.json's `stories` object (24 tot
 | S219 | Void/Delete Draft JE | ✅ DONE |
 | S007 | Immutable Audit Log | ✅ DONE |
 | S224 | Document Audit History View | 🟡 DONE_PENDING_INTEGRATION |
+| S202 | Dealer Group Hierarchy View & Maintenance | 🟡 DONE_PENDING_INTEGRATION |
 
-**Totals:** {"DONE":23,"DONE_PENDING_INTEGRATION":1} — 24/24 at DONE or DONE_PENDING_INTEGRATION.
+**Totals:** {"DONE":23,"DONE_PENDING_INTEGRATION":2} — 25/25 at DONE or DONE_PENDING_INTEGRATION.
 
 ## Completed packages
 
@@ -108,6 +109,7 @@ Carry-forward integrations:
 - **S207**: DONE — promoted in R0 Stabilization Phase 9; all 3 stubGate conditions met (tsc clean, real S007 audit sink draining iam.authz.denied, live-database + broker-backed verification both exist)
 - **S007**: DONE — Golden-R0 Controlled Fleet: real transactional audit coupling across tenant-service/auth-service/coa-service/audit-service (3 gaps found and fixed), hash-chain tamper detection proven live-DB, write-path coverage census CI-enforced. Unblocks S224 per PO condition 6.
 - **S224**: DONE_PENDING_INTEGRATION — Golden-R0 Controlled Fleet: real S007 dependency satisfied (no stub); document-history GET+export endpoints implemented with centralized S207 authz, BR224-3 audit.viewed emission, fresh-database migration reproducibility verified. Capped below DONE pending package-wide Figma/SME/UX validation (PO condition 9), not a technical gap.
+- **S202**: DONE_PENDING_INTEGRATION — Golden-R0 Controlled Fleet: real S007/S207 dependencies satisfied directly; org tree GET+reparent endpoints implemented with centralized S207 authz (org.tree.view/manage), effective-dated re-parent (BR202-2), cycle rejection (BR202-1), CSV export parity (BR202-3), fresh-database migration reproducibility verified for tenant-service and auth-service. Also fixed a real S224 authz-catalog defect found along the way. Capped below DONE pending package-wide Figma/SME/UX validation (PO condition 9), not a technical gap.
 
 ## Binding decisions
 
