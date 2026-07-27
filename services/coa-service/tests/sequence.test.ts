@@ -25,7 +25,7 @@ function makePrisma() {
   const gaps: any[] = [];
   const audits: any[] = [];
   const seqKey = (t: string, s: string, e: string, p: string) => `${t}::${s}::${e}::${p}`;
-  return {
+  const client: any = {
     _seqs: seqs,
     _gaps: gaps,
     _audits: audits,
@@ -56,17 +56,30 @@ function makePrisma() {
           .filter((r) => (where.periodCode ? r.periodCode === where.periodCode : true)),
     },
     auditOutboxEvent: { create: async ({ data }: any) => (audits.push(data), data) },
-    // Atomic claim emulation: read-and-increment the matching seq row.
-    $queryRawUnsafe: async (_sql: string, tenantId: string, sourceCode: string, entityId: string, periodCode: string) => {
+    // Atomic upsert-and-claim emulation: models the real
+    // `INSERT ... ON CONFLICT DO UPDATE ... RETURNING (next_seq - 1)`
+    // statement, which either inserts a fresh row (nextSeq starts at 2,
+    // claims 1) or increments an existing row and claims the pre-increment
+    // value — matching sequence-service.ts's fix for the real live-DB
+    // concurrency defect (a separate find+create+update could abort the
+    // whole Postgres transaction on the losing side of a create race).
+    $queryRawUnsafe: async (_sql: string, id: string, tenantId: string, sourceCode: string, entityId: string, periodCode: string) => {
       const row = seqs.find(
         (r) => seqKey(r.tenantId, r.sourceCode, r.entityId, r.periodCode) === seqKey(tenantId, sourceCode, entityId, periodCode),
       );
-      if (!row) return [];
+      if (!row) {
+        seqs.push({ id, tenantId, sourceCode, entityId, periodCode, nextSeq: 2 });
+        return [{ claimed: 1 }];
+      }
       const claimed = row.nextSeq;
       row.nextSeq = row.nextSeq + 1;
       return [{ claimed }];
     },
   };
+  client.$transaction = async (arg: any) =>
+    typeof arg === 'function' ? arg(client) : Promise.all(arg);
+  return client;
+
 }
 
 function makeEvents() {
@@ -144,6 +157,25 @@ describe('SequenceService.allocate (BR213-1/2)', () => {
     await expect(
       svc.allocate({ tenantId: TENANT, sourceCode: 'GJ', entityId: ENTITY, periodCode: '2026/1' }),
     ).rejects.toBeInstanceOf(SequenceValidationError);
+  });
+
+  it('S007 write-path coverage: allocate() writes an ALLOCATED audit event transactionally coupled to the counter claim (previously had none at all)', async () => {
+    const { svc, prisma } = setup();
+    const result = await svc.allocate({ tenantId: TENANT, sourceCode: 'GJ', entityId: ENTITY, periodCode: '2026-01', actor: 'alice' });
+    expect(prisma._audits).toHaveLength(1);
+    expect(prisma._audits[0]).toMatchObject({
+      tenantId: TENANT,
+      docType: 'journal_sequence',
+      docId: result.journalNumber,
+      action: 'ALLOCATED',
+      actor: 'alice',
+    });
+  });
+
+  it('defaults the audit actor to "system" for internal callers (e.g. the posting path) that omit one', async () => {
+    const { svc, prisma } = setup();
+    await svc.allocate({ tenantId: TENANT, sourceCode: 'GJ', entityId: ENTITY, periodCode: '2026-01' });
+    expect(prisma._audits[0].actor).toBe('system');
   });
 });
 

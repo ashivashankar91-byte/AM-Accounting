@@ -158,6 +158,65 @@ model RoleAssignment {
   @@index([roleId])
 }
 
+// ── S004A: Dealership Position Role Templates ─────────────────────────────────
+// Shipped, position-shaped starter permission sets (BILLER, CASHIER, TITLE_CLERK,
+// AP_CLERK, AR_CLERK, ACCOUNTANT, OFFICE_MGR, CONTROLLER, SALESPERSON_RO) that a
+// security administrator applies in one click instead of hand-building a role.
+// Applying a template does NOT create a parallel permission map: it materializes
+// (or reuses) a real, tenant-scoped S206 `Role` keyed by the template's position
+// and grants it via the real S206/S207 `RoleAssignment` mechanism, so the exact
+// same AuthzService.check() enforcement already proven for S206 governs it.
+
+/// `tenantId = NULL` rows are the global, shipped defaults (BR4A-1) — visible to
+/// every tenant (RLS SELECT policy), never mutable by any tenant (RLS INSERT/
+/// UPDATE/DELETE require a real tenantId). A tenant "customizes" a shipped
+/// template by cloning it (`clonedFromId` set) into its own tenantId-owned row;
+/// the clone is copied by value, so editing the shipped source afterward never
+/// retroactively mutates an already-created clone (BR4A-1 exception workflow).
+model RoleTemplate {
+  id            String    @id @default(uuid())
+  tenantId      String?   @map("tenant_id")             // null = global shipped default
+  key           String                                  // position slug, e.g. BILLER
+  name          String                                  // display name, 1–60
+  permissions   String[]  @default([])                  // catalog permission keys (no local map)
+  fieldMasks    String[]  @default([]) @map("field_masks") // e.g. ["vehicle.cost"] (BR4A-2)
+  builtIn       Boolean   @default(false) @map("built_in")
+  status        String    @default("ACTIVE")            // ACTIVE | INACTIVE
+  clonedFromId  String?   @map("cloned_from_id")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  assignments RoleTemplateAssignment[]
+
+  @@map("role_template")
+  @@index([tenantId])
+  @@index([key])
+}
+
+/// Record of a template being applied to a user. Backed 1:1 by a real S206
+/// `RoleAssignment` (roleAssignmentId) — this table exists only so a template
+/// application (and its later deactivation) can be looked up and reversed by
+/// template identity, never as an independent enforcement path.
+model RoleTemplateAssignment {
+  id               String    @id @default(uuid())
+  tenantId         String    @map("tenant_id")
+  templateId       String    @map("template_id")
+  userId           String    @map("user_id")
+  roleAssignmentId String    @map("role_assignment_id")
+  entityId         String?   @map("entity_id")
+  storeIds         String[]  @default([]) @map("store_ids")
+  allStores        Boolean   @default(false) @map("all_stores")
+  status           String    @default("APPLIED")        // APPLIED | REVOKED
+  createdAt        DateTime  @default(now()) @map("created_at")
+  revokedAt        DateTime? @map("revoked_at")
+
+  template RoleTemplate @relation(fields: [templateId], references: [id])
+
+  @@map("role_template_assignment")
+  @@index([tenantId, userId])
+  @@index([templateId])
+}
+
 /// AuditPort stub outbox (S007 dependency). Every state change writes a record with
 /// before/after images; the real audit service consumes this table when S007 merges.
 model AuditOutboxEvent {

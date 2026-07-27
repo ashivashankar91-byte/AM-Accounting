@@ -15,6 +15,8 @@ import type {
   JournalLine as PrismaJournalLine,
   GLAccount as PrismaGLAccount,
 } from '.prisma/gl-client';
+import { setTenantContextOnConnection } from '@amacc/shared-kernel';
+import { appendAuditRowsTx } from './audit';
 
 type JournalEntryWithLines = PrismaJournalEntry & {
   lines?: (PrismaJournalLine & { glAccount?: PrismaGLAccount | null })[];
@@ -66,42 +68,67 @@ export class PrismaJournalRepository implements IJournalRepository {
   }
 
   async create(dto: CreateJournalEntryDTO, tenantId: TenantId): Promise<JournalEntry> {
-    const row = await this.prisma.journalEntry.create({
-      data: {
-        tenantId,
-        entryDate: dto.entryDate,
-        description: dto.description,
-        source: dto.source,
-        sourceRef: dto.sourceRef,
-        createdByUserId: dto.createdByUserId ?? null,
-        priorPeriodAdjustment: dto.priorPeriodAdjustment ?? false,
-        adjustmentReason: dto.adjustmentReason ?? null,
-        status: 'DRAFT',
-        lines: {
-          create: dto.lines.map((l) => ({
-            glAccountId: l.glAccountId,
-            debit: l.debit,
-            credit: l.credit,
-            memo: l.memo,
-            departmentCode: l.departmentCode,
-            technicianId: l.technicianId,
-            roNumber: l.roNumber,
-            roLineNumber: l.roLineNumber,
-            flatRateHours: l.flatRateHours,
-            clockHours: l.clockHours,
-            partNumber: l.partNumber,
-            partQuantity: l.partQuantity,
-            earningCode: l.earningCode,
-            dealProductCode: l.dealProductCode,
-            dealNumber: l.dealNumber,
-            vehicleVin: l.vehicleVin,
-            moduleSource: l.moduleSource,
-            laborType: l.laborType,
-            costType: l.costType,
-          })),
+    const row = await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, tenantId);
+      const created = await tx.journalEntry.create({
+        data: {
+          tenantId,
+          entryDate: dto.entryDate,
+          description: dto.description,
+          source: dto.source,
+          sourceRef: dto.sourceRef,
+          createdByUserId: dto.createdByUserId ?? null,
+          priorPeriodAdjustment: dto.priorPeriodAdjustment ?? false,
+          adjustmentReason: dto.adjustmentReason ?? null,
+          status: 'DRAFT',
+          lines: {
+            create: dto.lines.map((l) => ({
+              glAccountId: l.glAccountId,
+              debit: l.debit,
+              credit: l.credit,
+              memo: l.memo,
+              storeId: l.storeId ?? '',
+              departmentCode: l.departmentCode,
+              technicianId: l.technicianId,
+              roNumber: l.roNumber,
+              roLineNumber: l.roLineNumber,
+              flatRateHours: l.flatRateHours,
+              clockHours: l.clockHours,
+              partNumber: l.partNumber,
+              partQuantity: l.partQuantity,
+              earningCode: l.earningCode,
+              dealProductCode: l.dealProductCode,
+              dealNumber: l.dealNumber,
+              vehicleVin: l.vehicleVin,
+              moduleSource: l.moduleSource,
+              laborType: l.laborType,
+              costType: l.costType,
+              costAmount: l.costAmount,
+              applyCd: l.applyCd,
+              companyCode: l.companyCode,
+              controlNumber: l.controlNumber,
+              applyToCost: l.applyToCost,
+              unitCount: l.unitCount ?? 0,
+            })),
+          },
         },
-      },
-      include: { lines: { include: { glAccount: true } } },
+        include: { lines: { include: { glAccount: true } } },
+      });
+      await appendAuditRowsTx(tx, {
+        tenantId,
+        docType: 'JOURNAL_ENTRY',
+        docId: created.id,
+        action: 'CREATE_DRAFT',
+        actor: dto.createdByUserId ?? 'system',
+        after: {
+          description: created.description,
+          source: created.source,
+          status: created.status,
+          lineCount: created.lines.length,
+        },
+        eventType: 'journal_entry.created',
+      });
+      return created;
     });
     return this.toDomain(row);
   }
@@ -168,7 +195,14 @@ export class PrismaJournalRepository implements IJournalRepository {
         debit: Number(l.debit),
         credit: Number(l.credit),
         memo: l.memo,
+        storeId: l.storeId ?? undefined,
         departmentCode: l.departmentCode ?? undefined,
+        controlNumber: l.controlNumber ?? undefined,
+        applyCd: l.applyCd ?? undefined,
+        companyCode: l.companyCode ?? undefined,
+        applyToCost: l.applyToCost == null ? undefined : Number(l.applyToCost),
+        unitCount: l.unitCount ?? undefined,
+        costAmount: l.costAmount == null ? undefined : Number(l.costAmount),
         technicianId: l.technicianId ?? undefined,
         roNumber: l.roNumber ?? undefined,
         roLineNumber: l.roLineNumber ?? undefined,

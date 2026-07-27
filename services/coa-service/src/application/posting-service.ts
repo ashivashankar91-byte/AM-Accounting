@@ -131,6 +131,7 @@ export class PostingService {
       sourceCode: dto.sourceCode,
       entityId: dto.entityId,
       periodCode: period.code,
+      actor: dto.postedBy ?? 'system',
     });
 
     try {

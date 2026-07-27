@@ -47,7 +47,7 @@ const DEPT_A = {
  * - findMany/count return empty when tenantId !== TENANT_A
  */
 function isolatingPrisma() {
-  return {
+  const client: any = {
     department: {
       findFirst: async ({ where }: any) => {
         if (where.tenantId === TENANT_A) return DEPT_A;
@@ -84,7 +84,13 @@ function isolatingPrisma() {
     tenantOutboxEvent: {
       create: async () => ({}),
     },
+    auditOutboxEvent: {
+      create: async () => ({}),
+    },
   };
+  client.$transaction = async (arg: any) =>
+    typeof arg === 'function' ? arg(client) : Promise.all(arg);
+  return client;
 }
 
 function noopPublisher() { return { publish: async () => {} }; }

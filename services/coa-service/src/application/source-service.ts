@@ -119,23 +119,27 @@ export class SourceService {
     if (existing) throw new DuplicateSourceError(code);
 
     const flags = normalizeFlags(dto.flags);
-    const row = await this.prisma.journalSource.create({
-      data: {
-        id: crypto.randomUUID(),
-        tenantId: dto.tenantId,
-        code,
-        numericAlias: dto.numericAlias ?? null,
-        name: dto.name.trim(),
-        sourceClass: 'MANUAL',
-        reserved: false,
-        autoPost: flags.autoPost,
-        yearEndOnly: flags.yearEndOnly,
-        thirteenthOnly: flags.thirteenthOnly,
-        status: 'ACTIVE',
-        version: 1,
-      },
+    // S007 BR7-1/BR7-4 — create + audit event are one atomic transaction.
+    const row = await this.prisma.$transaction(async (tx) => {
+      const r = await tx.journalSource.create({
+        data: {
+          id: crypto.randomUUID(),
+          tenantId: dto.tenantId,
+          code,
+          numericAlias: dto.numericAlias ?? null,
+          name: dto.name.trim(),
+          sourceClass: 'MANUAL',
+          reserved: false,
+          autoPost: flags.autoPost,
+          yearEndOnly: flags.yearEndOnly,
+          thirteenthOnly: flags.thirteenthOnly,
+          status: 'ACTIVE',
+          version: 1,
+        },
+      });
+      await this.audit(dto.tenantId, code, dto.actor, 'CREATE', null, this.snapshot(r), tx);
+      return r;
     });
-    await this.audit(dto.tenantId, code, dto.actor, 'CREATE', null, this.snapshot(row));
     await this.emit('coa.source.created', dto.tenantId, row, dto.actor);
     return row;
   }
@@ -175,11 +179,15 @@ export class SourceService {
     if (Object.keys(data).length === 0) return row;
 
     const before = this.snapshot(row);
-    const updated = await this.prisma.journalSource.update({
-      where: { id: row.id },
-      data: { ...data, version: { increment: 1 } },
+    // S007 BR7-1/BR7-4 — update + audit event are one atomic transaction.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.journalSource.update({
+        where: { id: row.id },
+        data: { ...data, version: { increment: 1 } },
+      });
+      await this.audit(dto.tenantId, row.code, dto.actor, 'UPDATE', before, this.snapshot(u), tx);
+      return u;
     });
-    await this.audit(dto.tenantId, row.code, dto.actor, 'UPDATE', before, this.snapshot(updated));
     await this.emit('coa.source.updated', dto.tenantId, updated, dto.actor);
     return updated;
   }
@@ -191,11 +199,15 @@ export class SourceService {
     if (row.status === 'INACTIVE') return row;
 
     const before = this.snapshot(row);
-    const updated = await this.prisma.journalSource.update({
-      where: { id: row.id },
-      data: { status: 'INACTIVE', version: { increment: 1 } },
+    // S007 BR7-1/BR7-4 — deactivate + audit event are one atomic transaction.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.journalSource.update({
+        where: { id: row.id },
+        data: { status: 'INACTIVE', version: { increment: 1 } },
+      });
+      await this.audit(tenantId, row.code, actor, 'DEACTIVATE', before, this.snapshot(u), tx);
+      return u;
     });
-    await this.audit(tenantId, row.code, actor, 'DEACTIVATE', before, this.snapshot(updated));
     await this.emit('coa.source.deactivated', tenantId, updated, actor);
     return updated;
   }
@@ -212,34 +224,41 @@ export class SourceService {
   async bootstrapReserved(tenantId: string, actor: string) {
     const existing = await this.prisma.journalSource.findMany({ where: { tenantId } });
     const byCode = new Map(existing.map((s) => [s.code, s]));
-    let created = 0;
-    let merged = 0;
-    for (const r of RESERVED_SOURCES) {
-      if (byCode.has(r.code)) {
-        merged += 1;
-        continue;
+    const toCreate = RESERVED_SOURCES.filter((r) => !byCode.has(r.code));
+    const merged = RESERVED_SOURCES.length - toCreate.length;
+
+    // S007 BR7-1/BR7-4 — every reserved-source row created plus the
+    // summary audit event are one atomic transaction: a failure partway
+    // through never leaves a partially-bootstrapped, unaudited set.
+    const createdRows = await this.prisma.$transaction(async (tx) => {
+      const rows = [];
+      for (const r of toCreate) {
+        const row = await tx.journalSource.create({
+          data: {
+            id: crypto.randomUUID(),
+            tenantId,
+            code: r.code,
+            numericAlias: r.numericAlias,
+            name: r.name,
+            sourceClass: r.sourceClass,
+            reserved: true,
+            autoPost: r.flags.autoPost,
+            yearEndOnly: r.flags.yearEndOnly,
+            thirteenthOnly: r.flags.thirteenthOnly,
+            status: 'ACTIVE',
+            version: 1,
+          },
+        });
+        rows.push(row);
       }
-      const row = await this.prisma.journalSource.create({
-        data: {
-          id: crypto.randomUUID(),
-          tenantId,
-          code: r.code,
-          numericAlias: r.numericAlias,
-          name: r.name,
-          sourceClass: r.sourceClass,
-          reserved: true,
-          autoPost: r.flags.autoPost,
-          yearEndOnly: r.flags.yearEndOnly,
-          thirteenthOnly: r.flags.thirteenthOnly,
-          status: 'ACTIVE',
-          version: 1,
-        },
-      });
+      await this.audit(tenantId, '*reserved*', actor, 'BOOTSTRAP', null, { created: rows.length, merged }, tx);
+      return rows;
+    });
+
+    for (const row of createdRows) {
       await this.emit('coa.source.created', tenantId, row, actor);
-      created += 1;
     }
-    await this.audit(tenantId, '*reserved*', actor, 'BOOTSTRAP', null, { created, merged });
-    return { created, merged };
+    return { created: createdRows.length, merged };
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -277,23 +296,20 @@ export class SourceService {
     action: string,
     before: unknown,
     after: unknown,
+    tx: Pick<PrismaClient, 'auditOutboxEvent'> = this.prisma,
   ) {
-    try {
-      await this.prisma.auditOutboxEvent.create({
-        data: {
-          id: crypto.randomUUID(),
-          tenantId,
-          docType: 'journal_source',
-          docId: code,
-          action,
-          before: (before ?? undefined) as any,
-          after: (after ?? undefined) as any,
-          actor,
-        },
-      });
-    } catch {
-      /* AuditPort write is non-fatal */
-    }
+    await tx.auditOutboxEvent.create({
+      data: {
+        id: crypto.randomUUID(),
+        tenantId,
+        docType: 'journal_source',
+        docId: code,
+        action,
+        before: (before ?? undefined) as any,
+        after: (after ?? undefined) as any,
+        actor,
+      },
+    });
   }
 
   private async emit(type: EventType, tenantId: string, row: any, actor: string) {

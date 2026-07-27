@@ -34,9 +34,45 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
       const body = await res.json().catch(() => ({}));
       const err = new Error(body.message ?? body.error ?? `API error ${res.status}`);
       (err as any).status = res.status;
+      // S222: preserve the full parsed error body (e.g. STRUCTURAL_IMBALANCE's
+      // drSum/crSum/delta) so callers can render more than just a message string.
+      (err as any).body = body;
       throw err;
     }
     return res.json();
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error(`Request timed out after ${API_TIMEOUT_MS / 1000}s — ${path}. Check that all services are running.`);
+    }
+    throw error;
+  }
+}
+
+// S227: CSV export endpoints return text/csv, not JSON — a lightweight
+// sibling of apiFetch that shares the same auth/tenant header resolution
+// but returns the raw response body instead of calling res.json().
+async function apiFetchRaw(path: string): Promise<string> {
+  const goldenPathToken = localStorage.getItem('goldenpath.accessToken');
+  const goldenPathTenantId = localStorage.getItem('goldenpath.tenantId');
+  const tenantId = goldenPathTenantId || localStorage.getItem('tenantId') || 'tenant-kunes';
+  const headers: Record<string, string> = {
+    'x-tenant-id': tenantId,
+    ...(goldenPathToken ? { Authorization: `Bearer ${goldenPathToken}` } : {}),
+  };
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${API_BASE}${path}`, { headers, signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const err = new Error(body.message ?? body.error ?? `API error ${res.status}`);
+      (err as any).status = res.status;
+      (err as any).body = body;
+      throw err;
+    }
+    return res.text();
   } catch (error: any) {
     clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
@@ -831,4 +867,101 @@ export const goldenPathApi = {
 
   getAuditHistory: (entityType: string, entityId: string) =>
     apiFetch<any[]>(`/api/v1/audit/entity/${entityType}/${entityId}`),
+
+  // S222 — Trial Balance Screen: consumes the real S014 gl-service report
+  // as-is (no client-side recomputation of dr/cr/ending balances). Note:
+  // `entity` here is gl-service's own companyCode slice dimension, which is
+  // architecturally separate from the tenant-service legalEntityId used by
+  // the rest of the Golden Path (ADR-JL-001 — journal lifecycle lives in
+  // coa-service; gl-service is a separate reporting ledger with its own
+  // schema and is not yet fed by coa-service's posted journals).
+  getTrialBalance: (params: { entity: string; store?: string; dept?: string; asOf: string }) => {
+    const qs = new URLSearchParams({ entity: params.entity, asOf: params.asOf });
+    if (params.store) qs.set('store', params.store);
+    if (params.dept) qs.set('dept', params.dept);
+    return apiFetch<{
+      scope: { entity: string; store: string | null; dept: string | null; asOf: string };
+      accounts: Array<{
+        accountId: string; accountCode: string; accountName: string; accountType: string;
+        normalBalance: 'DEBIT' | 'CREDIT'; priorBalance: number; currentAmount: number;
+        endingBalance: number; debitBalance: number; creditBalance: number;
+      }>;
+      drSum: number; crSum: number; delta: number;
+    }>(`/api/v1/gl/reports/trial-balance?${qs.toString()}`);
+  },
+
+  // S222 drill-through target: reuses the real S220 activity API (no
+  // duplicated calculation) for whichever coa-service account, in the
+  // *current* golden-path legal entity, shares the clicked TB row's human
+  // account number. Because gl-service and coa-service are separate ledgers,
+  // a match is a best-effort cross-service correlation by account number,
+  // not a guaranteed foreign-key relationship.
+  getAccountActivity: (accountId: string, params?: string) =>
+    apiFetch<any>(`/api/v1/coa/inquiry/accounts/${accountId}/activity${params ? `?${params}` : ''}`),
+
+  // S227 — Balance Sheet & Income Statement: consumes the real gl-service
+  // FinancialStatementService reports as-is (no client-side recomputation of
+  // any classification, contra-account sign, or net-income calculation).
+  // Same companyCode-slice caveat as getTrialBalance above (ADR-JL-001).
+  getBalanceSheet: (params: { entity: string; store?: string; dept?: string; asOf: string }) => {
+    const qs = new URLSearchParams({ entity: params.entity, asOf: params.asOf });
+    if (params.store) qs.set('store', params.store);
+    if (params.dept) qs.set('dept', params.dept);
+    return apiFetch<{
+      scope: { entity: string; store: string | null; dept: string | null; asOf: string };
+      assets: { rows: Array<{ accountCode: string; accountName: string; accountType: string; amount: number }>; total: number };
+      liabilities: { rows: Array<{ accountCode: string; accountName: string; accountType: string; amount: number }>; total: number };
+      equity: { rows: Array<{ accountCode: string; accountName: string; accountType: string; amount: number }>; total: number; currentEarnings: number };
+      totalLiabilitiesAndEquity: number;
+      excludedAccounts: Array<{ accountCode: string; accountType: string; reason: string }>;
+      reconciledToTrialBalance: { drSum: number; crSum: number };
+    }>(`/api/v1/gl/reports/balance-sheet?${qs.toString()}`);
+  },
+  exportBalanceSheet: (params: { entity: string; store?: string; dept?: string; asOf: string }) => {
+    const qs = new URLSearchParams({ entity: params.entity, asOf: params.asOf });
+    if (params.store) qs.set('store', params.store);
+    if (params.dept) qs.set('dept', params.dept);
+    return apiFetchRaw(`/api/v1/gl/reports/balance-sheet/export?${qs.toString()}`);
+  },
+  getIncomeStatement: (params: { entity: string; store?: string; dept?: string; asOf: string }) => {
+    const qs = new URLSearchParams({ entity: params.entity, asOf: params.asOf });
+    if (params.store) qs.set('store', params.store);
+    if (params.dept) qs.set('dept', params.dept);
+    return apiFetch<{
+      scope: { entity: string; store: string | null; dept: string | null; asOf: string };
+      revenue: { rows: Array<{ accountCode: string; accountName: string; accountType: string; amount: number }>; total: number };
+      expense: { rows: Array<{ accountCode: string; accountName: string; accountType: string; amount: number }>; total: number };
+      netIncome: number;
+      excludedAccounts: Array<{ accountCode: string; accountType: string; reason: string }>;
+      reconciledToTrialBalance: { drSum: number; crSum: number };
+    }>(`/api/v1/gl/reports/income-statement?${qs.toString()}`);
+  },
+  exportIncomeStatement: (params: { entity: string; store?: string; dept?: string; asOf: string }) => {
+    const qs = new URLSearchParams({ entity: params.entity, asOf: params.asOf });
+    if (params.store) qs.set('store', params.store);
+    if (params.dept) qs.set('dept', params.dept);
+    return apiFetchRaw(`/api/v1/gl/reports/income-statement/export?${qs.toString()}`);
+  },
+
+  // S202 — Dealer Group Hierarchy: real tenant-service org tree (GROUP ->
+  // ENTITY -> STORE -> DEPARTMENT), consumed as-is, no client-side tree
+  // reconstruction.
+  getOrgTree: () => apiFetch<any>('/api/v1/org/tree'),
+
+  // S004A — Dealership Position Role Templates: list/apply only (the
+  // Golden Path browser journey applies an existing template; full
+  // create/clone/deactivate CRUD already has live-gateway backend evidence
+  // from the S004A certification and is not duplicated in this minimal
+  // screen).
+  listRoleTemplates: () => apiFetch<{ templates: any[] }>('/api/v1/iam/role-templates'),
+  applyRoleTemplate: (data: { templateId: string; userId: string; entityId: string; storeIds?: string[]; allStores?: boolean }) =>
+    apiFetch<any>('/api/v1/iam/role-templates:apply', { method: 'POST', body: JSON.stringify(data) }),
+
+  // S221 — GL Search: consumes the real coa-service cross-account ledger
+  // search API (frozen S220 ActivityLineView contract) as-is.
+  searchGL: (params: Record<string, string | undefined>) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v) qs.set(k, v); });
+    return apiFetch<{ criteria: any; results: any[] }>(`/api/v1/coa/inquiry/search?${qs.toString()}`);
+  },
 };

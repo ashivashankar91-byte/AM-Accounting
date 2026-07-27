@@ -39,7 +39,7 @@ function makePrisma(seed: any[] = []) {
   const audits: any[] = [];
   const outbox: any[] = [];
   const reparents: any[] = [];
-  return {
+  const client: any = {
     _accounts: accounts,
     _audits: audits,
     _outbox: outbox,
@@ -61,6 +61,10 @@ function makePrisma(seed: any[] = []) {
     coaOutboxEvent: { create: async ({ data }: any) => (outbox.push(data), data) },
     glAccountReparent: { create: async ({ data }: any) => (reparents.push(data), data) },
   };
+  client.$transaction = async (arg: any) =>
+    typeof arg === 'function' ? arg(client) : Promise.all(arg);
+  return client;
+
 }
 
 function makeEvents() {

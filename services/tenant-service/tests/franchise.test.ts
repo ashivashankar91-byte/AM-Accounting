@@ -47,7 +47,7 @@ const ACTIVE_FR = {
 };
 
 function makePrisma(overrides: Record<string, any> = {}) {
-  return {
+  const client: any = {
     store: {
       findFirst: async () => ({ id: STORE_ID, tenantId: TENANT }),
       ...overrides.store,
@@ -77,7 +77,14 @@ function makePrisma(overrides: Record<string, any> = {}) {
       create: async () => ({}),
       ...overrides.tenantOutboxEvent,
     },
+    auditOutboxEvent: {
+      create: async () => ({}),
+      ...overrides.auditOutboxEvent,
+    },
   };
+  client.$transaction = async (arg: any) =>
+    typeof arg === 'function' ? arg(client) : Promise.all(arg);
+  return client;
 }
 
 function noopPublisher() { return { publish: async () => {} }; }

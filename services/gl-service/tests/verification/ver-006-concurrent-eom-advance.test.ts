@@ -6,7 +6,7 @@
  * exactly one succeeds and one blocks/fails gracefully.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
 describe('VER-006: EOM Distributed Locking', () => {
   let tenantId: string;

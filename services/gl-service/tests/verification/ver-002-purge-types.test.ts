@@ -8,7 +8,7 @@
  * - Type 3: only deletes zero-balance groups
  */
 
-import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
 describe('VER-002: Purge Type Algorithms', () => {
   let tenantId: string;

@@ -1,6 +1,7 @@
 import { inject, injectable } from 'tsyringe';
 import { IEventPublisher } from '@amacc/shared-kernel';
 import { createEvent } from '@amacc/shared-kernel';
+import { PrismaClient } from '.prisma/tenant-client';
 
 // ── DTOs ─────────────────────────────────────────────────────────────────────
 
@@ -136,24 +137,30 @@ export class LegalEntityService {
         })
       : null;
 
-    const entity = await this.prisma.legalEntity.create({
-      data: {
-        tenantId:          dto.tenantId,
-        entityCode:        dto.entityCode.toUpperCase(),
-        legalName:         dto.legalName,
-        displayName:       dto.displayName ?? null,
-        statutoryId:       dto.statutoryId ?? null,
-        functionalCurrency: dto.functionalCurrency.toUpperCase(),
-        country:           dto.country.toUpperCase(),
-        fiscalYearEndMonth: dto.fiscalYearEndMonth,
-        address:           dto.address ?? null,
-        city:              dto.city ?? null,
-        state:             dto.state ?? null,
-        postalCode:        dto.postalCode ?? null,
-        effectiveDate:     dto.effectiveDate,
-        status:            'ACTIVE',
-        version:           1,
-      },
+    // S007 BR7-1/BR7-4 — legal-entity create + audit event are one atomic
+    // transaction.
+    const entity = await this.prisma.$transaction(async (tx: any) => {
+      const e = await tx.legalEntity.create({
+        data: {
+          tenantId:          dto.tenantId,
+          entityCode:        dto.entityCode.toUpperCase(),
+          legalName:         dto.legalName,
+          displayName:       dto.displayName ?? null,
+          statutoryId:       dto.statutoryId ?? null,
+          functionalCurrency: dto.functionalCurrency.toUpperCase(),
+          country:           dto.country.toUpperCase(),
+          fiscalYearEndMonth: dto.fiscalYearEndMonth,
+          address:           dto.address ?? null,
+          city:              dto.city ?? null,
+          state:             dto.state ?? null,
+          postalCode:        dto.postalCode ?? null,
+          effectiveDate:     dto.effectiveDate,
+          status:            'ACTIVE',
+          version:           1,
+        },
+      });
+      await this._audit(dto.tenantId, 'LegalEntity', e.id, 'CREATE', null, e, actor, tx);
+      return e;
     });
 
     // Publish to outbox
@@ -161,7 +168,6 @@ export class LegalEntityService {
       entityCode: entity.entityCode,
       legalName:  entity.legalName,
     });
-    await this._audit(dto.tenantId, 'LegalEntity', entity.id, 'CREATE', null, entity, actor);
 
     return { entity, warnDuplicateStatutoryId: !!dupStatutory };
   }
@@ -211,13 +217,16 @@ export class LegalEntityService {
     if (dto.state             !== undefined) data.state             = dto.state;
     if (dto.postalCode        !== undefined) data.postalCode        = dto.postalCode;
 
-    const entity = await this.prisma.legalEntity.update({ where: { id }, data });
+    const entity = await this.prisma.$transaction(async (tx: any) => {
+      const e = await tx.legalEntity.update({ where: { id }, data });
+      await this._audit(tenantId, 'LegalEntity', id, 'UPDATE', current, e, actor, tx);
+      return e;
+    });
 
     await this._writeOutbox(tenantId, 'LEGAL_ENTITY_UPDATED', id, {
       entityCode: entity.entityCode,
       changes:    Object.keys(data).filter(k => !['version', 'effectiveDate'].includes(k)),
     });
-    await this._audit(tenantId, 'LegalEntity', id, 'UPDATE', current, entity, actor);
 
     return { entity, warnDuplicateStatutoryId: !!warnDuplicateStatutoryId };
   }
@@ -237,15 +246,19 @@ export class LegalEntityService {
       );
     }
 
-    const entity = await this.prisma.legalEntity.update({
-      where: { id },
-      data:  {
-        status:            'INACTIVE',
-        version:           current.version + 1,
-        deactivatedAt:     new Date(),
-        deactivatedBy:     dto.deactivatedBy,
-        deactivationReason: dto.reason,
-      },
+    const entity = await this.prisma.$transaction(async (tx: any) => {
+      const e = await tx.legalEntity.update({
+        where: { id },
+        data:  {
+          status:            'INACTIVE',
+          version:           current.version + 1,
+          deactivatedAt:     new Date(),
+          deactivatedBy:     dto.deactivatedBy,
+          deactivationReason: dto.reason,
+        },
+      });
+      await this._audit(tenantId, 'LegalEntity', id, 'DEACTIVATE', current, e, dto.deactivatedBy, tx);
+      return e;
     });
 
     await this._writeOutbox(tenantId, 'LEGAL_ENTITY_DEACTIVATED', id, {
@@ -253,7 +266,6 @@ export class LegalEntityService {
       reason:            dto.reason,
       deactivatedBy:     dto.deactivatedBy,
     });
-    await this._audit(tenantId, 'LegalEntity', id, 'DEACTIVATE', current, entity, dto.deactivatedBy);
 
     return entity;
   }
@@ -285,21 +297,19 @@ export class LegalEntityService {
 
   /** R0 Stabilization Phase 4: AuditPort outbox — tenant-service had none
    * before this. Drained to the real S007 audit-service by AuditOutboxDrainer
-   * (see src/index.ts). Never fatal to the business operation. */
+   * (see src/index.ts). S007 BR7-1/BR7-4: coupled transactionally with the
+   * domain write by every caller above (no independent swallow here). */
   private async _audit(
     tenantId: string, docType: string, docId: string, action: string,
     before: unknown, after: unknown, actor?: string,
+    tx: Pick<PrismaClient, 'auditOutboxEvent'> = this.prisma,
   ): Promise<void> {
-    try {
-      await this.prisma.auditOutboxEvent.create({
-        data: {
-          id: crypto.randomUUID(), tenantId, docType, docId, action,
-          before: (before ?? undefined) as any, after: (after ?? undefined) as any,
-          actor: actor ?? 'system',
-        },
-      });
-    } catch {
-      // Non-fatal: AuditPort write must not fail the business operation.
-    }
+    await tx.auditOutboxEvent.create({
+      data: {
+        id: crypto.randomUUID(), tenantId, docType, docId, action,
+        before: (before ?? undefined) as any, after: (after ?? undefined) as any,
+        actor: actor ?? 'system',
+      },
+    });
   }
 }

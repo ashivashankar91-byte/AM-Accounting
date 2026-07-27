@@ -1,4 +1,5 @@
 import { Prisma } from '.prisma/gl-client';
+import { RlsTenantContext, setTenantContextOnConnection } from '@amacc/shared-kernel';
 import pino from 'pino';
 
 const logger = pino({ name: 'serializable-retry' });
@@ -12,7 +13,10 @@ export async function withSerializableRetry<T>(
 ): Promise<T> {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      return await prisma.$transaction(fn, {
+      return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        await setTenantContextOnConnection(tx as any, RlsTenantContext.get());
+        return fn(tx);
+      }, {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable
       });
     } catch (err: any) {

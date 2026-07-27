@@ -179,25 +179,29 @@ export class UserService {
     });
     if (existing) throw new DuplicateEmailError(email);
 
-    let user;
-    try {
-      user = await this.prisma.user.create({
-        data: {
-          id: randomUUID(),
-          tenantId: dto.tenantId,
-          email,
-          displayName: dto.displayName.trim(),
-          status: 'INVITED',
-          entityScope: dto.entityScope ?? [],
-          storeScope: dto.storeScope ?? [],
-        },
-      });
-    } catch (e: any) {
-      if (e?.code === 'P2002') throw new DuplicateEmailError(email); // unique race
-      throw e;
-    }
+    // S007 BR7-1/BR7-4 — user create + audit event are one atomic transaction.
+    const user = await this.prisma.$transaction(async (tx) => {
+      let u;
+      try {
+        u = await tx.user.create({
+          data: {
+            id: randomUUID(),
+            tenantId: dto.tenantId,
+            email,
+            displayName: dto.displayName.trim(),
+            status: 'INVITED',
+            entityScope: dto.entityScope ?? [],
+            storeScope: dto.storeScope ?? [],
+          },
+        });
+      } catch (e: any) {
+        if (e?.code === 'P2002') throw new DuplicateEmailError(email); // unique race
+        throw e;
+      }
+      await this._auditTx(tx, dto.tenantId, 'user', u.id, 'CREATE', null, this._toView(u), dto.actor);
+      return u;
+    });
 
-    await this._audit(dto.tenantId, 'user', user.id, 'CREATE', null, this._toView(user), dto.actor);
     await this._emit('iam.user.created', dto.tenantId, user.id, user.email, dto.actor);
     return this._toView(user);
   }
@@ -211,11 +215,15 @@ export class UserService {
       throw new UserValidationError('INVALID_TRANSITION', 'Cannot activate a deactivated user');
     }
     if (user.status === 'ACTIVE') return this._toView(user);
-    const updated = await this.prisma.user.update({
-      where: { id },
-      data: { status: 'ACTIVE', failedLogins: 0, version: { increment: 1 } },
+    // S007 BR7-1/BR7-4 — activate + audit event are one atomic transaction.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.user.update({
+        where: { id },
+        data: { status: 'ACTIVE', failedLogins: 0, version: { increment: 1 } },
+      });
+      await this._auditTx(tx, tenantId, 'user', id, 'ACTIVATE', this._toView(user), this._toView(u), actor);
+      return u;
     });
-    await this._audit(tenantId, 'user', id, 'ACTIVATE', this._toView(user), this._toView(updated), actor);
     return this._toView(updated);
   }
 
@@ -226,16 +234,23 @@ export class UserService {
 
     const failed = user.failedLogins + 1;
     const lock = failed >= LOCKOUT_THRESHOLD;
-    const updated = await this.prisma.user.update({
-      where: { id },
-      data: {
-        failedLogins: failed,
-        status: lock ? 'LOCKED' : user.status,
-        version: { increment: 1 },
-      },
-    });
+    // S007 BR7-1/BR7-4 — the failed-login increment (and lock transition, when
+    // it occurs) is atomic with its LOCK audit event. A non-locking failed
+    // attempt has no audit event to couple, so it is a plain update.
+    const updated = lock
+      ? await this.prisma.$transaction(async (tx) => {
+          const u = await tx.user.update({
+            where: { id },
+            data: { failedLogins: failed, status: 'LOCKED', version: { increment: 1 } },
+          });
+          await this._auditTx(tx, tenantId, 'user', id, 'LOCK', this._toView(user), this._toView(u), 'system');
+          return u;
+        })
+      : await this.prisma.user.update({
+          where: { id },
+          data: { failedLogins: failed, status: user.status, version: { increment: 1 } },
+        });
     if (lock) {
-      await this._audit(tenantId, 'user', id, 'LOCK', this._toView(user), this._toView(updated), 'system');
       await this._emit('iam.user.locked', tenantId, id, user.email, 'system');
     }
     return this._toView(updated);
@@ -248,11 +263,15 @@ export class UserService {
       throw new UserValidationError('INVALID_TRANSITION', 'Cannot unlock a deactivated user');
     }
     const nextStatus = user.status === 'LOCKED' ? 'ACTIVE' : user.status;
-    const updated = await this.prisma.user.update({
-      where: { id },
-      data: { status: nextStatus, failedLogins: 0, version: { increment: 1 } },
+    // S007 BR7-1/BR7-4 — unlock + audit event are one atomic transaction.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.user.update({
+        where: { id },
+        data: { status: nextStatus, failedLogins: 0, version: { increment: 1 } },
+      });
+      await this._auditTx(tx, tenantId, 'user', id, 'UNLOCK', this._toView(user), this._toView(u), actor);
+      return u;
     });
-    await this._audit(tenantId, 'user', id, 'UNLOCK', this._toView(user), this._toView(updated), actor);
     await this._emit('iam.user.unlocked', tenantId, id, user.email, actor);
     return this._toView(updated);
   }
@@ -271,13 +290,23 @@ export class UserService {
       return { user: this._toView(user), revokedSessions: revoked };
     }
 
-    const updated = await this.prisma.user.update({
-      where: { id },
-      data: { status: 'INACTIVE', deactivatedAt: new Date(), version: { increment: 1 } },
+    // S007 BR7-1/BR7-4 — the deactivate transition, its session revocation,
+    // and the audit event are one atomic transaction: a failure in any of
+    // the three never leaves an active user with revoked sessions (or vice
+    // versa) unaudited.
+    const { updated, revokedSessions } = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.user.update({
+        where: { id },
+        data: { status: 'INACTIVE', deactivatedAt: new Date(), version: { increment: 1 } },
+      });
+      const res = await tx.session.updateMany({
+        where: { tenantId, userId: id, status: 'ACTIVE' },
+        data: { status: 'REVOKED', revokedAt: new Date() },
+      });
+      await this._auditTx(tx, tenantId, 'user', id, 'DEACTIVATE', this._toView(user), this._toView(u), actor);
+      return { updated: u, revokedSessions: res.count };
     });
-    const revokedSessions = await this._revokeSessions(tenantId, id);
 
-    await this._audit(tenantId, 'user', id, 'DEACTIVATE', this._toView(user), this._toView(updated), actor);
     await this._emit('iam.user.deactivated', tenantId, id, user.email, actor);
     return { user: this._toView(updated), revokedSessions };
   }
@@ -290,15 +319,20 @@ export class UserService {
     }
     const resetToken = `rst_${randomUUID().replace(/-/g, '')}`;
     const resetTokenHash = createHash('sha256').update(resetToken).digest('hex');
-    const updated = await this.prisma.user.update({
-      where: { id },
-      data: {
-        resetTokenHash,
-        resetTokenExpiresAt: new Date(Date.now() + RESET_TOKEN_TTL_MS),
-        version: { increment: 1 },
-      },
+    // S007 BR7-1/BR7-4 — reset-token issuance + audit event are one atomic
+    // transaction.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.user.update({
+        where: { id },
+        data: {
+          resetTokenHash,
+          resetTokenExpiresAt: new Date(Date.now() + RESET_TOKEN_TTL_MS),
+          version: { increment: 1 },
+        },
+      });
+      await this._auditTx(tx, tenantId, 'user', id, 'RESET', this._toView(user), this._toView(u), actor);
+      return u;
     });
-    await this._audit(tenantId, 'user', id, 'RESET', this._toView(user), this._toView(updated), actor);
     return { user: this._toView(updated), resetToken };
   }
 
@@ -318,18 +352,23 @@ export class UserService {
 
     const passwordHash = await bcrypt.hash(newPassword, 10);
     const nextStatus = user.status === 'INVITED' ? 'ACTIVE' : user.status;
-    const updated = await this.prisma.user.update({
-      where: { id },
-      data: {
-        passwordHash,
-        status: nextStatus,
-        failedLogins: 0,
-        resetTokenHash: null,
-        resetTokenExpiresAt: null,
-        version: { increment: 1 },
-      },
+    // S007 BR7-1/BR7-4 — set-password + audit event are one atomic
+    // transaction.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.user.update({
+        where: { id },
+        data: {
+          passwordHash,
+          status: nextStatus,
+          failedLogins: 0,
+          resetTokenHash: null,
+          resetTokenExpiresAt: null,
+          version: { increment: 1 },
+        },
+      });
+      await this._auditTx(tx, tenantId, 'user', id, 'SET_PASSWORD', this._toView(user), this._toView(u), 'user');
+      return u;
     });
-    await this._audit(tenantId, 'user', id, 'SET_PASSWORD', this._toView(user), this._toView(updated), 'user');
     if (user.status === 'INVITED') {
       await this._emit('iam.user.activated', tenantId, id, user.email, 'user');
     }
@@ -540,8 +579,32 @@ export class UserService {
         },
       });
     } catch {
-      // AuditPort write is non-fatal to the business operation.
+      // AuditPort write is non-fatal to the business operation here: this
+      // path backs LOGIN/LOGOUT/LOGIN_DENIED, whose deny/allow outcome is
+      // already decided before this call and must never flip on a broken
+      // audit sink (see tests/user-login.test.ts "audit service unavailable").
     }
+  }
+
+  /**
+   * S007 BR7-1/BR7-4 — strict, transaction-coupled audit write for the user
+   * CRUD/lifecycle mutations (create/activate/lock/unlock/deactivate/reset/
+   * set-password). Unlike `_audit` above, this never swallows: a failure
+   * here must propagate and roll back the paired domain write, so a broken
+   * audit sink can never produce a silently-unaudited state change.
+   */
+  private async _auditTx(
+    tx: Pick<PrismaClient, 'auditOutboxEvent'>,
+    tenantId: string, docType: string, docId: string, action: string,
+    before: unknown, after: unknown, actor?: string,
+  ): Promise<void> {
+    await tx.auditOutboxEvent.create({
+      data: {
+        id: randomUUID(), tenantId, docType, docId, action,
+        before: (before ?? undefined) as any, after: (after ?? undefined) as any,
+        actor: actor ?? 'user',
+      },
+    });
   }
 
   private async _emit(

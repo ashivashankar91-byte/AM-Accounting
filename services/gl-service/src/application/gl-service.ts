@@ -36,6 +36,7 @@ import {
   GLAccountType,
   JournalStatus,
   asTenantId,
+  setTenantContextOnConnection,
 } from '@amacc/shared-kernel';
 import { createEvent } from '@amacc/shared-kernel';
 import { GLValidationEngine } from '../domain/validation-engine';
@@ -43,6 +44,7 @@ import { computeUnitCount } from '../domain/unit-count';
 import { withSerializableRetry } from '../lib/serializable-retry';
 import { PrismaClient } from '.prisma/gl-client';
 import { Decimal } from '@prisma/client/runtime/library';
+import { appendAuditRowsTx } from '../infrastructure/audit';
 
 // ── Typed error classes ───────────────────────────────────────────────────────
 // @trace-cobol tranpost.cbl ERROR-DATE, NOFIND-STATUS, GL-ERROR-DIALOG-POP* paragraphs
@@ -529,6 +531,7 @@ export class GLService {
     };
 
     await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, tenantId);
       await tx.journalEntry.update({
         where: { id: entryId },
         data: { status: 'PENDING_REVIEW', agentReviewed: false },
@@ -540,6 +543,16 @@ export class GLService {
           payload: eventPayload as any,
           correlationId,
         },
+      });
+      await appendAuditRowsTx(tx, {
+        tenantId,
+        docType: 'JOURNAL_ENTRY',
+        docId: entryId,
+        action: 'SUBMITTED',
+        actor: postedBy,
+        before: { status: entry.status },
+        after: { status: 'PENDING_REVIEW', correlationId },
+        writeEventOutbox: false,
       });
     });
 
@@ -633,7 +646,7 @@ export class GLService {
 
           // 3a. Update GL period running balance — JRN file equivalent
           // @trace-cobol UPDATE-JOURNAL paragraph
-          await this.updateJournalBalance(tx, tenantId, account, entry, netAmount);
+          await this.updateJournalBalance(tx, tenantId, account, entry, line, netAmount);
 
           // 3b. Write history transaction record — HISTTRAN file equivalent
           // @trace-cobol UPDATE-HISTTRAN + WR-HISTTRAN paragraphs
@@ -694,6 +707,16 @@ export class GLService {
             payload: { entryId, totalDebits, totalCredits, lineCount: entry.lines.length } as any,
             correlationId,
           },
+        });
+        await appendAuditRowsTx(tx, {
+          tenantId,
+          docType: 'JOURNAL_ENTRY',
+          docId: entryId,
+          action: 'APPROVED_POSTED',
+          actor: approverId ?? 'GL_AGENT',
+          before: { status: entry.status },
+          after: { status: 'POSTED', totalDebits, totalCredits, lineCount: entry.lines.length, postedAt: postedAt.toISOString() },
+          writeEventOutbox: false,
         });
     });
 
@@ -806,12 +829,18 @@ export class GLService {
       credit: line.debit,
       memo: `REVERSAL: ${line.memo ?? ''}`,
       departmentCode: line.departmentCode,
+      storeId: line.storeId,
       technicianId: line.technicianId,
       roNumber: line.roNumber,
+      controlNumber: line.controlNumber,
+      companyCode: line.companyCode,
+      applyToCost: line.applyToCost,
+      unitCount: line.unitCount,
       applyCd: '#',          // Suppress COS/INV chain on reversal
     }));
 
     const reversalEntry = await (this.prisma as any).$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, tenantId);
       // Create reversal entry in DRAFT status
       const newEntry = await tx.journalEntry.create({
         data: {
@@ -843,6 +872,17 @@ export class GLService {
       await tx.historyTransaction.updateMany({
         where: { journalEntryId: entryId, tenantId },
         data: { revAdjFlag: 'R' },
+      });
+
+      await appendAuditRowsTx(tx, {
+        tenantId,
+        docType: 'JOURNAL_ENTRY',
+        docId: entryId,
+        action: 'REVERSED',
+        actor: reverserId,
+        before: { status: original.status },
+        after: { status: 'REVERSED', reversalEntryId: newEntry.id, reversalDate: reversalDate.toISOString(), reason },
+        eventType: 'journal_entry.reversed',
       });
 
       return newEntry;
@@ -886,6 +926,7 @@ export class GLService {
     tenantId: string,
     account: any,
     entry: JournalEntry,
+    line: any,
     netAmount: number,
   ): Promise<void> {
     // @trace-cobol "IF GLOBAL-YE-IS-IN-PROGRESS EXIT PARAGRAPH" — year-end skips journal
@@ -901,15 +942,29 @@ export class GLService {
 
     await tx.gLAccountPeriodBalance.upsert({
       where: {
-        tenantId_glAccountId_periodYear_periodMonth_journalSource: {
+        tenantId_glAccountId_periodYear_periodMonth_journalSource_companyCode_storeId_departmentCode: {
           tenantId,
           glAccountId: account.id,
           periodYear,
           periodMonth,
           journalSource,
+          companyCode: line.companyCode ?? '',
+          storeId: line.storeId ?? '',
+          departmentCode: line.departmentCode ?? '',
         },
       },
-      create: { tenantId, glAccountId: account.id, periodYear, periodMonth, journalSource, runningBalance: netAmount, unitCount },
+      create: {
+        tenantId,
+        glAccountId: account.id,
+        periodYear,
+        periodMonth,
+        journalSource,
+        companyCode: line.companyCode ?? '',
+        storeId: line.storeId ?? '',
+        departmentCode: line.departmentCode ?? '',
+        runningBalance: netAmount,
+        unitCount,
+      },
       update: { runningBalance: { increment: netAmount }, unitCount: { increment: unitCount } },
     });
   }
@@ -1010,7 +1065,7 @@ export class GLService {
     }
 
     const cosLineNumber = baseLineNumber + 1;
-    await this.updateJournalBalance(tx, tenantId, cosAccount, entry, costAmount);
+    await this.updateJournalBalance(tx, tenantId, cosAccount, entry, line, costAmount);
     await this.writeHistoryTransaction(tx, tenantId, cosAccount, entry, line, costAmount, cosLineNumber, 'C', postedAt, postedByUserId);
     if (cosAccount.scheduleCode && !(entry as any).isYearEnd) {
       const entryDate = entry.entryDate instanceof Date ? entry.entryDate : new Date(entry.entryDate as any);
@@ -1043,7 +1098,7 @@ export class GLService {
     // @trace-cobol "COMPUTE AMOUNT = TR-COST * -1" — inventory is offset of cost
     const invAmount = costAmount * -1;
     const invLineNumber = baseLineNumber + 2;
-    await this.updateJournalBalance(tx, tenantId, invAccount, entry, invAmount);
+    await this.updateJournalBalance(tx, tenantId, invAccount, entry, line, invAmount);
     await this.writeHistoryTransaction(tx, tenantId, invAccount, entry, line, invAmount, invLineNumber, 'I', postedAt, postedByUserId);
     if (invAccount.scheduleCode && !(entry as any).isYearEnd) {
       const entryDate = entry.entryDate instanceof Date ? entry.entryDate : new Date(entry.entryDate as any);

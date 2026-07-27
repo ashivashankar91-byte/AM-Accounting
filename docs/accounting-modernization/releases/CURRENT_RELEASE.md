@@ -15,34 +15,43 @@
 
 ## All R0 stories currently tracked in MODULE_STATE.json
 
-This table lists **every** story in MODULE_STATE.json's `stories` object (22 total), across every package — active and completed — so this file cannot silently omit a package the way it previously omitted R0-JOURNAL-LIFECYCLE.
+This table lists **every** story in MODULE_STATE.json's `stories` object (31 total), across every package — active and completed — so this file cannot silently omit a package the way it previously omitted R0-JOURNAL-LIFECYCLE.
 
 | ID | Title | Status |
 |---|---|---|
 | S200 | Create & Maintain Legal Entity | ✅ DONE |
-| S201 | Create & Maintain Store (Rooftop) | 🟡 DONE_PENDING_INTEGRATION |
-| S203 | Department Code Maintenance | 🟡 DONE_PENDING_INTEGRATION |
-| S204 | Franchise Maintenance | 🟡 DONE_PENDING_INTEGRATION |
-| S205 | User Account Lifecycle | 🟠 PARTIAL |
-| S206 | Basic Role Management | 🟡 DONE_PENDING_INTEGRATION |
+| S201 | Create & Maintain Store (Rooftop) | ✅ DONE |
+| S203 | Department Code Maintenance | ✅ DONE |
+| S204 | Franchise Maintenance | ✅ DONE |
+| S205 | User Account Lifecycle | ✅ DONE |
+| S206 | Basic Role Management | ✅ DONE |
 | S207 | Permission Catalog & Check API | ✅ DONE |
-| S223 | Configuration Framework | 🟡 DONE_PENDING_INTEGRATION |
+| S223 | Configuration Framework | ✅ DONE |
 | S208 | Fiscal Calendar Definition | ✅ DONE |
 | S209 | Accounting Period Open & Status | ✅ DONE |
-| S210 | Basic Chart of Accounts CRUD | 🟡 DONE_PENDING_INTEGRATION |
-| S211 | Account Hierarchy & Totaling Groups | 🟡 DONE_PENDING_INTEGRATION |
+| S210 | Basic Chart of Accounts CRUD | ✅ DONE |
+| S211 | Account Hierarchy & Totaling Groups | ✅ DONE |
 | S010 | Seed Canonical COA Skeleton | ✅ DONE |
 | S212 | Journal Source Registry | ✅ DONE |
-| S213 | Journal Numbering Sequences | 🟡 DONE_PENDING_INTEGRATION |
+| S213 | Journal Numbering Sequences | ✅ DONE |
 | S013 | Balanced Journal Posting API | ✅ DONE |
-| S214 | Draft Journal | 🟡 DONE_PENDING_INTEGRATION |
-| S215 | Validate Manual JE | 🟡 DONE_PENDING_INTEGRATION |
-| S216 | Post Manual JE (Direct-Post) | 🟡 DONE_PENDING_INTEGRATION |
+| S214 | Draft Journal | ✅ DONE |
+| S215 | Validate Manual JE | ✅ DONE |
+| S216 | Post Manual JE (Direct-Post) | ✅ DONE |
 | S217 | View Journal Entry | ✅ DONE |
 | S218 | Reverse Posted JE | ✅ DONE |
-| S219 | Void/Delete Draft JE | 🟡 DONE_PENDING_INTEGRATION |
+| S219 | Void/Delete Draft JE | ✅ DONE |
+| S007 | Immutable Audit Log | ✅ DONE |
+| S224 | Document Audit History View | 🟡 DONE_PENDING_INTEGRATION |
+| S202 | Dealer Group Hierarchy View & Maintenance | 🟡 DONE_PENDING_INTEGRATION |
+| S004A | Dealership Position Role Templates | 🟡 DONE_PENDING_INTEGRATION |
+| S220 | GL Account Activity Inquiry | 🟡 DONE_PENDING_INTEGRATION |
+| S014 | Trial Balance API | 🟡 DONE_PENDING_INTEGRATION |
+| S221 | GL Search | 🟡 DONE_PENDING_INTEGRATION |
+| S222 | Trial Balance Screen & Export | 🟡 DONE_PENDING_INTEGRATION |
+| S227 | Balance Sheet and Income Statement | 🟡 DONE_PENDING_INTEGRATION |
 
-**Totals:** {"DONE":9,"DONE_PENDING_INTEGRATION":12,"PARTIAL":1} — 21/22 at DONE or DONE_PENDING_INTEGRATION.
+**Totals:** {"DONE":23,"DONE_PENDING_INTEGRATION":8} — 31/31 at DONE or DONE_PENDING_INTEGRATION.
 
 ## Completed packages
 
@@ -52,14 +61,14 @@ Closed: 2026-07-24
 
 | ID | Title | Status |
 |---|---|---|
-| S223 | Configuration Framework | 🟡 DONE_PENDING_INTEGRATION |
+| S223 | Configuration Framework | ✅ DONE |
 | S208 | Fiscal Calendar Definition | ✅ DONE |
 | S209 | Accounting Period Open & Status | ✅ DONE |
-| S210 | Basic Chart of Accounts CRUD | 🟡 DONE_PENDING_INTEGRATION |
-| S211 | Account Hierarchy & Totaling Groups | 🟡 DONE_PENDING_INTEGRATION |
+| S210 | Basic Chart of Accounts CRUD | ✅ DONE |
+| S211 | Account Hierarchy & Totaling Groups | ✅ DONE |
 | S010 | Seed Canonical COA Skeleton | ✅ DONE |
 | S212 | Journal Source Registry | ✅ DONE |
-| S213 | Journal Numbering Sequences | 🟡 DONE_PENDING_INTEGRATION |
+| S213 | Journal Numbering Sequences | ✅ DONE |
 
 All 8 accounting-setup stories DONE_PENDING_INTEGRATION in coa-service: config framework, fiscal calendar, accounting periods, chart of accounts, account hierarchy, COA seed, journal source registry, journal numbering sequences. Foundation for GL posting is in place; posting hooks (SourceService.assertUsableByManual BR212-1, SequenceService.allocate BR213-1, FiscalCalendarService.resolve BR208-5, GlAccount.balance/hasPostings) are consumed by R0-JOURNAL-LIFECYCLE S013.
 
@@ -76,12 +85,12 @@ Closed: 2026-07-24
 | ID | Title | Status |
 |---|---|---|
 | S200 | Create & Maintain Legal Entity | ✅ DONE |
-| S201 | Create & Maintain Store (Rooftop) | 🟡 DONE_PENDING_INTEGRATION |
-| S203 | Department Code Maintenance | 🟡 DONE_PENDING_INTEGRATION |
-| S204 | Franchise Maintenance | 🟡 DONE_PENDING_INTEGRATION |
+| S201 | Create & Maintain Store (Rooftop) | ✅ DONE |
+| S203 | Department Code Maintenance | ✅ DONE |
+| S204 | Franchise Maintenance | ✅ DONE |
 | S207 | Permission Catalog & Check API | ✅ DONE |
-| S206 | Basic Role Management | 🟡 DONE_PENDING_INTEGRATION |
-| S205 | User Account Lifecycle | 🟠 PARTIAL |
+| S206 | Basic Role Management | ✅ DONE |
+| S205 | User Account Lifecycle | ✅ DONE |
 
 All 7 org-foundation stories reached DONE or DONE_PENDING_INTEGRATION. Legal entity, store, department, franchise, permission catalog, roles, and user lifecycle delivered.
 
@@ -91,6 +100,28 @@ Carry-forward integrations:
 - Real broker-backed event verification — validate outbox events over a live RabbitMQ broker (dev bus subscribe is currently a no-op in-memory stub); specifically broker-backed iam.user.deactivated fan-out to S206 auto-revoke.
 - DONE_PENDING_INTEGRATION closure gates — re-run each story's integration suite green against real S007/S207 services and record in completion evidence before flipping to full DONE: S201, S203, S204, S205, S206.
 
+### GOLDEN-R0-FLEET — PACKAGE_COMPLETE_WITH_PENDING_INTEGRATIONS
+
+Closed: 2026-07-27
+
+| ID | Title | Status |
+|---|---|---|
+| S202 | Dealer Group Hierarchy View & Maintenance | 🟡 DONE_PENDING_INTEGRATION |
+| S004A | Dealership Position Role Templates | 🟡 DONE_PENDING_INTEGRATION |
+| S224 | Document Audit History View | 🟡 DONE_PENDING_INTEGRATION |
+| S220 | GL Account Activity Inquiry | 🟡 DONE_PENDING_INTEGRATION |
+| S221 | GL Search | 🟡 DONE_PENDING_INTEGRATION |
+| S014 | Trial Balance API | 🟡 DONE_PENDING_INTEGRATION |
+| S222 | Trial Balance Screen & Export | 🟡 DONE_PENDING_INTEGRATION |
+| S227 | Balance Sheet and Income Statement | 🟡 DONE_PENDING_INTEGRATION |
+
+31/31 Golden R0 stories implemented. 23 DONE; 8 (S202, S004A, S224, S220, S221, S014, S222, S227) remain DONE_PENDING_INTEGRATION pending real Figma/UX/product sign-off (package-wide gate, not a technical gap for any of them). Phase 3 full release certification PASSED: fresh-database rebuild, full test matrix, 12/12 live Playwright Golden Path scenarios, financial reconciliation (TB/BS/IS), security/RLS/authz proofs. Phase 4 closed the BR013-1 frontend defect, the verifyChain() hash-walk defect, one S224 UX functional gap, and the legacy audit-chain treatment decision -- all real, disclosed, and fixed, not fabricated.
+
+Carry-forward integrations:
+- Real human Figma/UX/product review for S202, S004A, S224, S220, S221, S014, S222, S227 -- no reviewer/SME available in this environment; an engineering-led self-review packet was produced instead and does not substitute for real sign-off.
+- Real Accounting SME demonstration/acceptance -- not performed; only a demo script/environment can be prepared without a real SME.
+- Fresh-stack Playwright re-certification -- documented as an evidence-separation exception rather than a full fresh-stack cutover; see PHASE4_FRESH_STACK_PLAYWRIGHT_EXCEPTION.md.
+
 ## Integration gate status
 
 (Verbatim from `MODULE_STATE.json.integrationGateStatus` — this is the authoritative list of what remains before any DONE_PENDING_INTEGRATION or PARTIAL story can become DONE.)
@@ -98,12 +129,16 @@ Carry-forward integrations:
 - **R0-ACCOUNTING-SETUP**: PARTIAL — S208/S209/S010/S212 promoted to DONE in R0 Stabilization Phase 9 (real gateway->coa-service golden path proven live: calendar defined, periods generated, period opened, COA seeded, sources bootstrapped). S223/S210/S211/S213 remain DONE_PENDING_INTEGRATION — authorization is centralized through real S207 (Phase 3) but their specific write paths were not individually re-run against the live stack in Phase 8; see STORY_CERTIFICATION_MATRIX.csv.
 - **R0-JOURNAL-LIFECYCLE**: PARTIAL — S013/S217/S218 promoted to DONE in R0 Stabilization Phase 9 (real gateway->coa-service golden path proven live: post rejected on a real business rule then succeeded, idempotent re-post proven, viewed, reversed). S214/S215/S216/S219 remain DONE_PENDING_INTEGRATION — authorization is centralized through real S207 but the draft->validate->direct-post->void flow specifically was not exercised through the live stack in Phase 8; see STORY_CERTIFICATION_MATRIX.csv.
 - **S200**: DONE — promoted in R0 Stabilization Phase 9; real gateway->tenant-service call, real S207 authz, real RLS-enforced write, real S007 audit delivery confirmed
-- **S201**: PENDING — awaiting real-stack exercise (carry-forward from R0-ORG-FOUNDATION); authorization already centralized through real S207 (Phase 3)
-- **S203**: PENDING — awaiting real-stack exercise (carry-forward from R0-ORG-FOUNDATION); authorization already centralized through real S207 (Phase 3)
-- **S204**: PENDING — awaiting real-stack exercise (carry-forward from R0-ORG-FOUNDATION); authorization already centralized through real S207 (Phase 3)
-- **S206**: PENDING — awaiting real-stack exercise of its own create/grant/revoke API (carry-forward); real S007 audit consumer and real S207 authz are both now genuinely wired and delivering
-- **S205**: PARTIAL — unchanged; still missing a real login/session-issuance endpoint (a functional gap, not only an integration gap) — explicitly out of scope for this stabilization package (one of the 9 remaining R0 stories)
+- **S201**: DONE
+- **S203**: DONE
+- **S204**: DONE
+- **S206**: DONE
+- **S205**: DONE — Final-R0: live-gateway certified. Real bcrypt login, jsonwebtoken-signed JWT + persisted session, session validation, authorized/denied access matrix (14 scenarios), and the failed-login audit gap closed (categorized DENIED events for USER_NOT_FOUND, INVALID_PASSWORD, TENANT_MISMATCH, ACCOUNT_DISABLED, ACCOUNT_LOCKED, no secrets exposed). See S205_CERTIFICATION_REPORT.md.
 - **S207**: DONE — promoted in R0 Stabilization Phase 9; all 3 stubGate conditions met (tsc clean, real S007 audit sink draining iam.authz.denied, live-database + broker-backed verification both exist)
+- **S007**: DONE — Golden-R0 Controlled Fleet: real transactional audit coupling across tenant-service/auth-service/coa-service/audit-service (3 gaps found and fixed), hash-chain tamper detection proven live-DB, write-path coverage census CI-enforced. Unblocks S224 per PO condition 6.
+- **S224**: DONE_PENDING_INTEGRATION — Golden-R0 Controlled Fleet: real S007 dependency satisfied (no stub); document-history GET+export endpoints implemented with centralized S207 authz, BR224-3 audit.viewed emission, fresh-database migration reproducibility verified. Capped below DONE pending package-wide Figma/SME/UX validation (PO condition 9), not a technical gap.
+- **S202**: DONE_PENDING_INTEGRATION — Golden-R0 Controlled Fleet: real S007/S207 dependencies satisfied directly; org tree GET+reparent endpoints implemented with centralized S207 authz (org.tree.view/manage), effective-dated re-parent (BR202-2), cycle rejection (BR202-1), CSV export parity (BR202-3), fresh-database migration reproducibility verified for tenant-service and auth-service. Also fixed a real S224 authz-catalog defect found along the way. Capped below DONE pending package-wide Figma/SME/UX validation (PO condition 9), not a technical gap. Real-gateway evidence closed 2026-07-27 (see S202_LIVE_GATEWAY_CERTIFICATION_REPORT.md); remaining gap is Figma/UX validation only.
+- **S004A**: DONE_PENDING_INTEGRATION — Golden-R0 Controlled Fleet: real S206/S207/S007 dependencies satisfied directly (no local permission map). Role-template list/create/clone/update/deactivate/apply/revoke implemented; 9 global shipped position templates seeded; applyTemplate() delegates to the real S206 RoleService so S207 enforcement is identical to S206's certified path; SoD self-apply denial implemented and tested. A real clone-permission-loss defect was found by unit test and fixed before any live evidence was attempted. Fresh-database migration reproducibility verified (11/11 auth-service migrations); cross-tenant RLS proven on all 4 verbs. Capped below DONE pending package-wide Figma/SME/UX validation (PO condition 9), not a technical gap. Live-gateway evidence captured 2026-07-27 (see S004A_LIVE_GATEWAY_CERTIFICATION_REPORT.md).
 
 ## Binding decisions
 

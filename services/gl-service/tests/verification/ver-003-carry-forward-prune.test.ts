@@ -7,7 +7,7 @@
  * 3. Increments gl_accounts.opening_balance with absorbed journal activity
  */
 
-import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
 describe('VER-003: Period Carry-Forward 8-Year Prune', () => {
   let tenantId: string;

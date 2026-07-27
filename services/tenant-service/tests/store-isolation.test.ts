@@ -53,7 +53,7 @@ const STORE_A = {
  * returns null (simulates the DB row being invisible to that tenant).
  */
 function isolatingPrisma() {
-  return {
+  const client: any = {
     store: {
       findFirst: async ({ where }: any) => {
         // Only return data when tenantId matches TENANT_A
@@ -80,7 +80,13 @@ function isolatingPrisma() {
     outboxEvent: {
       create: async () => ({}),
     },
+    auditOutboxEvent: {
+      create: async () => ({}),
+    },
   };
+  client.$transaction = async (arg: any) =>
+    typeof arg === 'function' ? arg(client) : Promise.all(arg);
+  return client;
 }
 
 function noopPublisher() {

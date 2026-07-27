@@ -125,6 +125,7 @@ model JournalLine {
   debit          Decimal  @default(0) @db.Decimal(15, 2)
   credit         Decimal  @default(0) @db.Decimal(15, 2)
   memo            String?
+  storeId         String   @default("") @map("store_id")
   departmentCode  String?  @map("department_code")
   technicianId    String?  @map("technician_id")
   roNumber        String?  @map("ro_number")
@@ -203,6 +204,24 @@ model OutboxEvent {
   @@index([createdAt])
 }
 
+model AuditOutboxEvent {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  docType     String    @map("doc_type")
+  docId       String    @map("doc_id")
+  action      String
+  before      Json?
+  after       Json?
+  actor       String
+  publishedAt DateTime? @map("published_at")
+  retryCount  Int       @default(0) @map("retry_count")
+  lastError   String?   @map("last_error")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([publishedAt, retryCount])
+  @@map("audit_outbox")
+}
+
 /// @cobol-origin jrn.fd — JR-BALANCE running balance per account/period/source
 /// @trace-cobol UPDATE-JOURNAL paragraph in tranpost.cbl
 /// Replaces JOURNAL-MF ISAM file. Eliminates risk of JRN balance overflow (INV-03).
@@ -213,6 +232,9 @@ model GLAccountPeriodBalance {
   periodYear     Int     @map("period_year")
   periodMonth    Int     @map("period_month")
   journalSource  String  @map("journal_source")
+  companyCode    String  @default("") @map("company_code")
+  storeId        String  @default("") @map("store_id")
+  departmentCode String  @default("") @map("department_code")
   /// @cobol-origin JR-BALANCE — running MTD balance for this account/period/source
   runningBalance Decimal @default(0) @map("running_balance") @db.Decimal(15, 2)
   /// @cobol-origin JR-COUNT — running unit count for this account/period/source
@@ -221,10 +243,11 @@ model GLAccountPeriodBalance {
 
   glAccount GLAccount @relation(fields: [glAccountId], references: [id])
 
-  @@unique([tenantId, glAccountId, periodYear, periodMonth, journalSource])
+  @@unique([tenantId, glAccountId, periodYear, periodMonth, journalSource, companyCode, storeId, departmentCode])
   @@map("gl_account_period_balances")
   @@index([tenantId])
   @@index([tenantId, glAccountId, periodYear, periodMonth])
+  @@index([tenantId, companyCode, storeId, departmentCode, periodYear, periodMonth])
 }
 
 /// @cobol-origin histtran.fd + histtran.rec — full audit trail, one record per line posted

@@ -1,0 +1,12 @@
+-- GOLDEN-R0 Phase 4: legacy audit-row treatment (PRODUCT_OWNER_DECISION).
+-- Adds an explicit, disclosed pre-chain cutoff per partition rather than
+-- backfilling hash values into already-immutable historical rows (which
+-- would require disabling this service's own tamper-detection trigger --
+-- indistinguishable from the tampering BR7-2 exists to catch) or silently
+-- accepting an unexplained "broken" result for partitions that legitimately
+-- predate the hash-chain feature.
+--
+-- NULL (the default) means "verify this partition's hash chain from
+-- genesis, no exceptions" -- the only state that will ever exist for a
+-- partition whose very first write happened after hash-chaining went live.
+ALTER TABLE "audit_chain_anchors" ADD COLUMN "chain_verified_from" TIMESTAMP(3);

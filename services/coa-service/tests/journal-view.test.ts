@@ -69,6 +69,9 @@ function makePrisma(seed: {
     coaOutboxEvent: { create: async ({ data }: any) => (outbox.push(data), data) },
     auditOutboxEvent: { create: async ({ data }: any) => (audits.push(data), data) },
   };
+  // emitViewed couples coaOutboxEvent + auditOutboxEvent in one transaction
+  // (BR7-1) — the fake just runs the callback against the same object.
+  prisma.$transaction = async (fn: (tx: any) => Promise<any>) => fn(prisma);
   return prisma;
 }
 

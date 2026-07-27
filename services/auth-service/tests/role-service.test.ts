@@ -147,7 +147,8 @@ function makePrisma() {
     auditOutboxEvent: {
       create: async ({ data }: any) => { state.audit.push({ ...data }); return { ...data }; },
     },
-    $transaction: async (ops: any[]) => Promise.all(ops),
+    $transaction: async (arg: any): Promise<any> =>
+      typeof arg === 'function' ? arg(p) : Promise.all(arg),
     $queryRaw: async (strings: TemplateStringsArray, ...values: any[]) => {
       const sql = strings.join(' ');
       if (sql.includes('legal_entities')) {

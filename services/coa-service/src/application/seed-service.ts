@@ -81,6 +81,7 @@ export class SeedService {
     let created = 0;
     let merged = 0;
     const conflicts: SeedConflict[] = [];
+    const toCreate: { acct: SeedAccount; parentId: string | null; isContra: boolean }[] = [];
 
     for (const acct of orderedForSeed(manifest)) {
       const current = byNumber.get(acct.number);
@@ -92,35 +93,61 @@ export class SeedService {
       }
       const parentId = acct.parentNumber ? (idByNumber.get(acct.parentNumber) ?? null) : null;
       const isContra = acct.normalBalance !== this.defaultBalance(acct.type);
-      const row = await this.prisma.glAccount.create({
+      // Reserve the id now so later accounts in this same seed pass can
+      // resolve THIS account as their parent before the transaction commits.
+      const reservedId = crypto.randomUUID();
+      idByNumber.set(acct.number, reservedId);
+      byNumber.set(acct.number, { id: reservedId } as any);
+      toCreate.push({ acct, parentId, isContra });
+      created += 1;
+    }
+
+    // S007 BR7-1/BR7-4 — every seeded account, the seed-run record, and the
+    // audit event are one atomic transaction: a failure partway through
+    // never leaves a partially-seeded, unaudited chart of accounts.
+    await this.prisma.$transaction(async (tx) => {
+      for (const { acct, parentId, isContra } of toCreate) {
+        const id = idByNumber.get(acct.number)!;
+        await tx.glAccount.create({
+          data: {
+            id,
+            tenantId: dto.tenantId,
+            entityId: dto.entityId,
+            accountNumber: acct.number,
+            name: acct.name,
+            type: acct.type,
+            normalBalance: acct.normalBalance,
+            isContra,
+            contraReason: isContra ? (acct.contraReason ?? 'Canonical contra account') : null,
+            postable: acct.postable,
+            parentId,
+            status: 'ACTIVE',
+            version: 1,
+          },
+        });
+      }
+
+      await tx.coaSeedRun.create({
         data: {
           id: crypto.randomUUID(),
           tenantId: dto.tenantId,
           entityId: dto.entityId,
-          accountNumber: acct.number,
-          name: acct.name,
-          type: acct.type,
-          normalBalance: acct.normalBalance,
-          isContra,
-          contraReason: isContra ? (acct.contraReason ?? 'Canonical contra account') : null,
-          postable: acct.postable,
-          parentId,
-          status: 'ACTIVE',
-          version: 1,
+          manifestVersion: manifest.version,
+          createdCount: created,
+          mergedCount: merged,
+          conflictCount: conflicts.length,
+          actor: dto.actor,
         },
       });
-      idByNumber.set(acct.number, row.id);
-      byNumber.set(acct.number, row as any);
-      created += 1;
-    }
 
-    await this.recordRun(dto, manifest.version, created, merged, conflicts.length);
-    await this.audit(dto.tenantId, dto.entityId, dto.actor, {
-      manifestVersion: manifest.version,
-      created,
-      merged,
-      conflicts: conflicts.length,
+      await this.audit(dto.tenantId, dto.entityId, dto.actor, {
+        manifestVersion: manifest.version,
+        created,
+        merged,
+        conflicts: conflicts.length,
+      }, tx);
     });
+
     await this.emitSeeded(dto.tenantId, dto.entityId, manifest.version, created, dto.actor);
 
     return { manifestVersion: manifest.version, created, merged, conflicts };
@@ -164,48 +191,25 @@ export class SeedService {
     return type === 'ASSET' || type === 'EXPENSE' ? 'DR' : 'CR';
   }
 
-  private async recordRun(
-    dto: SeedDTO,
-    version: string,
-    created: number,
-    merged: number,
-    conflicts: number,
+  private async audit(
+    tenantId: string,
+    entityId: string,
+    actor: string,
+    after: unknown,
+    tx: Pick<PrismaClient, 'auditOutboxEvent'> = this.prisma,
   ) {
-    try {
-      await this.prisma.coaSeedRun.create({
-        data: {
-          id: crypto.randomUUID(),
-          tenantId: dto.tenantId,
-          entityId: dto.entityId,
-          manifestVersion: version,
-          createdCount: created,
-          mergedCount: merged,
-          conflictCount: conflicts,
-          actor: dto.actor,
-        },
-      });
-    } catch {
-      /* non-fatal */
-    }
-  }
-
-  private async audit(tenantId: string, entityId: string, actor: string, after: unknown) {
-    try {
-      await this.prisma.auditOutboxEvent.create({
-        data: {
-          id: crypto.randomUUID(),
-          tenantId,
-          docType: 'coa_seed',
-          docId: entityId,
-          action: 'SEED',
-          before: undefined as any,
-          after: after as any,
-          actor,
-        },
-      });
-    } catch {
-      /* non-fatal */
-    }
+    await tx.auditOutboxEvent.create({
+      data: {
+        id: crypto.randomUUID(),
+        tenantId,
+        docType: 'coa_seed',
+        docId: entityId,
+        action: 'SEED',
+        before: undefined as any,
+        after: after as any,
+        actor,
+      },
+    });
   }
 
   private async emitSeeded(

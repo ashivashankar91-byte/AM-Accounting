@@ -223,28 +223,37 @@ export class JournalViewService {
       ts: new Date().toISOString(),
       schemaV: 1,
     };
-    // Outbox is the source of truth; broker publish is best-effort.
-    await this.prisma.coaOutboxEvent.create({
-      data: {
-        id: crypto.randomUUID(),
-        tenantId,
-        eventType: 'audit.viewed',
-        aggregateId: journalId,
-        payload: payload as any,
-      },
-    });
-    // AuditPort stub (S007) — PII-access trail with actor, no before/after mutation.
-    await this.prisma.auditOutboxEvent.create({
-      data: {
-        id: crypto.randomUUID(),
-        tenantId,
-        docType: 'JOURNAL_ENTRY',
-        docId: journalId,
-        action: 'VIEWED',
-        before: null as any,
-        after: payload as any,
-        actor: actor.userId,
-      },
+    // BR7-1: the audit trail write (auditOutboxEvent) must be transactionally
+    // coupled to its write — previously these two creates ran as separate,
+    // uncoupled awaits, so a failure on the second could leave a
+    // domain-event (audit.viewed) published with no corresponding audit
+    // record, or vice versa on retry. coaOutboxEvent remains a distinct,
+    // best-effort eventual-consistency mechanism for downstream consumers
+    // (same pattern as every other coa-service write site), but it is now
+    // committed atomically alongside the audit write rather than before it.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.coaOutboxEvent.create({
+        data: {
+          id: crypto.randomUUID(),
+          tenantId,
+          eventType: 'audit.viewed',
+          aggregateId: journalId,
+          payload: payload as any,
+        },
+      });
+      // AuditPort stub (S007) — PII-access trail with actor, no before/after mutation.
+      await tx.auditOutboxEvent.create({
+        data: {
+          id: crypto.randomUUID(),
+          tenantId,
+          docType: 'JOURNAL_ENTRY',
+          docId: journalId,
+          action: 'VIEWED',
+          before: null as any,
+          after: payload as any,
+          actor: actor.userId,
+        },
+      });
     });
     try {
       await this.events.publish({

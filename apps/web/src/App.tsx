@@ -44,10 +44,16 @@ import MobileApprovals from './pages/MobileApprovals';
 import GoldenPathLogin from './pages/goldenpath/Login';
 import GoldenPathProtectedRoute from './pages/goldenpath/ProtectedRoute';
 import GoldenPathSelectEntity from './pages/goldenpath/SelectEntity';
+import GoldenPathOrgHierarchy from './pages/goldenpath/OrgHierarchy';
+import GoldenPathRoleTemplates from './pages/goldenpath/RoleTemplates';
 import GoldenPathFiscalPeriod from './pages/goldenpath/FiscalPeriod';
 import GoldenPathChartOfAccounts from './pages/goldenpath/ChartOfAccounts';
 import GoldenPathJournalWorkflow from './pages/goldenpath/JournalWorkflow';
 import GoldenPathAuditHistory from './pages/goldenpath/AuditHistory';
+import GoldenPathTrialBalance from './pages/goldenpath/TrialBalance';
+import GoldenPathGLSearch from './pages/goldenpath/GLSearch';
+import GoldenPathBalanceSheet from './pages/goldenpath/BalanceSheet';
+import GoldenPathIncomeStatement from './pages/goldenpath/IncomeStatement';
 import TrialBalance from './pages/TrialBalance';
 import ManualJournalEntry from './pages/ManualJournalEntry';
 import AMACCSync from './pages/AMACCSync';
@@ -522,10 +528,28 @@ export default function App() {
                   audit history. Real JWT auth (S205), no mock/demo bypass. */}
               <Route path="/golden-path/login" element={<GoldenPathLogin />} />
               <Route path="/golden-path/select-entity" element={<GoldenPathProtectedRoute><GoldenPathSelectEntity /></GoldenPathProtectedRoute>} />
+              {/* S202/S004A — minimal Golden Path browser-journey screens,
+                  added for the Golden R0 final closure browser certification
+                  (steps 3/4 of the required 16-step journey). */}
+              <Route path="/golden-path/org-hierarchy" element={<GoldenPathProtectedRoute><GoldenPathOrgHierarchy /></GoldenPathProtectedRoute>} />
+              <Route path="/golden-path/role-templates" element={<GoldenPathProtectedRoute><GoldenPathRoleTemplates /></GoldenPathProtectedRoute>} />
               <Route path="/golden-path/fiscal" element={<GoldenPathProtectedRoute><GoldenPathFiscalPeriod /></GoldenPathProtectedRoute>} />
               <Route path="/golden-path/coa" element={<GoldenPathProtectedRoute><GoldenPathChartOfAccounts /></GoldenPathProtectedRoute>} />
               <Route path="/golden-path/journal" element={<GoldenPathProtectedRoute><GoldenPathJournalWorkflow /></GoldenPathProtectedRoute>} />
               <Route path="/golden-path/audit/:entityType/:entityId" element={<GoldenPathProtectedRoute><GoldenPathAuditHistory /></GoldenPathProtectedRoute>} />
+              {/* S222 — Trial Balance Screen. Not a step in the sequential
+                  login->...->audit-history Golden Path (TB isn't one of its
+                  11 steps); a directly-reachable Controller reporting screen
+                  consuming the real S014 gl-service API. */}
+              <Route path="/golden-path/trial-balance" element={<GoldenPathProtectedRoute><GoldenPathTrialBalance /></GoldenPathProtectedRoute>} />
+              <Route path="/golden-path/gl-search" element={<GoldenPathProtectedRoute><GoldenPathGLSearch /></GoldenPathProtectedRoute>} />
+              {/* S227 — Balance Sheet & Income Statement Screens. Same
+                  reachability model as S222 above (direct Controller
+                  reporting screens, not sequential Golden Path steps),
+                  consuming the real gl-service FinancialStatementService
+                  API only. */}
+              <Route path="/golden-path/balance-sheet" element={<GoldenPathProtectedRoute><GoldenPathBalanceSheet /></GoldenPathProtectedRoute>} />
+              <Route path="/golden-path/income-statement" element={<GoldenPathProtectedRoute><GoldenPathIncomeStatement /></GoldenPathProtectedRoute>} />
 
               {/* WF-A001 through WF-A010 */}
               <Route path="/accounting/dashboard" element={<DashboardWorkflow />} />

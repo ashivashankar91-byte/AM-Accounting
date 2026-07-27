@@ -11,8 +11,11 @@ import { PrismaJournalRepository } from './infrastructure/journal-repository';
 import { PrismaGLAccountRepository } from './infrastructure/account-repository';
 import { EventStore } from './infrastructure/event-store';
 import { ExchangeRateService } from './infrastructure/exchange-rate-service';
+import { appendAuditRows } from './infrastructure/audit';
 import { GLService } from './application/gl-service';
 import { AgentReviewTimeoutJob } from './application/agent-timeout';
+import { TrialBalanceService } from './application/trial-balance-service';
+import { FinancialStatementService } from './application/financial-statement-service';
 import { GLValidationEngine } from './domain/validation-engine';
 import {
   DuplicateEntryRule,
@@ -24,8 +27,23 @@ import {
   NegativeInventoryRule,
   FSLineMappingGapRule,
 } from './domain/validation-rules';
-import { IEventPublisher, IJournalRepository, IGLAccountRepository, OutboxProcessor, authMiddleware } from '@amacc/shared-kernel';
+import {
+  IEventPublisher,
+  IJournalRepository,
+  IGLAccountRepository,
+  OutboxProcessor,
+  authMiddleware,
+  HttpAuthzClient,
+  AuthzClient,
+  HttpAuditClient,
+  AuditOutboxDrainer,
+  makePrismaAuditOutboxStore,
+  createTenantRlsMiddleware,
+  tenantContextHook,
+  createAuthzGuard,
+} from '@amacc/shared-kernel';
 import pino from 'pino';
+import { getActor, getTenantId, GL_PERMISSIONS } from './http/security';
 
 const logger = pino({ name: 'gl-service' });
 
@@ -34,6 +52,7 @@ async function bootstrap() {
   await app.register(cors, { origin: true });
 
   const prisma = new PrismaClient();
+  (prisma as any).$use(createTenantRlsMiddleware(prisma));
   await prisma.$connect();
 
   const eventPublisher = new RabbitMQEventPublisher({
@@ -56,26 +75,62 @@ async function bootstrap() {
   // DI registrations
   container.registerInstance('PrismaClient', prisma);
   container.registerInstance<IEventPublisher>('IEventPublisher', eventPublisher);
+  container.registerInstance<AuthzClient>('AuthzClient', new HttpAuthzClient({
+    onError: (err, req) => logger.error({ err, permission: req.permissionKey }, 'authz/check failed'),
+  }));
   container.registerInstance('GLValidationEngine', validationEngine);
   container.register<IJournalRepository>('IJournalRepository', { useClass: PrismaJournalRepository });
   container.register<IGLAccountRepository>('IGLAccountRepository', { useClass: PrismaGLAccountRepository });
   container.register('GLService', { useClass: GLService });
+  container.register(TrialBalanceService, { useClass: TrialBalanceService });
+  container.register(FinancialStatementService, { useClass: FinancialStatementService });
   container.register(InquiryRepository, { useClass: InquiryRepository });
 
   await app.register(glRoutes, { prefix: '/api/v1/gl' });
   await app.register(inquiryRoutes, { prefix: '/api/v1/gl' });
 
-  const JWT_SECRET = process.env['AMACC_JWT_SECRET'] ?? 'amacc-dev-secret-change-in-production';
+  const JWT_SECRET = process.env['AMACC_JWT_SECRET'];
+  if (!JWT_SECRET) {
+    throw new Error('FATAL: AMACC_JWT_SECRET environment variable is not set. Set it before starting gl-service.');
+  }
   app.addHook('preHandler', async (request, reply) => {
     if (request.url === '/health') return;
     return authMiddleware(JWT_SECRET)(request, reply);
   });
+  app.addHook('preHandler', tenantContextHook);
 
   // Resolve GLService once for all inline routes that need it
   const glService = container.resolve<GLService>('GLService');
+  const requireDashboardView = createAuthzGuard(
+    container.resolve<AuthzClient>('AuthzClient'),
+    { getTenantId: (request) => getTenantId(request, 400) },
+  )(GL_PERMISSIONS.DASHBOARD_VIEW);
+  const requireLedgerManage = createAuthzGuard(
+    container.resolve<AuthzClient>('AuthzClient'),
+    { getTenantId: (request) => getTenantId(request, 400) },
+  )(GL_PERMISSIONS.LEDGER_MANAGE);
+  app.addHook('onRoute', (routeOptions: any) => {
+    if (typeof routeOptions.url !== 'string') return;
+    if (
+      routeOptions.url.startsWith('/api/v1/dashboard/') ||
+      routeOptions.url.startsWith('/api/v1/command-center/') ||
+      (routeOptions.url.startsWith('/api/v1/esg/') && String(routeOptions.method) === 'GET')
+    ) {
+      const existing = routeOptions.preHandler
+        ? (Array.isArray(routeOptions.preHandler) ? routeOptions.preHandler : [routeOptions.preHandler])
+        : [];
+      routeOptions.preHandler = [...existing, requireDashboardView];
+    }
+    if (routeOptions.url === '/api/v1/esg/metrics' && String(routeOptions.method) === 'POST') {
+      const existing = routeOptions.preHandler
+        ? (Array.isArray(routeOptions.preHandler) ? routeOptions.preHandler : [routeOptions.preHandler])
+        : [];
+      routeOptions.preHandler = [...existing, requireLedgerManage];
+    }
+  });
 
   // Dashboard summary — returns full data for controller dashboard
-  app.get('/api/v1/dashboard/summary', async (request, reply) => {
+  app.get('/api/v1/dashboard/summary', { preHandler: [requireDashboardView] }, async (request, reply) => {
     const tenantId = request.headers['x-tenant-id'] as string | undefined;
     if (!tenantId) {
       return reply.status(400).send({ error: 'MISSING_TENANT_ID', message: 'x-tenant-id header is required' });
@@ -239,7 +294,7 @@ async function bootstrap() {
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const periodLabel = `${monthNames[month - 1]} ${year}`;
 
-    return reply.send({
+    const response = {
       companyName: 'Kunes Auto Group',
       period: periodLabel,
       asOf: now.toISOString(),
@@ -274,7 +329,19 @@ async function bootstrap() {
       payroll,
       reconStatus,
       agentAlerts: 0,
+    };
+
+    await appendAuditRows(prisma as any, {
+      tenantId,
+      docType: 'GL_DASHBOARD',
+      docId: 'summary',
+      action: 'VIEWED',
+      actor: getActor(request),
+      after: { route: '/api/v1/dashboard/summary', asOf: response.asOf, period: response.period },
+      eventType: 'audit.viewed',
     });
+
+    return reply.send(response);
   });
 
   // ════════════════════════════════════════════════════════════════════
@@ -985,12 +1052,29 @@ async function bootstrap() {
   );
   outboxProcessor.startPolling(5000);
 
+  const auditDrainer = new AuditOutboxDrainer(
+    makePrismaAuditOutboxStore((prisma as any).auditOutboxEvent),
+    new HttpAuditClient(),
+    {
+      serviceName: 'gl-service',
+      onFailed: (row, err, willRetry) => logger.error({ outboxId: row.id, err, willRetry }, 'audit outbox delivery failed'),
+    },
+  );
+  const stopAuditDrainer = auditDrainer.start(5000);
+
   // Start agent-review auto-approve timeout job.
   // If agent-gl does not review a PENDING_REVIEW entry within AGENT_REVIEW_TIMEOUT_SECONDS,
   // the entry is auto-approved with approvedByUserId = 'AUTO_TIMEOUT' via the full
   // GLService.approveJournalEntry path so period balances and outbox events are written.
   const timeoutJob = new AgentReviewTimeoutJob(prisma, glService);
   timeoutJob.startPolling(10_000);
+
+  const shutdown = () => {
+    stopAuditDrainer();
+    process.exit(0);
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 bootstrap().catch((err) => {

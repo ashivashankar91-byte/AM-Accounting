@@ -36,7 +36,7 @@ const FR_A = {
 };
 
 function isolatingPrisma() {
-  return {
+  const client: any = {
     store: {
       findFirst: async ({ where }: any) => (where.tenantId === TENANT_A ? { id: STORE_A, tenantId: TENANT_A } : null),
     },
@@ -56,7 +56,11 @@ function isolatingPrisma() {
       update:   async ({ data }: any) => ({ ...FR_A, ...data }),
     },
     tenantOutboxEvent: { create: async () => ({}) },
+    auditOutboxEvent: { create: async () => ({}) },
   };
+  client.$transaction = async (arg: any) =>
+    typeof arg === 'function' ? arg(client) : Promise.all(arg);
+  return client;
 }
 
 function noopPublisher() { return { publish: async () => {} }; }

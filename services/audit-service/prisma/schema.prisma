@@ -35,10 +35,58 @@ model AuditLog {
   /// never an UPDATE (the table is append-only/immutable by trigger).
   sourceEventId String?  @unique @map("source_event_id")
 
+  /// S007 BR7-2 hash chain. hashSelf = sha256(hashPrev + canonical content of
+  /// this row), computed synchronously at insert time (see AuditService.log).
+  /// hashPrev is null only for the first row ever written in a partition
+  /// (the chain's genesis record).
+  hashPrev      String?  @map("hash_prev")
+  hashSelf      String?  @map("hash_self")
+  /// Generated column ('YYYY-MM' derived from occurred_at via date_part,
+  /// zero-padded) || ':' || tenant_id — see the hash-chain migration for the
+  /// exact expression (to_char is rejected by Postgres for generated
+  /// columns: it is not IMMUTABLE, only date_part is).
+  /// Computed by Postgres, never written by the application — see migration
+  /// 20260727000001_add_hash_chain for why this is generated, not physically
+  /// partitioned.
+  partitionKey  String?  @map("partition_key")
+
   @@map("audit_logs")
   @@index([tenantId])
   @@index([entityType, entityId])
   @@index([actorId])
   @@index([occurredAt])
   @@index([tenantId, eventType])
+  @@index([partitionKey])
+  /// S224 Document Audit History View: GET /audit/documents/:docType/:docId
+  /// filters by exactly these three columns, ordered by occurredAt.
+  @@index([tenantId, entityType, entityId, occurredAt], map: "audit_logs_tenant_entity_occurred_idx")
+}
+
+/// Mutable bookkeeping pointer to the current chain tail hash per partition.
+/// NOT audit evidence itself (see migration 20260727000001_add_hash_chain) —
+/// the audit_logs immutability guarantee does not apply to this table.
+model AuditChainAnchor {
+  partitionKey   String   @id @map("partition_key")
+  tailHash       String?  @map("tail_hash")
+  tailAuditLogId String?  @map("tail_audit_log_id")
+  updatedAt      DateTime @default(now()) @map("updated_at")
+  /// GOLDEN-R0 Phase 4 (PRODUCT_OWNER_DECISION legacy-audit-row treatment):
+  /// explicit pre-chain cutoff. NULL means every row in this partition is
+  /// expected to be hash-chained from genesis (the default, and the only
+  /// state a partition can ever be in once hash-chaining has been active
+  /// since its very first write). When set, verifyChain() treats every row
+  /// with occurredAt < chainVerifiedFrom as pre-existing, out-of-scope
+  /// legacy data (hashPrev/hashSelf never populated for it, because it was
+  /// written before this service's hash-chain feature existed) and verifies
+  /// hash-chain continuity only for rows from this timestamp forward. This
+  /// was chosen over (a) a controlled backfill, which would require
+  /// disabling this service's own immutability trigger to rewrite rows
+  /// already recorded as immutable -- an action indistinguishable from the
+  /// very tampering BR7-2 exists to detect, and (b) leaving the false
+  /// "broken" result unexplained. Never used to hide a genuine, newly
+  /// introduced chain break -- only set once, per partition, by an explicit,
+  /// logged, human-approved operation (see LEGACY_AUDIT_CHAIN_DECISION.md).
+  chainVerifiedFrom DateTime? @map("chain_verified_from")
+
+  @@map("audit_chain_anchors")
 }

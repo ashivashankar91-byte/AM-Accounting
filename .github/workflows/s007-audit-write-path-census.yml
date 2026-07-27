@@ -1,0 +1,32 @@
+name: S007 Audit Write-Path Census
+
+# Enforces the S007 Definition of Done requirement "100% write-path
+# coverage (census in CI)": every domain-write call site in the certified
+# live-stack services (tenant-service, auth-service, coa-service,
+# audit-service) must couple an audit write to the same transaction, or be
+# a documented, reasoned exemption in scripts/audit-write-path-census.js.
+# See docs/accounting-modernization/S007_WRITE_PATH_COVERAGE_CENSUS.md.
+
+on:
+  push:
+    branches: [final-r0, golden-r0-fleet, main]
+  pull_request:
+    paths:
+      - 'services/tenant-service/src/**'
+      - 'services/auth-service/src/**'
+      - 'services/coa-service/src/**'
+      - 'services/audit-service/src/**'
+      - 'scripts/audit-write-path-census.js'
+      - 'docs/accounting-modernization/S007_WRITE_PATH_COVERAGE_CENSUS.md'
+  workflow_dispatch:
+
+jobs:
+  census:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run write-path coverage census
+        run: node scripts/audit-write-path-census.js

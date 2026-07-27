@@ -7,6 +7,7 @@ import { legalEntityRoutes } from './http/legal-entity-routes';
 import { storeRoutes } from './http/store-routes';
 import { departmentRoutes } from './http/department-routes';
 import { franchiseRoutes, oemRefRoutes } from './http/franchise-routes';
+import { orgRoutes } from './http/org-routes';
 import { RabbitMQEventPublisher } from './infrastructure/event-publisher';
 import { PrismaTenantRepository } from './infrastructure/tenant-repository';
 import { TenantService } from './application/tenant-service';
@@ -14,6 +15,7 @@ import { LegalEntityService } from './application/legal-entity-service';
 import { StoreService } from './application/store-service';
 import { DepartmentService } from './application/department-service';
 import { FranchiseService } from './application/franchise-service';
+import { OrgService } from './application/org-service';
 import {
   IEventPublisher, ITenantRepository, HttpAuthzClient, AuthzClient,
   HttpAuditClient, AuditOutboxDrainer, makePrismaAuditOutboxStore,
@@ -56,6 +58,7 @@ async function bootstrap() {
   container.register('StoreService', { useClass: StoreService });
   container.register('DepartmentService', { useClass: DepartmentService });
   container.register('FranchiseService', { useClass: FranchiseService });
+  container.register('OrgService', { useClass: OrgService });
   container.registerInstance<AuthzClient>('AuthzClient', new HttpAuthzClient({
     onError: (err, req) => logger.error({ err, permission: req.permissionKey }, 'authz/check failed'),
   }));
@@ -64,6 +67,7 @@ async function bootstrap() {
   await app.register(legalEntityRoutes, { prefix: '/api/v1/legal-entities' });
   await app.register(storeRoutes, { prefix: '/api/v1/stores' });
   await app.register(franchiseRoutes, { prefix: '/api/v1/stores' });
+  await app.register(orgRoutes, { prefix: '/api/v1/org' });
   await app.register(departmentRoutes, { prefix: '/api/v1/entities' });
   await app.register(oemRefRoutes, { prefix: '/api/v1/oems' });
   app.get('/health', async () => ({ status: 'ok', service: 'tenant-service' }));

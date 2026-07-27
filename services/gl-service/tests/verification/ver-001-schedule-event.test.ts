@@ -11,7 +11,7 @@
  * 4. If schedule-service consumer running, verify schedule_details row created
  */
 
-import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
 describe('VER-001: Schedule Event Publishing on Journal Posting', () => {
   let prisma: any;

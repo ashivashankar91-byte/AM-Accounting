@@ -128,20 +128,86 @@ export class RoleService {
       throw new RoleValidationError('ROLE_EXISTS', `Role name already exists: ${dto.name}`);
     }
 
-    const role = await this.prisma.role.create({
-      data: {
-        id: randomUUID(),
-        tenantId: dto.tenantId,
-        key,
-        name: dto.name,
-        permissions: dto.permissions,
-        builtIn: false,
-        status: 'ACTIVE',
-      },
+    // S007 BR7-1/BR7-4 — role create, its S207 permission projection, and the
+    // audit event are one atomic transaction: a failure in any of the three
+    // rolls back the whole role-creation, never a partial/unaudited role.
+    const role = await this.prisma.$transaction(async (tx) => {
+      const r = await tx.role.create({
+        data: {
+          id: randomUUID(),
+          tenantId: dto.tenantId,
+          key,
+          name: dto.name,
+          permissions: dto.permissions,
+          builtIn: false,
+          status: 'ACTIVE',
+        },
+      });
+      await this._projectRolePermissions(r.key, r.permissions, tx);
+      await this._audit(dto.tenantId, 'role', r.id, 'CREATE', null, this._toRoleView(r), dto.actor, tx);
+      return r;
     });
 
-    await this._projectRolePermissions(role.key, role.permissions);
-    await this._audit(dto.tenantId, 'role', role.id, 'CREATE', null, this._toRoleView(role), dto.actor);
+    await this._emit('iam.role.created', dto.tenantId, {
+      eventId: randomUUID(), roleId: role.id, roleKey: role.key,
+      scope: { tenantId: dto.tenantId }, actor: dto.actor ?? 'user',
+      ts: new Date().toISOString(), schemaV: 1,
+    });
+    this.authz.invalidateCache();
+    return this._toRoleView(role);
+  }
+
+  // ── S004A support: materialize the real backing Role for a position template ──
+  // S004A ("Dealership Position Role Templates") must not create a parallel
+  // permission map: applying a template finds-or-creates a real, tenant-scoped
+  // Role keyed by the template's position slug and (re-)projects its exact
+  // permission set, so AuthzService.check() enforces it through the same S207
+  // path already proven for S206. The key is passed explicitly (not derived
+  // from the display name via _deriveKey) because template keys are fixed
+  // position slugs (e.g. OFFICE_MGR, SALESPERSON_RO) that do not always match
+  // what _deriveKey would compute from a human-friendly template name.
+  async ensureRoleForPositionTemplate(dto: {
+    tenantId: string; key: string; name: string; permissions: string[]; actor?: string;
+  }): Promise<RoleView> {
+    await this._assertPermissionsKnown(dto.permissions);
+    const existing = await this.prisma.role.findFirst({ where: { tenantId: dto.tenantId, key: dto.key } });
+    if (existing) {
+      if (existing.status !== 'ACTIVE') {
+        throw new RoleValidationError('ROLE_RETIRED', `Backing role for position ${dto.key} has been retired`);
+      }
+      const same = JSON.stringify([...existing.permissions].sort())
+        === JSON.stringify([...dto.permissions].sort());
+      if (same) return this._toRoleView(existing);
+      // Template permissions changed since the last apply: re-project so the
+      // backing role (and every user already assigned it) reflects the
+      // template's *current* permission set (AC: "permission set... takes
+      // effect"). This never touches other tenants' clones/roles.
+      return this.updateRole(dto.tenantId, existing.id, { permissions: dto.permissions, actor: dto.actor });
+    }
+
+    let role;
+    try {
+      role = await this.prisma.$transaction(async (tx) => {
+        const r = await tx.role.create({
+          data: {
+            id: randomUUID(), tenantId: dto.tenantId, key: dto.key, name: dto.name,
+            permissions: dto.permissions, builtIn: false, status: 'ACTIVE',
+          },
+        });
+        await this._projectRolePermissions(r.key, r.permissions, tx);
+        await this._audit(dto.tenantId, 'role', r.id, 'CREATE', null, this._toRoleView(r), dto.actor, tx);
+        return r;
+      });
+    } catch (err: any) {
+      if (err?.code === 'P2002') {
+        throw new RoleValidationError(
+          'ROLE_EXISTS',
+          `A role named "${dto.name}" already exists for this tenant under a different key`,
+        );
+      }
+      throw err;
+    }
+
     await this._emit('iam.role.created', dto.tenantId, {
       eventId: randomUUID(), roleId: role.id, roleKey: role.key,
       scope: { tenantId: dto.tenantId }, actor: dto.actor ?? 'user',
@@ -173,13 +239,18 @@ export class RoleService {
     }
 
     const before = this._toRoleView(current);
-    const role = await this.prisma.role.update({ where: { id }, data });
+    // S007 BR7-1/BR7-4 — update, its permission re-projection, and the audit
+    // event are one atomic transaction.
+    const role = await this.prisma.$transaction(async (tx) => {
+      const r = await tx.role.update({ where: { id }, data });
+      // Re-project permissions so affected users change within 5 s (AC).
+      if (dto.permissions !== undefined) {
+        await this._projectRolePermissions(r.key, r.permissions, tx);
+      }
+      await this._audit(tenantId, 'role', r.id, 'UPDATE', before, this._toRoleView(r), dto.actor, tx);
+      return r;
+    });
 
-    // Re-project permissions so affected users change within 5 s (AC).
-    if (dto.permissions !== undefined) {
-      await this._projectRolePermissions(role.key, role.permissions);
-    }
-    await this._audit(tenantId, 'role', role.id, 'UPDATE', before, this._toRoleView(role), dto.actor);
     await this._emit('iam.role.updated', tenantId, {
       eventId: randomUUID(), roleId: role.id, roleKey: role.key,
       scope: { tenantId }, actor: dto.actor ?? 'user',
@@ -200,11 +271,15 @@ export class RoleService {
     if (assignedCount > 0) throw new RoleInUseError(id);
 
     const before = this._toRoleView(current);
-    await this.prisma.role.update({ where: { id }, data: { status: 'RETIRED' } });
-    // A retired role grants nothing: drop its permission projection.
-    await this.prisma.rolePermission.deleteMany({ where: { role: current.key } });
+    // S007 BR7-1/BR7-4 — retire, permission-projection removal, and audit
+    // event are one atomic transaction.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.role.update({ where: { id }, data: { status: 'RETIRED' } });
+      // A retired role grants nothing: drop its permission projection.
+      await tx.rolePermission.deleteMany({ where: { role: current.key } });
+      await this._audit(tenantId, 'role', id, 'RETIRE', before, { ...before, status: 'RETIRED' }, actor, tx);
+    });
 
-    await this._audit(tenantId, 'role', id, 'RETIRE', before, { ...before, status: 'RETIRED' }, actor);
     await this._emit('iam.role.retired', tenantId, {
       eventId: randomUUID(), roleId: id, roleKey: current.key,
       scope: { tenantId }, actor: actor ?? 'user',
@@ -246,23 +321,29 @@ export class RoleService {
       await this._assertStoresInEntity(dto.entityId, storeIds);
     }
 
-    const assignment = await this.prisma.roleAssignment.create({
-      data: {
-        id: randomUUID(),
-        tenantId: dto.tenantId,
-        userId: dto.userId,
-        roleId: dto.roleId,
-        entityId: dto.entityId,
-        storeIds,
-        allStores,
-        status: 'GRANTED',
-      },
+    // S007 BR7-1/BR7-4 — assignment create, S207 projection, and audit event
+    // are one atomic transaction.
+    const assignment = await this.prisma.$transaction(async (tx) => {
+      const a = await tx.roleAssignment.create({
+        data: {
+          id: randomUUID(),
+          tenantId: dto.tenantId,
+          userId: dto.userId,
+          roleId: dto.roleId,
+          entityId: dto.entityId,
+          storeIds,
+          allStores,
+          status: 'GRANTED',
+        },
+      });
+
+      await this._projectAssignment(a.tenantId, a.userId, role.key,
+        a.entityId, allStores, storeIds, tx);
+      await this._audit(dto.tenantId, 'role_assignment', a.id, 'GRANT', null,
+        this._toAssignmentView(a, role.key), dto.actor, tx);
+      return a;
     });
 
-    await this._projectAssignment(assignment.tenantId, assignment.userId, role.key,
-      assignment.entityId, allStores, storeIds);
-    await this._audit(dto.tenantId, 'role_assignment', assignment.id, 'GRANT', null,
-      this._toAssignmentView(assignment, role.key), dto.actor);
     await this._emit('iam.assignment.granted', dto.tenantId, {
       eventId: randomUUID(), roleId: dto.roleId, userId: dto.userId,
       scope: { tenantId: dto.tenantId, entityId: dto.entityId, storeIds, allStores },
@@ -280,14 +361,18 @@ export class RoleService {
     if (current.status === 'REVOKED') return;
 
     const before = this._toAssignmentView(current, current.role.key);
-    await this.prisma.roleAssignment.update({
-      where: { id }, data: { status: 'REVOKED', revokedAt: new Date() },
+    // S007 BR7-1/BR7-4 — revoke, its projection removal, and audit event are
+    // one atomic transaction.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.roleAssignment.update({
+        where: { id }, data: { status: 'REVOKED', revokedAt: new Date() },
+      });
+      await this._unprojectAssignment(tenantId, current.userId, current.role.key,
+        current.entityId, current.allStores, current.storeIds, tx);
+      await this._audit(tenantId, 'role_assignment', id, 'REVOKE', before,
+        { ...before, status: 'REVOKED' }, actor, tx);
     });
-    await this._unprojectAssignment(tenantId, current.userId, current.role.key,
-      current.entityId, current.allStores, current.storeIds);
 
-    await this._audit(tenantId, 'role_assignment', id, 'REVOKE', before,
-      { ...before, status: 'REVOKED' }, actor);
     await this._emit('iam.assignment.revoked', tenantId, {
       eventId: randomUUID(), roleId: current.roleId, userId: current.userId,
       scope: { tenantId, entityId: current.entityId,
@@ -310,19 +395,21 @@ export class RoleService {
   // ── Projection into the S207 read models ─────────────────────────────────────
 
   /** role.permissions is the source of truth; sync role_permission for its key. */
-  private async _projectRolePermissions(roleKey: string, permissions: string[]): Promise<void> {
-    await this.prisma.$transaction([
-      this.prisma.rolePermission.deleteMany({ where: { role: roleKey } }),
-      this.prisma.rolePermission.createMany({
-        data: permissions.map((permissionKey) => ({ role: roleKey, permissionKey })),
-        skipDuplicates: true,
-      }),
-    ]);
+  private async _projectRolePermissions(
+    roleKey: string, permissions: string[],
+    tx: Pick<PrismaClient, 'rolePermission'> = this.prisma,
+  ): Promise<void> {
+    await tx.rolePermission.deleteMany({ where: { role: roleKey } });
+    await tx.rolePermission.createMany({
+      data: permissions.map((permissionKey) => ({ role: roleKey, permissionKey })),
+      skipDuplicates: true,
+    });
   }
 
   private async _projectAssignment(
     tenantId: string, userId: string, roleKey: string,
     entityId: string | null, allStores: boolean, storeIds: string[],
+    tx: Pick<PrismaClient, 'authzRoleAssignment'> = this.prisma,
   ): Promise<void> {
     const rows = allStores
       ? [{ entityId, storeId: null as string | null }]
@@ -336,11 +423,11 @@ export class RoleService {
       // insert a fresh duplicate on every re-assignment. find-then-create
       // against the plain (nullable-safe) where filter is idempotent in
       // every case, matching _unprojectAssignment's filter shape below.
-      const existing = await this.prisma.authzRoleAssignment.findFirst({
+      const existing = await tx.authzRoleAssignment.findFirst({
         where: { tenantId, userId, role: roleKey, entityId: r.entityId, storeId: r.storeId },
       });
       if (!existing) {
-        await this.prisma.authzRoleAssignment.create({
+        await tx.authzRoleAssignment.create({
           data: { id: randomUUID(), tenantId, userId, role: roleKey, entityId: r.entityId, storeId: r.storeId },
         });
       }
@@ -350,13 +437,14 @@ export class RoleService {
   private async _unprojectAssignment(
     tenantId: string, userId: string, roleKey: string,
     entityId: string | null, allStores: boolean, storeIds: string[],
+    tx: Pick<PrismaClient, 'authzRoleAssignment'> = this.prisma,
   ): Promise<void> {
     if (entityId == null || allStores) {
-      await this.prisma.authzRoleAssignment.deleteMany({
+      await tx.authzRoleAssignment.deleteMany({
         where: { tenantId, userId, role: roleKey, entityId, storeId: null },
       });
     } else {
-      await this.prisma.authzRoleAssignment.deleteMany({
+      await tx.authzRoleAssignment.deleteMany({
         where: { tenantId, userId, role: roleKey, entityId, storeId: { in: storeIds } },
       });
     }
@@ -420,18 +508,15 @@ export class RoleService {
   private async _audit(
     tenantId: string, docType: string, docId: string, action: string,
     before: unknown, after: unknown, actor?: string,
+    tx: Pick<PrismaClient, 'auditOutboxEvent'> = this.prisma,
   ): Promise<void> {
-    try {
-      await this.prisma.auditOutboxEvent.create({
-        data: {
-          id: randomUUID(), tenantId, docType, docId, action,
-          before: (before ?? undefined) as any, after: (after ?? undefined) as any,
-          actor: actor ?? 'user',
-        },
-      });
-    } catch {
-      // AuditPort write is non-fatal to the business operation.
-    }
+    await tx.auditOutboxEvent.create({
+      data: {
+        id: randomUUID(), tenantId, docType, docId, action,
+        before: (before ?? undefined) as any, after: (after ?? undefined) as any,
+        actor: actor ?? 'user',
+      },
+    });
   }
 
   private async _emit(type: string, tenantId: string, payload: Record<string, unknown>): Promise<void> {

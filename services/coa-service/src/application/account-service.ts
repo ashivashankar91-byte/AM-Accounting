@@ -174,25 +174,32 @@ export class AccountService {
     if (existing) throw new DuplicateAccountError(dto.entityId, dto.accountNumber);
 
     const contra = isContra(type, normalBalance);
-    const created = await this.prisma.glAccount.create({
-      data: {
-        id: crypto.randomUUID(),
-        tenantId: dto.tenantId,
-        entityId: dto.entityId,
-        accountNumber: dto.accountNumber,
-        name: dto.name,
-        type,
-        normalBalance,
-        isContra: contra,
-        contraReason: contra ? (dto.contraReason ?? null) : null,
-        postable: dto.postable ?? true,
-        parentId: dto.parentId ?? null,
-        status: 'ACTIVE',
-        version: 1,
-      },
+    // S007 BR7-1/BR7-4 — the audit event is written in the SAME database
+    // transaction as the domain write, and its failure is no longer
+    // swallowed: an audit-write failure rolls back the account creation
+    // rather than silently losing the audit trail.
+    const created = await this.prisma.$transaction(async (tx) => {
+      const c = await tx.glAccount.create({
+        data: {
+          id: crypto.randomUUID(),
+          tenantId: dto.tenantId,
+          entityId: dto.entityId,
+          accountNumber: dto.accountNumber,
+          name: dto.name,
+          type,
+          normalBalance,
+          isContra: contra,
+          contraReason: contra ? (dto.contraReason ?? null) : null,
+          postable: dto.postable ?? true,
+          parentId: dto.parentId ?? null,
+          status: 'ACTIVE',
+          version: 1,
+        },
+      });
+      await this.audit(dto.tenantId, c.id, 'CREATE', dto.actor, null, this.snapshot(c), tx);
+      return c;
     });
 
-    await this.audit(dto.tenantId, created.id, 'CREATE', dto.actor, null, this.snapshot(created));
     await this.emit('coa.account.created', dto.tenantId, created.entityId, created.accountNumber, dto.actor, {
       created: this.snapshot(created),
     });
@@ -255,20 +262,23 @@ export class AccountService {
 
     if (Object.keys(changes).length === 0) return account; // no-op
 
-    const updated = await this.prisma.glAccount.update({
-      where: { id: account.id },
-      data: {
-        name: dto.name ?? account.name,
-        type,
-        normalBalance,
-        isContra: isContra(type, normalBalance),
-        contraReason,
-        postable,
-        version: { increment: 1 },
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.glAccount.update({
+        where: { id: account.id },
+        data: {
+          name: dto.name ?? account.name,
+          type,
+          normalBalance,
+          isContra: isContra(type, normalBalance),
+          contraReason,
+          postable,
+          version: { increment: 1 },
+        },
+      });
+      await this.audit(dto.tenantId, u.id, 'UPDATE', dto.actor, before, this.snapshot(u), tx);
+      return u;
     });
 
-    await this.audit(dto.tenantId, updated.id, 'UPDATE', dto.actor, before, this.snapshot(updated));
     await this.emit('coa.account.updated', dto.tenantId, updated.entityId, updated.accountNumber, dto.actor, changes);
     return updated;
   }
@@ -285,11 +295,14 @@ export class AccountService {
     }
 
     const before = this.snapshot(account);
-    const updated = await this.prisma.glAccount.update({
-      where: { id: account.id },
-      data: { status: 'INACTIVE', version: { increment: 1 } },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.glAccount.update({
+        where: { id: account.id },
+        data: { status: 'INACTIVE', version: { increment: 1 } },
+      });
+      await this.audit(tenantId, u.id, 'DEACTIVATE', actor, before, this.snapshot(u), tx);
+      return u;
     });
-    await this.audit(tenantId, updated.id, 'DEACTIVATE', actor, before, this.snapshot(updated));
     await this.emit('coa.account.deactivated', tenantId, updated.entityId, updated.accountNumber, actor, {
       status: { from: 'ACTIVE', to: 'INACTIVE' },
     });
@@ -343,14 +356,17 @@ export class AccountService {
     const before = this.snapshot(account);
     const oldParentId = account.parentId ?? null;
 
-    const updated = await this.prisma.glAccount.update({
-      where: { id: account.id },
-      data: { parentId: newParentId, parentEffectiveFrom: effectiveFrom, version: { increment: 1 } },
-    });
+    // S007 BR7-1/BR7-4 — reparent write, the effective-dated history trail
+    // (BR211-3), and the audit event are one atomic transaction: a failure
+    // in any of the three rolls back the whole reparent, never a partial
+    // silent write.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.glAccount.update({
+        where: { id: account.id },
+        data: { parentId: newParentId, parentEffectiveFrom: effectiveFrom, version: { increment: 1 } },
+      });
 
-    // BR211-3 — append-only effective-dated trail.
-    try {
-      await this.prisma.glAccountReparent.create({
+      await tx.glAccountReparent.create({
         data: {
           id: crypto.randomUUID(),
           tenantId: dto.tenantId,
@@ -362,11 +378,11 @@ export class AccountService {
           actor: dto.actor,
         },
       });
-    } catch {
-      /* history write is non-fatal */
-    }
 
-    await this.audit(dto.tenantId, updated.id, 'REPARENT', dto.actor, before, this.snapshot(updated));
+      await this.audit(dto.tenantId, u.id, 'REPARENT', dto.actor, before, this.snapshot(u), tx);
+      return u;
+    });
+
     await this.emitReparented(dto.tenantId, updated, oldParentId, newParentId, effectiveFrom, dto.actor);
     return updated;
   }
@@ -431,6 +447,13 @@ export class AccountService {
     };
   }
 
+  /**
+   * S007 BR7-1/BR7-4 — AuditPort write. `tx` MUST be the same transaction
+   * client as the domain write it accompanies: a failure here throws and
+   * propagates out of the enclosing `$transaction`, rolling back the
+   * domain write too. Never swallowed — an audit event can never be
+   * silently lost.
+   */
   private async audit(
     tenantId: string,
     docId: string,
@@ -438,23 +461,20 @@ export class AccountService {
     actor: string,
     before: unknown,
     after: unknown,
+    tx: Pick<PrismaClient, 'auditOutboxEvent'> = this.prisma,
   ) {
-    try {
-      await this.prisma.auditOutboxEvent.create({
-        data: {
-          id: crypto.randomUUID(),
-          tenantId,
-          docType: 'gl_account',
-          docId,
-          action,
-          before: (before ?? undefined) as any,
-          after: (after ?? undefined) as any,
-          actor,
-        },
-      });
-    } catch {
-      /* AuditPort write is non-fatal */
-    }
+    await tx.auditOutboxEvent.create({
+      data: {
+        id: crypto.randomUUID(),
+        tenantId,
+        docType: 'gl_account',
+        docId,
+        action,
+        before: (before ?? undefined) as any,
+        after: (after ?? undefined) as any,
+        actor,
+      },
+    });
   }
 
   private async emit(

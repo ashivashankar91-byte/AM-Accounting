@@ -39,6 +39,8 @@ import { sequenceRoutes, SEQUENCE_PERMISSIONS } from '../src/http/sequence-route
 import { sourceRoutes, SOURCE_PERMISSIONS } from '../src/http/source-routes';
 import { journalRoutes, JE_PERMISSIONS } from '../src/http/journal-routes';
 import { draftRoutes, JE_DRAFT_PERMISSIONS } from '../src/http/draft-routes';
+import { glInquiryRoutes, INQUIRY_PERMISSIONS } from '../src/http/gl-inquiry-routes';
+import { glSearchRoutes, SEARCH_PERMISSIONS } from '../src/http/gl-search-routes';
 
 const JWT_SECRET = 'coa-authz-test-secret';
 
@@ -84,12 +86,16 @@ const ROLE_GRANTS: Record<string, ReadonlySet<string>> = {
     JE_PERMISSIONS.POST, JE_PERMISSIONS.VIEW, JE_PERMISSIONS.REVERSE,
     JE_DRAFT_PERMISSIONS.CREATE, JE_DRAFT_PERMISSIONS.EDIT, JE_DRAFT_PERMISSIONS.VIEW_ALL,
     JE_DRAFT_PERMISSIONS.VOID, JE_DRAFT_PERMISSIONS.VOID_ANY,
+    INQUIRY_PERMISSIONS.VIEW,
+    SEARCH_PERMISSIONS.SEARCH,
   ]),
   ACCOUNTANT: new Set([
     ACCOUNT_PERMISSIONS.VIEW, CONFIG_PERMISSIONS.VIEW, FISCAL_PERMISSIONS.VIEW,
     PERIOD_PERMISSIONS.VIEW, SEQUENCE_PERMISSIONS.GAP_REPORT, SOURCE_PERMISSIONS.VIEW,
     JE_PERMISSIONS.POST, JE_PERMISSIONS.VIEW, JE_PERMISSIONS.REVERSE,
     JE_DRAFT_PERMISSIONS.CREATE, JE_DRAFT_PERMISSIONS.EDIT, JE_DRAFT_PERMISSIONS.VOID,
+    INQUIRY_PERMISSIONS.VIEW,
+    SEARCH_PERMISSIONS.SEARCH,
   ]),
   CLERK: new Set([JE_PERMISSIONS.VIEW, JE_DRAFT_PERMISSIONS.CREATE, JE_DRAFT_PERMISSIONS.EDIT, JE_DRAFT_PERMISSIONS.VOID]),
 };
@@ -147,6 +153,8 @@ describe('coa-service route-level authorization (R0 Stabilization Phase 3)', () 
     { story: 'S218', permission: JE_PERMISSIONS.REVERSE, routeFn: journalRoutes, serviceToken: 'ReversalService', prefix: '/coa', method: 'POST', path: '/coa/journals/id1:reverse', grantedRole: 'ACCOUNTANT', payload: { reason: 'correction' } },
     { story: 'S214', permission: JE_DRAFT_PERMISSIONS.CREATE, routeFn: draftRoutes, serviceToken: 'DraftService', prefix: '/coa', method: 'POST', path: '/coa/manual-journals/drafts', grantedRole: 'CLERK', payload: {} },
     { story: 'S214', permission: JE_DRAFT_PERMISSIONS.EDIT, routeFn: draftRoutes, serviceToken: 'DraftService', prefix: '/coa', method: 'PUT', path: '/coa/manual-journals/drafts/d1', grantedRole: 'ACCOUNTANT', payload: {} },
+    { story: 'S220', permission: INQUIRY_PERMISSIONS.VIEW, routeFn: glInquiryRoutes, serviceToken: 'GLInquiryService', prefix: '/coa', method: 'GET', path: '/coa/inquiry/accounts/acc-1/activity?periodCode=2026-08', grantedRole: 'ACCOUNTANT' },
+    { story: 'S221', permission: SEARCH_PERMISSIONS.SEARCH, routeFn: glSearchRoutes, serviceToken: 'GLSearchService', prefix: '/coa', method: 'GET', path: '/coa/inquiry/search?sourceCode=GJ', grantedRole: 'ACCOUNTANT' },
   ];
 
   for (const c of cases) {

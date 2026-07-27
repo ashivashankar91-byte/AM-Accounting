@@ -1,5 +1,6 @@
 import { inject, injectable } from 'tsyringe';
 import { IEventPublisher } from '@amacc/shared-kernel';
+import { PrismaClient } from '.prisma/tenant-client';
 
 // ── US States + Canadian Provinces (BR201-2: drives tax jurisdiction defaulting) ──
 
@@ -148,21 +149,27 @@ export class StoreService {
       );
     }
 
-    const store = await this.prisma.store.create({
-      data: {
-        tenantId:     dto.tenantId,
-        entityId:     dto.entityId,
-        storeCode:    dto.storeCode.toUpperCase(),
-        storeName:    dto.storeName,
-        stateProvince: dto.stateProvince.toUpperCase(),
-        addressLine1: dto.addressLine1 ?? null,
-        addressLine2: dto.addressLine2 ?? null,
-        city:         dto.city ?? null,
-        postalCode:   dto.postalCode ?? null,
-        dmvId:        dto.dmvId ?? null,
-        status:       'ACTIVE',
-        version:      1,
-      },
+    // S007 BR7-1/BR7-4 — store create + audit event are one atomic
+    // transaction.
+    const store = await this.prisma.$transaction(async (tx: any) => {
+      const s = await tx.store.create({
+        data: {
+          tenantId:     dto.tenantId,
+          entityId:     dto.entityId,
+          storeCode:    dto.storeCode.toUpperCase(),
+          storeName:    dto.storeName,
+          stateProvince: dto.stateProvince.toUpperCase(),
+          addressLine1: dto.addressLine1 ?? null,
+          addressLine2: dto.addressLine2 ?? null,
+          city:         dto.city ?? null,
+          postalCode:   dto.postalCode ?? null,
+          dmvId:        dto.dmvId ?? null,
+          status:       'ACTIVE',
+          version:      1,
+        },
+      });
+      await this._audit(dto.tenantId, 'Store', s.id, 'CREATE', null, s, actor, tx);
+      return s;
     });
 
     await this._writeOutbox(dto.tenantId, 'STORE_CREATED', store.id, {
@@ -171,7 +178,6 @@ export class StoreService {
       storeName:    store.storeName,
       stateProvince: store.stateProvince,
     });
-    await this._audit(dto.tenantId, 'Store', store.id, 'CREATE', null, store, actor);
 
     return store;
   }
@@ -200,13 +206,16 @@ export class StoreService {
     if (dto.postalCode    !== undefined) data.postalCode    = dto.postalCode;
     if (dto.dmvId         !== undefined) data.dmvId         = dto.dmvId;
 
-    const store = await this.prisma.store.update({ where: { id }, data });
+    const store = await this.prisma.$transaction(async (tx: any) => {
+      const s = await tx.store.update({ where: { id }, data });
+      await this._audit(tenantId, 'Store', id, 'UPDATE', current, s, actor, tx);
+      return s;
+    });
 
     await this._writeOutbox(tenantId, 'STORE_UPDATED', id, {
       storeCode: store.storeCode,
       changes:   Object.keys(data).filter(k => k !== 'version'),
     });
-    await this._audit(tenantId, 'Store', id, 'UPDATE', current, store, actor);
 
     return store;
   }
@@ -226,15 +235,19 @@ export class StoreService {
       );
     }
 
-    const store = await this.prisma.store.update({
-      where: { id },
-      data: {
-        status:            'INACTIVE',
-        version:           current.version + 1,
-        deactivatedAt:     new Date(),
-        deactivatedBy:     dto.deactivatedBy,
-        deactivationReason: dto.reason,
-      },
+    const store = await this.prisma.$transaction(async (tx: any) => {
+      const s = await tx.store.update({
+        where: { id },
+        data: {
+          status:            'INACTIVE',
+          version:           current.version + 1,
+          deactivatedAt:     new Date(),
+          deactivatedBy:     dto.deactivatedBy,
+          deactivationReason: dto.reason,
+        },
+      });
+      await this._audit(tenantId, 'Store', id, 'DEACTIVATE', current, s, dto.deactivatedBy, tx);
+      return s;
     });
 
     await this._writeOutbox(tenantId, 'STORE_DEACTIVATED', id, {
@@ -242,7 +255,6 @@ export class StoreService {
       reason:        dto.reason,
       deactivatedBy: dto.deactivatedBy,
     });
-    await this._audit(tenantId, 'Store', id, 'DEACTIVATE', current, store, dto.deactivatedBy);
 
     return store;
   }
@@ -252,18 +264,15 @@ export class StoreService {
   private async _audit(
     tenantId: string, docType: string, docId: string, action: string,
     before: unknown, after: unknown, actor?: string,
+    tx: Pick<PrismaClient, 'auditOutboxEvent'> = this.prisma,
   ): Promise<void> {
-    try {
-      await this.prisma.auditOutboxEvent.create({
-        data: {
-          id: crypto.randomUUID(), tenantId, docType, docId, action,
-          before: (before ?? undefined) as any, after: (after ?? undefined) as any,
-          actor: actor ?? 'system',
-        },
-      });
-    } catch {
-      // Non-fatal: AuditPort write must not fail the business operation.
-    }
+    await tx.auditOutboxEvent.create({
+      data: {
+        id: crypto.randomUUID(), tenantId, docType, docId, action,
+        before: (before ?? undefined) as any, after: (after ?? undefined) as any,
+        actor: actor ?? 'system',
+      },
+    });
   }
 
   private async _writeOutbox(

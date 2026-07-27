@@ -6,7 +6,7 @@
  * for the same AR reference, period, and finance charge amount.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
 describe('VER-007: Finance Charge Deduplication', () => {
   let tenantId: string;

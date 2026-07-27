@@ -177,39 +177,45 @@ export class ConfigService {
 
     // Supersede prior versions at the same (key, scope, dimension) that are
     // effective on or before the new row (keeps history, marks them SUPERSEDED).
-    await this.prisma.configSetting.updateMany({
-      where: {
-        tenantId: dto.tenantId,
-        key: dto.key,
-        scope: dto.scope,
-        entityId: dto.entityId ?? null,
-        storeId: dto.storeId ?? null,
-        effectiveFrom: { lte: effectiveFrom },
-        status: { in: ['SCHEDULED', 'EFFECTIVE'] },
-      },
-      data: { status: 'SUPERSEDED', supersededAt: now },
-    });
+    // S007 BR7-1/BR7-4 — supersede + create + audit event are one atomic
+    // transaction; an audit-write failure rolls back the config change.
+    const after = { value: dto.value, scope: dto.scope, resolvedScope: dto.scope };
+    const created = await this.prisma.$transaction(async (tx) => {
+      await tx.configSetting.updateMany({
+        where: {
+          tenantId: dto.tenantId,
+          key: dto.key,
+          scope: dto.scope,
+          entityId: dto.entityId ?? null,
+          storeId: dto.storeId ?? null,
+          effectiveFrom: { lte: effectiveFrom },
+          status: { in: ['SCHEDULED', 'EFFECTIVE'] },
+        },
+        data: { status: 'SUPERSEDED', supersededAt: now },
+      });
 
-    const created = await this.prisma.configSetting.create({
-      data: {
-        id: crypto.randomUUID(),
-        tenantId: dto.tenantId,
-        key: dto.key,
-        type,
-        scope: dto.scope,
-        entityId: dto.entityId ?? null,
-        storeId: dto.storeId ?? null,
-        value: dto.value,
-        effectiveFrom,
-        status,
-        actor: dto.actor,
-      },
+      const c = await tx.configSetting.create({
+        data: {
+          id: crypto.randomUUID(),
+          tenantId: dto.tenantId,
+          key: dto.key,
+          type,
+          scope: dto.scope,
+          entityId: dto.entityId ?? null,
+          storeId: dto.storeId ?? null,
+          value: dto.value,
+          effectiveFrom,
+          status,
+          actor: dto.actor,
+        },
+      });
+
+      await this.audit(dto.tenantId, dto.key, c.id, dto.actor, before, after, tx);
+      return c;
     });
 
     this.invalidate(dto.tenantId, dto.key);
 
-    const after = { value: dto.value, scope: dto.scope, resolvedScope: dto.scope };
-    await this.audit(dto.tenantId, dto.key, created.id, dto.actor, before, after);
     await this.emitChanged(dto, before.value, effectiveFrom);
 
     return { setting: created, before, after };
@@ -243,23 +249,22 @@ export class ConfigService {
     actor: string,
     before: unknown,
     after: unknown,
+    tx: Pick<PrismaClient, 'auditOutboxEvent'> = this.prisma,
   ): Promise<void> {
-    try {
-      await this.prisma.auditOutboxEvent.create({
-        data: {
-          id: crypto.randomUUID(),
-          tenantId,
-          docType: 'config_setting',
-          docId,
-          action: 'PUT',
-          before: (before ?? undefined) as any,
-          after: (after ?? undefined) as any,
-          actor,
-        },
-      });
-    } catch {
-      // AuditPort write is non-fatal to the business operation.
-    }
+    // S007 BR7-1/BR7-4 — `tx` must be the same transaction client as the
+    // domain write. Never swallowed: a failure propagates and rolls back.
+    await tx.auditOutboxEvent.create({
+      data: {
+        id: crypto.randomUUID(),
+        tenantId,
+        docType: 'config_setting',
+        docId,
+        action: 'PUT',
+        before: (before ?? undefined) as any,
+        after: (after ?? undefined) as any,
+        actor,
+      },
+    });
   }
 
   private async emitChanged(dto: PutConfigDTO, beforeValue: string, effectiveFrom: Date): Promise<void> {

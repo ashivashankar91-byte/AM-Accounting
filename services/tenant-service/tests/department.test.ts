@@ -42,7 +42,7 @@ const ACTIVE_DEPT = {
 const INACTIVE_DEPT = { ...ACTIVE_DEPT, status: 'INACTIVE', version: 2, deactivatedBy: 'admin', deactivationReason: 'Closed' };
 
 function makePrisma(overrides: Record<string, any> = {}) {
-  return {
+  const client: any = {
     department: {
       findMany:  async () => [ACTIVE_DEPT],
       count:     async () => 1,
@@ -64,7 +64,14 @@ function makePrisma(overrides: Record<string, any> = {}) {
       create: async () => ({}),
       ...overrides.tenantOutboxEvent,
     },
+    auditOutboxEvent: {
+      create: async () => ({}),
+      ...overrides.auditOutboxEvent,
+    },
   };
+  client.$transaction = async (arg: any) =>
+    typeof arg === 'function' ? arg(client) : Promise.all(arg);
+  return client;
 }
 
 function noopPublisher() { return { publish: async () => {} }; }
@@ -216,6 +223,38 @@ describe('DepartmentService.seedCanonical', () => {
     });
     await svc.seedCanonical(TENANT, ENTITY);
     expect(created).toHaveLength(0); // nothing created
+  });
+
+  it('writes a CREATE audit event for every canonical department seeded (S007 BR7-1)', async () => {
+    const auditWrites: any[] = [];
+    const svc = makeSvc({
+      department: {
+        findFirst: async () => null,
+        create:    async ({ data }: any) => data,
+      },
+      auditOutboxEvent: {
+        create: async ({ data }: any) => { auditWrites.push(data); return data; },
+      },
+    });
+    await svc.seedCanonical(TENANT, ENTITY, 'onboarding-admin');
+    expect(auditWrites).toHaveLength(12);
+    expect(auditWrites.every((a) => a.docType === 'Department' && a.action === 'CREATE')).toBe(true);
+    expect(auditWrites.every((a) => a.actor === 'onboarding-admin')).toBe(true);
+  });
+
+  it('defaults the seed actor to system-seed when none is provided', async () => {
+    const auditWrites: any[] = [];
+    const svc = makeSvc({
+      department: {
+        findFirst: async () => null,
+        create:    async ({ data }: any) => data,
+      },
+      auditOutboxEvent: {
+        create: async ({ data }: any) => { auditWrites.push(data); return data; },
+      },
+    });
+    await svc.seedCanonical(TENANT, ENTITY);
+    expect(auditWrites.every((a) => a.actor === 'system-seed')).toBe(true);
   });
 });
 

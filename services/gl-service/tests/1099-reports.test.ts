@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { TenantId } from '@amacc/shared-kernel';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../node_modules/.prisma/gl-client';
 
 describe('1099 Contractor Reports API', () => {
   let prisma: PrismaClient;
@@ -9,6 +9,12 @@ describe('1099 Contractor Reports API', () => {
   beforeEach(async () => {
     prisma = new PrismaClient();
     tenantId = 'test-tenant-1099' as TenantId;
+    await (prisma as any).vendor1099Record.deleteMany({ where: { tenantId } });
+  });
+
+  afterEach(async () => {
+    await (prisma as any).vendor1099Record.deleteMany({ where: { tenantId } });
+    await prisma.$disconnect();
   });
 
   describe('POST /api/v1/ap/1099/generate', () => {
@@ -40,8 +46,8 @@ describe('1099 Contractor Reports API', () => {
       }
 
       expect(created.length).toBe(2);
-      expect(created[0].totalPayments).toBe(8500.00);
-      expect(created[1].totalPayments).toBe(600.00);
+      expect(Number(created[0].totalPayments)).toBe(8500.00);
+      expect(Number(created[1].totalPayments)).toBe(600.00);
     });
 
     it('should not generate 1099 for vendors below $600 threshold', async () => {
@@ -243,7 +249,7 @@ describe('1099 Contractor Reports API', () => {
         },
       });
 
-      expect(updated.totalPayments).toBe(800.00);
+      expect(Number(updated.totalPayments)).toBe(800.00);
       expect(updated.boxAmounts.box_1).toBe(800.00);
     });
 

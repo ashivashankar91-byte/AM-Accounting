@@ -11,18 +11,26 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { container } from 'tsyringe';
-import { asTenantId, authMiddleware, TenantId } from '@amacc/shared-kernel';
+import { authMiddleware } from '@amacc/shared-kernel';
 import { InquiryRepository } from '../infrastructure/inquiry-repository';
 import { PrismaClient } from '.prisma/gl-client';
+import { attachRouteSecurity, getTenantId, GL_PERMISSIONS } from './security';
 
-function getTenantId(request: any): TenantId {
-  const tenantId = request.headers['x-tenant-id'] as string | undefined;
-  if (!tenantId || tenantId.trim() === '') {
-    const err: any = new Error('Missing required header: x-tenant-id');
-    err.statusCode = 401;
-    throw err;
+function resolvePermission(method: string, url: string): string | null {
+  if (url === '/reports/autopost-summary/acknowledge' && method === 'POST') return GL_PERMISSIONS.LEDGER_MANAGE;
+  if (method === 'GET') return GL_PERMISSIONS.LEDGER_VIEW;
+  return null;
+}
+
+function resolveAudit(method: string, url: string) {
+  if (method !== 'GET') return null;
+  if (url === '/accounts/:code/period-balances' || url === '/accounts/:code/inquiry') {
+    return { docType: 'GL_ACCOUNT_INQUIRY', docId: (request: any) => String(request.params?.code ?? 'account') };
   }
-  return asTenantId(tenantId);
+  if (url === '/history') return { docType: 'GL_HISTORY', docId: (request: any) => String(request.query?.refno ?? 'history') };
+  if (url.startsWith('/transaction-batches')) return { docType: 'GL_BATCH', docId: () => url };
+  if (url === '/reports/autopost-summary') return { docType: 'GL_AUTOPOST_SUMMARY', docId: () => 'autopost-summary' };
+  return null;
 }
 
 export async function inquiryRoutes(app: FastifyInstance) {
@@ -34,6 +42,7 @@ export async function inquiryRoutes(app: FastifyInstance) {
 
   const repo = container.resolve(InquiryRepository);
   const prisma = container.resolve<PrismaClient>('PrismaClient');
+  attachRouteSecurity(app, prisma, resolvePermission, resolveAudit, 401);
 
   // ── Period Balances ────────────────────────────────────────────────────────
   // Returns all GLAccountPeriodBalance records for a given account code,
@@ -116,7 +125,7 @@ export async function inquiryRoutes(app: FastifyInstance) {
           accountCode: code,
           accountName: acct.name,
           accountType: acct.type,
-          balance: Number(acct.currentBalance ?? 0),
+          balance: Number((acct as any).openingBalance ?? 0),
         },
       };
     };

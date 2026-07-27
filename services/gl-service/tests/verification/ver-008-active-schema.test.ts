@@ -15,7 +15,7 @@
  * Report FAIL if any columns are missing.
  */
 
-import { describe, it, expect, beforeAll } from '@jest/globals';
+import { describe, it, expect, beforeAll } from 'vitest';
 
 describe('VER-008: Active Database Schema Inventory', () => {
   let tenantId: string;
