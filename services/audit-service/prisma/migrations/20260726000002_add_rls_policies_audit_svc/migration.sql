@@ -1,3 +1,20 @@
+-- FINAL-R0 Foundation Completion: renamed from an original migration folder
+-- that collided, by literal name, with an identically-named migration in
+-- another service's own prisma/migrations directory. Because every AMACC
+-- service shares ONE physical Postgres database/schema (and therefore ONE
+-- shared `_prisma_migrations` tracking table), `prisma migrate deploy`
+-- matches purely on migration_name — whichever service applied a given name
+-- FIRST caused every other service with an identically-named migration to be
+-- silently SKIPPED (treated as already applied) on a clean deploy, even
+-- though the SQL bodies differ per service. This was found by actually
+-- deploying all four services' migrations onto one clean database in
+-- sequence: tenant-service's own RLS-enabling migration for
+-- legal_entities/stores/departments/franchises never ran (relrowsecurity
+-- was false for all of them), and audit-service's own RLS-enabling
+-- migration for audit_logs never ran either — both are real, previously
+-- uncertified tenant-isolation gaps, not just a cosmetic renaming issue.
+-- Content below is unchanged from the original; only the folder (and hence
+-- the tracked migration_name) was renamed to be unique across services.
 -- R0 Stabilization Phase 5 (ADR-001): PostgreSQL Row Level Security.
 -- See services/tenant-service/prisma/migrations/20260726000003_add_rls_policies
 -- for the full design rationale. audit_logs has an immutable trigger

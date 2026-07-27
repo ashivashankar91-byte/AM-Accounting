@@ -1,6 +1,7 @@
 import { inject, injectable } from 'tsyringe';
 import crypto from 'crypto';
 import { PrismaClient } from '.prisma/coa-client';
+import { setTenantContextOnConnection } from '@amacc/shared-kernel';
 import { PostingService } from './posting-service';
 
 // ── Errors ───────────────────────────────────────────────────────────────────
@@ -147,6 +148,7 @@ export class ReversalService {
     // Link the original both ways + flip its status. Separate tx (post() owns its
     // own SERIALIZABLE tx); idempotent replay re-applies the same linkage.
     await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, tenantId);
       await tx.journalEntry.update({
         where: { id: original.id },
         data: { status: 'REVERSED', reversedBy: reversal.id },

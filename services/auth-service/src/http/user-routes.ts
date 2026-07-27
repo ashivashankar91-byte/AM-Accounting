@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { container } from 'tsyringe';
+import { authMiddleware } from '@amacc/shared-kernel';
 import { AuthzService } from '../application/authz-service';
 import {
   UserService,
@@ -9,12 +10,22 @@ import {
   UserValidationError,
   DuplicateEmailError,
   LastAdminError,
+  InvalidResetTokenError,
 } from '../application/user-service';
 
 // ── S205: /iam/users routes — user account lifecycle ────────────────────────────
-// Deny-by-default via the real S207 AuthzPort (§11). The caller identifies with
-// x-user-id + x-tenant-id; mutating ops require iam.user.manage, reads iam.user.view.
-// Users hold no permissions directly (BR205-4) — access flows from S206 roles.
+// Deny-by-default via the real S207 AuthzPort (§11) AND real JWT verification
+// (authMiddleware, composed into each authenticated route's preHandler below) —
+// the caller's identity is the verified JWT subject (request.user.sub), never a
+// client-supplied header. FINAL-R0 defect fix: these routes previously trusted
+// a raw, unverified x-user-id header as the caller's identity (no JWT check at
+// all), allowing anyone with network access to spoof any userId. x-tenant-id is
+// still read from the header, but authMiddleware rejects any request whose
+// header tenantId disagrees with the JWT's own tenantId claim.
+// Mutating ops require iam.user.manage, reads iam.user.view. Users hold no
+// permissions directly (BR205-4) — access flows from S206 roles.
+// /users/:id/set-password remains intentionally un-authenticated: it is guarded
+// by the one-time reset token itself, since the caller has no session yet.
 
 function svc(): UserService { return container.resolve<UserService>('UserService'); }
 function authz(): AuthzService { return container.resolve<AuthzService>('AuthzService'); }
@@ -30,18 +41,18 @@ function getTenantId(request: any): string {
 }
 
 function getActor(request: any): string {
-  return (request.headers['x-user-id'] as string | undefined)?.trim() || 'user';
+  return (request.user?.sub as string | undefined)?.trim() || 'user';
 }
 
-/** Deny-by-default guard backed by the real AuthzPort (S207). Tenant-level scope. */
+/** Deny-by-default guard backed by the real AuthzPort (S207) and a real verified JWT. */
 function requirePermission(permission: string) {
   return async function guard(request: any, reply: any) {
     const tenantId = (request.headers['x-tenant-id'] as string | undefined)?.trim();
-    const userId = (request.headers['x-user-id'] as string | undefined)?.trim();
+    const userId = (request.user?.sub as string | undefined)?.trim();
     if (!tenantId || !userId) {
       return reply.status(403).send({
         error: 'FORBIDDEN',
-        message: 'x-user-id and x-tenant-id are required (deny-by-default)',
+        message: 'An authenticated JWT (Bearer token) and x-tenant-id are required (deny-by-default)',
       });
     }
     const result = await authz().check({
@@ -69,6 +80,9 @@ function handleError(error: unknown, reply: any) {
   if (error instanceof UserValidationError) {
     return reply.status(422).send({ error: error.code, message: error.message });
   }
+  if (error instanceof InvalidResetTokenError) {
+    return reply.status(422).send({ error: 'INVALID_RESET_TOKEN', message: error.message });
+  }
   if (error instanceof z.ZodError) {
     return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
   }
@@ -84,15 +98,23 @@ const CreateUserSchema = z.object({
   storeScope:  z.array(z.string().min(1)).optional(),
 });
 
+const SetPasswordSchema = z.object({
+  resetToken:  z.string().min(1),
+  newPassword: z.string().min(8).max(200),
+});
+
 export async function userRoutes(app: FastifyInstance) {
+  const JWT_SECRET = process.env['AMACC_JWT_SECRET'];
+  if (!JWT_SECRET) throw new Error('FATAL: AMACC_JWT_SECRET environment variable is required.');
+
   // ── Reads ─────────────────────────────────────────────────────────────────
 
-  app.get('/users', { preHandler: requirePermission(USER_PERMISSIONS.VIEW) }, async (request, reply) => {
+  app.get('/users', { preHandler: [authMiddleware(JWT_SECRET), requirePermission(USER_PERMISSIONS.VIEW)] }, async (request, reply) => {
     const tenantId = getTenantId(request);
     return reply.status(200).send({ users: await svc().listUsers(tenantId) });
   });
 
-  app.get('/users/:id', { preHandler: requirePermission(USER_PERMISSIONS.VIEW) }, async (request, reply) => {
+  app.get('/users/:id', { preHandler: [authMiddleware(JWT_SECRET), requirePermission(USER_PERMISSIONS.VIEW)] }, async (request, reply) => {
     const tenantId = getTenantId(request);
     try {
       return reply.status(200).send(await svc().getUser(tenantId, (request.params as any).id));
@@ -101,7 +123,7 @@ export async function userRoutes(app: FastifyInstance) {
 
   // ── Create (201 INVITED | 409 duplicate) ─────────────────────────────────────
 
-  app.post('/users', { preHandler: requirePermission(USER_PERMISSIONS.MANAGE) }, async (request, reply) => {
+  app.post('/users', { preHandler: [authMiddleware(JWT_SECRET), requirePermission(USER_PERMISSIONS.MANAGE)] }, async (request, reply) => {
     const tenantId = getTenantId(request);
     try {
       const body = CreateUserSchema.parse(request.body);
@@ -112,7 +134,7 @@ export async function userRoutes(app: FastifyInstance) {
 
   // ── Deactivate (200 + session revocation | 422 last-admin-self) ───────────────
 
-  app.post('/users/:id/deactivate', { preHandler: requirePermission(USER_PERMISSIONS.MANAGE) }, async (request, reply) => {
+  app.post('/users/:id/deactivate', { preHandler: [authMiddleware(JWT_SECRET), requirePermission(USER_PERMISSIONS.MANAGE)] }, async (request, reply) => {
     const tenantId = getTenantId(request);
     try {
       const result = await svc().deactivateUser(tenantId, (request.params as any).id, getActor(request));
@@ -122,7 +144,7 @@ export async function userRoutes(app: FastifyInstance) {
 
   // ── Unlock (200, failedLogins:0) ─────────────────────────────────────────────
 
-  app.post('/users/:id/unlock', { preHandler: requirePermission(USER_PERMISSIONS.MANAGE) }, async (request, reply) => {
+  app.post('/users/:id/unlock', { preHandler: [authMiddleware(JWT_SECRET), requirePermission(USER_PERMISSIONS.MANAGE)] }, async (request, reply) => {
     const tenantId = getTenantId(request);
     try {
       const user = await svc().unlockUser(tenantId, (request.params as any).id, getActor(request));
@@ -132,11 +154,22 @@ export async function userRoutes(app: FastifyInstance) {
 
   // ── Reset (202, reset-token issued) ──────────────────────────────────────────
 
-  app.post('/users/:id/reset', { preHandler: requirePermission(USER_PERMISSIONS.MANAGE) }, async (request, reply) => {
+  app.post('/users/:id/reset', { preHandler: [authMiddleware(JWT_SECRET), requirePermission(USER_PERMISSIONS.MANAGE)] }, async (request, reply) => {
     const tenantId = getTenantId(request);
     try {
       const result = await svc().resetUser(tenantId, (request.params as any).id, getActor(request));
       return reply.status(202).send(result);
+    } catch (err) { return handleError(err, reply); }
+  });
+
+  // ── Set password (public — guarded by the one-time reset token itself, ──────
+  //    not by a permission check: the caller has no session yet). FINAL-R0 S205.
+  app.post('/users/:id/set-password', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    try {
+      const body = SetPasswordSchema.parse(request.body);
+      const user = await svc().setPassword(tenantId, (request.params as any).id, body.resetToken, body.newPassword);
+      return reply.status(200).send({ user });
     } catch (err) { return handleError(err, reply); }
   });
 }

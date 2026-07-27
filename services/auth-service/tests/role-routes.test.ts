@@ -10,6 +10,7 @@ import 'reflect-metadata';
 import { describe, it, expect, beforeEach } from 'vitest';
 import Fastify, { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
+import * as crypto from 'crypto';
 import { roleRoutes } from '../src/http/role-routes';
 import {
   RoleInUseError,
@@ -17,6 +18,30 @@ import {
   RoleValidationError,
   RoleNotFoundError,
 } from '../src/application/role-service';
+
+// ── JWT helper ────────────────────────────────────────────────────────────────
+// FINAL-R0: role-routes.ts now requires a real verified JWT (authMiddleware) —
+// the caller's identity comes from the JWT's `sub` claim, not a spoofable
+// x-user-id header. See auth-service/src/http/role-routes.ts header comment.
+
+const JWT_SECRET = 'role-routes-test-secret';
+process.env['AMACC_JWT_SECRET'] = JWT_SECRET;
+
+function b64u(s: string): string {
+  return Buffer.from(s).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+function tokenFor(userId: string, tenantId = 'tenant-a'): string {
+  const header = b64u(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  const now = Math.floor(Date.now() / 1000);
+  const body = b64u(JSON.stringify({ sub: userId, tenantId, iat: now, exp: now + 3600 }));
+  const sig = crypto.createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
+  return `${header}.${body}.${sig}`;
+}
+
+function authed(userId = 'admin', tenantId = 'tenant-a') {
+  return { 'x-tenant-id': tenantId, authorization: `Bearer ${tokenFor(userId, tenantId)}` };
+}
 
 // ── Fakes ─────────────────────────────────────────────────────────────────────
 
@@ -35,7 +60,7 @@ async function makeApp(): Promise<FastifyInstance> {
   return app;
 }
 
-const H = { 'x-tenant-id': 'tenant-a', 'x-user-id': 'admin' };
+const H = authed('admin');
 
 beforeEach(() => {
   allow = true;
@@ -71,10 +96,21 @@ describe('S206 · /iam/roles', () => {
     expect(res.json().error).toBe('FORBIDDEN');
   });
 
-  it('PRM206-3: 403 when caller identity headers are missing', async () => {
+  it('PRM206-3: 401 when no Authorization header (no verified JWT) is present', async () => {
     const app = await makeApp();
     const res = await app.inject({ method: 'GET', url: '/api/v1/iam/roles' });   // no headers
-    expect(res.statusCode).toBe(403);
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('FINAL-R0 defect closure: a spoofed x-user-id header with no real JWT is rejected, not trusted', async () => {
+    const app = await makeApp();
+    // Previously (pre-fix) this exact request would have been trusted as
+    // userId="root-attacker" with zero proof of identity.
+    const res = await app.inject({
+      method: 'GET', url: '/api/v1/iam/roles',
+      headers: { 'x-tenant-id': 'tenant-a', 'x-user-id': 'root-attacker' },
+    });
+    expect(res.statusCode).toBe(401);
   });
 
   it('PRM206-4: 200 list roles', async () => {

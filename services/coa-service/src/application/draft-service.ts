@@ -1,6 +1,6 @@
 import { inject, injectable } from 'tsyringe';
 import crypto from 'crypto';
-import { IEventPublisher } from '@amacc/shared-kernel';
+import { IEventPublisher, setTenantContextOnConnection } from '@amacc/shared-kernel';
 import { PrismaClient } from '.prisma/coa-client';
 import {
   DraftLineInput,
@@ -193,6 +193,7 @@ export class DraftService {
     const lines = (dto.lines ?? []).map(normalizeLine);
 
     const draft = await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, dto.tenantId);
       const created = await tx.manualJeDraft.create({
         data: {
           id,
@@ -242,6 +243,7 @@ export class DraftService {
     const nextVersion = existing.version + 1;
 
     const updated = await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, actor.tenantId);
       const before = this.snapshot(existing);
       const row = await tx.manualJeDraft.update({
         where: { id },
@@ -319,6 +321,7 @@ export class DraftService {
 
     const attId = crypto.randomUUID();
     const created = await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, actor.tenantId);
       const row = await tx.attachment.create({
         data: {
           id: attId,
@@ -403,6 +406,7 @@ export class DraftService {
     // fail keeps DRAFT so the accountant can keep fixing (demo: fix-live-until-green).
     const nextStatus = result.pass ? 'VALIDATED' : 'DRAFT';
     await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, actor.tenantId);
       const before = this.snapshot(draft);
       const row = await tx.manualJeDraft.update({
         where: { id },
@@ -497,6 +501,7 @@ export class DraftService {
 
     // (6) Link the draft to its journal + audit (before/after images §11).
     await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, actor.tenantId);
       const before = this.snapshot(fresh);
       const row = await tx.manualJeDraft.update({
         where: { id },
@@ -547,6 +552,7 @@ export class DraftService {
     const reason = (dto.reason ?? '').trim() || null;
 
     await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, actor.tenantId);
       const before = this.snapshot(draft);
       const row = await tx.manualJeDraft.update({
         where: { id },

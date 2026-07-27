@@ -41,6 +41,13 @@ import T1Sidebar from './components/T1Sidebar';
 import Settings from './pages/Settings';
 import QueryExplorer from './pages/QueryExplorer';
 import MobileApprovals from './pages/MobileApprovals';
+import GoldenPathLogin from './pages/goldenpath/Login';
+import GoldenPathProtectedRoute from './pages/goldenpath/ProtectedRoute';
+import GoldenPathSelectEntity from './pages/goldenpath/SelectEntity';
+import GoldenPathFiscalPeriod from './pages/goldenpath/FiscalPeriod';
+import GoldenPathChartOfAccounts from './pages/goldenpath/ChartOfAccounts';
+import GoldenPathJournalWorkflow from './pages/goldenpath/JournalWorkflow';
+import GoldenPathAuditHistory from './pages/goldenpath/AuditHistory';
 import TrialBalance from './pages/TrialBalance';
 import ManualJournalEntry from './pages/ManualJournalEntry';
 import AMACCSync from './pages/AMACCSync';
@@ -508,6 +515,17 @@ export default function App() {
               <Route path="/query" element={<QueryExplorer />} />
               <Route path="/amacc-sync" element={<AMACCSync />} />
               <Route path="/mobile-approvals" element={<MobileApprovals />} />
+
+              {/* FINAL-R0 Golden Path (Step 4): login -> select tenant/entity ->
+                  fiscal calendar -> accounting period -> Chart of Accounts ->
+                  journal draft -> validate -> post -> view -> reverse ->
+                  audit history. Real JWT auth (S205), no mock/demo bypass. */}
+              <Route path="/golden-path/login" element={<GoldenPathLogin />} />
+              <Route path="/golden-path/select-entity" element={<GoldenPathProtectedRoute><GoldenPathSelectEntity /></GoldenPathProtectedRoute>} />
+              <Route path="/golden-path/fiscal" element={<GoldenPathProtectedRoute><GoldenPathFiscalPeriod /></GoldenPathProtectedRoute>} />
+              <Route path="/golden-path/coa" element={<GoldenPathProtectedRoute><GoldenPathChartOfAccounts /></GoldenPathProtectedRoute>} />
+              <Route path="/golden-path/journal" element={<GoldenPathProtectedRoute><GoldenPathJournalWorkflow /></GoldenPathProtectedRoute>} />
+              <Route path="/golden-path/audit/:entityType/:entityId" element={<GoldenPathProtectedRoute><GoldenPathAuditHistory /></GoldenPathProtectedRoute>} />
 
               {/* WF-A001 through WF-A010 */}
               <Route path="/accounting/dashboard" element={<DashboardWorkflow />} />

@@ -2,6 +2,7 @@ import { inject, injectable } from 'tsyringe';
 import { PrismaClient } from '.prisma/auth-client';
 import type { IEventPublisher } from '@amacc/shared-kernel';
 import { randomUUID, createHash } from 'crypto';
+import * as bcrypt from 'bcryptjs';
 
 // ── S205: User Account Lifecycle ────────────────────────────────────────────────
 // Security admins create, deactivate, unlock and reset staff logins with entity/store
@@ -24,6 +25,9 @@ export const LOCKOUT_THRESHOLD = 5;
 
 /** Reset-token lifetime. */
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1h
+
+/** Session lifetime issued at login (FINAL-R0: S205 login/session capability). */
+const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8h
 
 // ── DTOs ────────────────────────────────────────────────────────────────────────
 
@@ -57,6 +61,33 @@ export interface ResetResult {
   resetToken: string;
 }
 
+export interface LoginResult {
+  user:          UserView;
+  sessionId:     string;
+  sessionToken:  string;   // raw, opaque session token — only ever returned once
+  expiresAt:     string;
+}
+
+/** FINAL-R0 S205: request-scoped, non-secret metadata for a login attempt --
+ * used ONLY to enrich audit evidence. Never contains credential material. */
+export interface LoginAttemptContext {
+  correlationId?: string;
+  ipAddress?:     string;
+  headerTenantId?: string; // x-tenant-id header, if the caller sent one pre-auth
+}
+
+/** Machine-readable denial reason recorded on every failed login attempt
+ * (FINAL-R0 S205 audit-gap closure). Never returned to the API caller --
+ * the HTTP response stays the deliberately generic "Invalid email or
+ * password" / "Account is X" in all cases, so the audit category itself
+ * cannot be used to enumerate accounts. */
+export type LoginDenialReason =
+  | 'USER_NOT_FOUND'
+  | 'INVALID_PASSWORD'
+  | 'TENANT_MISMATCH'
+  | 'ACCOUNT_DISABLED'
+  | 'ACCOUNT_LOCKED';
+
 // ── Errors ────────────────────────────────────────────────────────────────────
 
 export class UserNotFoundError extends Error {
@@ -83,6 +114,29 @@ export class LastAdminError extends Error {
     super('Cannot deactivate the last active administrator');
     this.name = 'LastAdminError';
   }
+}
+
+/** Invalid or expired reset token presented to set-password (BR205: reset flow). */
+export class InvalidResetTokenError extends Error {
+  constructor() { super('Reset token is invalid or expired'); this.name = 'InvalidResetTokenError'; }
+}
+
+/** Login rejected — deliberately generic (never reveal whether the email exists). */
+export class InvalidCredentialsError extends Error {
+  constructor() { super('Invalid email or password'); this.name = 'InvalidCredentialsError'; }
+}
+
+/** Login rejected because the account is LOCKED (BR205-3) or INACTIVE (BR205-2). */
+export class AccountNotUsableError extends Error {
+  constructor(public readonly status: string) {
+    super(`Account is ${status} and cannot log in`);
+    this.name = 'AccountNotUsableError';
+  }
+}
+
+/** Session token missing, unknown, revoked, or expired. */
+export class InvalidSessionError extends Error {
+  constructor() { super('Session is invalid, revoked, or expired'); this.name = 'InvalidSessionError'; }
 }
 
 // RFC5322-ish practical email check.
@@ -248,6 +302,143 @@ export class UserService {
     return { user: this._toView(updated), resetToken };
   }
 
+  // ── Set password (consume reset token → hash + store password) ──────────────
+  // FINAL-R0 S205: the one-time resetToken (from createUser's admin-triggered
+  // resetUser call, or a self-service "forgot password" reset) is exchanged here
+  // for a real, durable credential. Token is single-use: cleared on success.
+  async setPassword(tenantId: string, id: string, resetToken: string, newPassword: string): Promise<UserView> {
+    const user = await this._require(tenantId, id);
+    if (!user.resetTokenHash || !user.resetTokenExpiresAt) throw new InvalidResetTokenError();
+    if (user.resetTokenExpiresAt.getTime() < Date.now()) throw new InvalidResetTokenError();
+    const presentedHash = createHash('sha256').update(resetToken).digest('hex');
+    if (presentedHash !== user.resetTokenHash) throw new InvalidResetTokenError();
+    if (!newPassword || newPassword.length < 8) {
+      throw new UserValidationError('INVALID_PASSWORD', 'password must be at least 8 characters');
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    const nextStatus = user.status === 'INVITED' ? 'ACTIVE' : user.status;
+    const updated = await this.prisma.user.update({
+      where: { id },
+      data: {
+        passwordHash,
+        status: nextStatus,
+        failedLogins: 0,
+        resetTokenHash: null,
+        resetTokenExpiresAt: null,
+        version: { increment: 1 },
+      },
+    });
+    await this._audit(tenantId, 'user', id, 'SET_PASSWORD', this._toView(user), this._toView(updated), 'user');
+    if (user.status === 'INVITED') {
+      await this._emit('iam.user.activated', tenantId, id, user.email, 'user');
+    }
+    return this._toView(updated);
+  }
+
+  // ── Login (email + password → new Session + JWT-backable session token) ─────
+  // FINAL-R0 S205: the previously-missing real login/session-issuance endpoint.
+  // Deliberately generic errors (BR: never reveal whether an email exists).
+  // Failed attempts flow through the existing recordFailedLogin lockout path.
+  //
+  // FINAL-R0 S205 audit-gap closure: every denied attempt now records an
+  // audit event (see _recordLoginDenied) BEFORE throwing, categorized by
+  // reason. The reason is never exposed in the thrown error / HTTP response
+  // -- only ever visible in the audit trail -- so this closes the evidence
+  // gap without weakening the existing anti-enumeration design.
+  async login(
+    tenantId: string, email: string, password: string, ctx: LoginAttemptContext = {},
+  ): Promise<LoginResult> {
+    const normalized = email.trim().toLowerCase();
+
+    // A caller that already has a tenant context (e.g. a pre-selected tenant
+    // in the UI sending x-tenant-id alongside the login form body) but a
+    // mismatched body.tenantId is a distinguishable, non-RLS-bypassing
+    // denial category -- unlike "does this email exist in a DIFFERENT
+    // tenant", which RLS correctly makes indistinguishable from
+    // USER_NOT_FOUND (that indistinguishability is the whole point of
+    // tenant-scoped RLS and is preserved below).
+    if (ctx.headerTenantId && ctx.headerTenantId !== tenantId) {
+      await this._recordLoginDenied(tenantId, normalized, 'TENANT_MISMATCH', ctx);
+      throw new InvalidCredentialsError();
+    }
+
+    const user = await this.prisma.user.findFirst({ where: { tenantId, email: normalized } });
+    if (!user) {
+      await this._recordLoginDenied(tenantId, normalized, 'USER_NOT_FOUND', ctx);
+      throw new InvalidCredentialsError();
+    }
+
+    if (user.status === 'INACTIVE') {
+      await this._recordLoginDenied(tenantId, normalized, 'ACCOUNT_DISABLED', ctx, user.id);
+      throw new AccountNotUsableError('INACTIVE');
+    }
+    if (user.status === 'LOCKED') {
+      await this._recordLoginDenied(tenantId, normalized, 'ACCOUNT_LOCKED', ctx, user.id);
+      throw new AccountNotUsableError('LOCKED');
+    }
+
+    if (!user.passwordHash) {
+      await this._recordLoginDenied(tenantId, normalized, 'INVALID_PASSWORD', ctx, user.id);
+      throw new InvalidCredentialsError();
+    }
+    const ok = await bcrypt.compare(password, user.passwordHash);
+    if (!ok) {
+      await this._recordLoginDenied(tenantId, normalized, 'INVALID_PASSWORD', ctx, user.id);
+      await this.recordFailedLogin(tenantId, user.id);
+      throw new InvalidCredentialsError();
+    }
+
+    if (user.status === 'INVITED') {
+      await this.prisma.user.update({ where: { id: user.id }, data: { status: 'ACTIVE', version: { increment: 1 } } });
+    }
+    const reset = await this.prisma.user.update({
+      where: { id: user.id },
+      data: { failedLogins: 0 },
+    });
+
+    const sessionToken = `sess_${randomUUID().replace(/-/g, '')}${randomUUID().replace(/-/g, '')}`;
+    const tokenHash = createHash('sha256').update(sessionToken).digest('hex');
+    const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+    const session = await this.prisma.session.create({
+      data: { id: randomUUID(), tenantId, userId: user.id, tokenHash, status: 'ACTIVE', expiresAt },
+    });
+
+    await this._audit(tenantId, 'user', user.id, 'LOGIN', null, { sessionId: session.id }, user.id);
+    await this._emit('iam.user.login', tenantId, user.id, user.email, user.id);
+
+    return {
+      user: this._toView(reset),
+      sessionId: session.id,
+      sessionToken,
+      expiresAt: expiresAt.toISOString(),
+    };
+  }
+
+  // ── Logout (revoke one session) ──────────────────────────────────────────────
+  async logout(tenantId: string, rawSessionToken: string): Promise<void> {
+    const tokenHash = createHash('sha256').update(rawSessionToken).digest('hex');
+    const session = await this.prisma.session.findFirst({ where: { tenantId, tokenHash } });
+    if (!session || session.status !== 'ACTIVE') return; // idempotent — already logged out
+    await this.prisma.session.update({
+      where: { id: session.id },
+      data: { status: 'REVOKED', revokedAt: new Date() },
+    });
+    await this._audit(tenantId, 'user', session.userId, 'LOGOUT', null, { sessionId: session.id }, session.userId);
+  }
+
+  // ── Validate a session token (used by the gateway/services to resolve caller) ─
+  async validateSession(tenantId: string, rawSessionToken: string): Promise<UserView> {
+    const tokenHash = createHash('sha256').update(rawSessionToken).digest('hex');
+    const session = await this.prisma.session.findFirst({ where: { tenantId, tokenHash } });
+    if (!session || session.status !== 'ACTIVE' || session.expiresAt.getTime() < Date.now()) {
+      throw new InvalidSessionError();
+    }
+    const user = await this.prisma.user.findFirst({ where: { id: session.userId, tenantId } });
+    if (!user || user.status !== 'ACTIVE') throw new InvalidSessionError();
+    return this._toView(user);
+  }
+
   // ── Helpers ──────────────────────────────────────────────────────────────────
 
   private async _require(tenantId: string, id: string) {
@@ -296,6 +487,42 @@ export class UserService {
     if (n.length < 1 || n.length > 80) {
       throw new UserValidationError('INVALID_DISPLAY_NAME', 'displayName must be 1–80 characters');
     }
+  }
+
+  // ── FINAL-R0 S205: failed-login audit trail ──────────────────────────────────
+  // Records EVERY denied login attempt (not just the ones that trip the
+  // lockout threshold). Never includes password, password hash, JWT, or
+  // session material -- only the normalized attempted email (an intentional,
+  // explicit exception; this is an identity reference, not credential
+  // material), a machine-readable denial category, non-secret request
+  // metadata, and the fixed outcome "DENIED". Uses the same fire-and-forget,
+  // exception-swallowing _audit() primitive as every other audit call in
+  // this service, so a broken/unreachable audit store can never turn a
+  // denial into an accidental allow (the caller always still throws
+  // immediately after this call, regardless of whether the audit write
+  // itself succeeded).
+  private async _recordLoginDenied(
+    tenantId: string,
+    attemptedEmail: string,
+    reason: LoginDenialReason,
+    ctx: LoginAttemptContext,
+    userId?: string,
+  ): Promise<void> {
+    await this._audit(
+      tenantId,
+      'user_login_attempt',
+      userId ?? `email:${attemptedEmail}`,
+      'LOGIN_DENIED',
+      null,
+      {
+        outcome: 'DENIED',
+        reason,
+        attemptedEmail,
+        correlationId: ctx.correlationId,
+        ipAddress: ctx.ipAddress,
+      },
+      'system',
+    );
   }
 
   // ── AuditPort (stub) + event helpers ────────────────────────────────────────

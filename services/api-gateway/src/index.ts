@@ -36,7 +36,15 @@ const PORT = parseInt(process.env['PORT'] ?? '3000', 10);
 
 const SERVICES: Array<{ prefix: string; upstream: string; rateLimit?: number; rewritePrefix?: string }> = [
   { prefix: '/api/v1/auth',           upstream: process.env['AUTH_SERVICE_URL']           ?? 'http://auth-service:3001' },
+  { prefix: '/api/v1/iam',            upstream: process.env['AUTH_SERVICE_URL']           ?? 'http://auth-service:3001' },
+  { prefix: '/api/v1/authz',          upstream: process.env['AUTH_SERVICE_URL']           ?? 'http://auth-service:3001' },
   { prefix: '/api/v1/tenants',        upstream: process.env['TENANT_SERVICE_URL']         ?? 'http://tenant-service:3002' },
+  { prefix: '/api/v1/legal-entities', upstream: process.env['TENANT_SERVICE_URL']         ?? 'http://tenant-service:3002' },
+  { prefix: '/api/v1/stores',         upstream: process.env['TENANT_SERVICE_URL']         ?? 'http://tenant-service:3002' },
+  { prefix: '/api/v1/entities',       upstream: process.env['TENANT_SERVICE_URL']         ?? 'http://tenant-service:3002' },
+  { prefix: '/api/v1/oems',           upstream: process.env['TENANT_SERVICE_URL']         ?? 'http://tenant-service:3002' },
+  { prefix: '/api/v1/config',         upstream: process.env['COA_SERVICE_URL']            ?? 'http://coa-service:3016' },
+  { prefix: '/api/v1/fiscal',         upstream: process.env['COA_SERVICE_URL']            ?? 'http://coa-service:3016' },
   { prefix: '/api/v1/gl/fs',           upstream: process.env['FS_SERVICE_URL']             ?? 'http://fs-service:3015',        rewritePrefix: '/api/v1/fs' },
   { prefix: '/api/v1/gl',             upstream: process.env['GL_SERVICE_URL']             ?? 'http://gl-service:3010',       rateLimit: 100 },
   { prefix: '/api/v1/dashboard',      upstream: process.env['GL_SERVICE_URL']             ?? 'http://gl-service:3010' },

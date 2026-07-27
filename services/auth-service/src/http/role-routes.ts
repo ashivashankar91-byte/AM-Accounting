@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { container } from 'tsyringe';
+import { authMiddleware } from '@amacc/shared-kernel';
 import { AuthzService } from '../application/authz-service';
 import {
   RoleService,
@@ -12,9 +13,16 @@ import {
 } from '../application/role-service';
 
 // ── S206: /iam routes — roles & role-assignments ────────────────────────────────
-// Access is enforced deny-by-default via the real S207 AuthzPort (§11). The caller
-// identifies with x-user-id + x-tenant-id; role ops require iam.role.manage,
-// assignment ops require iam.role.assign, reads require iam.role.view.
+// Access is enforced deny-by-default via the real S207 AuthzPort (§11) AND real
+// JWT verification (authMiddleware, registered below) — the caller's identity is
+// the verified JWT subject (request.user.sub), never a client-supplied header.
+// FINAL-R0 defect fix: these routes previously trusted a raw, unverified
+// x-user-id header as the caller's identity (no JWT check at all), allowing
+// anyone with network access to spoof any userId. x-tenant-id is still read
+// from the header, but authMiddleware now rejects any request whose header
+// tenantId disagrees with the JWT's own tenantId claim.
+// Role ops require iam.role.manage, assignment ops require iam.role.assign,
+// reads require iam.role.view.
 
 function svc(): RoleService { return container.resolve<RoleService>('RoleService'); }
 function authz(): AuthzService { return container.resolve<AuthzService>('AuthzService'); }
@@ -30,18 +38,18 @@ function getTenantId(request: any): string {
 }
 
 function getActor(request: any): string {
-  return (request.headers['x-user-id'] as string | undefined)?.trim() || 'user';
+  return (request.user?.sub as string | undefined)?.trim() || 'user';
 }
 
-/** Deny-by-default guard backed by the real AuthzPort (S207). */
+/** Deny-by-default guard backed by the real AuthzPort (S207) and a real verified JWT. */
 function requirePermission(permission: string, scopeFrom?: (request: any) => { entityId?: string }) {
   return async function guard(request: any, reply: any) {
     const tenantId = (request.headers['x-tenant-id'] as string | undefined)?.trim();
-    const userId = (request.headers['x-user-id'] as string | undefined)?.trim();
+    const userId = (request.user?.sub as string | undefined)?.trim();
     if (!tenantId || !userId) {
       return reply.status(403).send({
         error: 'FORBIDDEN',
-        message: 'x-user-id and x-tenant-id are required (deny-by-default)',
+        message: 'An authenticated JWT (Bearer token) and x-tenant-id are required (deny-by-default)',
       });
     }
     const extra = scopeFrom?.(request) ?? {};
@@ -98,6 +106,10 @@ const GrantAssignmentSchema = z.object({
 });
 
 export async function roleRoutes(app: FastifyInstance) {
+  const JWT_SECRET = process.env['AMACC_JWT_SECRET'];
+  if (!JWT_SECRET) throw new Error('FATAL: AMACC_JWT_SECRET environment variable is required.');
+  app.addHook('preHandler', authMiddleware(JWT_SECRET));
+
   // ── Roles ─────────────────────────────────────────────────────────────────
 
   app.get('/roles', { preHandler: requirePermission(ROLE_PERMISSIONS.VIEW) }, async (request, reply) => {

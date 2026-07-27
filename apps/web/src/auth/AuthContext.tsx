@@ -1,0 +1,128 @@
+import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from 'react';
+
+// FINAL-R0 Step 4: real JWT auth context backing the browser Golden Path.
+// Replaces the previous hardcoded 'tenant-kunes' localStorage fallback in
+// api/client.ts with a real, user-driven login -> JWT -> Bearer-header flow
+// against the real auth-service (S205) through the real gateway.
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  displayName: string;
+  status: string;
+}
+
+interface LoginResult {
+  user: AuthUser;
+  accessToken: string;
+  tokenType: string;
+  sessionToken: string;
+  expiresAt: string;
+}
+
+interface AuthState {
+  accessToken: string | null;
+  tenantId: string | null;
+  user: AuthUser | null;
+  legalEntityId: string | null;
+}
+
+interface AuthContextValue extends AuthState {
+  isAuthenticated: boolean;
+  login: (tenantId: string, email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  selectLegalEntity: (legalEntityId: string) => void;
+}
+
+const STORAGE_KEYS = {
+  accessToken: 'goldenpath.accessToken',
+  sessionToken: 'goldenpath.sessionToken',
+  tenantId: 'goldenpath.tenantId',
+  user: 'goldenpath.user',
+  legalEntityId: 'goldenpath.legalEntityId',
+} as const;
+
+function readInitialState(): AuthState {
+  try {
+    const accessToken = localStorage.getItem(STORAGE_KEYS.accessToken);
+    const tenantId = localStorage.getItem(STORAGE_KEYS.tenantId);
+    const legalEntityId = localStorage.getItem(STORAGE_KEYS.legalEntityId);
+    const userRaw = localStorage.getItem(STORAGE_KEYS.user);
+    const user = userRaw ? (JSON.parse(userRaw) as AuthUser) : null;
+    return { accessToken, tenantId, user, legalEntityId };
+  } catch {
+    return { accessToken: null, tenantId: null, user: null, legalEntityId: null };
+  }
+}
+
+const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [state, setState] = useState<AuthState>(readInitialState);
+
+  const login = useCallback(async (tenantId: string, email: string, password: string) => {
+    const res = await fetch('/api/v1/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tenantId, email, password }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(body?.message ?? body?.error ?? `Login failed (${res.status})`);
+    }
+    const result = body as LoginResult;
+    localStorage.setItem(STORAGE_KEYS.accessToken, result.accessToken);
+    localStorage.setItem(STORAGE_KEYS.sessionToken, result.sessionToken);
+    localStorage.setItem(STORAGE_KEYS.tenantId, tenantId);
+    localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(result.user));
+    setState({ accessToken: result.accessToken, tenantId, user: result.user, legalEntityId: state.legalEntityId });
+  }, [state.legalEntityId]);
+
+  const logout = useCallback(async () => {
+    const sessionToken = localStorage.getItem(STORAGE_KEYS.sessionToken);
+    const tenantId = localStorage.getItem(STORAGE_KEYS.tenantId);
+    if (sessionToken && tenantId) {
+      try {
+        await fetch('/api/v1/auth/logout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tenantId, sessionToken }),
+        });
+      } catch {
+        // Best-effort revoke; still clear local state below regardless.
+      }
+    }
+    Object.values(STORAGE_KEYS).forEach((k) => localStorage.removeItem(k));
+    setState({ accessToken: null, tenantId: null, user: null, legalEntityId: null });
+  }, []);
+
+  const selectLegalEntity = useCallback((legalEntityId: string) => {
+    localStorage.setItem(STORAGE_KEYS.legalEntityId, legalEntityId);
+    setState((prev) => ({ ...prev, legalEntityId }));
+  }, []);
+
+  const value = useMemo<AuthContextValue>(() => ({
+    ...state,
+    isAuthenticated: Boolean(state.accessToken && state.tenantId),
+    login,
+    logout,
+    selectLegalEntity,
+  }), [state, login, logout, selectLegalEntity]);
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export function useAuth(): AuthContextValue {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within an AuthProvider');
+  return ctx;
+}
+
+// Read-only helpers used by api/client.ts so the fetch layer doesn't need to
+// import React context directly.
+export function getStoredAccessToken(): string | null {
+  return localStorage.getItem(STORAGE_KEYS.accessToken);
+}
+export function getStoredTenantId(): string | null {
+  return localStorage.getItem(STORAGE_KEYS.tenantId);
+}

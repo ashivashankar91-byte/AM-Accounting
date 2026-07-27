@@ -199,6 +199,7 @@ model User {
   entityScope  String[]  @default([]) @map("entity_scope")
   storeScope   String[]  @default([]) @map("store_scope")
   version      Int       @default(0)
+  passwordHash        String?   @map("password_hash")          // set via first activation / reset (S205 login)
   resetTokenHash      String?   @map("reset_token_hash")
   resetTokenExpiresAt DateTime? @map("reset_token_expires_at")
   createdAt    DateTime  @default(now()) @map("created_at")
