@@ -168,6 +168,31 @@ model Franchise {
   @@map("franchises")
 }
 
+/// ACC-S202: effective-dated re-parent override for the org tree (BR202-2).
+/// Base parent-child edges (Store.entityId, Franchise.storeId) are set at
+/// creation and are immutable; re-parenting a node is recorded here rather
+/// than mutating the base row, so a full re-parent history is preserved and
+/// "current parent" is a resolved projection (latest row with
+/// effective_from <= asOf, falling back to the base FK when none exists) —
+/// per BR202-2 ("re-parenting is effective-dated, not a separate state").
+model OrgReparentEvent {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  /// STORE | FRANCHISE — the only two re-parentable node types in the S202
+  /// tree (GROUP is a synthetic tenant root; ENTITY has no re-parent target).
+  nodeType      String   @map("node_type")
+  nodeId        String   @map("node_id")
+  oldParentId   String   @map("old_parent_id")
+  newParentId   String   @map("new_parent_id")
+  effectiveFrom DateTime @map("effective_from") @db.Date
+  actor         String
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId])
+  @@index([tenantId, nodeType, nodeId])
+  @@map("org_reparent_events")
+}
+
 /// Outbox for reliable event publishing from tenant-service.
 /// Polled by outbox processor and forwarded to RabbitMQ.
 model TenantOutboxEvent {
