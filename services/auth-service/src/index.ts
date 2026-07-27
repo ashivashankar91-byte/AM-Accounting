@@ -6,9 +6,11 @@ import { authRoutes } from './http/routes';
 import { developerRoutes } from './http/developer-routes';
 import { authzRoutes } from './http/authz-routes';
 import { roleRoutes } from './http/role-routes';
+import { roleTemplateRoutes } from './http/role-template-routes';
 import { userRoutes } from './http/user-routes';
 import { AuthzService } from './application/authz-service';
 import { RoleService } from './application/role-service';
+import { RoleTemplateService } from './application/role-template-service';
 import { UserService } from './application/user-service';
 import { RabbitMQEventPublisher } from './infrastructure/event-publisher';
 import {
@@ -47,6 +49,10 @@ async function bootstrap() {
   // S206: basic role management (write authority; projects into S207 read models)
   container.register('RoleService', { useClass: RoleService });
 
+  // S004A: dealership position role templates (delegates to RoleService — no
+  // separate local permission map; see role-template-service.ts header).
+  container.register('RoleTemplateService', { useClass: RoleTemplateService });
+
   // S205: user account lifecycle (create/deactivate/unlock/reset; emits iam.user.*)
   container.register('UserService', { useClass: UserService });
 
@@ -80,6 +86,7 @@ async function bootstrap() {
   await app.register(authRoutes, { prefix: '/api/v1/auth' });
   await app.register(authzRoutes, { prefix: '/api/v1/authz' });
   await app.register(roleRoutes, { prefix: '/api/v1/iam' });
+  await app.register(roleTemplateRoutes, { prefix: '/api/v1/iam' });
   await app.register(userRoutes, { prefix: '/api/v1/iam' });
   if (process.env['NODE_ENV'] === 'development') {
     await app.register(developerRoutes);
