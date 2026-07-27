@@ -22,9 +22,10 @@ function tokenFor(role: string, tenantId = 'tenant-a'): string {
   const header = b64u(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const now = Math.floor(Date.now() / 1000);
   const body = b64u(JSON.stringify({ sub: role, tenantId, role, iat: now, exp: now + 3600 }));
-  const sig = Buffer.from(
-    crypto.createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('binary'),
-  ).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+  // NOTE: digest('base64url') directly — not digest('binary') fed through
+  // Buffer.from() (which defaults to utf8 and corrupts bytes >= 0x80). This
+  // matches shared-kernel's verifyJWT/createServiceToken fix (see auth.ts).
+  const sig = crypto.createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
   return `${header}.${body}.${sig}`;
 }
 
