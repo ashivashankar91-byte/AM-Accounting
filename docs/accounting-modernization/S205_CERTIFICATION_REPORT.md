@@ -101,3 +101,28 @@ All 14 required live-gateway scenarios plus the 9 audit-gap closure scenarios pa
 real evidence (real bcrypt, real JWT, real Postgres/RLS, real audit_outbox→audit_logs
 delivery). Status corrected PARTIAL → DONE in `STORY_CERTIFICATION_MATRIX.csv` and
 `MODULE_STATE.json`.
+
+## 7. Addendum — additional defect found and fixed during Batch A story certification
+
+While gathering live evidence for S206 (Batch A), a related but distinct critical
+defect was found: `/api/v1/iam/roles`, `/api/v1/iam/role-assignments`, and
+`/api/v1/iam/users` (the latter is part of S205's own user-lifecycle CRUD surface)
+had **no JWT verification at all** — they trusted a raw, client-supplied `x-user-id`
+header as the caller's identity. This is distinct from the login/session scenarios
+already certified above (which use `/login`, `/logout`, `/session`, all of which
+already enforced real JWT verification). Fixed by requiring `authMiddleware` on
+every authenticated route in both files and deriving identity from the verified
+JWT's `sub` claim. Live-verified: a spoofed `x-user-id` header with no
+`Authorization` header now returns 401 instead of being trusted. See commit
+`3dbeb30`. This does not change the DONE verdict above — it closes an additional
+identity-spoofing gap in the user/role management surface, making S205's own
+`/iam/users` routes (create/deactivate/unlock/reset) properly authenticated for
+the first time.
+
+
+**S205_LIVE_GATEWAY_CERTIFICATION_PASSED**
+
+All 14 required live-gateway scenarios plus the 9 audit-gap closure scenarios pass with
+real evidence (real bcrypt, real JWT, real Postgres/RLS, real audit_outbox→audit_logs
+delivery). Status corrected PARTIAL → DONE in `STORY_CERTIFICATION_MATRIX.csv` and
+`MODULE_STATE.json`.

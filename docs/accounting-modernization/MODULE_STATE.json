@@ -150,10 +150,9 @@
       "title": "Create & Maintain Store (Rooftop)",
       "layman": "Add each physical dealership location with its rooftop code so journal entries are stamped by location.",
       "sprint": 1,
-      "status": "DONE_PENDING_INTEGRATION",
+      "status": "DONE",
       "completedDate": "2026-07-23",
-      "usesStubs": true,
-      "stubGate": "DONE_PENDING_INTEGRATION",
+      "usesStubs": false,
       "dependencies": [
         "S200"
       ],
@@ -168,16 +167,21 @@
         "priorClaim": "status DONE, despite this story's own usesStubs:true and stubGate:DONE_PENDING_INTEGRATION fields",
         "correctedBecause": "Internal inconsistency in the original file: status said DONE while the story's own usesStubs/stubGate fields and the repository-verification evidence (local ROLE_PERMISSIONS stub in store-routes.ts, no audit table in tenant-service, tenant-service tsc failure) all say otherwise. Corrected to match S203/S204, which use the identical pattern and were already correctly labeled DONE_PENDING_INTEGRATION.",
         "reference": "docs/accounting-modernization/repository-verification/STORY_EVIDENCE_MATRIX.csv"
+      },
+      "finalR0Certification": {
+        "phase": "Final-R0 Foundation Completion \u2014 Batch A",
+        "status": "DONE",
+        "evidence": "Live-gateway certified (Final-R0 Batch A): positive create (201), validation failure (400), unauthorized (401), cross-tenant denial (403), duplicate storeCode conflict (409), real persistence verified via psql, audit_logs evidence (entity_type='Store'), centralized S207 authorization, migration reproducibility confirmed from fresh DB.",
+        "reference": "docs/accounting-modernization/stabilization/STORY_CERTIFICATION_MATRIX.csv"
       }
     },
     "S203": {
       "title": "Department Code Maintenance",
       "layman": "Set up the standard departments (New, Used, Service, Parts, Body...) so every dollar lands in the right department column.",
       "sprint": 1,
-      "status": "DONE_PENDING_INTEGRATION",
+      "status": "DONE",
       "completedDate": "2026-07-23",
-      "usesStubs": true,
-      "stubGate": "Re-run integration suite green against real S007/S207 services",
+      "usesStubs": false,
       "dependencies": [
         "S200"
       ],
@@ -191,16 +195,21 @@
         "vitestCount": 53,
         "playwrightCount": 9,
         "notes": "department.test.ts (34), department-routes.test.ts (10), department-isolation.test.ts (9). 12 canonical departments seeded for tenant-kunes. HTTP 422 on canonical-range violation confirmed."
+      },
+      "finalR0Certification": {
+        "phase": "Final-R0 Foundation Completion \u2014 Batch A",
+        "status": "DONE",
+        "evidence": "Live-gateway certified (Final-R0 Batch A): positive create (201, code 20; codes 01-12 canonical-reserved), validation failure (400), unauthorized (401), cross-tenant denial (403), duplicate code conflict (409), real persistence via psql, audit_logs evidence (entity_type='Department'), centralized S207 authorization, migration reproducibility confirmed.",
+        "reference": "docs/accounting-modernization/stabilization/STORY_CERTIFICATION_MATRIX.csv"
       }
     },
     "S204": {
       "title": "Franchise Maintenance",
       "layman": "Record which car brands (Ford, GM...) each store sells, with the official dealer code for each.",
       "sprint": 3,
-      "status": "DONE_PENDING_INTEGRATION",
+      "status": "DONE",
       "completedDate": "2026-07-24",
-      "usesStubs": true,
-      "stubGate": "Re-run integration suite green against real S007/S207 services",
+      "usesStubs": false,
       "dependencies": [
         "S200",
         "S201"
@@ -216,6 +225,12 @@
         "playwrightCount": 4,
         "completionDoc": "docs/accounting-modernization/audit-results/S204-COMPLETION.md",
         "notes": "franchise.test.ts (14), franchise-routes.test.ts (10), franchise-isolation.test.ts (7); full tenant-service suite 150/150. Migration 20260724000001_add_franchises applied (oem_ref seeded=6). Runtime transcript: OEM list=6, add Ford=201, unknown OEM=422, duplicate Ford=409, GM 5-digit=422. \u00a79 event payload confirmed in tenant_outbox_events. Partial unique index enforces one active OEM per store while permitting sold/historical rows."
+      },
+      "finalR0Certification": {
+        "phase": "Final-R0 Foundation Completion \u2014 Batch A",
+        "status": "DONE",
+        "evidence": "Live-gateway certified (Final-R0 Batch A): positive create (201, FORD/12345), validation failure (422, dealer-code pattern), unauthorized (401), cross-tenant denial (403), duplicate OEM-per-store conflict (409), real persistence via psql, audit_logs evidence (entity_type='Franchise'), centralized S207 authorization, migration reproducibility confirmed.",
+        "reference": "docs/accounting-modernization/stabilization/STORY_CERTIFICATION_MATRIX.csv"
       }
     },
     "S205": {
@@ -272,10 +287,9 @@
       "title": "Basic Role Management",
       "layman": "Bundle permissions into named jobs (like 'Accountant') and hand people jobs, not one-off switches.",
       "sprint": 1,
-      "status": "DONE_PENDING_INTEGRATION",
+      "status": "DONE",
       "completedDate": "2026-07-24",
-      "usesStubs": true,
-      "stubGate": "Re-run integration suite green against real S007 audit consumer",
+      "usesStubs": false,
       "dependencies": [
         "S207"
       ],
@@ -289,6 +303,12 @@
         "vitestSuiteTotal": 56,
         "completionDoc": "docs/accounting-modernization/audit-results/S206-COMPLETION.md",
         "notes": "role-service.test.ts (17), role-routes.test.ts (12); full auth-service suite 56/56 (S207 27 + S206 29). Migration 20260724000003_add_role_management applied (4 starter roles, 2 bootstrap assignments, catalog v1.1.0, 3 iam.role.* permissions). Runtime transcript (:3001): list=4 starter roles, create=201, create-as-accountant=403, delete-assigned=409 ROLE_IN_USE, grant test-cashier@store01=201, authz allow@store01 / deny@store02 (cross-store), entity-outside-tenant=422, catalog diff 1.0.0\u21921.1.0 adds iam.role.assign|manage|view (13 total). audit_outbox recorded role/CREATE + role_assignment/GRANT. AuditPort stub only \u2192 DONE_PENDING_INTEGRATION."
+      },
+      "finalR0Certification": {
+        "phase": "Final-R0 Foundation Completion \u2014 Batch A",
+        "status": "DONE",
+        "evidence": "Live-gateway certified (Final-R0 Batch A). CRITICAL defect found+fixed (commit 3dbeb30): /iam/roles, /iam/role-assignments, /iam/users had NO JWT verification, trusting spoofable x-user-id header as identity \u2014 full auth bypass distinct from Priority-0 NODE_ENV bypass. Fixed via authMiddleware + verified-JWT sub claim; live-verified spoofed header now returns 401. Evidence: positive role create (201), duplicate-name validation (409), unauthorized (401), cross-tenant denial (403), role-assignment grant (201, append-only grant model), real persistence+audit via psql (entity_type in role/role_assignment), centralized S207 authorization, migration reproducibility confirmed.",
+        "reference": "docs/accounting-modernization/stabilization/STORY_CERTIFICATION_MATRIX.csv"
       }
     },
     "S207": {
@@ -323,10 +343,9 @@
       "package": "R0-ACCOUNTING-SETUP",
       "epic": "CE-01",
       "sprint": 1,
-      "status": "DONE_PENDING_INTEGRATION",
+      "status": "DONE",
       "completedDate": "2026-07-24",
-      "usesStubs": true,
-      "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207",
+      "usesStubs": false,
       "dependencies": [],
       "blockers": [],
       "packet": "out/COPILOT_BUILD_PACKETS/R0/S223.md",
@@ -340,6 +359,12 @@
         "gatewayRoute": "/api/v1/config -> coa-service:3016",
         "doc": "docs/accounting-modernization/audit-results/S223-COMPLETION.md",
         "specDeviation": "Package hosted in coa-service (mirrors tenant-service org-foundation consolidation); recorded in completion doc \u00a71"
+      },
+      "finalR0Certification": {
+        "phase": "Final-R0 Foundation Completion \u2014 Batch A",
+        "status": "DONE",
+        "evidence": "Live-gateway certified (Final-R0 Batch A): positive PUT (200, fiscal.max_open_periods TENANT scope) + GET readback (persistence proof), validation failure (400, unknown key), unauthorized (401), cross-tenant denial (403), audit_logs evidence (entity_type='config_setting'), centralized S207 authorization, migration reproducibility confirmed.",
+        "reference": "docs/accounting-modernization/stabilization/STORY_CERTIFICATION_MATRIX.csv"
       }
     },
     "S208": {
@@ -831,10 +856,10 @@
     "R0-ACCOUNTING-SETUP": "PARTIAL \u2014 S208/S209/S010/S212 promoted to DONE in R0 Stabilization Phase 9 (real gateway->coa-service golden path proven live: calendar defined, periods generated, period opened, COA seeded, sources bootstrapped). S223/S210/S211/S213 remain DONE_PENDING_INTEGRATION \u2014 authorization is centralized through real S207 (Phase 3) but their specific write paths were not individually re-run against the live stack in Phase 8; see STORY_CERTIFICATION_MATRIX.csv.",
     "R0-JOURNAL-LIFECYCLE": "PARTIAL \u2014 S013/S217/S218 promoted to DONE in R0 Stabilization Phase 9 (real gateway->coa-service golden path proven live: post rejected on a real business rule then succeeded, idempotent re-post proven, viewed, reversed). S214/S215/S216/S219 remain DONE_PENDING_INTEGRATION \u2014 authorization is centralized through real S207 but the draft->validate->direct-post->void flow specifically was not exercised through the live stack in Phase 8; see STORY_CERTIFICATION_MATRIX.csv.",
     "S200": "DONE \u2014 promoted in R0 Stabilization Phase 9; real gateway->tenant-service call, real S207 authz, real RLS-enforced write, real S007 audit delivery confirmed",
-    "S201": "PENDING \u2014 awaiting real-stack exercise (carry-forward from R0-ORG-FOUNDATION); authorization already centralized through real S207 (Phase 3)",
-    "S203": "PENDING \u2014 awaiting real-stack exercise (carry-forward from R0-ORG-FOUNDATION); authorization already centralized through real S207 (Phase 3)",
-    "S204": "PENDING \u2014 awaiting real-stack exercise (carry-forward from R0-ORG-FOUNDATION); authorization already centralized through real S207 (Phase 3)",
-    "S206": "PENDING \u2014 awaiting real-stack exercise of its own create/grant/revoke API (carry-forward); real S007 audit consumer and real S207 authz are both now genuinely wired and delivering",
+    "S201": "DONE",
+    "S203": "DONE",
+    "S204": "DONE",
+    "S206": "DONE",
     "S205": "DONE \u2014 Final-R0: live-gateway certified. Real bcrypt login, jsonwebtoken-signed JWT + persisted session, session validation, authorized/denied access matrix (14 scenarios), and the failed-login audit gap closed (categorized DENIED events for USER_NOT_FOUND, INVALID_PASSWORD, TENANT_MISMATCH, ACCOUNT_DISABLED, ACCOUNT_LOCKED, no secrets exposed). See S205_CERTIFICATION_REPORT.md.",
     "S207": "DONE \u2014 promoted in R0 Stabilization Phase 9; all 3 stubGate conditions met (tsc clean, real S007 audit sink draining iam.authz.denied, live-database + broker-backed verification both exist)"
   },
