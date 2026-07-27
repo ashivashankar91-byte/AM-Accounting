@@ -77,7 +77,11 @@ export type EventType =
   | 'THIRTEENTH_MONTH_FINALIZED'
   // S007 BR7-2: emitted by audit-service's periodic hash-chain verify job
   // when a partition's chain fails to recompute (tamper/corruption alarm).
-  | 'audit.chain.alert';
+  | 'audit.chain.alert'
+  // S224 BR224-3: emitted by audit-service's document-history endpoint when
+  // a rendered field diff contains a PII field — "views audit itself" is
+  // itself an auditable, security-monitorable event.
+  | 'audit.viewed';
 
 export function createEvent(
   type: EventType,
@@ -162,4 +166,5 @@ export const EVENT_ROUTING: Record<EventType, string[]> = {
   COMPLIANCE_ALERT:               ['notification-service', 'audit-service'],
   THIRTEENTH_MONTH_FINALIZED:     ['fs-service', 'audit-service', 'notification-service'],
   'audit.chain.alert':            ['notification-service'],
+  'audit.viewed':                 ['notification-service'],
 };
