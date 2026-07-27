@@ -79,6 +79,7 @@ export default function TrialBalance() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [drillAccountCode, setDrillAccountCode] = useState<string | null>(null);
+  const [drillRow, setDrillRow] = useState<TrialBalanceRow | null>(null);
   const [drillResult, setDrillResult] = useState<any>(null);
   const [drillError, setDrillError] = useState<string | null>(null);
 
@@ -110,6 +111,7 @@ export default function TrialBalance() {
 
   async function drillToInquiry(row: TrialBalanceRow) {
     setDrillAccountCode(row.accountCode);
+    setDrillRow(row);
     setDrillResult(null);
     setDrillError(null);
     if (!legalEntityId) {
@@ -223,8 +225,29 @@ export default function TrialBalance() {
               {drillError && <p data-testid="tb-drill-error" style={{ color: '#92400e' }}>{drillError}</p>}
               {drillResult && (
                 <div data-testid="tb-drill-result">
-                  Beginning {fmt(drillResult.beginningBalance ?? 0)} — Ending {fmt(drillResult.endingBalance ?? 0)} —{' '}
-                  {(drillResult.lines?.length ?? 0)} activity line(s) in the current legal entity
+                  <div data-testid="tb-drill-account">
+                    {drillResult.account?.accountNumber} — {drillResult.account?.name}
+                  </div>
+                  <div data-testid="tb-drill-period">
+                    {drillResult.range?.preset ?? drillResult.range?.periodCode ?? `${drillResult.range?.startDate} to ${drillResult.range?.endDate}`}
+                  </div>
+                  <div>
+                    Beginning {fmt(drillResult.beginningBalance ?? 0)} — Ending{' '}
+                    <span data-testid="tb-drill-ending-balance">{fmt(drillResult.endingBalance ?? 0)}</span> —{' '}
+                    Period debit <span data-testid="tb-drill-period-debit">{fmt(drillResult.periodDebitActivity ?? 0)}</span> —{' '}
+                    Period credit <span data-testid="tb-drill-period-credit">{fmt(drillResult.periodCreditActivity ?? 0)}</span> —{' '}
+                    {(drillResult.lines?.length ?? 0)} activity line(s) in the current legal entity
+                  </div>
+                  {drillRow && (
+                    <div data-testid="tb-drill-source-row">
+                      Trial Balance source row — Debit {fmt(drillRow.debitBalance)} — Credit {fmt(drillRow.creditBalance)}
+                    </div>
+                  )}
+                  {(drillResult.lines ?? []).map((l: any, i: number) => (
+                    <div key={l.journalEntryId ?? i} data-testid={`tb-drill-line-${i}`}>
+                      {l.entryDate} — {l.journalNumber} — DR {fmt(l.dr)} / CR {fmt(l.cr)}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

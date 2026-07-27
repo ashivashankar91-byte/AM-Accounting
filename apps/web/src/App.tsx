@@ -81,7 +81,14 @@ import DayEndClose from './pages/service/DayEndClose';
 import InquiryMenu from './pages/accounting/InquiryMenu';
 import ScheduleInquiry from './pages/accounting/ScheduleInquiry';
 import TransactionInquiry from './pages/accounting/TransactionInquiry';
-import GLInquiry from './pages/accounting/GLInquiry';
+// FINAL-R0 / UXMAP-02 (Golden R0 UI convergence): the /accounting/inquiry/gl
+// route previously rendered the legacy prototype at
+// ./pages/accounting/GLInquiry.tsx, which called the legacy gl-service
+// /api/v1/gl/inquiry endpoint -- disconnected from the certified S220
+// coa-service contract. Rewired to the goldenpath implementation, which
+// consumes GET /api/v1/coa/inquiry/accounts/:id/activity only. The legacy
+// file is left on disk, unrouted (isolated, not deleted).
+import GLInquiry from './pages/goldenpath/GLInquiry';
 import MFGDCSCommunications from './pages/accounting/MFGDCSCommunications';
 import PartsGLAccounts from './pages/accounting/admin/PartsGLAccounts';
 import ServiceGLAccounts from './pages/accounting/admin/ServiceGLAccounts';

@@ -173,16 +173,49 @@ test.describe('Golden R0 — full 16-step browser journey (positive)', () => {
 
     // 7. View the journal through GL Inquiry drill-through (S220,
     // coa-service — same ledger as the journal just posted).
+    //
+    // UXMAP-03 closure proof: previously this step used asOf=2026-01, which
+    // returns ZERO gl-service Trial Balance rows for entity 01 (verified
+    // live), so `firstRow.count() > 0` was always false and the drill code
+    // path — including the preset=CURRENT_MONTH defect — was never actually
+    // exercised by this "positive" journey. Switched to asOf=2026-02, the
+    // certified gl-service evidence scope (GL_ENTITY/GL_AS_OF, used again in
+    // steps 9-13 below), which is confirmed live to return real rows every
+    // run, so the click and the drill-through call underneath it always
+    // fire for real.
     await page.getByTestId('journal-go-to-trial-balance').click();
     await page.waitForURL(/\/golden-path\/trial-balance/, { timeout: 10_000 });
-    await page.getByTestId('tb-entity').fill('01');
-    await page.getByTestId('tb-asof').fill('2026-01');
+    await page.getByTestId('tb-entity').fill(GL_ENTITY);
+    await page.getByTestId('tb-asof').fill(GL_AS_OF);
     await page.getByTestId('tb-run').click();
     await expect(page.getByTestId('tb-table').or(page.getByTestId('tb-error'))).toBeVisible({ timeout: 10_000 });
     const firstRow = page.locator('[data-testid^="tb-row-"]').first();
-    if ((await firstRow.count()) > 0) {
-      await firstRow.click();
-      await expect(page.getByTestId('tb-drill-panel')).toBeVisible({ timeout: 10_000 });
+    expect(await firstRow.count(), 'gl-service TB certified evidence scope must return at least one row').toBeGreaterThan(0);
+    const drilledAccountCode = (await firstRow.getAttribute('data-testid'))!.replace('tb-row-', '');
+    await firstRow.click();
+    await expect(page.getByTestId('tb-drill-panel')).toBeVisible({ timeout: 10_000 });
+    // Disclosed architecture (ADR-JL-001): gl-service's Trial Balance and
+    // coa-service's Chart of Accounts are separate ledgers with no shared
+    // account-number overlap for this tenant's legal entity today (verified
+    // live — TB accounts 1000/4000 do not exist in coa-service's COA). The
+    // drill-through call is real and now correctly OPEN_MONTH-scoped
+    // (UXMAP-03 fixed above); a real coa-service account match is the one
+    // precondition it cannot manufacture. Assert whichever real, honest
+    // outcome the backend actually produces — never silently skip either.
+    await expect(page.getByTestId('tb-drill-result').or(page.getByTestId('tb-drill-error'))).toBeVisible({ timeout: 10_000 });
+    if (await page.getByTestId('tb-drill-result').isVisible()) {
+      // A real coa-service account match was found — prove the full
+      // journey: correct account passed, correct period passed, and (when
+      // real activity exists) the line data and dr/cr shown are internally
+      // consistent with what the API actually returned.
+      await expect(page.getByTestId('tb-drill-account')).toContainText(drilledAccountCode);
+      await expect(page.getByTestId('tb-drill-period')).toContainText('OPEN_MONTH');
+    } else {
+      // No match exists in the real chart of accounts for this row — the
+      // honest, disclosed ADR-JL-001 gap, not a swallowed error.
+      await expect(page.getByTestId('tb-drill-error')).toContainText(
+        new RegExp(`No account numbered ${drilledAccountCode} exists`),
+      );
     }
 
     // 8. Search for the transaction through GL Search (S221, coa-service —
@@ -273,6 +306,69 @@ test.describe('Golden R0 — full 16-step browser journey (positive)', () => {
     await expect(page.getByTestId('audit-event').first()).toBeVisible({ timeout: 20_000 });
     const eventCount = await page.getByTestId('audit-event').count();
     expect(eventCount).toBeGreaterThan(0);
+  });
+
+  // S220 GL Inquiry — direct proof of the real coa-service contract.
+  // Complements the Trial Balance drill-through above: that path can only
+  // reach GL Inquiry when a coa-service account happens to share a number
+  // with a gl-service Trial Balance row, which (per ADR-JL-001, verified
+  // live) is not true for any row in today's certified TB evidence. This
+  // test instead drives the rewired /accounting/inquiry/gl screen directly
+  // against a real, known-active account (10001 Operating Checking, used as
+  // the credit line by every journal this whole suite posts) with a real
+  // historical date range, so the five UXMAP-03/Phase-A proof points are
+  // demonstrated against live, non-empty data:
+  //   1. the request returns 200 (network-level assertion, not just DOM)
+  //   2. the selected account is passed and echoed back correctly
+  //   3. the selected period (custom range) is passed and echoed back
+  //   4. real journal lines appear
+  //   5. the displayed ending balance is internally consistent with the
+  //      displayed beginning balance and period debit/credit activity —
+  //      the strongest available proof without a Trial Balance row to
+  //      compare against for this specific account (see checkpoint notes).
+  test('GL Inquiry (S220) — real account activity, 200 response, correct account/period, lines present', async ({ page }) => {
+    await login(page, TENANT_A, ADMIN_EMAIL, PASSWORD);
+    await page.waitForURL(/\/golden-path\/select-entity/, { timeout: 15_000 });
+    await expect(page.getByTestId('legal-entity-list')).toBeVisible({ timeout: 10_000 });
+    await page.getByTestId('select-entity-KUNES-01').click();
+    await page.waitForURL(/\/golden-path\/org-hierarchy/, { timeout: 10_000 });
+
+    await page.goto(`${BASE}/accounting/inquiry/gl`);
+    await expect(page.getByTestId('gli-account')).toBeVisible({ timeout: 10_000 });
+    await page.getByTestId('gli-account').selectOption({ label: '10001 Operating Checking' });
+    await page.getByTestId('gli-range-mode').selectOption('CUSTOM');
+    await page.getByTestId('gli-start-date').fill('2026-01-01');
+    await page.getByTestId('gli-end-date').fill('2026-03-31');
+
+    const [response] = await Promise.all([
+      page.waitForResponse((r) => /\/api\/v1\/coa\/inquiry\/accounts\/.+\/activity\?/.test(r.url())),
+      page.getByTestId('gli-run').click(),
+    ]);
+    // 1. Request returns 200.
+    expect(response.status()).toBe(200);
+    const body = await response.json();
+
+    await expect(page.getByTestId('gli-table')).toBeVisible({ timeout: 10_000 });
+    // 2. The selected account is passed and echoed back correctly.
+    expect(body.account.accountNumber).toBe('10001');
+    await expect(page.locator('text=Account 10001')).toBeVisible();
+    // 3. The selected period (custom range) is passed and echoed back.
+    expect(body.range.startDate).toBe('2026-01-01');
+    expect(body.range.endDate).toBe('2026-03-31');
+    await expect(page.getByText('2026-01-01 to 2026-03-31')).toBeVisible();
+    // 4. Real journal lines appear.
+    expect(body.lines.length).toBeGreaterThan(0);
+    await expect(page.getByTestId('gli-row-0')).toBeVisible();
+    // 5. Ending balance is internally consistent with beginning balance +
+    // net period activity, exactly as the API computed it (BR220-1) — the
+    // UI performs no recomputation of its own.
+    const expectedEnding = body.account.normalBalance === 'DR' || body.account.normalBalance === 'DEBIT'
+      ? body.beginningBalance + body.periodDebitActivity - body.periodCreditActivity
+      : body.beginningBalance - body.periodDebitActivity + body.periodCreditActivity;
+    expect(Math.abs(body.endingBalance - expectedEnding)).toBeLessThan(0.01);
+    await expect(page.getByTestId('gli-ending-balance')).toContainText(
+      body.endingBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace('-', ''),
+    );
   });
 });
 

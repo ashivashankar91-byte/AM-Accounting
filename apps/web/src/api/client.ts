@@ -890,14 +890,17 @@ export const goldenPathApi = {
     }>(`/api/v1/gl/reports/trial-balance?${qs.toString()}`);
   },
 
-  // S222 drill-through target: reuses the real S220 activity API (no
-  // duplicated calculation) for whichever coa-service account, in the
-  // *current* golden-path legal entity, shares the clicked TB row's human
-  // account number. Because gl-service and coa-service are separate ledgers,
-  // a match is a best-effort cross-service correlation by account number,
-  // not a guaranteed foreign-key relationship.
+  // S220 — GL Inquiry: real coa-service account-activity API, consumed by
+  // both the standalone GL Inquiry screen and the S222 Trial Balance
+  // drill-through (which reuses this same call for whichever coa-service
+  // account, in the *current* golden-path legal entity, shares the clicked
+  // TB row's human account number — a best-effort cross-service correlation
+  // by account number, not a guaranteed foreign-key relationship, because
+  // gl-service and coa-service are separate ledgers).
   getAccountActivity: (accountId: string, params?: string) =>
     apiFetch<any>(`/api/v1/coa/inquiry/accounts/${accountId}/activity${params ? `?${params}` : ''}`),
+  exportAccountActivity: (accountId: string, params?: string) =>
+    apiFetchRaw(`/api/v1/coa/inquiry/accounts/${accountId}/activity:export${params ? `?${params}` : ''}`),
 
   // S227 — Balance Sheet & Income Statement: consumes the real gl-service
   // FinancialStatementService reports as-is (no client-side recomputation of
