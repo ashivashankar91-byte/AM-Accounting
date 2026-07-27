@@ -1061,6 +1061,39 @@
         "promotedBecause": "Backend/API/authorization/audit-evidence work is complete and evidenced against a real, freshly-migrated database with zero test regressions, reusing S220's frozen result contract exactly as instructed, and a real multi-criterion AND-combination defect was caught and fixed before any live call. Capped at DONE_PENDING_INTEGRATION (not DONE) solely because PO condition 9 requires business/Figma/UX validation before any controlled-fleet story reaches DONE, and that validation is still package-wide open -- this is a business/UX sign-off gap, not a technical stub-adapter gap.",
         "reference": "docs/accounting-modernization/stabilization/STORY_CERTIFICATION_MATRIX.csv; S221_LIVE_GATEWAY_CERTIFICATION_REPORT.md"
       }
+    },
+    "S222": {
+      "title": "Trial Balance Screen & Export",
+      "layman": "A controller can open a Trial Balance report on screen for a slice of the ledger (entity/store/dept/as-of), suppress zero balances, see subtotals and a grand total, drill into an account, export it, and get a clear error banner instead of a silently-wrong report if the ledger doesn't foot.",
+      "package": "GOLDEN-R0-FLEET",
+      "status": "DONE_PENDING_INTEGRATION",
+      "completedDate": null,
+      "usesStubs": false,
+      "dependencies": [
+        "S207",
+        "S007",
+        "S014",
+        "S220",
+        "S211"
+      ],
+      "blockers": [
+        "Package-wide Figma/SME/UX validation for the controlled-fleet stories is still open (GOLDEN_R0_STORY_CONTRACT_GAPS.md Class 4 = PENDING); S222 is FIGMA_REQUIRED and no UI has been built without a Figma artifact.",
+        "No browser/Playwright automation infrastructure exists in this repository yet; browser Golden Path validation for S222 remains outstanding, honestly reported as not yet possible rather than skipped.",
+        "True parent/child hierarchy subtotals from S211 are unavailable because gl-service (S014) does not expose coa-service's account-hierarchy data (separate ledger per ADR-JL-001); accountType-level subtotals implemented instead as a documented partial fulfillment.",
+        "Drill-through to S220 is a best-effort cross-service account-number correlation only (gl-service and coa-service are separate ledgers with different account numbering conventions), proven live to honestly report 'no matching account' rather than fabricate a result.",
+        "UQ-14 foot-gate format alignment remains open per the approved Story Contract."
+      ],
+      "completionEvidence": {
+        "vitestCount": null,
+        "playwrightCount": null,
+        "notes": "Golden-R0 Controlled Fleet: Trial Balance Screen (apps/web/src/pages/goldenpath/TrialBalance.tsx) consuming the real S014 gl-service API (GET /api/v1/gl/reports/trial-balance) with zero client-side recomputation of dr/cr/ending balances. Controls: entity/store/dept/as-of, zero-suppression toggle; renders accountType subtotal rows (aggregated from already-returned rows only) plus a grand total; full-width STRUCTURAL_IMBALANCE error banner rendering the real drSum/crSum/delta from the API's 500 error body; CSV export formats already-fetched data only. New goldenPathApi.getTrialBalance() and getAccountActivity() (reuses the real S220 API for drill-through); apiFetch() enhanced to preserve the full parsed error body. Onboarding correction: the two newest S014 migrations were applied to the shared live-stack Postgres (no db push); gl-service started persistently on the shared stack (:13020); api-gateway restarted with GL_SERVICE_URL set so /api/v1/gl/* now actually proxies to it. apps/web npx tsc --noEmit and npm run build both pass. Real live-gateway evidence captured 2026-07-27: seeded a real balanced $500 journal entry through the real POST /accounts + POST /journal-entries + /approve + /post APIs (a real SEGREGATION_OF_DUTIES_VIOLATION rule was encountered and honored, resolved with a scratch CONTROLLER evidence user deleted immediately after use); 200 positive TB (drSum=crSum=500, delta=0); 200 empty slice; 500 STRUCTURAL_IMBALANCE (scratch one-sided projection row for a disposable slice, deleted after capture); 401 no-token; 401 invalid-token; 403 cross-tenant; 403 unauthorized (scratch CLERK user, deleted after capture). Real S007 audit confirmed via psql: 6 GL_LEDGER_REPORT VIEWED audit_outbox rows, tenant-scoped, published. Drill-through correlation tested live against the real Golden Path Chart of Accounts and honestly returns 'no matching account' (gl-service's legacy 4-digit account numbers do not coincide with coa-service's 5-digit numbers) -- not fabricated as working when it architecturally cannot be. See S222_LIVE_GATEWAY_CERTIFICATION_REPORT.md."
+      },
+      "stabilizationReconciliation": {
+        "phase": "Golden-R0 Controlled Fleet Implementation -- Lane A/B (Trial Balance Screen, after S014)",
+        "priorStatus": "NOT_STARTED (new Golden-R0 fleet story; not part of the original 22 R0 stories)",
+        "promotedBecause": "Frontend screen implemented against the real, previously-certified S014 API with no duplicated calculation logic, gl-service properly onboarded into the persistent shared live stack for the first time, and real positive/negative/audit live-gateway evidence captured. Capped at DONE_PENDING_INTEGRATION (not DONE) per PO condition 9 (package-wide Figma/SME/UX/browser validation still open) -- a business/UX sign-off and tooling gap, not a technical stub-adapter gap. A genuine, pre-existing cross-service architecture gap (gl-service/coa-service are separate ledgers) is documented transparently rather than papered over.",
+        "reference": "docs/accounting-modernization/stabilization/STORY_CERTIFICATION_MATRIX.csv; S222_LIVE_GATEWAY_CERTIFICATION_REPORT.md"
+      }
     }
   },
   "sequence": [
