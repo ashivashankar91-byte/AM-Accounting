@@ -162,10 +162,64 @@ are not repeated here.)
 
 ---
 
-## 9. Remaining blockers before `FINAL_R0_FOUNDATION_COMPLETION_PASSED`
+## 9. Step 4 — Frontend reconciliation and browser Golden Path
 
-Backend foundation certification (S205 + 12 stories, 22/22 DONE) is complete.
-**Step 4 (frontend reconciliation + browser Golden Path) has not yet been
-started** as of this report. The final gate verdict is withheld until Step 4
-is genuinely complete and verified — see the session's final verdict message
-for current status.
+**Finding:** the pre-existing `apps/web` frontend (a large, already-committed
+legacy-style prototype UI, 100+ pages) had **no real authentication wiring at
+all** — `src/api/client.ts` sent only a hardcoded `x-tenant-id: 'tenant-kunes'`
+header with zero Authorization/JWT header, and neither worktree had a Login
+page, auth context, protected-route wrapper, tenant/legal-entity selector, or
+fiscal-calendar/period UI. This was confirmed with the Product Owner before
+proceeding: the required minimum frontend for the Golden Path was net-new
+work, not a reconciliation of existing WIP.
+
+**What was built (minimum, self-contained, real-auth)** — committed in
+`b516bc6`:
+- `src/auth/AuthContext.tsx` — real `login()`/`logout()` against the real
+  S205 `/api/v1/auth/login`/`logout` endpoints; stores a real JWT, tenantId,
+  and user in `localStorage`. No synthetic/mock session of any kind.
+- `src/pages/goldenpath/{Login,ProtectedRoute,SelectEntity,FiscalPeriod,
+  ChartOfAccounts,JournalWorkflow,AuditHistory}.tsx` — the 11-step Golden Path,
+  each page calling the real gateway (legal-entities, fiscal/period,
+  coa/accounts, manual-journals/drafts, journals, audit) with real JWT Bearer
+  auth against the same live stack used for backend certification. No stubs,
+  no mock data.
+- `src/api/client.ts` — `apiFetch` now injects `Authorization: Bearer` and
+  prefers the real Golden Path session's tenantId. This is additive: the
+  pre-existing 100+ legacy demo pages (out of scope for this certification)
+  are unaffected and keep their previous unauthenticated behavior.
+- `playwright.config.ts` — fixed a real defect: the `baseURL` default
+  (`5173`) didn't match `apps/web`'s actual vite dev-server port (`5174`),
+  which had silently pointed every pre-existing e2e spec at nothing.
+- `tests/e2e/golden-path.spec.ts` — full positive Golden Path journey
+  (login → select entity → fiscal calendar → open period → seed a new
+  Chart-of-Accounts account → journal draft → validate → post → view →
+  reverse → audit history) plus 3 negative browser scenarios: unauthenticated
+  redirect-to-login, wrong-password rejection, and cross-tenant denial (a
+  tenant-B user with no role grants gets a real 403 `FORBIDDEN` from
+  centralized S207 authorization, surfaced in the UI — not a silently empty
+  list).
+
+**Defect found and fixed during this step**: the audit-history page initially
+showed a false "no audit events found" empty state immediately after a
+reverse action, because `audit_logs` is populated asynchronously from the
+outbox drainer (S007) and the UI's first query raced the drain by roughly a
+second. Fixed with a short bounded poll (max 5×1s) in `AuditHistory.tsx`
+rather than papering over it with a longer arbitrary timeout in the test.
+
+**Browser E2E result**: `npx playwright test tests/e2e/golden-path.spec.ts`
+— **4/4 passing**, verified stable across two consecutive full runs against
+the live stack (real Postgres, real JWTs, real gateway, no mocks). Second
+tenant (`e410db34-d007-46f9-8e34-aab2009299c9`, user
+`xtuser@crosstenant.test`) and the admin test user's password were both
+provisioned directly in Postgres for this step, reusing the existing
+`admin@kunes-final-r0.test` identity already exercised throughout the backend
+certification pass.
+
+## 10. Remaining blockers before `FINAL_R0_FOUNDATION_COMPLETION_PASSED`
+
+None outstanding for the scope of this Final-R0 Foundation Completion gate:
+backend (22/22 DONE) and frontend/browser Golden Path (4/4 Playwright,
+including negative/cross-tenant scenarios) are both complete and verified
+with live evidence. See the session's final verdict message for the full
+summary.
