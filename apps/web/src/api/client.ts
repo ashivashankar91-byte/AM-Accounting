@@ -2,10 +2,18 @@ const API_BASE = import.meta.env.VITE_API_URL ?? '';
 const API_TIMEOUT_MS = 10_000;
 
 async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const tenantId = localStorage.getItem('tenantId') || 'tenant-kunes';
-  if (!localStorage.getItem('tenantId')) localStorage.setItem('tenantId', tenantId);
+  // FINAL-R0 Step 4: prefer the real Golden Path session (real JWT + real
+  // tenantId from a completed login) over the legacy demo 'tenant-kunes'
+  // fallback used by the pre-existing prototype pages. This is additive only
+  // — pages that never call goldenpath login are unaffected and keep their
+  // pre-existing unauthenticated demo behavior.
+  const goldenPathToken = localStorage.getItem('goldenpath.accessToken');
+  const goldenPathTenantId = localStorage.getItem('goldenpath.tenantId');
+  const tenantId = goldenPathTenantId || localStorage.getItem('tenantId') || 'tenant-kunes';
+  if (!goldenPathTenantId && !localStorage.getItem('tenantId')) localStorage.setItem('tenantId', tenantId);
   const headers: Record<string, string> = {
     'x-tenant-id': tenantId,
+    ...(goldenPathToken ? { Authorization: `Bearer ${goldenPathToken}` } : {}),
     ...(options.headers as Record<string, string> ?? {}),
   };
   if (options.body) {
@@ -24,7 +32,9 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
     clearTimeout(timeoutId);
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error ?? `API error ${res.status}`);
+      const err = new Error(body.message ?? body.error ?? `API error ${res.status}`);
+      (err as any).status = res.status;
+      throw err;
     }
     return res.json();
   } catch (error: any) {
@@ -755,4 +765,70 @@ export const developerApi = {
   createKey: (data: any) => apiFetch<any>('/api/v1/developer/keys', { method: 'POST', body: JSON.stringify(data) }),
   deleteKey: (id: string) => apiFetch<any>(`/api/v1/developer/keys/${id}`, { method: 'DELETE' }),
   getKeyUsage: (id: string) => apiFetch<any[]>(`/api/v1/developer/keys/${id}/usage`),
+};
+
+// ── FINAL-R0 Step 4: Golden Path API ────────────────────────────────────────
+// Minimal, dedicated client for the browser Golden Path certification flow:
+// login -> select tenant/legal entity -> fiscal calendar -> accounting
+// period -> Chart of Accounts -> journal draft -> validate -> post -> view
+// -> reverse -> audit history. Talks to the real gateway with real JWT auth
+// (see src/auth/AuthContext.tsx) -- no mock data.
+export const goldenPathApi = {
+  listLegalEntities: () => apiFetch<{ items: any[]; total: number }>('/api/v1/legal-entities'),
+
+  getFiscalCalendar: (entityId: string) => apiFetch<any>(`/api/v1/fiscal/entities/${entityId}/fiscal-calendar`),
+  defineFiscalCalendar: (entityId: string, fyStartMonth: number) =>
+    apiFetch<any>(`/api/v1/fiscal/entities/${entityId}/fiscal-calendar`, {
+      method: 'POST',
+      body: JSON.stringify({ fyStartMonth, structure: 'TWELVE' }),
+    }),
+  generateFiscalYear: (entityId: string, fiscalYear: number) =>
+    apiFetch<any>(`/api/v1/fiscal/entities/${entityId}/fiscal-calendar/years`, {
+      method: 'POST',
+      body: JSON.stringify({ fiscalYear }),
+    }),
+
+  getPeriodBoard: (entityId: string) => apiFetch<{ board: any[] }>(`/api/v1/fiscal/periods?entity=${entityId}`),
+  openPeriod: (periodId: string, confirm = false) =>
+    apiFetch<any>(`/api/v1/fiscal/periods/${periodId}/open`, {
+      method: 'POST',
+      body: JSON.stringify({ confirm }),
+    }),
+
+  listStores: (entityId: string) => apiFetch<{ items: any[] }>(`/api/v1/stores?entityId=${entityId}`),
+  listDepartments: (entityId: string) => apiFetch<{ items: any[] }>(`/api/v1/legal-entities/${entityId}/departments`),
+
+  listAccounts: (entityId: string) => apiFetch<{ accounts: any[] }>(`/api/v1/coa/accounts?entity=${entityId}`),
+  createAccount: (data: {
+    entityId: string; accountNumber: string; name: string; type: string;
+    normalBalance: string; postable: boolean; parentId?: string | null;
+  }) => apiFetch<any>('/api/v1/coa/accounts', { method: 'POST', body: JSON.stringify(data) }),
+
+  createDraft: (data: { entityId: string; entryDate: string; sourceCode: string; memo?: string; lines: any[] }) =>
+    apiFetch<{ draftId: string; status: string; version: number }>('/api/v1/coa/manual-journals/drafts', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getDraft: (draftId: string) => apiFetch<any>(`/api/v1/coa/manual-journals/drafts/${draftId}`),
+  validateDraft: (draftId: string) =>
+    apiFetch<{ pass: boolean; errors?: any[] }>(`/api/v1/coa/manual-journals/drafts/${draftId}:validate`, { method: 'POST' }),
+  postDraft: (draftId: string) =>
+    apiFetch<{ journalId: string; journalNumber: string; idempotent?: boolean }>(
+      `/api/v1/coa/manual-journals/drafts/${draftId}:post`, { method: 'POST' },
+    ),
+  voidDraft: (draftId: string, reason?: string) =>
+    apiFetch<any>(`/api/v1/coa/manual-journals/drafts/${draftId}:void`, {
+      method: 'POST',
+      body: JSON.stringify({ reason: reason ?? null }),
+    }),
+
+  getJournal: (journalNumber: string) => apiFetch<any>(`/api/v1/coa/journals/${journalNumber}`),
+  reverseJournal: (journalId: string, reason: string) =>
+    apiFetch<any>(`/api/v1/coa/journals/${journalId}:reverse`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+
+  getAuditHistory: (entityType: string, entityId: string) =>
+    apiFetch<any[]>(`/api/v1/audit/entity/${entityType}/${entityId}`),
 };

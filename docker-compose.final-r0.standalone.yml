@@ -1,0 +1,166 @@
+# LOCAL ONLY — generated for FINAL-R0 foundation completion. Not committed.
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: amacc
+      POSTGRES_PASSWORD: amacc_dev
+      POSTGRES_DB: amacc
+    ports:
+    - 45433:5432
+    volumes:
+    - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      test:
+      - CMD-SHELL
+      - pg_isready -U amacc
+  redis:
+    image: redis:7-alpine
+    ports:
+    - 46380:6379
+    healthcheck:
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      test:
+      - CMD
+      - redis-cli
+      - ping
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+    - 45673:5672
+    - 55673:15672
+    healthcheck:
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      test:
+      - CMD
+      - rabbitmq-diagnostics
+      - check_running
+  auth-service:
+    build:
+      context: .
+      dockerfile: services/auth-service/Dockerfile
+    ports:
+    - 43001:3001
+    environment:
+      DATABASE_URL: postgresql://amacc:amacc_dev@postgres:5432/amacc
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      REDIS_URL: redis://redis:6379
+      NODE_ENV: development
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-sk-ant-placeholder}
+      AMACC_JWT_SECRET: ${AMACC_JWT_SECRET:?AMACC_JWT_SECRET is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_ISSUER: amacc
+      ADMIN_API_KEY: ${ADMIN_API_KEY:?ADMIN_API_KEY is required}
+      AMACC_INTERNAL_TOKEN: ${AMACC_INTERNAL_TOKEN:-amacc-internal-dev}
+      PORT: 3001
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+  tenant-service:
+    build:
+      context: .
+      dockerfile: services/tenant-service/Dockerfile
+    ports:
+    - 43002:3002
+    environment:
+      DATABASE_URL: postgresql://amacc:amacc_dev@postgres:5432/amacc
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      REDIS_URL: redis://redis:6379
+      NODE_ENV: development
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-sk-ant-placeholder}
+      AMACC_JWT_SECRET: ${AMACC_JWT_SECRET:?AMACC_JWT_SECRET is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_ISSUER: amacc
+      ADMIN_API_KEY: ${ADMIN_API_KEY:?ADMIN_API_KEY is required}
+      AMACC_INTERNAL_TOKEN: ${AMACC_INTERNAL_TOKEN:-amacc-internal-dev}
+      PORT: 3002
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+  coa-service:
+    build:
+      context: .
+      dockerfile: services/coa-service/Dockerfile
+    ports:
+    - 43016:3016
+    environment:
+      DATABASE_URL: postgresql://amacc:amacc_dev@postgres:5432/amacc
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      REDIS_URL: redis://redis:6379
+      NODE_ENV: development
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-sk-ant-placeholder}
+      AMACC_JWT_SECRET: ${AMACC_JWT_SECRET:?AMACC_JWT_SECRET is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_ISSUER: amacc
+      ADMIN_API_KEY: ${ADMIN_API_KEY:?ADMIN_API_KEY is required}
+      AMACC_INTERNAL_TOKEN: ${AMACC_INTERNAL_TOKEN:-amacc-internal-dev}
+      PORT: 3016
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+  audit-service:
+    build:
+      context: .
+      dockerfile: services/audit-service/Dockerfile
+    ports:
+    - 43031:3031
+    environment:
+      DATABASE_URL: postgresql://amacc:amacc_dev@postgres:5432/amacc
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      REDIS_URL: redis://redis:6379
+      NODE_ENV: development
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-sk-ant-placeholder}
+      AMACC_JWT_SECRET: ${AMACC_JWT_SECRET:?AMACC_JWT_SECRET is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_ISSUER: amacc
+      ADMIN_API_KEY: ${ADMIN_API_KEY:?ADMIN_API_KEY is required}
+      AMACC_INTERNAL_TOKEN: ${AMACC_INTERNAL_TOKEN:-amacc-internal-dev}
+      PORT: 3031
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+  api-gateway:
+    build:
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+    ports:
+    - 43100:3000
+    environment:
+      DATABASE_URL: postgresql://amacc:amacc_dev@postgres:5432/amacc
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      REDIS_URL: redis://redis:6379
+      NODE_ENV: development
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-sk-ant-placeholder}
+      AMACC_JWT_SECRET: ${AMACC_JWT_SECRET:?AMACC_JWT_SECRET is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_ISSUER: amacc
+      ADMIN_API_KEY: ${ADMIN_API_KEY:?ADMIN_API_KEY is required}
+      AMACC_INTERNAL_TOKEN: ${AMACC_INTERNAL_TOKEN:-amacc-internal-dev}
+      PORT: 3000
+      AUTH_SERVICE_URL: http://auth-service:3001
+      GL_SERVICE_URL: http://gl-service:3010
+      EOM_SERVICE_URL: http://eom-service:3011
+      SCHEDULE_SERVICE_URL: http://schedule-service:3018
+      GROUP_SERVICE_URL: http://group-service:3039
+    depends_on:
+    - auth-service
+    - tenant-service
+    - coa-service
+    - audit-service
+volumes:
+  pgdata: null

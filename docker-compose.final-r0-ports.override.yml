@@ -1,0 +1,107 @@
+# LOCAL ONLY — not committed. Remaps every host port +10000 so this
+# final-r0 worktree's stack can run alongside another already-running
+# am-accounting docker-compose stack on the same host without port conflicts.
+services:
+  agent-apar:
+    ports:
+    - 13023:3023
+  agent-eom:
+    ports:
+    - 13021:3021
+  agent-gl:
+    ports:
+    - 13020:3020
+  agent-payroll:
+    ports:
+    - 13022:3022
+  agent-t1:
+    ports:
+    - 13024:3024
+  analytics-service:
+    ports:
+    - 13046:3046
+  apar-service:
+    ports:
+    - 13013:3013
+  api-gateway:
+    ports:
+    - 13100:3000
+  approval-service:
+    ports:
+    - 13033:3033
+  audit-service:
+    ports:
+    - 13031:3031
+  auth-service:
+    ports:
+    - 13001:3001
+  cashflow-service:
+    ports:
+    - 13037:3037
+  coa-service:
+    ports:
+    - 13016:3016
+  compliance-service:
+    ports:
+    - 13043:3043
+  connector-service:
+    ports:
+    - 13032:3032
+  document-service:
+    ports:
+    - 13038:3038
+  eom-service:
+    ports:
+    - 13011:3011
+  fs-service:
+    ports:
+    - 13015:3015
+  gl-service:
+    ports:
+    - 13010:3010
+  group-service:
+    ports:
+    - 13039:3039
+  notification-service:
+    ports:
+    - 13030:3030
+  onboarding-service:
+    ports:
+    - 13035:3035
+  orchestrator-service:
+    ports:
+    - 13048:3048
+  payroll-service:
+    ports:
+    - 13012:3012
+  postgres:
+    ports:
+    - 15433:5432
+  query-service:
+    ports:
+    - 13045:3045
+  rabbitmq:
+    ports:
+    - 15673:5672
+    - 25673:15672
+  recon-service:
+    ports:
+    - 13014:3014
+  redis:
+    ports:
+    - 16380:6379
+  schedule-service:
+    ports:
+    - 13018:3018
+  tenant-service:
+    ports:
+    - 13002:3002
+  user-service:
+    ports:
+    - 13040:3040
+  web:
+    ports:
+    - 15174:5174
+  webhook-service:
+    ports:
+    - 13036:3036

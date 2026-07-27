@@ -8,7 +8,10 @@ export default defineConfig({
   workers: 1,
   reporter: 'html',
   use: {
-    baseURL: process.env['BASE_URL'] ?? 'http://localhost:5173',
+    // FINAL-R0 defect fix: apps/web's vite.config.ts runs the dev server on
+    // port 5174 (5173 is used by a different app in this monorepo), so the
+    // previous 5173 default here silently pointed every spec at nothing.
+    baseURL: process.env['BASE_URL'] ?? 'http://localhost:5174',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
