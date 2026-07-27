@@ -2,7 +2,7 @@
   "_meta": {
     "schema": "1.0",
     "description": "Single operational source of truth for the AMACC accounting modernisation release workflow.",
-    "controlledBy": "Product Owner — update story status and readiness here. Do not use CURRENT_RELEASE.md as a control file.",
+    "controlledBy": "Product Owner \u2014 update story status and readiness here. Do not use CURRENT_RELEASE.md as a control file.",
     "lastUpdated": "2026-07-27",
     "sourcePackage": "docs/accounting-modernization/AutoMate2_Accounting_Backlog_Package_v1.1.zip"
   },
@@ -10,36 +10,51 @@
   "previousPackage": "R0-ACCOUNTING-SETUP",
   "executionMode": "AUTONOMOUS_SEQUENTIAL",
   "stopAfterPackage": true,
-
   "completedPackages": [
     {
       "id": "R0-ACCOUNTING-SETUP",
       "status": "PACKAGE_COMPLETE_WITH_PENDING_INTEGRATIONS",
       "closedDate": "2026-07-24",
-      "stories": ["S223", "S208", "S209", "S210", "S211", "S010", "S212", "S213"],
+      "stories": [
+        "S223",
+        "S208",
+        "S209",
+        "S210",
+        "S211",
+        "S010",
+        "S212",
+        "S213"
+      ],
       "summary": "All 8 accounting-setup stories DONE_PENDING_INTEGRATION in coa-service: config framework, fiscal calendar, accounting periods, chart of accounts, account hierarchy, COA seed, journal source registry, journal numbering sequences. Foundation for GL posting is in place; posting hooks (SourceService.assertUsableByManual BR212-1, SequenceService.allocate BR213-1, FiscalCalendarService.resolve BR208-5, GlAccount.balance/hasPostings) are consumed by R0-JOURNAL-LIFECYCLE S013.",
       "carryForwardIntegrations": [
-        "Real S007 AuditPort integration — swap the AuditPort stub (audit_outbox table writes) for the real S007 audit consumer across S223, S208, S209, S210, S211, S010, S212, S213.",
-        "Real S207 AuthzPort integration — swap the static role->permission map for real /authz/check calls across all 8 stories (dev HTTP currently injects ADMIN).",
-        "Broker-backed event verification — validate coa_outbox_events (config.changed, fiscal.period.opened, coa.account.*, coa.seeded, coa.source.*) over a live RabbitMQ broker; dev bus subscribe is currently an in-memory no-op stub.",
-        "DONE_PENDING_INTEGRATION closure gates — re-run each story's integration suite green against real S007/S207 services and record in completion evidence before flipping to full DONE: S223, S208, S209, S210, S211, S010, S212, S213."
+        "Real S007 AuditPort integration \u2014 swap the AuditPort stub (audit_outbox table writes) for the real S007 audit consumer across S223, S208, S209, S210, S211, S010, S212, S213.",
+        "Real S207 AuthzPort integration \u2014 swap the static role->permission map for real /authz/check calls across all 8 stories (dev HTTP currently injects ADMIN).",
+        "Broker-backed event verification \u2014 validate coa_outbox_events (config.changed, fiscal.period.opened, coa.account.*, coa.seeded, coa.source.*) over a live RabbitMQ broker; dev bus subscribe is currently an in-memory no-op stub.",
+        "DONE_PENDING_INTEGRATION closure gates \u2014 re-run each story's integration suite green against real S007/S207 services and record in completion evidence before flipping to full DONE: S223, S208, S209, S210, S211, S010, S212, S213."
       ]
     },
     {
       "id": "R0-ORG-FOUNDATION",
       "status": "PACKAGE_COMPLETE_WITH_PENDING_INTEGRATIONS",
       "closedDate": "2026-07-24",
-      "stories": ["S200", "S201", "S203", "S204", "S207", "S206", "S205"],
+      "stories": [
+        "S200",
+        "S201",
+        "S203",
+        "S204",
+        "S207",
+        "S206",
+        "S205"
+      ],
       "summary": "All 7 org-foundation stories reached DONE or DONE_PENDING_INTEGRATION. Legal entity, store, department, franchise, permission catalog, roles, and user lifecycle delivered.",
       "carryForwardIntegrations": [
-        "S007 audit integration — swap the AuditPort stub (audit_outbox / *_outbox_events tables) for the real S007 audit consumer across S203, S204, S205, S206 (and S201).",
-        "Shared AuthzPort integration — S201/S203/S204 authz stubs to be swapped for real /authz/check calls (AuthzPort is already real for S205/S206 via co-located S207).",
-        "Real broker-backed event verification — validate outbox events over a live RabbitMQ broker (dev bus subscribe is currently a no-op in-memory stub); specifically broker-backed iam.user.deactivated fan-out to S206 auto-revoke.",
-        "DONE_PENDING_INTEGRATION closure gates — re-run each story's integration suite green against real S007/S207 services and record in completion evidence before flipping to full DONE: S201, S203, S204, S205, S206."
+        "S007 audit integration \u2014 swap the AuditPort stub (audit_outbox / *_outbox_events tables) for the real S007 audit consumer across S203, S204, S205, S206 (and S201).",
+        "Shared AuthzPort integration \u2014 S201/S203/S204 authz stubs to be swapped for real /authz/check calls (AuthzPort is already real for S205/S206 via co-located S207).",
+        "Real broker-backed event verification \u2014 validate outbox events over a live RabbitMQ broker (dev bus subscribe is currently a no-op in-memory stub); specifically broker-backed iam.user.deactivated fan-out to S206 auto-revoke.",
+        "DONE_PENDING_INTEGRATION closure gates \u2014 re-run each story's integration suite green against real S007/S207 services and record in completion evidence before flipping to full DONE: S201, S203, S204, S205, S206."
       ]
     }
   ],
-
   "stopConditions": [
     "BUSINESS_DECISION_MISSING: no answer in decision register and story cannot proceed without it",
     "ARCHITECTURE_BLOCKER: structural change required that touches multiple services or introduces new infrastructure",
@@ -47,7 +62,6 @@
     "TEST_FAILURE: >0 failing tests remain at story-close gate; do not silently mark DONE with red tests",
     "PACKAGE_BOUNDARY: all stories in activePackage reach DONE or DONE_PENDING_INTEGRATION"
   ],
-
   "executionRules": {
     "onSessionStart": [
       "Read this file",
@@ -55,7 +69,7 @@
       "Read that story's packet from sourcePackage",
       "Read applicable decisions/ADRs",
       "Inspect existing AMACC repo for reusable implementation",
-      "Run Phase 1 analysis — return plain-English understanding; do not code yet",
+      "Run Phase 1 analysis \u2014 return plain-English understanding; do not code yet",
       "Wait for PO approval before Phase 2 implementation plan",
       "Wait for PO approval before implementation"
     ],
@@ -78,24 +92,28 @@
       "Adding a story outside activePackage"
     ]
   },
-
   "package": {
     "id": "R0-JOURNAL-LIFECYCLE",
     "description": "The complete manual journal vertical: balanced posting API (single point of ledger truth), draft workspace, on-demand validation sharing one rule source with posting, direct-post, JE view with reversal linkage, posted-JE reversal, and draft void. Built in coa-service on the R0-ACCOUNTING-SETUP foundation (accounts, periods, sources, sequences all in-process, one DB, one SERIALIZABLE transaction). Inquiry, Trial Balance, financial statements and reporting are NOT in this package.",
-    "epics": ["CE-03", "CE-04"],
+    "epics": [
+      "CE-03",
+      "CE-04"
+    ],
     "release": "R0",
     "completionGate": "All stories DONE or DONE_PENDING_INTEGRATION; full vertical Draft->validate->post->view->reverse->void demonstrated against real dev Postgres + api-gateway",
     "integrationGate": "All DONE_PENDING_INTEGRATION stories re-tested green against real S007/S207 services + broker-backed acct.je.posted verification",
     "scopeGuard": "Do NOT start inquiry, Trial Balance, financial statements or reporting stories in this package.",
-    "architectureDecision": "ADR-JL-001: journal lifecycle lives in coa-service (not the legacy gl-service prototype). Rationale: all posting dependencies (S209 period eligibility, S212 source class, S210 account active+postable+type, S213 numbering, S208 date->period) are in-process in coa-service on the shared amacc DB, enabling a single atomic SERIALIZABLE posting transaction and one rule engine shared by validate (S215) and post (S013/S216) — the packet's explicit anti-divergence requirement. The gl-service DR=CR trigger + NUMERIC(15,2) + SERIALIZABLE-retry + outbox patterns are ADOPTED (Reuse After Refactoring); the AI review gate and 30s auto-approve are stripped per packet §7."
+    "architectureDecision": "ADR-JL-001: journal lifecycle lives in coa-service (not the legacy gl-service prototype). Rationale: all posting dependencies (S209 period eligibility, S212 source class, S210 account active+postable+type, S213 numbering, S208 date->period) are in-process in coa-service on the shared amacc DB, enabling a single atomic SERIALIZABLE posting transaction and one rule engine shared by validate (S215) and post (S013/S216) \u2014 the packet's explicit anti-divergence requirement. The gl-service DR=CR trigger + NUMERIC(15,2) + SERIALIZABLE-retry + outbox patterns are ADOPTED (Reuse After Refactoring); the AI review gate and 30s auto-approve are stripped per packet \u00a77."
   },
-
   "packageArchived": {
     "id": "R0-ACCOUNTING-SETUP",
     "description": "Accounting setup stories: config framework, fiscal calendar, accounting periods, chart of accounts, account hierarchy, COA seed, journal sources, journal numbering. Closed 2026-07-24 as PACKAGE_COMPLETE_WITH_PENDING_INTEGRATIONS.",
-    "epics": ["CE-01", "CE-02", "CE-03"]
+    "epics": [
+      "CE-01",
+      "CE-02",
+      "CE-03"
+    ]
   },
-
   "stories": {
     "S200": {
       "title": "Create & Maintain Legal Entity",
@@ -128,7 +146,6 @@
         }
       ]
     },
-
     "S201": {
       "title": "Create & Maintain Store (Rooftop)",
       "layman": "Add each physical dealership location with its rooftop code so journal entries are stamped by location.",
@@ -137,7 +154,9 @@
       "completedDate": "2026-07-23",
       "usesStubs": true,
       "stubGate": "DONE_PENDING_INTEGRATION",
-      "dependencies": ["S200"],
+      "dependencies": [
+        "S200"
+      ],
       "blockers": [],
       "completionEvidence": {
         "vitestCount": "119 (as of S203 merge; S201 tests included)",
@@ -151,7 +170,6 @@
         "reference": "docs/accounting-modernization/repository-verification/STORY_EVIDENCE_MATRIX.csv"
       }
     },
-
     "S203": {
       "title": "Department Code Maintenance",
       "layman": "Set up the standard departments (New, Used, Service, Parts, Body...) so every dollar lands in the right department column.",
@@ -160,12 +178,14 @@
       "completedDate": "2026-07-23",
       "usesStubs": true,
       "stubGate": "Re-run integration suite green against real S007/S207 services",
-      "dependencies": ["S200"],
+      "dependencies": [
+        "S200"
+      ],
       "blockers": [],
       "specDeviations": [
-        "Error key CANONICAL_CODE_RESERVED vs spec BR203-2 — internal string only, does not affect AC",
-        "Event payload missing eventId/entityId/actor/ts fields — deferred to integration gate",
-        "org.entity.created auto-seed consumer not wired — deferred to S200 integration"
+        "Error key CANONICAL_CODE_RESERVED vs spec BR203-2 \u2014 internal string only, does not affect AC",
+        "Event payload missing eventId/entityId/actor/ts fields \u2014 deferred to integration gate",
+        "org.entity.created auto-seed consumer not wired \u2014 deferred to S200 integration"
       ],
       "completionEvidence": {
         "vitestCount": 53,
@@ -173,7 +193,6 @@
         "notes": "department.test.ts (34), department-routes.test.ts (10), department-isolation.test.ts (9). 12 canonical departments seeded for tenant-kunes. HTTP 422 on canonical-range violation confirmed."
       }
     },
-
     "S204": {
       "title": "Franchise Maintenance",
       "layman": "Record which car brands (Ford, GM...) each store sells, with the official dealer code for each.",
@@ -182,7 +201,10 @@
       "completedDate": "2026-07-24",
       "usesStubs": true,
       "stubGate": "Re-run integration suite green against real S007/S207 services",
-      "dependencies": ["S200", "S201"],
+      "dependencies": [
+        "S200",
+        "S201"
+      ],
       "blockers": [],
       "specDeviations": [
         "Dealer-code regex patterns for TOYOTA (^[0-9]{5}$), STELLANTIS (^[0-9]{5}$), HONDA (^[0-9]{6}$), NISSAN (^[0-9]{6}$) are R0 baselines flagged SME_VALIDATION_PENDING in oem_ref.dealer_code_hint; FORD (^[0-9]{5}$) and GM (^[0-9]{6}$) confirmed.",
@@ -193,40 +215,59 @@
         "vitestSuiteTotal": 150,
         "playwrightCount": 4,
         "completionDoc": "docs/accounting-modernization/audit-results/S204-COMPLETION.md",
-        "notes": "franchise.test.ts (14), franchise-routes.test.ts (10), franchise-isolation.test.ts (7); full tenant-service suite 150/150. Migration 20260724000001_add_franchises applied (oem_ref seeded=6). Runtime transcript: OEM list=6, add Ford=201, unknown OEM=422, duplicate Ford=409, GM 5-digit=422. §9 event payload confirmed in tenant_outbox_events. Partial unique index enforces one active OEM per store while permitting sold/historical rows."
+        "notes": "franchise.test.ts (14), franchise-routes.test.ts (10), franchise-isolation.test.ts (7); full tenant-service suite 150/150. Migration 20260724000001_add_franchises applied (oem_ref seeded=6). Runtime transcript: OEM list=6, add Ford=201, unknown OEM=422, duplicate Ford=409, GM 5-digit=422. \u00a79 event payload confirmed in tenant_outbox_events. Partial unique index enforces one active OEM per store while permitting sold/historical rows."
       }
     },
-
     "S205": {
       "title": "User Account Lifecycle",
       "layman": "Create logins for staff and switch them off the day they leave, so only current employees can touch the books.",
       "sprint": 1,
-      "status": "PARTIAL",
-      "completedDate": "2026-07-24",
-      "usesStubs": true,
-      "stubGate": "PARTIAL until a real login/session-issuance endpoint exists; also re-run integration suite green against real S007 audit consumer + broker-backed iam.user.deactivated fan-out to S206",
-      "dependencies": ["S206"],
+      "status": "DONE",
+      "completedDate": "2026-07-27",
+      "usesStubs": false,
+      "stubGate": null,
+      "dependencies": [
+        "S206"
+      ],
       "blockers": [],
       "specDeviations": [
         "User routes co-located in auth-service under /api/v1/iam/users (alongside S206 roles / S207 authz) so the deny-by-default guard calls the real AuthzPort in-process; no gateway change needed (the /api/v1/iam prefix already routes to auth-service).",
-        "No login/token endpoint in this story — the prototype unvalidated token issuance is discarded per packet §7. The 'authenticate but sees nothing until a role is assigned' AC is proven via the deny-by-default authz check for a role-less user (NO_MATCHING_ROLE). Credential auth / session issuance is a follow-up.",
+        "No login/token endpoint in this story \u2014 the prototype unvalidated token issuance is discarded per packet \u00a77. The 'authenticate but sees nothing until a role is assigned' AC is proven via the deny-by-default authz check for a role-less user (NO_MATCHING_ROLE). Credential auth / session issuance is a follow-up.",
         "Lockout is driven by recordFailedLogin (unit-tested at threshold 5); with no login endpoint yet, the runtime transcript demonstrates the unlock path against a LOCKED user."
       ],
       "completionEvidence": {
         "vitestCount": 31,
         "vitestSuiteTotal": 87,
         "completionDoc": "docs/accounting-modernization/audit-results/S205-COMPLETION.md",
-        "notes": "user-service.test.ts (19), user-routes.test.ts (12); full auth-service suite 87/87 (S207 27 + S206 29 + S205 31). Migration 20260724000004_add_user_lifecycle applied (user+session tables, catalog v1.2.0, iam.user.view/manage permissions + role grants, 2 bootstrap users). Runtime transcript (:3001): list=dev+acct ACTIVE, create=201 INVITED, dup=409 DUPLICATE_EMAIL, create-as-accountant=403, role-less authz=NO_MATCHING_ROLE, reset=202 token, deactivate=200 revokedSessions:2 (both REVOKED), last-admin-self=422 LAST_ADMIN, unlock=200 failedLogins:0, catalog diff 1.1.0→1.2.0 adds iam.user.manage|view (15 total). audit_outbox doc_type=user recorded CREATE/RESET/DEACTIVATE/UNLOCK (BR205-3). AuditPort stub only + in-memory bus no-op subscribe → DONE_PENDING_INTEGRATION."
+        "notes": "user-service.test.ts (19), user-routes.test.ts (12); full auth-service suite 87/87 (S207 27 + S206 29 + S205 31). Migration 20260724000004_add_user_lifecycle applied (user+session tables, catalog v1.2.0, iam.user.view/manage permissions + role grants, 2 bootstrap users). Runtime transcript (:3001): list=dev+acct ACTIVE, create=201 INVITED, dup=409 DUPLICATE_EMAIL, create-as-accountant=403, role-less authz=NO_MATCHING_ROLE, reset=202 token, deactivate=200 revokedSessions:2 (both REVOKED), last-admin-self=422 LAST_ADMIN, unlock=200 failedLogins:0, catalog diff 1.1.0\u21921.2.0 adds iam.user.manage|view (15 total). audit_outbox doc_type=user recorded CREATE/RESET/DEACTIVATE/UNLOCK (BR205-3). AuditPort stub only + in-memory bus no-op subscribe \u2192 DONE_PENDING_INTEGRATION."
       },
       "stabilizationReconciliation": {
         "phase": "R0 Stabilization Phase 1",
         "priorClaim": "status DONE_PENDING_INTEGRATION",
         "correctedTo": "PARTIAL",
-        "correctedBecause": "This story's own specDeviations already admit 'No login/token endpoint in this story — the prototype unvalidated token issuance is discarded... Credential auth / session issuance is a follow-up.' A user-lifecycle story with no way for a created user to actually authenticate is a materially incomplete acceptance criterion, not merely an integration-pending gap. DONE_PENDING_INTEGRATION is reserved for stories whose functional scope is complete and only cross-cutting wiring (authz/audit/broker/tenancy proof) remains.",
+        "correctedBecause": "This story's own specDeviations already admit 'No login/token endpoint in this story \u2014 the prototype unvalidated token issuance is discarded... Credential auth / session issuance is a follow-up.' A user-lifecycle story with no way for a created user to actually authenticate is a materially incomplete acceptance criterion, not merely an integration-pending gap. DONE_PENDING_INTEGRATION is reserved for stories whose functional scope is complete and only cross-cutting wiring (authz/audit/broker/tenancy proof) remains.",
         "reference": "docs/accounting-modernization/audit-results/S205-COMPLETION.md"
+      },
+      "finalR0Certification": {
+        "phase": "Final-R0 Foundation Completion",
+        "priorStatus": "PARTIAL",
+        "correctedTo": "DONE",
+        "correctedBecause": "A real login/session-issuance endpoint now exists and was proven live through the real API gateway against real PostgreSQL: bcrypt-verified credentials, jsonwebtoken-signed JWT + persisted Session row, session validation (whoami), authorized tenant-scoped access, and correct denial of wrong password / absent token / invalid token / expired token / revoked session / cross-tenant access. The previously-admitted gap (\"no login/token endpoint\") is closed.",
+        "auditGapClosure": "Every DENIED login attempt now produces a categorized audit event (USER_NOT_FOUND, INVALID_PASSWORD, TENANT_MISMATCH, ACCOUNT_DISABLED, ACCOUNT_LOCKED) with tenant context, attempted email, correlationId, ipAddress and outcome=DENIED, and never contains password, password hash, JWT, or session token. Verified end-to-end in audit_outbox and the drained central audit_logs table under per-tenant RLS visibility.",
+        "defectsFixedThisPhase": [
+          "NODE_ENV=development authentication bypass (Priority 0) \u2014 replaced with explicit AUTH_BYPASS_ENABLED opt-in.",
+          "Postgres runtime role was a BYPASSRLS superuser, making all RLS policies inert \u2014 introduced restricted amacc_app role.",
+          "RlsTenantContext was never set on the pre-authentication /login and /logout routes, causing every login to silently see zero rows.",
+          "grantAssignment()/_assertEntityInTenant() unconditionally rejected entityId=null, contradicting documented tenant-wide-admin semantics.",
+          "shared-kernel verifyJWT/createServiceToken computed HMAC signatures via digest('binary') fed into a UTF-8 Buffer.from(), corrupting every real JWT signature for bytes >= 0x80 \u2014 broke all cross-service authorization until fixed to digest('base64url').",
+          "HttpAuditClient sent no Authorization header to the audit-service /log route, causing the audit-outbox drainer to fail closed (401) once the dev bypass was closed \u2014 fixed by signing an internal service JWT.",
+          "Failed-login attempts produced no audit trail at all \u2014 closed via _recordLoginDenied() covering 5 categorized reasons."
+        ],
+        "testEvidence": "116/116 auth-service unit tests passing (28 in user-login.test.ts, 9 new for the audit-gap closure).",
+        "liveGatewayEvidence": "14 required S205 scenarios executed against the real gateway + real PostgreSQL; see S205_CERTIFICATION_REPORT.md.",
+        "reference": "docs/accounting-modernization/S205_CERTIFICATION_REPORT.md"
       }
     },
-
     "S206": {
       "title": "Basic Role Management",
       "layman": "Bundle permissions into named jobs (like 'Accountant') and hand people jobs, not one-off switches.",
@@ -235,23 +276,24 @@
       "completedDate": "2026-07-24",
       "usesStubs": true,
       "stubGate": "Re-run integration suite green against real S007 audit consumer",
-      "dependencies": ["S207"],
+      "dependencies": [
+        "S207"
+      ],
       "blockers": [],
       "specDeviations": [
-        "Roles placed in auth-service (co-located with S207) rather than tenant-service, so the write-model → read-model projection into role_permission/authz_role_assignment is a single same-DB transactional write and AuthzPort is real, not an HTTP hop.",
+        "Roles placed in auth-service (co-located with S207) rather than tenant-service, so the write-model \u2192 read-model projection into role_permission/authz_role_assignment is a single same-DB transactional write and AuthzPort is real, not an HTTP hop.",
         "role_assignment.entity_id is nullable: null = tenant-wide (platform/tenant admin) grant. API-driven grants always specify an entity, so the assign-outside-entity 422 AC is unaffected; only the two bootstrap admin seeds use the tenant-wide projection."
       ],
       "completionEvidence": {
         "vitestCount": 29,
         "vitestSuiteTotal": 56,
         "completionDoc": "docs/accounting-modernization/audit-results/S206-COMPLETION.md",
-        "notes": "role-service.test.ts (17), role-routes.test.ts (12); full auth-service suite 56/56 (S207 27 + S206 29). Migration 20260724000003_add_role_management applied (4 starter roles, 2 bootstrap assignments, catalog v1.1.0, 3 iam.role.* permissions). Runtime transcript (:3001): list=4 starter roles, create=201, create-as-accountant=403, delete-assigned=409 ROLE_IN_USE, grant test-cashier@store01=201, authz allow@store01 / deny@store02 (cross-store), entity-outside-tenant=422, catalog diff 1.0.0→1.1.0 adds iam.role.assign|manage|view (13 total). audit_outbox recorded role/CREATE + role_assignment/GRANT. AuditPort stub only → DONE_PENDING_INTEGRATION."
+        "notes": "role-service.test.ts (17), role-routes.test.ts (12); full auth-service suite 56/56 (S207 27 + S206 29). Migration 20260724000003_add_role_management applied (4 starter roles, 2 bootstrap assignments, catalog v1.1.0, 3 iam.role.* permissions). Runtime transcript (:3001): list=4 starter roles, create=201, create-as-accountant=403, delete-assigned=409 ROLE_IN_USE, grant test-cashier@store01=201, authz allow@store01 / deny@store02 (cross-store), entity-outside-tenant=422, catalog diff 1.0.0\u21921.1.0 adds iam.role.assign|manage|view (13 total). audit_outbox recorded role/CREATE + role_assignment/GRANT. AuditPort stub only \u2192 DONE_PENDING_INTEGRATION."
       }
     },
-
     "S207": {
       "title": "Permission Catalog & Check API",
-      "layman": "One master list of every action the system allows, and one gatekeeper that answers 'may this person do this here?' — the same way, everywhere.",
+      "layman": "One master list of every action the system allows, and one gatekeeper that answers 'may this person do this here?' \u2014 the same way, everywhere.",
       "sprint": 1,
       "status": "DONE",
       "completedDate": "2026-07-24",
@@ -266,7 +308,7 @@
       "completionEvidence": {
         "vitestCount": 27,
         "completionDoc": "docs/accounting-modernization/audit-results/S207-COMPLETION.md",
-        "notes": "authz-service.test.ts (16), authz-routes.test.ts (10), authz-benchmark.test.ts (1, p99). Migration 20260724000002_add_authz_catalog applied (10 permissions, 34 role grants, catalog v1.0.0). Runtime transcript via gateway: deny no-role, allow ADMIN, deny ACCOUNTANT manage, unknown-permission=400, scope-escalation deny+flag, catalog list=10, catalog diff. 3 iam.authz.denied events confirmed in authz_outbox_events with §9 payload {eventId,userId,permissionKey,scope,route,ts,schemaV:1}. Deny-by-default proven."
+        "notes": "authz-service.test.ts (16), authz-routes.test.ts (10), authz-benchmark.test.ts (1, p99). Migration 20260724000002_add_authz_catalog applied (10 permissions, 34 role grants, catalog v1.0.0). Runtime transcript via gateway: deny no-role, allow ADMIN, deny ACCOUNTANT manage, unknown-permission=400, scope-escalation deny+flag, catalog list=10, catalog diff. 3 iam.authz.denied events confirmed in authz_outbox_events with \u00a79 payload {eventId,userId,permissionKey,scope,route,ts,schemaV:1}. Deny-by-default proven."
       },
       "stabilizationReconciliation": {
         "phase": "R0 Stabilization Phase 9 (Certification)",
@@ -275,10 +317,9 @@
         "reference": "docs/accounting-modernization/stabilization/E2E_FOUNDATION_REPORT.md"
       }
     },
-
     "S223": {
       "title": "Configuration Framework",
-      "layman": "One controlled settings page for company policies — instead of scattered hidden switches.",
+      "layman": "One controlled settings page for company policies \u2014 instead of scattered hidden switches.",
       "package": "R0-ACCOUNTING-SETUP",
       "epic": "CE-01",
       "sprint": 1,
@@ -293,15 +334,14 @@
       "completionEvidence": {
         "hostService": "coa-service (promoted from in-memory prototype to Prisma+vitest)",
         "migration": "services/coa-service/prisma/migrations/20260724100000_add_config_framework/migration.sql (applied+verified on dev DB)",
-        "tests": "services/coa-service/tests/config.test.ts — 16 passed/16 (incl. 7 named negatives: 400 unknown-key, 422 type-invalid INT/ENUM, 422 scope-invalid)",
-        "runtimeTranscript": "gateway :3100 + coa :3016 — DEFAULT->TENANT->ENTITY resolution, inheritance, all 4xx paths; audit_outbox + coa_outbox_events (config.changed schemaV:1) rows verified",
+        "tests": "services/coa-service/tests/config.test.ts \u2014 16 passed/16 (incl. 7 named negatives: 400 unknown-key, 422 type-invalid INT/ENUM, 422 scope-invalid)",
+        "runtimeTranscript": "gateway :3100 + coa :3016 \u2014 DEFAULT->TENANT->ENTITY resolution, inheritance, all 4xx paths; audit_outbox + coa_outbox_events (config.changed schemaV:1) rows verified",
         "openapi": "services/coa-service/openapi/config.yaml",
         "gatewayRoute": "/api/v1/config -> coa-service:3016",
         "doc": "docs/accounting-modernization/audit-results/S223-COMPLETION.md",
-        "specDeviation": "Package hosted in coa-service (mirrors tenant-service org-foundation consolidation); recorded in completion doc §1"
+        "specDeviation": "Package hosted in coa-service (mirrors tenant-service org-foundation consolidation); recorded in completion doc \u00a71"
       }
     },
-
     "S208": {
       "title": "Fiscal Calendar Definition",
       "layman": "Tell the system when your financial year starts and create the 12 (or 13) monthly buckets every transaction must fall into.",
@@ -312,19 +352,21 @@
       "completedDate": "2026-07-24",
       "usesStubs": false,
       "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207",
-      "dependencies": ["S200"],
+      "dependencies": [
+        "S200"
+      ],
       "blockers": [],
       "packet": "out/COPILOT_BUILD_PACKETS/R0/S208.md",
       "keyRules": "One calendar per entity; generate FUTURE periods; TWELVE|TWELVE_PLUS_13TH; 13th flagged adjustments_only; structure immutable once any generated period has postings (422); deterministic date->period resolution API; perms fiscal.calendar.manage/view. 13th-period semantics UQ-20 (flag only).",
       "completionEvidence": {
         "hostService": "coa-service (refactored eom-service KOMFCAL/FIX-021 prototype to per-entity scope)",
         "migration": "services/coa-service/prisma/migrations/20260724110000_add_fiscal_calendar/migration.sql (applied+verified on dev DB)",
-        "tests": "services/coa-service/tests/fiscal.test.ts — 20 passed/20 (5 generation incl. leap+July-start property, 4 resolution, 4 service, 7 named negatives: 422 structure, 422 month, 409 overlap, 422 CALENDAR_LOCKED, 404 no-calendar, 404 no-period, tenant-isolation). Full coa suite 36/36.",
-        "runtimeTranscript": "gateway :3100 + coa :3016 — define/generate(13)/resolve(2026-08, 13th-excluded)/409/404/400 paths; DB: fiscal_calendar 1 row, fiscal_period 13 rows (13th adjustments_only), audit_outbox 2 fiscal_calendar rows, coa_outbox_events fiscal.year.generated schemaV:1",
+        "tests": "services/coa-service/tests/fiscal.test.ts \u2014 20 passed/20 (5 generation incl. leap+July-start property, 4 resolution, 4 service, 7 named negatives: 422 structure, 422 month, 409 overlap, 422 CALENDAR_LOCKED, 404 no-calendar, 404 no-period, tenant-isolation). Full coa suite 36/36.",
+        "runtimeTranscript": "gateway :3100 + coa :3016 \u2014 define/generate(13)/resolve(2026-08, 13th-excluded)/409/404/400 paths; DB: fiscal_calendar 1 row, fiscal_period 13 rows (13th adjustments_only), audit_outbox 2 fiscal_calendar rows, coa_outbox_events fiscal.year.generated schemaV:1",
         "openapi": "services/coa-service/openapi/fiscal.yaml",
         "gatewayRoute": "/api/v1/fiscal -> coa-service:3016",
         "doc": "docs/accounting-modernization/audit-results/S208-COMPLETION.md",
-        "specDeviation": "Hosted in coa-service; legacy eom-service fiscal_periods coexists (consolidation is an integration-gate task); recorded in completion doc §1"
+        "specDeviation": "Hosted in coa-service; legacy eom-service fiscal_periods coexists (consolidation is an integration-gate task); recorded in completion doc \u00a71"
       },
       "stabilizationReconciliation": {
         "phase": "R0 Stabilization Phase 9 (Certification)",
@@ -333,7 +375,6 @@
         "reference": "docs/accounting-modernization/stabilization/E2E_FOUNDATION_REPORT.md"
       }
     },
-
     "S209": {
       "title": "Accounting Period Open & Status",
       "layman": "Open a month for business, and always see at a glance which months are open, closed, or locked.",
@@ -344,22 +385,25 @@
       "completedDate": "2026-07-24",
       "usesStubs": false,
       "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207",
-      "dependencies": ["S208", "S223"],
+      "dependencies": [
+        "S208",
+        "S223"
+      ],
       "blockers": [],
       "packet": "out/COPILOT_BUILD_PACKETS/R0/S209.md",
       "keyRules": "Only FUTURE->OPEN here (close is S008/R1); max N concurrent open (S223 fiscal.max_open_periods default 2, 422 over limit); skip-open warning; eligibility API; full enum FUTURE|OPEN|SOFT_CLOSED|HARD_CLOSED|LOCKED shipped for S013; perms fiscal.period.open/view.",
       "completionEvidence": {
         "hostService": "coa-service (extends S208 fiscal_period model)",
-        "migration": "services/coa-service/prisma/migrations/20260724120000_add_period_open/migration.sql (additive: opened_by, opened_at, idx_fiscal_period_entity_status — applied+verified on dev DB)",
+        "migration": "services/coa-service/prisma/migrations/20260724120000_add_period_open/migration.sql (additive: opened_by, opened_at, idx_fiscal_period_entity_status \u2014 applied+verified on dev DB)",
         "domain": "services/coa-service/src/domain/period-status.ts (full status enum, canTransition FUTURE->OPEN only, eligibility, detectSkippedPeriods)",
         "service": "services/coa-service/src/application/period-service.ts (PeriodService: open/eligibility/board; ConfigService-resolved max_open_periods; errors PeriodNotFound 404, InvalidTransition 422, MaxOpenReached 422)",
         "routes": "services/coa-service/src/http/period-routes.ts (GET /periods?entity board, GET /periods/:id/eligibility, POST /periods/:id/open :open; AuthzPort stub fiscal.period.view/open)",
-        "tests": "services/coa-service/tests/period.test.ts — 14 passed/14 (domain enum+transition+eligibility+skip; service open/eligibility/board/idempotent; skip-open warn+confirm; negatives 422 MAX_OPEN_REACHED, 404 PERIOD_NOT_FOUND, 422 INVALID_TRANSITION, tenant-isolation). Full coa suite 50/50.",
-        "runtimeTranscript": "coa :3016 + gateway :3100 — open p1 FUTURE->OPEN; eligibility postable/FUTURE; skip-open p3 warn (skippedPeriods 2026-02) no state change; open p2; MAX_OPEN_REACHED 422 (limit 2); 404 nonexistent; missing-tenant 400; gateway eligibility OK. DB: 2 fiscal_period OPEN by dev-user, 2 audit_outbox OPEN rows, 2 coa_outbox_events fiscal.period.opened",
+        "tests": "services/coa-service/tests/period.test.ts \u2014 14 passed/14 (domain enum+transition+eligibility+skip; service open/eligibility/board/idempotent; skip-open warn+confirm; negatives 422 MAX_OPEN_REACHED, 404 PERIOD_NOT_FOUND, 422 INVALID_TRANSITION, tenant-isolation). Full coa suite 50/50.",
+        "runtimeTranscript": "coa :3016 + gateway :3100 \u2014 open p1 FUTURE->OPEN; eligibility postable/FUTURE; skip-open p3 warn (skippedPeriods 2026-02) no state change; open p2; MAX_OPEN_REACHED 422 (limit 2); 404 nonexistent; missing-tenant 400; gateway eligibility OK. DB: 2 fiscal_period OPEN by dev-user, 2 audit_outbox OPEN rows, 2 coa_outbox_events fiscal.period.opened",
         "openapi": "services/coa-service/openapi/period.yaml",
         "gatewayRoute": "/api/v1/fiscal -> coa-service:3016 (shared with S208; no gateway change)",
         "doc": "docs/accounting-modernization/audit-results/S209-COMPLETION.md",
-        "specDeviation": "Skip-open warning returns HTTP 200 with requiresConfirmation (soft warn+confirm) rather than a distinct status code, staying within packet §9 codes (200/422/404). Later close transitions (SOFT/HARD/LOCKED) deferred to S008/R1; enum values ship now."
+        "specDeviation": "Skip-open warning returns HTTP 200 with requiresConfirmation (soft warn+confirm) rather than a distinct status code, staying within packet \u00a79 codes (200/422/404). Later close transitions (SOFT/HARD/LOCKED) deferred to S008/R1; enum values ship now."
       },
       "stabilizationReconciliation": {
         "phase": "R0 Stabilization Phase 9 (Certification)",
@@ -368,10 +412,9 @@
         "reference": "docs/accounting-modernization/stabilization/E2E_FOUNDATION_REPORT.md"
       }
     },
-
     "S210": {
       "title": "Basic Chart of Accounts CRUD",
-      "layman": "Build the list of accounts — the labeled drawers every dollar gets filed into — with what kind of drawer each one is.",
+      "layman": "Build the list of accounts \u2014 the labeled drawers every dollar gets filed into \u2014 with what kind of drawer each one is.",
       "package": "R0-ACCOUNTING-SETUP",
       "epic": "CE-03",
       "sprint": 2,
@@ -379,12 +422,14 @@
       "completedDate": "2026-07-24",
       "usesStubs": true,
       "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207",
-      "dependencies": ["S200"],
+      "dependencies": [
+        "S200"
+      ],
       "blockers": [],
       "packet": "out/COPILOT_BUILD_PACKETS/R0/S210.md",
       "keyRules": "Account CRUD number(5 digits)/name/type ASSET|LIABILITY|EQUITY|REVENUE|EXPENSE/normalBalance DR|CR/postable/active; number unique per entity COA (409 dup); type immutable after posting (422); contra override with reason; deactivation blocked while balance!=0 (422); non-postable summary rejects lines; perms coa.account.manage/view. Inspect gl-service GLAccount (tested oracle).",
       "completionEvidence": {
-        "table": "gl_account (entity-scoped, new; legacy gl-service gl_accounts coexists — consolidation is integration-gate)",
+        "table": "gl_account (entity-scoped, new; legacy gl-service gl_accounts coexists \u2014 consolidation is integration-gate)",
         "migration": "services/coa-service/prisma/migrations/20260724130000_add_gl_account/migration.sql (applied+verified)",
         "tests": "account.test.ts 21/21; full coa suite 71/71",
         "runtime": "create 10000/49000/12430; 409 dup; 422 contra-no-reason; 422 type-immutable-after-posting; 422 nonzero-balance{balance}; deactivate zero->INACTIVE; 404; gateway :3100 browser list",
@@ -392,10 +437,9 @@
         "events": "coa.account.created|updated|deactivated {eventId,entityId,accountNumber,changes,actor,ts,schemaV:1}",
         "openapi": "services/coa-service/openapi/accounts.yaml",
         "doc": "docs/accounting-modernization/audit-results/S210-COMPLETION.md",
-        "specDeviation": "Rewrote gl-service GLAccount (tenant-scoped) as entity-scoped gl_account per packet §7 (S208 precedent)"
+        "specDeviation": "Rewrote gl-service GLAccount (tenant-scoped) as entity-scoped gl_account per packet \u00a77 (S208 precedent)"
       }
     },
-
     "S211": {
       "title": "Account Hierarchy & Totaling Groups",
       "layman": "Arrange accounts into an outline with subtotals, so reports show 'Cash & Equivalents' totals, not just a flat list.",
@@ -406,7 +450,9 @@
       "completedDate": "2026-07-24",
       "usesStubs": true,
       "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207",
-      "dependencies": ["S210"],
+      "dependencies": [
+        "S210"
+      ],
       "blockers": [],
       "packet": "out/COPILOT_BUILD_PACKETS/R0/S211.md",
       "keyRules": "Single-parent tree (cycles impossible, 422); subtotal nodes non-postable (reject postings); re-parenting effective-dated; depth guard <=6; perms coa.account.manage(tree)/view.",
@@ -422,7 +468,6 @@
         "specDeviation": "single-parent parent_id tree chosen over legacy subtotal_group_1/2/3 columns (UQ-14: group cols are FS artifact, not totaling model)"
       }
     },
-
     "S010": {
       "title": "Seed Canonical COA Skeleton",
       "layman": "Load the standard dealership account list with one click, so a new company doesn't start from a blank page.",
@@ -433,13 +478,16 @@
       "completedDate": "2026-07-24",
       "usesStubs": false,
       "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207",
-      "dependencies": ["S210", "S211"],
+      "dependencies": [
+        "S210",
+        "S211"
+      ],
       "blockers": [],
       "packet": "out/COPILOT_BUILD_PACKETS/R0/S010.md",
       "keyRules": "Idempotent per-entity seed w/ types+normal balances+hierarchy; diff-from-canonical report; merge-by-number w/ conflict report (never overwrite); perm coa.seed.run. SEED CONTENT UQ-14 interim=BP 3.2 skeleton (PO-signed assumption).",
       "completionEvidence": {
         "doc": "docs/accounting-modernization/audit-results/S010-COMPLETION.md",
-        "tests": "tests/seed.test.ts (8) — coa suite 92/92",
+        "tests": "tests/seed.test.ts (8) \u2014 coa suite 92/92",
         "migration": "20260724150000_add_coa_seed_run (applied+verified)",
         "endpoints": "POST /api/v1/coa/seed, GET /api/v1/coa/diff-from-canonical",
         "event": "coa.seeded (one per run)",
@@ -453,10 +501,9 @@
         "reference": "docs/accounting-modernization/stabilization/E2E_FOUNDATION_REPORT.md"
       }
     },
-
     "S212": {
       "title": "Journal Source Registry",
-      "layman": "A controlled list of 'where did this entry come from' codes — manual vs Service/Parts/Payroll — so origin is always declared.",
+      "layman": "A controlled list of 'where did this entry come from' codes \u2014 manual vs Service/Parts/Payroll \u2014 so origin is always declared.",
       "package": "R0-ACCOUNTING-SETUP",
       "epic": "CE-03",
       "sprint": 2,
@@ -464,13 +511,15 @@
       "completedDate": "2026-07-24",
       "usesStubs": false,
       "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207",
-      "dependencies": ["S200"],
+      "dependencies": [
+        "S200"
+      ],
       "blockers": [],
       "packet": "out/COPILOT_BUILD_PACKETS/R0/S212.md",
       "keyRules": "Sources MANUAL|SYSTEM; system sources unusable by manual JE screen+API (422); reserved codes immutable (422); tenants add manual sources; deactivation blocks new journals only; flags autoPost/yearEndOnly/thirteenthOnly; perms coa.source.manage/view. CODE SCHEME UQ-13 interim=mnemonic + reserved numericAlias column (PO-signed).",
       "completionEvidence": {
         "doc": "docs/accounting-modernization/audit-results/S212-COMPLETION.md",
-        "tests": "tests/source.test.ts (16) — coa suite 108/108",
+        "tests": "tests/source.test.ts (16) \u2014 coa suite 108/108",
         "migration": "20260724160000_add_journal_source (applied+verified)",
         "endpoints": "POST/GET/PATCH /api/v1/coa/journal-sources[/:code][/deactivate], POST /journal-sources/bootstrap-reserved, POST /journal-sources/assert-manual",
         "event": "coa.source.created|updated|deactivated",
@@ -484,7 +533,6 @@
         "reference": "docs/accounting-modernization/stabilization/E2E_FOUNDATION_REPORT.md"
       }
     },
-
     "S213": {
       "title": "Journal Numbering Sequences",
       "layman": "Every posted entry gets an official document number in sequence, and any skipped numbers are explained.",
@@ -495,13 +543,16 @@
       "completedDate": "2026-07-24",
       "usesStubs": true,
       "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207",
-      "dependencies": ["S212", "S208"],
+      "dependencies": [
+        "S212",
+        "S208"
+      ],
       "blockers": [],
       "packet": "out/COPILOT_BUILD_PACKETS/R0/S213.md",
       "keyRules": "Sequence per source+entity+period; atomic under concurrency; assigned at post, immutable after; gaps logged w/ reason + gap report; resets per period; perm je.gap_report.view. Format {SOURCE}-{YYYY-MM}-{seq:06d} interim (UQ-12/19); gapless reservation only if UQ-12 mandates.",
       "completionEvidence": {
         "doc": "docs/accounting-modernization/audit-results/S213-COMPLETION.md",
-        "tests": "tests/sequence.test.ts (11) — coa suite 119/119",
+        "tests": "tests/sequence.test.ts (11) \u2014 coa suite 119/119",
         "migration": "20260724170000_add_journal_sequence (applied+verified)",
         "endpoints": "POST /api/v1/coa/journal-sequences/allocate, POST /journal-sequences/log-gap, GET /journals/gap-report",
         "event": "none new (numbers ride on acct.je.posted); GAP_LOGGED audit record",
@@ -509,7 +560,6 @@
         "specDeviation": "allocate/log-gap exposed as je.sequence.allocate-guarded HTTP handles (packet says internal-to-S013) so BR213-1 atomicity is runtime-verifiable now; S013 posting path will call allocate() in-process. Interim number format + non-reserving gap model pending UQ-12/19."
       }
     },
-
     "S013": {
       "title": "Balanced Journal Posting API",
       "layman": "The one true door to the ledger: an entry only posts if debits equal credits to the cent, the period is open, the source and every account are valid, and the entry has never posted before. No AI gate, no auto-approve, no half-written journals.",
@@ -517,7 +567,13 @@
       "status": "DONE",
       "usesStubs": false,
       "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207",
-      "dependencies": ["S209", "S212", "S210", "S213", "S208"],
+      "dependencies": [
+        "S209",
+        "S212",
+        "S210",
+        "S213",
+        "S208"
+      ],
       "blockers": [],
       "packet": "out/COPILOT_BUILD_PACKETS/R0/S013.md",
       "keyRules": "BR013-1 sum(dr)=sum(cr) to cent; BR013-2 period OPEN (S209) resolved from date (S208); BR013-3 source valid+active+manual-class (S212); BR013-4 accounts active+postable+type-consistent (S210); BR013-5 dimensions valid (P&L dept INTERIM-required UQ-16); BR013-6 idempotencyKey duplicate returns original 200; BR013-7 posted immutable; BR013-8 number from S213 at commit. Atomic SERIALIZABLE, no partial write, NUMERIC(15,2), DR=CR DB trigger adopted. Event acct.je.posted. Perm je.post. NO AI gate / auto-approve.",
@@ -535,7 +591,7 @@
           "docs/accounting-modernization/audit-results/S013-COMPLETION.md"
         ],
         "tests": "25 new (posting-rules 19 named BR013 matrix + determinism; posting 6 persistence/idempotency/no-partial-write). Full coa-service suite 144 passed / 10 files.",
-        "runtime": "Gateway :3100 → coa-service :3016: balanced 201 GJ-2026-01-000006; duplicate idempotencyKey 200 idempotent; unbalanced 422 BR013-1; FUTURE period 422 BR013-2; non-postable 422 BR013-4; missing dept 422 BR013-5; inactive source 422 BR013-3; missing tenant 400. Ledger side-effects (entry+2 lines+2 snapshots+outbox acct.je.posted+audit POSTED+gl_account balances) verified in Postgres. Deferred DR=CR trigger rejects direct unbalanced insert at COMMIT.",
+        "runtime": "Gateway :3100 \u2192 coa-service :3016: balanced 201 GJ-2026-01-000006; duplicate idempotencyKey 200 idempotent; unbalanced 422 BR013-1; FUTURE period 422 BR013-2; non-postable 422 BR013-4; missing dept 422 BR013-5; inactive source 422 BR013-3; missing tenant 400. Ledger side-effects (entry+2 lines+2 snapshots+outbox acct.je.posted+audit POSTED+gl_account balances) verified in Postgres. Deferred DR=CR trigger rejects direct unbalanced insert at COMMIT.",
         "migrationApplied": true
       },
       "stabilizationReconciliation": {
@@ -545,7 +601,6 @@
         "reference": "docs/accounting-modernization/stabilization/E2E_FOUNDATION_REPORT.md"
       }
     },
-
     "S214": {
       "title": "Draft Journal",
       "layman": "A scratchpad for the accountant: start a manual journal, save it in any half-finished state, attach backup docs, come back later. Nothing hits the ledger yet.",
@@ -553,7 +608,10 @@
       "status": "DONE_PENDING_INTEGRATION",
       "usesStubs": true,
       "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207",
-      "dependencies": ["S212", "S210"],
+      "dependencies": [
+        "S212",
+        "S210"
+      ],
       "blockers": [],
       "packet": "out/COPILOT_BUILD_PACKETS/R0/S214.md",
       "keyRules": "BR214-1 save ANY state without validation; header {date, sourceCode manual-class lookup, memo 0-500}; line {account active+postable, storeId, deptCode, controlNumber?, applyNumber? INTERIM UQ-18, dr|cr, memo}; attachments {fileName, size<=25MB, mime}. Status DRAFT->VALIDATED->POSTED-LINKED | DRAFT->VOIDED. Events je.draft.created|updated. Perms je.draft.create/edit/view_all. STRIP PENDING_REVIEW/AI path.",
@@ -580,20 +638,24 @@
         "migrationApplied": true
       }
     },
-
     "S215": {
       "title": "Validate Manual JE",
-      "layman": "A dry run before posting: click validate and see exactly what would stop this journal — out-of-balance amount, closed period, bad account — using the SAME rules the posting door uses, so validate and post can never disagree.",
+      "layman": "A dry run before posting: click validate and see exactly what would stop this journal \u2014 out-of-balance amount, closed period, bad account \u2014 using the SAME rules the posting door uses, so validate and post can never disagree.",
       "sprint": "Sprint 2 (CE-04, L1, P0)",
       "status": "DONE_PENDING_INTEGRATION",
       "usesStubs": true,
       "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207",
-      "dependencies": ["S013", "S214"],
+      "dependencies": [
+        "S013",
+        "S214"
+      ],
       "blockers": [],
       "packet": "out/COPILOT_BUILD_PACKETS/R0/S215.md",
       "keyRules": "BR215-1 single rule source shared with S013 (no second engine); BR215-2 validate/post divergence = test failure. POST /manual-journals/drafts/{id}:validate -> 200 {pass, errors:[{lineIndex?,rule,message,field?}], deltaDr, deltaCr}; engine-unavailable -> 503 (never silent pass). validationState UNCHECKED->PASS|FAIL. Perm je.validate (implied by je.draft.edit).",
       "service": "coa-service",
-      "endpoints": ["POST /api/v1/coa/manual-journals/drafts/{id}:validate"],
+      "endpoints": [
+        "POST /api/v1/coa/manual-journals/drafts/{id}:validate"
+      ],
       "completedDate": "2026-07-24",
       "completionEvidence": {
         "artifacts": [
@@ -604,10 +666,9 @@
         ],
         "tests": "13 new (tests/validate.test.ts incl. 6-scenario BR215-2 parity suite); full coa-service suite 169 passed / 12 files",
         "runtime": "gateway :3100: unbalanced 200 pass:false BR013-1 delta 100/90; future-period 200 BR013-2; non-postable 200 BR013-4 lineIndex0; all-clear 200 pass:true -> status VALIDATED; edit resets to DRAFT clearing validation; unknown action 404; nonexistent-id:validate 404 DRAFT_NOT_FOUND. DB: validation_result JSONB persisted, 5 DRAFT_VALIDATED audit rows.",
-        "migrationApplied": "n/a — reuses S214 validated_at/validation_result columns"
+        "migrationApplied": "n/a \u2014 reuses S214 validated_at/validation_result columns"
       }
     },
-
     "S216": {
       "title": "Post Manual JE (Direct-Post)",
       "layman": "The accountant hits Post on a validated draft and it goes straight to the ledger through the one true posting door, linking the draft to its posted journal. Approval routing is config-gated off in R0.",
@@ -615,12 +676,18 @@
       "status": "DONE_PENDING_INTEGRATION",
       "usesStubs": true,
       "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207",
-      "dependencies": ["S013", "S214", "S215"],
+      "dependencies": [
+        "S013",
+        "S214",
+        "S215"
+      ],
       "blockers": [],
       "packet": "out/COPILOT_BUILD_PACKETS/R0/S216.md",
       "keyRules": "BR216-1 post validated draft calls S013 atomically; draft->POSTED-LINKED. je.posting_mode config (S223): DIRECT (R0 default) | APPROVAL_REQUIRED (rejects with 'routing requires S031' until S031). POST /manual-journals/drafts/{id}:post -> 201 {journalNumber} | 422 approval-mode | unvalidated runs validation first. Event acct.je.posted (postedBy=user). Perm je.post. Reconcile je.posting_mode enum with existing S223 direct|review.",
       "service": "coa-service",
-      "endpoints": ["POST /api/v1/coa/manual-journals/drafts/{id}:post"],
+      "endpoints": [
+        "POST /api/v1/coa/manual-journals/drafts/{id}:post"
+      ],
       "completedDate": "2026-07-24",
       "completionEvidence": {
         "artifacts": [
@@ -636,7 +703,6 @@
         "reconciliation": "je.posting_mode enum reconciled with existing S223 config (values direct|review); 'direct'->post, non-direct->APPROVAL_REQUIRED gate (routing requires S031). ENTITY scope beats TENANT (BR223-2 precedence)."
       }
     },
-
     "S217": {
       "title": "View Journal Entry",
       "layman": "Open any posted journal by its number and see the whole story: source, period, who posted it, the lines, an immutable badge, and clickable links to its reversal (or the entry it reversed).",
@@ -644,12 +710,16 @@
       "status": "DONE",
       "usesStubs": false,
       "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207",
-      "dependencies": ["S013"],
+      "dependencies": [
+        "S013"
+      ],
       "blockers": [],
       "packet": "out/COPILOT_BUILD_PACKETS/R0/S217.md",
       "keyRules": "GET /journals/{number} -> 200 {journalNumber, source, periodCode, postedBy, postedAt, memo, immutable badge, lines, reversalOf?, reversedBy?, attachments} | 404 with search suggestion. BR217-3 reversal links navigate both directions. Event audit.viewed for masked-role. Perm je.view (+ field masks S004A).",
       "service": "coa-service",
-      "endpoints": ["GET /api/v1/coa/journals/{number}"],
+      "endpoints": [
+        "GET /api/v1/coa/journals/{number}"
+      ],
       "completedDate": "2026-07-24",
       "completionEvidence": {
         "artifacts": [
@@ -672,20 +742,23 @@
         "reference": "docs/accounting-modernization/stabilization/E2E_FOUNDATION_REPORT.md"
       }
     },
-
     "S218": {
       "title": "Reverse Posted JE",
-      "layman": "Fix a posted mistake the honest way: post an equal-and-opposite entry into the same or a later open period, with a mandatory reason, linked both ways to the original — history is never erased.",
+      "layman": "Fix a posted mistake the honest way: post an equal-and-opposite entry into the same or a later open period, with a mandatory reason, linked both ways to the original \u2014 history is never erased.",
       "sprint": "Sprint 2 (CE-04, L1, P0)",
       "status": "DONE",
       "usesStubs": false,
       "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207",
-      "dependencies": ["S013"],
+      "dependencies": [
+        "S013"
+      ],
       "blockers": [],
       "packet": "out/COPILOT_BUILD_PACKETS/R0/S218.md",
       "keyRules": "BR218-1 mirrored lines, linked reversal_of, own number; BR218-2 reversible once, reversal itself reversible (reinstatement, warned); BR218-3 reason mandatory 1-500 on both docs. POST /journals/{id}:reverse -> 201 {reversalNumber} | 409 already-reversed | 422 closed-target-period {eligiblePeriods[]} | 422 reason omitted. Event acct.je.posted (reversalOf). Perm je.reverse. TB-restoration property test required.",
       "service": "coa-service",
-      "endpoints": ["POST /api/v1/coa/journals/{id}:reverse"],
+      "endpoints": [
+        "POST /api/v1/coa/journals/{id}:reverse"
+      ],
       "completedDate": "2026-07-24",
       "completionEvidence": {
         "artifacts": [
@@ -708,20 +781,23 @@
         "reference": "docs/accounting-modernization/stabilization/E2E_FOUNDATION_REPORT.md"
       }
     },
-
     "S219": {
       "title": "Void/Delete Draft JE",
-      "layman": "Throw away an unposted draft cleanly (soft-delete + audit), keeping worklists tidy — but posted entries can never be deleted, only reversed. Admins can void someone else's draft with a reason.",
+      "layman": "Throw away an unposted draft cleanly (soft-delete + audit), keeping worklists tidy \u2014 but posted entries can never be deleted, only reversed. Admins can void someone else's draft with a reason.",
       "sprint": "Sprint 2 (CE-04, L1, P0)",
       "status": "DONE_PENDING_INTEGRATION",
       "usesStubs": true,
       "stubGate": "DONE_PENDING_INTEGRATION until integration suite re-runs green against real S007/S207",
-      "dependencies": ["S214"],
+      "dependencies": [
+        "S214"
+      ],
       "blockers": [],
       "packet": "out/COPILOT_BUILD_PACKETS/R0/S219.md",
       "keyRules": "BR219-1 only drafts voidable, soft-delete + audit; BR219-2 posted void -> 409 'reverse only'; BR219-3 admin void of another's draft requires reason. POST /manual-journals/drafts/{id}:void -> 200 {status:VOIDED} idempotent | 409. Event je.draft.voided. Perms je.draft.void (own), je.draft.void.any (admin). NO hard delete (schema-proven).",
       "service": "coa-service",
-      "endpoints": ["POST /api/v1/coa/manual-journals/drafts/{id}:void"],
+      "endpoints": [
+        "POST /api/v1/coa/manual-journals/drafts/{id}:void"
+      ],
       "completedDate": "2026-07-24",
       "completionEvidence": {
         "artifacts": [
@@ -739,22 +815,28 @@
       }
     }
   },
-
-  "sequence": ["S013", "S214", "S215", "S216", "S217", "S218", "S219"],
+  "sequence": [
+    "S013",
+    "S214",
+    "S215",
+    "S216",
+    "S217",
+    "S218",
+    "S219"
+  ],
   "sequenceNote": "R0-JOURNAL-LIFECYCLE build order honors the vertical flow Draft->validate->post->view->reverse->void AND the packet dependency graph: S013 (posting engine + shared rule source) FIRST because S215 reuses its rule engine (BR215-1) and S216 calls it (BR216-1); S214 (draft) provides the aggregate S215/S216/S219 operate on; S215 validate; S216 post; S217 view posted; S218 reverse posted; S219 void draft. Matches the requested included-stories order S013,S214,S215,S216,S217,S218,S219.",
   "nextEligibleStory": "NONE",
-  "packageStatus": "PACKAGE_COMPLETE_WITH_PENDING_INTEGRATIONS — R0-JOURNAL-LIFECYCLE 7/7 complete; S013/S217/S218 promoted to DONE in R0 Stabilization Phase 9 (real gateway->service->auth-service golden path proven live); S214/S215/S216/S219 remain DONE_PENDING_INTEGRATION (authorization is genuinely centralized through real S207, but their specific write paths were not individually re-run against the live stack in Phase 8 — see STORY_CERTIFICATION_MATRIX.csv).",
-
+  "packageStatus": "PACKAGE_COMPLETE_WITH_PENDING_INTEGRATIONS \u2014 R0-JOURNAL-LIFECYCLE 7/7 complete; S013/S217/S218 promoted to DONE in R0 Stabilization Phase 9 (real gateway->service->auth-service golden path proven live); S214/S215/S216/S219 remain DONE_PENDING_INTEGRATION (authorization is genuinely centralized through real S207, but their specific write paths were not individually re-run against the live stack in Phase 8 \u2014 see STORY_CERTIFICATION_MATRIX.csv).",
   "integrationGateStatus": {
-    "R0-ACCOUNTING-SETUP": "PARTIAL — S208/S209/S010/S212 promoted to DONE in R0 Stabilization Phase 9 (real gateway->coa-service golden path proven live: calendar defined, periods generated, period opened, COA seeded, sources bootstrapped). S223/S210/S211/S213 remain DONE_PENDING_INTEGRATION — authorization is centralized through real S207 (Phase 3) but their specific write paths were not individually re-run against the live stack in Phase 8; see STORY_CERTIFICATION_MATRIX.csv.",
-    "R0-JOURNAL-LIFECYCLE": "PARTIAL — S013/S217/S218 promoted to DONE in R0 Stabilization Phase 9 (real gateway->coa-service golden path proven live: post rejected on a real business rule then succeeded, idempotent re-post proven, viewed, reversed). S214/S215/S216/S219 remain DONE_PENDING_INTEGRATION — authorization is centralized through real S207 but the draft->validate->direct-post->void flow specifically was not exercised through the live stack in Phase 8; see STORY_CERTIFICATION_MATRIX.csv.",
-    "S200": "DONE — promoted in R0 Stabilization Phase 9; real gateway->tenant-service call, real S207 authz, real RLS-enforced write, real S007 audit delivery confirmed",
-    "S201": "PENDING — awaiting real-stack exercise (carry-forward from R0-ORG-FOUNDATION); authorization already centralized through real S207 (Phase 3)",
-    "S203": "PENDING — awaiting real-stack exercise (carry-forward from R0-ORG-FOUNDATION); authorization already centralized through real S207 (Phase 3)",
-    "S204": "PENDING — awaiting real-stack exercise (carry-forward from R0-ORG-FOUNDATION); authorization already centralized through real S207 (Phase 3)",
-    "S206": "PENDING — awaiting real-stack exercise of its own create/grant/revoke API (carry-forward); real S007 audit consumer and real S207 authz are both now genuinely wired and delivering",
-    "S205": "PARTIAL — unchanged; still missing a real login/session-issuance endpoint (a functional gap, not only an integration gap) — explicitly out of scope for this stabilization package (one of the 9 remaining R0 stories)",
-    "S207": "DONE — promoted in R0 Stabilization Phase 9; all 3 stubGate conditions met (tsc clean, real S007 audit sink draining iam.authz.denied, live-database + broker-backed verification both exist)"
+    "R0-ACCOUNTING-SETUP": "PARTIAL \u2014 S208/S209/S010/S212 promoted to DONE in R0 Stabilization Phase 9 (real gateway->coa-service golden path proven live: calendar defined, periods generated, period opened, COA seeded, sources bootstrapped). S223/S210/S211/S213 remain DONE_PENDING_INTEGRATION \u2014 authorization is centralized through real S207 (Phase 3) but their specific write paths were not individually re-run against the live stack in Phase 8; see STORY_CERTIFICATION_MATRIX.csv.",
+    "R0-JOURNAL-LIFECYCLE": "PARTIAL \u2014 S013/S217/S218 promoted to DONE in R0 Stabilization Phase 9 (real gateway->coa-service golden path proven live: post rejected on a real business rule then succeeded, idempotent re-post proven, viewed, reversed). S214/S215/S216/S219 remain DONE_PENDING_INTEGRATION \u2014 authorization is centralized through real S207 but the draft->validate->direct-post->void flow specifically was not exercised through the live stack in Phase 8; see STORY_CERTIFICATION_MATRIX.csv.",
+    "S200": "DONE \u2014 promoted in R0 Stabilization Phase 9; real gateway->tenant-service call, real S207 authz, real RLS-enforced write, real S007 audit delivery confirmed",
+    "S201": "PENDING \u2014 awaiting real-stack exercise (carry-forward from R0-ORG-FOUNDATION); authorization already centralized through real S207 (Phase 3)",
+    "S203": "PENDING \u2014 awaiting real-stack exercise (carry-forward from R0-ORG-FOUNDATION); authorization already centralized through real S207 (Phase 3)",
+    "S204": "PENDING \u2014 awaiting real-stack exercise (carry-forward from R0-ORG-FOUNDATION); authorization already centralized through real S207 (Phase 3)",
+    "S206": "PENDING \u2014 awaiting real-stack exercise of its own create/grant/revoke API (carry-forward); real S007 audit consumer and real S207 authz are both now genuinely wired and delivering",
+    "S205": "DONE \u2014 Final-R0: live-gateway certified. Real bcrypt login, jsonwebtoken-signed JWT + persisted session, session validation, authorized/denied access matrix (14 scenarios), and the failed-login audit gap closed (categorized DENIED events for USER_NOT_FOUND, INVALID_PASSWORD, TENANT_MISMATCH, ACCOUNT_DISABLED, ACCOUNT_LOCKED, no secrets exposed). See S205_CERTIFICATION_REPORT.md.",
+    "S207": "DONE \u2014 promoted in R0 Stabilization Phase 9; all 3 stubGate conditions met (tsc clean, real S007 audit sink draining iam.authz.denied, live-database + broker-backed verification both exist)"
   },
   "stabilization": {
     "phase0CheckpointCommit": "8453d0f",
@@ -762,15 +844,37 @@
     "reconciledOn": "R0 Stabilization Phase 1",
     "certifiedOn": "R0 Stabilization Phase 9",
     "reportDirectory": "docs/accounting-modernization/stabilization/",
-    "note": "Status corrections in this file (S200, S205, S207) were made against evidence in docs/accounting-modernization/repository-verification/. CURRENT_RELEASE.md is generated from this file by scripts/generate-release-doc.js — do not hand-edit CURRENT_RELEASE.md; run `node scripts/generate-release-doc.js` after any story status change, and run `node scripts/generate-release-doc.js --check` in CI to fail the build if the two disagree.",
+    "note": "Status corrections in this file (S200, S205, S207) were made against evidence in docs/accounting-modernization/repository-verification/. CURRENT_RELEASE.md is generated from this file by scripts/generate-release-doc.js \u2014 do not hand-edit CURRENT_RELEASE.md; run `node scripts/generate-release-doc.js` after any story status change, and run `node scripts/generate-release-doc.js --check` in CI to fail the build if the two disagree.",
     "phase9Promotions": {
-      "promotedToDone": ["S200", "S207", "S208", "S209", "S010", "S212", "S013", "S217", "S218"],
-      "evidence": "docs/accounting-modernization/stabilization/STORY_CERTIFICATION_MATRIX.csv and E2E_FOUNDATION_REPORT.md — each promoted story was individually exercised via a real HTTP call through the live api-gateway -> service -> auth-service -> RLS-enforced Postgres -> audit-service chain, not merely authorized on paper.",
-      "remainingAt12StoriesDonePendingIntegration": ["S201", "S203", "S204", "S206", "S223", "S210", "S211", "S213", "S214", "S215", "S216", "S219"],
-      "remainingReason": "Authorization is genuinely centralized through the real S207 engine for all of these (Phase 3), and the shared HttpAuthzClient/RLS-middleware bugs found and fixed in Phase 8 apply uniformly to every route using that shared code — but each story's own specific write path was not individually re-run against the live stack in this pass. Conservative: not claimed as DONE without direct evidence per story."
+      "promotedToDone": [
+        "S200",
+        "S207",
+        "S208",
+        "S209",
+        "S010",
+        "S212",
+        "S013",
+        "S217",
+        "S218"
+      ],
+      "evidence": "docs/accounting-modernization/stabilization/STORY_CERTIFICATION_MATRIX.csv and E2E_FOUNDATION_REPORT.md \u2014 each promoted story was individually exercised via a real HTTP call through the live api-gateway -> service -> auth-service -> RLS-enforced Postgres -> audit-service chain, not merely authorized on paper.",
+      "remainingAt12StoriesDonePendingIntegration": [
+        "S201",
+        "S203",
+        "S204",
+        "S206",
+        "S223",
+        "S210",
+        "S211",
+        "S213",
+        "S214",
+        "S215",
+        "S216",
+        "S219"
+      ],
+      "remainingReason": "Authorization is genuinely centralized through the real S207 engine for all of these (Phase 3), and the shared HttpAuthzClient/RLS-middleware bugs found and fixed in Phase 8 apply uniformly to every route using that shared code \u2014 but each story's own specific write path was not individually re-run against the live stack in this pass. Conservative: not claimed as DONE without direct evidence per story."
     }
   },
-
   "decisionRegister": "docs/accounting-modernization/decisions/DECISION_REGISTER.md",
   "adrDirectory": "docs/accounting-modernization/decisions/",
   "auditDirectory": "docs/accounting-modernization/audit-results/",
