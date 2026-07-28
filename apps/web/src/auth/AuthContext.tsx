@@ -25,13 +25,14 @@ interface AuthState {
   tenantId: string | null;
   user: AuthUser | null;
   legalEntityId: string | null;
+  legalEntityLabel: string | null;
 }
 
 interface AuthContextValue extends AuthState {
   isAuthenticated: boolean;
   login: (tenantId: string, email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  selectLegalEntity: (legalEntityId: string) => void;
+  selectLegalEntity: (legalEntityId: string, legalEntityLabel: string) => void;
 }
 
 const STORAGE_KEYS = {
@@ -40,6 +41,11 @@ const STORAGE_KEYS = {
   tenantId: 'goldenpath.tenantId',
   user: 'goldenpath.user',
   legalEntityId: 'goldenpath.legalEntityId',
+  // Golden R0 UI convergence (Phase 1): display label for the shell's
+  // context bar, stored alongside the id selectLegalEntity already tracked.
+  // Purely presentational — never used for API calls (those keep using
+  // legalEntityId, the real tenant-service identifier).
+  legalEntityLabel: 'goldenpath.legalEntityLabel',
 } as const;
 
 function readInitialState(): AuthState {
@@ -47,11 +53,12 @@ function readInitialState(): AuthState {
     const accessToken = localStorage.getItem(STORAGE_KEYS.accessToken);
     const tenantId = localStorage.getItem(STORAGE_KEYS.tenantId);
     const legalEntityId = localStorage.getItem(STORAGE_KEYS.legalEntityId);
+    const legalEntityLabel = localStorage.getItem(STORAGE_KEYS.legalEntityLabel);
     const userRaw = localStorage.getItem(STORAGE_KEYS.user);
     const user = userRaw ? (JSON.parse(userRaw) as AuthUser) : null;
-    return { accessToken, tenantId, user, legalEntityId };
+    return { accessToken, tenantId, user, legalEntityId, legalEntityLabel };
   } catch {
-    return { accessToken: null, tenantId: null, user: null, legalEntityId: null };
+    return { accessToken: null, tenantId: null, user: null, legalEntityId: null, legalEntityLabel: null };
   }
 }
 
@@ -75,8 +82,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(STORAGE_KEYS.sessionToken, result.sessionToken);
     localStorage.setItem(STORAGE_KEYS.tenantId, tenantId);
     localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(result.user));
-    setState({ accessToken: result.accessToken, tenantId, user: result.user, legalEntityId: state.legalEntityId });
-  }, [state.legalEntityId]);
+    setState({
+      accessToken: result.accessToken,
+      tenantId,
+      user: result.user,
+      legalEntityId: state.legalEntityId,
+      legalEntityLabel: state.legalEntityLabel,
+    });
+  }, [state.legalEntityId, state.legalEntityLabel]);
 
   const logout = useCallback(async () => {
     const sessionToken = localStorage.getItem(STORAGE_KEYS.sessionToken);
@@ -93,12 +106,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
     Object.values(STORAGE_KEYS).forEach((k) => localStorage.removeItem(k));
-    setState({ accessToken: null, tenantId: null, user: null, legalEntityId: null });
+    setState({ accessToken: null, tenantId: null, user: null, legalEntityId: null, legalEntityLabel: null });
   }, []);
 
-  const selectLegalEntity = useCallback((legalEntityId: string) => {
+  const selectLegalEntity = useCallback((legalEntityId: string, legalEntityLabel: string) => {
     localStorage.setItem(STORAGE_KEYS.legalEntityId, legalEntityId);
-    setState((prev) => ({ ...prev, legalEntityId }));
+    localStorage.setItem(STORAGE_KEYS.legalEntityLabel, legalEntityLabel);
+    setState((prev) => ({ ...prev, legalEntityId, legalEntityLabel }));
   }, []);
 
   const value = useMemo<AuthContextValue>(() => ({

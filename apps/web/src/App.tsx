@@ -1,10 +1,16 @@
-import { Routes, Route, useLocation, useNavigate, Link } from 'react-router-dom';
-import type { LucideIcon } from 'lucide-react';
+import { useState } from 'react';
+import { Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, BookOpen, CreditCard, Users, Calendar,
-  Wrench, Settings as SettingsIcon, Terminal,
+  Wrench, Settings as SettingsIcon, Terminal, Search, Bell,
 } from 'lucide-react';
 import ErrorBoundary from './components/ErrorBoundary';
+import { useAuth } from './auth/AuthContext';
+import { NavRail, EXPANDED_WIDTH, COLLAPSED_WIDTH } from './components/shell/NavRail';
+import { Breadcrumb } from './components/shell/Breadcrumb';
+import { ContextBar } from './components/shell/ContextBar';
+import { resolveGoldenPathRoute } from './components/shell/goldenPathRoutes';
+import type { AppModule } from './components/shell/types';
 import Dashboard from './pages/Dashboard';
 import GeneralLedger from './pages/GeneralLedger';
 import EOMClose from './pages/EOMClose';
@@ -114,22 +120,10 @@ import NACHAStandalone from './pages/payroll/reports/NACHAStandalone';
 import EmployeeInfoReport from './pages/payroll/reports/EmployeeInfoReport';
 import GovernmentWageReport from './pages/payroll/reports/GovernmentWageReport';
 
-// ─── Module / navigation types ───────────────────────────────────────────────
-
-interface NavItem { path: string; label: string }
-interface ModuleSection { title: string; items: NavItem[] }
-interface Module {
-  key: string;
-  Icon: LucideIcon;
-  label: string;
-  defaultPath: string;
-  matchPrefixes: string[];
-  sections: ModuleSection[];
-}
-
 // ─── Module definitions ───────────────────────────────────────────────────────
+// Types moved to components/shell/types.ts (shared with NavRail).
 
-const MODULES: Module[] = [
+const MODULES: AppModule[] = [
   {
     key: 'dashboard',
     Icon: LayoutDashboard,
@@ -334,110 +328,43 @@ function resolveTitle(pathname: string): string {
   return 'AutoMate Accounting';
 }
 
-// ─── Icon Rail (64 px, #3B1082 purple) ───────────────────────────────────────
-
-function IconRail({ activeKey, onSelect }: { activeKey: string; onSelect: (key: string) => void }) {
-  return (
-    <nav
-      className="fixed left-0 top-0 h-screen flex flex-col items-center py-3 gap-0.5 z-50"
-      style={{ width: 64, background: '#3B1082' }}
-    >
-      {/* Logo */}
-      <div
-        className="mb-5 w-9 h-9 rounded-xl flex items-center justify-center font-black text-white text-[15px] flex-shrink-0"
-        style={{ background: '#194FA1' }}
-      >
-        A
-      </div>
-
-      {MODULES.map(({ key, Icon, label }) => {
-        const active = activeKey === key;
-        return (
-          <button
-            key={key}
-            title={label}
-            onClick={() => onSelect(key)}
-            className="relative w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-100 flex-shrink-0"
-            style={{
-              background: active ? 'rgba(255,255,255,0.18)' : 'transparent',
-              color: active ? '#FFFFFF' : 'rgba(255,255,255,0.48)',
-              border: 'none',
-              cursor: 'pointer',
-            }}
-          >
-            {active && (
-              <span
-                className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 rounded-r-full"
-                style={{ background: '#60AFFF' }}
-              />
-            )}
-            <Icon size={19} />
-          </button>
-        );
-      })}
-    </nav>
-  );
-}
-
-// ─── Sub-Nav (192 px, white, left=64) ────────────────────────────────────────
-
-function SubNav({ module, pathname }: { module: Module; pathname: string }) {
-  return (
-    <nav
-      className="fixed top-0 h-screen flex flex-col z-40 overflow-hidden"
-      style={{ left: 64, width: 192, background: '#FFFFFF', borderRight: '1px solid #E2E8F0' }}
-    >
-      {/* Module title */}
-      <div className="flex-shrink-0 px-4 h-14 flex items-center border-b border-slate-100">
-        <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
-          {module.label}
-        </span>
-      </div>
-
-      {/* Scrollable nav items */}
-      <div className="flex-1 overflow-y-auto py-2 scrollbar-thin">
-        {module.sections.map(section => (
-          <div key={section.title} className="mb-1">
-            <p className="px-4 pt-3 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-300 select-none">
-              {section.title}
-            </p>
-            {section.items.map(item => {
-              const active = pathname === item.path ||
-                (item.path !== '/' && pathname.startsWith(item.path + '/'));
-              return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  className="flex items-center mx-2 rounded-lg no-underline transition-colors duration-100"
-                  style={{
-                    padding: '6px 12px 6px ' + (active ? '10px' : '12px'),
-                    color: active ? '#194FA1' : '#374151',
-                    background: active ? '#EBF3FF' : 'transparent',
-                    fontWeight: active ? 600 : 400,
-                    fontSize: 12,
-                    borderLeft: active ? '2px solid #194FA1' : '2px solid transparent',
-                  }}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-          </div>
-        ))}
-      </div>
-    </nav>
-  );
-}
-
 // ─── App ──────────────────────────────────────────────────────────────────────
+
+const RAIL_COLLAPSED_KEY = 'amacc.railCollapsed';
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+  return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
+}
 
 export default function App() {
   const location = useLocation();
   const navigate  = useNavigate();
+  const { isAuthenticated, user, legalEntityLabel, tenantId: sessionTenantId } = useAuth();
 
   const activeKey    = getActiveModuleKey(location.pathname);
   const activeModule = MODULES.find(m => m.key === activeKey) ?? MODULES[0];
   const pageTitle    = resolveTitle(location.pathname);
+  const goldenPathRoute = resolveGoldenPathRoute(location.pathname);
+  const effectiveTitle = goldenPathRoute?.title ?? pageTitle;
+
+  // Golden R0 UI convergence — Phase 1: no authenticated shell/navigation
+  // around the sign-in screen (no rail, no header, no tenant/user context).
+  const isLoginRoute = location.pathname === '/golden-path/login';
+
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem(RAIL_COLLAPSED_KEY) === '1'; } catch { return false; }
+  });
+  function toggleCollapsed() {
+    setCollapsed(prev => {
+      const next = !prev;
+      try { localStorage.setItem(RAIL_COLLAPSED_KEY, next ? '1' : '0'); } catch { /* best-effort persistence only */ }
+      return next;
+    });
+  }
+  const railWidth = collapsed ? COLLAPSED_WIDTH : EXPANDED_WIDTH;
 
   const tenantId = localStorage.getItem('tenantId') || 'tenant-kunes';
   const tenantNames: Record<string, string> = {
@@ -446,6 +373,20 @@ export default function App() {
     'tenant-sunrise': 'Sunrise Dealerships',
   };
   const tenantName = tenantNames[tenantId] ?? tenantId;
+
+  // Real signed-in session (golden-path auth) takes precedence over the
+  // legacy demo tenant-badge mechanism used by the rest of the app, which has
+  // no real login of its own.
+  const contextTenantId = sessionTenantId ?? tenantId;
+  const contextUserLabel = isAuthenticated && user ? user.displayName : 'Not signed in';
+  const avatarLabel = isAuthenticated && user ? initials(user.displayName) : 'SA';
+  const avatarTitle = isAuthenticated && user
+    ? `${user.displayName}${legalEntityLabel ? ' · ' + legalEntityLabel : ''}`
+    : undefined;
+
+  const crumbs = goldenPathRoute
+    ? [{ label: 'Accounting' }, { label: goldenPathRoute.group }, { label: goldenPathRoute.title }]
+    : [{ label: 'Accounting' }, { label: activeModule.label }, { label: pageTitle }];
 
   function handleModuleSelect(key: string) {
     const mod = MODULES.find(m => m.key === key);
@@ -456,31 +397,73 @@ export default function App() {
     <ErrorBoundary>
       <div className="flex h-screen overflow-hidden" style={{ background: '#F8FAFC' }}>
 
-        {/* ── 64 px Icon Rail ── */}
-        <IconRail activeKey={activeKey} onSelect={handleModuleSelect} />
+        {!isLoginRoute && (
+          <NavRail
+            modules={MODULES}
+            activeKey={activeKey}
+            pathname={location.pathname}
+            collapsed={collapsed}
+            onToggleCollapsed={toggleCollapsed}
+            onSelectModule={handleModuleSelect}
+          />
+        )}
 
-        {/* ── 192 px Sub-Nav ── */}
-        <SubNav module={activeModule} pathname={location.pathname} />
+        {/* ── Main content ── */}
+        <div className="flex-1 flex flex-col min-h-screen" style={{ marginLeft: isLoginRoute ? 0 : railWidth, transition: 'margin-left 150ms ease-out' }}>
 
-        {/* ── Main content (offset 256 px = 64 + 192) ── */}
-        <div className="flex-1 flex flex-col min-h-screen" style={{ marginLeft: 256 }}>
+          {!isLoginRoute && (
+            <>
+              {/* Top Header — platform identity, module name, global search,
+                  notifications, dealership-group selector, user (Section 03,
+                  line 608). Search/notifications are visual affordances only
+                  in this phase; no backend search/notification feature exists
+                  yet. */}
+              <header className="h-[52px] bg-white border-b border-slate-200 flex items-center px-6 sticky top-0 z-30 flex-shrink-0 gap-3">
+                <span className="text-[13px] font-medium text-slate-400 select-none">
+                  AutoMate · Dealer Platform
+                </span>
+                <span className="text-slate-200 select-none">|</span>
+                <h2 className="text-[15px] font-semibold text-slate-900 truncate">{effectiveTitle}</h2>
+                <div className="ml-auto flex items-center gap-3">
+                  <button
+                    type="button"
+                    title="Search (not yet wired to a backend search feature)"
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+                  >
+                    <Search size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    title="Notifications — none yet"
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+                  >
+                    <Bell size={16} />
+                  </button>
+                  <span className="bg-blue-50 text-blue-700 text-[11px] font-semibold px-3 py-[3px] rounded-full border border-blue-200 select-none">
+                    {tenantName}
+                  </span>
+                  <div
+                    title={avatarTitle}
+                    className="w-8 h-8 rounded-full bg-blue-700 flex items-center justify-center flex-shrink-0"
+                  >
+                    <span className="text-white text-xs font-semibold select-none">{avatarLabel}</span>
+                  </div>
+                </div>
+              </header>
 
-          {/* Top Header */}
-          <header className="h-14 bg-white border-b border-slate-200 flex items-center px-6 sticky top-0 z-30 flex-shrink-0 gap-2">
-            <span className="text-[13px] font-medium text-slate-400 select-none">
-              AutoMate · Dealer Platform
-            </span>
-            <span className="text-slate-200 select-none">|</span>
-            <h2 className="text-[15px] font-semibold text-slate-900 truncate">{pageTitle}</h2>
-            <div className="ml-auto flex items-center gap-2">
-              <span className="bg-blue-50 text-blue-700 text-[11px] font-semibold px-3 py-[3px] rounded-full border border-blue-200 select-none">
-                {tenantName}
-              </span>
-              <div className="w-8 h-8 rounded-full bg-blue-700 flex items-center justify-center flex-shrink-0">
-                <span className="text-white text-xs font-semibold select-none">SA</span>
+              <div className="px-6 py-2 bg-white border-b border-slate-100 flex-shrink-0">
+                <Breadcrumb crumbs={crumbs} />
               </div>
-            </div>
-          </header>
+
+              <div className="flex-shrink-0 sticky top-[52px] z-20">
+                <ContextBar
+                  tenantId={contextTenantId}
+                  legalEntityLabel={legalEntityLabel}
+                  userDisplayName={contextUserLabel}
+                />
+              </div>
+            </>
+          )}
 
           {/* Page Content */}
           <main className="flex-1 overflow-y-auto overflow-x-hidden">
@@ -626,8 +609,8 @@ export default function App() {
           </main>
         </div>
 
-        {/* T1 Copilot — persistent on every page */}
-        <T1Sidebar />
+        {/* T1 Copilot — persistent on every authenticated page; hidden pre-login */}
+        {!isLoginRoute && <T1Sidebar />}
       </div>
     </ErrorBoundary>
   );

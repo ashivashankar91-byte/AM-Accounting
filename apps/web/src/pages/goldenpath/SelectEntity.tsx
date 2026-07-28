@@ -21,8 +21,8 @@ export default function SelectEntity() {
       .finally(() => setLoading(false));
   }, []);
 
-  function pick(id: string) {
-    selectLegalEntity(id);
+  function pick(id: string, label: string) {
+    selectLegalEntity(id, label);
     navigate('/golden-path/org-hierarchy');
   }
 
@@ -42,7 +42,7 @@ export default function SelectEntity() {
           <li key={e.id} style={{ border: '1px solid #ddd', borderRadius: 6, padding: 12, marginBottom: 8 }}>
             <div style={{ fontWeight: 600 }}>{e.legalName} ({e.entityCode})</div>
             <div style={{ fontSize: 13, color: '#666' }}>{e.status} · FY end month {e.fiscalYearEndMonth}</div>
-            <button data-testid={`select-entity-${e.entityCode}`} onClick={() => pick(e.id)} style={{ marginTop: 8 }}>
+            <button data-testid={`select-entity-${e.entityCode}`} onClick={() => pick(e.id, `${e.entityCode} — ${e.legalName}`)} style={{ marginTop: 8 }}>
               Select
             </button>
           </li>
