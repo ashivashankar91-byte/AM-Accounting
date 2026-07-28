@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { goldenPathApi } from '../../api/client';
-import { EmptyState, ErrorState, LoadingState, MoneyCell, UnauthorizedState, formatMoney } from '../../components/goldenpath/shared';
+import { EmptyState, ErrorState, LoadingState, MoneyTd, UnauthorizedState, formatMoney } from '../../components/report';
 
 interface FSRow {
   accountCode: string;
@@ -60,12 +60,12 @@ function Section({ title, rows, total, testPrefix }: { title: string; rows: FSRo
             <tr key={r.accountCode} data-testid={`${testPrefix}-row-${r.accountCode}`}>
               <td>{r.accountCode}</td>
               <td>{r.accountName}</td>
-              <MoneyCell value={r.amount} />
+              <MoneyTd value={r.amount} />
             </tr>
           ))}
           <tr data-testid={`${testPrefix}-total`} style={{ fontWeight: 700, borderTop: '1px solid #333' }}>
             <td colSpan={2}>Total {title}</td>
-            <MoneyCell value={total} bold />
+            <MoneyTd value={total} bold />
           </tr>
         </tbody>
       </table>
@@ -269,11 +269,11 @@ export default function BalanceSheet() {
             <tbody>
               <tr data-testid="bs-current-earnings">
                 <td colSpan={2}>Current-Period Earnings (included in Equity)</td>
-                <MoneyCell value={report.equity.currentEarnings} />
+                <MoneyTd value={report.equity.currentEarnings} />
               </tr>
               <tr data-testid="bs-grand-total" style={{ fontWeight: 700, borderTop: '2px solid #333' }}>
                 <td colSpan={2}>Total Liabilities + Equity</td>
-                <MoneyCell value={report.totalLiabilitiesAndEquity} bold />
+                <MoneyTd value={report.totalLiabilitiesAndEquity} bold />
               </tr>
               <tr data-testid="bs-reconciled-tb" style={{ color: '#555' }}>
                 <td colSpan={2}>Reconciled to Trial Balance (Dr / Cr)</td>

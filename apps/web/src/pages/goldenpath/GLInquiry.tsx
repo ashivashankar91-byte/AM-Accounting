@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
 import { goldenPathApi } from '../../api/client';
-import { EmptyState, ErrorState, LoadingState, MoneyCell, UnauthorizedState, formatMoney } from '../../components/goldenpath/shared';
+import { EmptyState, ErrorState, LoadingState, MoneyTd, UnauthorizedState, formatMoney } from '../../components/report';
 
 interface ActivityLine {
   journalEntryId: string;
@@ -240,19 +240,19 @@ export default function GLInquiry() {
             <tbody>
               <tr data-testid="gli-beginning-balance">
                 <td colSpan={2}>Beginning balance</td>
-                <MoneyCell value={report.beginningBalance} />
+                <MoneyTd value={report.beginningBalance} />
               </tr>
               <tr data-testid="gli-period-debit">
                 <td colSpan={2}>Period debit activity</td>
-                <MoneyCell value={report.periodDebitActivity} />
+                <MoneyTd value={report.periodDebitActivity} />
               </tr>
               <tr data-testid="gli-period-credit">
                 <td colSpan={2}>Period credit activity</td>
-                <MoneyCell value={report.periodCreditActivity} />
+                <MoneyTd value={report.periodCreditActivity} />
               </tr>
               <tr data-testid="gli-ending-balance" style={{ fontWeight: 700, borderTop: '2px solid #333' }}>
                 <td colSpan={2}>Ending balance</td>
-                <MoneyCell value={report.endingBalance} bold />
+                <MoneyTd value={report.endingBalance} bold />
               </tr>
             </tbody>
           </table>
@@ -288,9 +288,9 @@ export default function GLInquiry() {
                     <td>{l.journalNumber}</td>
                     <td>{l.source}</td>
                     <td>{l.memo}</td>
-                    <MoneyCell value={l.dr || null} />
-                    <MoneyCell value={l.cr || null} />
-                    <MoneyCell value={l.runningBalance} bold />
+                    <MoneyTd value={l.dr || null} />
+                    <MoneyTd value={l.cr || null} />
+                    <MoneyTd value={l.runningBalance} bold />
                   </tr>
                 ))}
               </tbody>

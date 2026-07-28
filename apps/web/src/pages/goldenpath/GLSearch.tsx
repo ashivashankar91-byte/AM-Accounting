@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { goldenPathApi } from '../../api/client';
-import { Banner, EmptyState, ErrorState, LoadingState, MoneyCell, UnauthorizedState } from '../../components/goldenpath/shared';
+import { Banner, EmptyState, ErrorState, LoadingState, MoneyTd, UnauthorizedState } from '../../components/report';
 
 interface GLSearchResultRow {
   journalEntryId: string;
@@ -264,8 +264,8 @@ export default function GLSearch() {
                   <td>{r.accountNumber}</td>
                   <td>{r.entryDate}</td>
                   <td>{r.source}</td>
-                  <MoneyCell value={r.dr || null} />
-                  <MoneyCell value={r.cr || null} />
+                  <MoneyTd value={r.dr || null} />
+                  <MoneyTd value={r.cr || null} />
                   <td>
                     <button data-testid={`gls-open-inquiry-${i}`} onClick={() => openInInquiry(r)}>Open in GL Inquiry</button>
                   </td>

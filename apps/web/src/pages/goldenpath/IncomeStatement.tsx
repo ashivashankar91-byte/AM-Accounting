@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { goldenPathApi } from '../../api/client';
-import { EmptyState, ErrorState, LoadingState, MoneyCell, UnauthorizedState, formatMoney } from '../../components/goldenpath/shared';
+import { EmptyState, ErrorState, LoadingState, MoneyTd, UnauthorizedState, formatMoney } from '../../components/report';
 
 interface FSRow {
   accountCode: string;
@@ -59,12 +59,12 @@ function Section({ title, rows, total, testPrefix }: { title: string; rows: FSRo
             <tr key={r.accountCode} data-testid={`${testPrefix}-row-${r.accountCode}`}>
               <td>{r.accountCode}</td>
               <td>{r.accountName}</td>
-              <MoneyCell value={r.amount} />
+              <MoneyTd value={r.amount} />
             </tr>
           ))}
           <tr data-testid={`${testPrefix}-total`} style={{ fontWeight: 700, borderTop: '1px solid #333' }}>
             <td colSpan={2}>Total {title}</td>
-            <MoneyCell value={total} bold />
+            <MoneyTd value={total} bold />
           </tr>
         </tbody>
       </table>
@@ -267,7 +267,7 @@ export default function IncomeStatement() {
                 }}
               >
                 <td colSpan={2}>Net Income</td>
-                <MoneyCell value={report.netIncome} bold />
+                <MoneyTd value={report.netIncome} bold />
               </tr>
             </tbody>
           </table>
