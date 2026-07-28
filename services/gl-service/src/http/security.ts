@@ -31,6 +31,13 @@ export interface RouteAuditSpec {
   docType: string;
   action?: 'VIEWED' | 'EXPORTED';
   docId?: (request: any) => string;
+  // Additive audit-metadata correction (S014 certification requirement,
+  // Golden R0 UI convergence, 2026-07-28): lets a route contribute extra,
+  // explicitly-named fields into the audit `after` payload (e.g.
+  // reportType/entityId/storeId/departmentId) on top of the generic
+  // route/method/params/query/statusCode fields every audited route
+  // already gets -- nothing existing is removed or renamed.
+  metadata?: (request: any) => Record<string, unknown>;
 }
 
 function normalizeRouteUrl(rawUrl: unknown): string {
@@ -81,6 +88,7 @@ export function attachRouteSecurity(
             params: request.params ?? {},
             query: request.query ?? {},
             statusCode: reply.statusCode ?? 200,
+            ...(audit.metadata ? audit.metadata(request) : {}),
           },
           eventType: audit.action === 'EXPORTED' ? 'audit.exported' : 'audit.viewed',
         });

@@ -168,6 +168,26 @@ export function resolvePermission(method: string, url: string): string | null {
   return null;
 }
 
+// S014 audit-metadata correction (Golden R0 UI convergence checkpoint,
+// 2026-07-28): additive fields on top of the generic route/method/params/
+// query/statusCode every audited route already gets -- docType stays
+// GL_LEDGER_REPORT / action stays VIEWED|EXPORTED (the established
+// reporting convention; not a new document type). entityId/asOf are always
+// present (both are required query params); storeId/departmentId are only
+// included when actually supplied, matching the real optional-filter
+// contract. Exported for direct unit testing.
+export function tbAuditMetadata(request: any): Record<string, unknown> {
+  const q = request.query ?? {};
+  const meta: Record<string, unknown> = {
+    reportType: 'TRIAL_BALANCE',
+    entityId: q.entity ?? q.company ?? null,
+    asOf: q.asOf ?? null,
+  };
+  if (q.store) meta.storeId = q.store;
+  if (q.dept) meta.departmentId = q.dept;
+  return meta;
+}
+
 export function resolveAudit(method: string, url: string) {
   if (method !== 'GET' && !(method === 'POST' && url === '/fs/oem-statement/generate')) return null;
   if (url === '/accounts' || url === '/accounts/:id' || url === '/accounts/:accountId/uncleared') {
@@ -176,15 +196,19 @@ export function resolveAudit(method: string, url: string) {
   if (url.startsWith('/journal-entries')) {
     return { docType: 'JOURNAL_ENTRY', docId: (request: any) => String(request.params?.id ?? 'journal-entries') };
   }
+  if (url === '/reports/trial-balance/export') {
+    return { docType: 'GL_LEDGER_REPORT', docId: () => url, action: 'EXPORTED' as const, metadata: tbAuditMetadata };
+  }
   if (
     url === '/reports/balance-sheet/export' ||
-    url === '/reports/income-statement/export' ||
-    url === '/reports/trial-balance/export'
+    url === '/reports/income-statement/export'
   ) {
     return { docType: 'GL_LEDGER_REPORT', docId: () => url, action: 'EXPORTED' as const };
   }
+  if (url === '/reports/trial-balance') {
+    return { docType: 'GL_LEDGER_REPORT', docId: () => url, metadata: tbAuditMetadata };
+  }
   if (
-    url === '/reports/trial-balance' ||
     url === '/trial-balance' ||
     url === '/balance-sheet' ||
     url === '/reports/balance-sheet' ||
