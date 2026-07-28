@@ -902,6 +902,22 @@ export async function glRoutes(app: FastifyInstance) {
       if (error instanceof UnclassifiedAccountTypeError) {
         return reply.status(500).send({ error: error.code, accounts: error.accounts });
       }
+      // Real, confirmed gap found during Balance Sheet refinement (Golden R0
+      // UI convergence checkpoint, 2026-07-28): getBalanceSheet() calls
+      // TrialBalanceService.getReport() first (financial-statement-
+      // service.ts:162), which throws this SAME-code ('STRUCTURAL_IMBALANCE')
+      // but differently-shaped ({drSum,crSum,delta}, not
+      // {totalAssets,totalLiabilitiesAndEquity,delta}) error when the
+      // underlying trial balance itself doesn't foot -- a distinct failure
+      // mode from FSStructuralImbalanceError (assets != liabilities+equity
+      // on an already-footed slice). The view route (GET
+      // /reports/balance-sheet) already catches this; export did not, so an
+      // export of an imbalanced-at-the-TB-level slice would previously fall
+      // through to an uncaught 500, inconsistent with the view's clean
+      // fail-closed response for the identical underlying condition.
+      if (error instanceof StructuralImbalanceError) {
+        return reply.status(500).send({ error: error.code, drSum: error.drSum, crSum: error.crSum, delta: error.delta });
+      }
       throw error;
     }
   });
