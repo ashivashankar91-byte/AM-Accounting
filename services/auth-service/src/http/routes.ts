@@ -12,8 +12,17 @@ import {
   InvalidSessionError,
 } from '../application/user-service';
 
-const JWT_SECRET = process.env['JWT_SECRET'];
-if (!JWT_SECRET) throw new Error('FATAL: JWT_SECRET environment variable is required. auth-service cannot start without it.');
+// Golden R0 UI convergence — Phase 5 defect fix: this file used to sign/verify
+// with JWT_SECRET while every consumer of the shared-kernel authMiddleware
+// (tenant-service, gl-service, coa-service, audit-service, and this same
+// service's own role/user/role-template routes) verifies with
+// AMACC_JWT_SECRET — two different values in .env, so every token this route
+// issued failed signature verification everywhere except here. Unified to
+// AMACC_JWT_SECRET, matching every other consumer. JWT_SECRET remains a
+// required, separate env var used elsewhere (e.g. the internal audit
+// client) — untouched.
+const JWT_SECRET = process.env['AMACC_JWT_SECRET'];
+if (!JWT_SECRET) throw new Error('FATAL: AMACC_JWT_SECRET environment variable is required. auth-service cannot start without it.');
 const JWT_ISSUER = process.env['JWT_ISSUER'] ?? 'amacc';
 const ADMIN_API_KEY = process.env['ADMIN_API_KEY'];
 if (!ADMIN_API_KEY) throw new Error('FATAL: ADMIN_API_KEY environment variable is required. auth-service cannot start without it.');

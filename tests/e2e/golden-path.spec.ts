@@ -121,7 +121,12 @@ test.describe('Golden R0 — full 16-step browser journey (positive)', () => {
 
     // 3. View the organization hierarchy (S202) — real tenant-service tree.
     await expect(page.getByTestId('org-tree')).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText('KUNES-01')).toBeVisible();
+    // Golden R0 UI convergence — Phase 5 fix: scoped to the org tree itself.
+    // Phase 1 added a global context bar that also legitimately displays the
+    // selected entity ("KUNES-01 — Kunes Final R0 LLC"), so an unscoped
+    // page.getByText('KUNES-01') now matches two real, correct elements
+    // (the context bar and the tree's own entity code) instead of one.
+    await expect(page.getByTestId('org-tree').getByText('KUNES-01')).toBeVisible();
     await page.getByRole('link', { name: 'Role Templates' }).click();
     await page.waitForURL(/\/golden-path\/role-templates/, { timeout: 10_000 });
 
