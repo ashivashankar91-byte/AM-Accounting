@@ -32,26 +32,6 @@ interface StructuralImbalance {
   delta: number;
 }
 
-function downloadCsv(report: TrialBalanceReport, rows: TrialBalanceRow[]) {
-  // Client-side formatting of the already-computed S014 response only — no
-  // dr/cr/ending-balance recalculation happens here (BR222-1 requirement:
-  // S222 must not duplicate Trial Balance calculation logic).
-  const header = ['Account', 'Name', 'Type', 'Prior', 'Activity', 'Ending', 'Debit', 'Credit'];
-  const body = rows.map((r) => [
-    r.accountCode, r.accountName, r.accountType,
-    r.priorBalance.toFixed(2), r.currentAmount.toFixed(2), r.endingBalance.toFixed(2),
-    r.debitBalance.toFixed(2), r.creditBalance.toFixed(2),
-  ]);
-  const csv = [header, ...body].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `trial-balance-${report.scope.entity}-${report.scope.asOf}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 const now = new Date();
 const defaultAsOf = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
@@ -90,6 +70,9 @@ export default function TrialBalance() {
   const [drillRow, setDrillRow] = useState<TrialBalanceRow | null>(null);
   const [drillResult, setDrillResult] = useState<any>(null);
   const [drillError, setDrillError] = useState<string | null>(null);
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportUnauthorized, setExportUnauthorized] = useState<string | null>(null);
 
   async function runReport() {
     setBusy(true);
@@ -148,6 +131,45 @@ export default function TrialBalance() {
     }
   }
 
+  // PRODUCT CHECKPOINT (Golden R0 UI convergence, 2026-07-28) — real
+  // server-side audited export, replacing the previous client-only CSV
+  // generation. Reuses the exact same query params as the view (same
+  // scoping), and surfaces the exact same STRUCTURAL_IMBALANCE banner the
+  // view uses if the slice doesn't foot — the export can never succeed
+  // where the view would fail closed. Duplicate-click prevention: the
+  // button is disabled for the duration of the request.
+  async function doExport() {
+    if (exportBusy) return;
+    setExportBusy(true);
+    setExportError(null);
+    setExportUnauthorized(null);
+    try {
+      const text = await goldenPathApi.exportTrialBalance({
+        entity,
+        store: store || undefined,
+        dept: dept || undefined,
+        asOf,
+      });
+      const blob = new Blob([text], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `trial-balance-${entity}-${asOf}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      if (err.status === 500 && err.body?.error === 'STRUCTURAL_IMBALANCE') {
+        setImbalance(err.body);
+      } else if (err.status === 401 || err.status === 403) {
+        setExportUnauthorized(err.message);
+      } else {
+        setExportError(err.message);
+      }
+    } finally {
+      setExportBusy(false);
+    }
+  }
+
   const rows = report ? (zeroSuppression ? report.accounts.filter((a) => a.endingBalance !== 0) : report.accounts) : [];
 
   // Subtotal-by-accountType — an aggregation of the rows already returned by
@@ -182,10 +204,21 @@ export default function TrialBalance() {
           {' '}Suppress zero balances
         </label>
         <button data-testid="tb-run" onClick={runReport} disabled={busy}>{busy ? 'Loading…' : 'Run Trial Balance'}</button>
-        {report && <button data-testid="tb-export" onClick={() => downloadCsv(report, rows)}>Export CSV</button>}
+        {/* Export is a real, independent server query (entity/store/dept/asOf
+            only) -- it does not depend on `report` client state, so it must
+            not be gated behind a successful view run. Previously gated
+            behind `report &&`, which made Export unreachable whenever the
+            last view run hit STRUCTURAL_IMBALANCE (report stays null on
+            that path) -- a real missing-state gap, not intentional scope. */}
+        <button data-testid="tb-export" onClick={doExport} disabled={exportBusy}>
+          {exportBusy ? 'Exporting…' : 'Export CSV'}
+        </button>
       </section>
 
       {busy && <LoadingState testId="tb-loading" label="Building trial balance…" />}
+      {exportBusy && <LoadingState testId="tb-export-loading" label="Preparing export…" />}
+      {exportError && <ErrorState testId="tb-export-error" message={exportError} />}
+      {exportUnauthorized && <UnauthorizedState testId="tb-export-unauthorized" message={exportUnauthorized} />}
 
       {report && rows.length === 0 && (
         <EmptyState

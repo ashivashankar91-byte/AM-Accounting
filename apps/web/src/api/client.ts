@@ -896,6 +896,12 @@ export const goldenPathApi = {
       drSum: number; crSum: number; delta: number;
     }>(`/api/v1/gl/reports/trial-balance?${qs.toString()}`);
   },
+  exportTrialBalance: (params: { entity: string; store?: string; dept?: string; asOf: string }) => {
+    const qs = new URLSearchParams({ entity: params.entity, asOf: params.asOf });
+    if (params.store) qs.set('store', params.store);
+    if (params.dept) qs.set('dept', params.dept);
+    return apiFetchRaw(`/api/v1/gl/reports/trial-balance/export?${qs.toString()}`);
+  },
 
   // S220 — GL Inquiry: real coa-service account-activity API, consumed by
   // both the standalone GL Inquiry screen and the S222 Trial Balance
