@@ -942,6 +942,20 @@ export async function glRoutes(app: FastifyInstance) {
       });
       return reply.send(report);
     } catch (error) {
+      // FSStructuralImbalanceError caught here too (Income Statement
+      // refinement, 2026-07-28) for consistency with getBalanceSheet()'s
+      // handling and with this route's own export sibling below — dead
+      // code today (getIncomeStatement() has no independent statement-level
+      // balance check), kept for governed-response-shape parity if that
+      // ever changes, never silently regressing to an uncaught 500.
+      if (error instanceof FSStructuralImbalanceError) {
+        return reply.status(500).send({
+          error: error.code,
+          totalAssets: error.totalAssets,
+          totalLiabilitiesAndEquity: error.totalLiabilitiesAndEquity,
+          delta: error.delta,
+        });
+      }
       if (error instanceof UnclassifiedAccountTypeError) {
         return reply.status(500).send({ error: error.code, accounts: error.accounts });
       }
@@ -977,8 +991,34 @@ export async function glRoutes(app: FastifyInstance) {
       reply.header('Content-Disposition', `attachment; filename="income-statement-${query.asOf}.csv"`);
       return reply.send(csv);
     } catch (error) {
+      // Deferred defect corrected (Income Statement refinement, 2026-07-28):
+      // getIncomeStatement() calls TrialBalanceService.getReport() first
+      // (financial-statement-service.ts), which can throw the TB-level
+      // StructuralImbalanceError ({drSum,crSum,delta}) exactly as
+      // getBalanceSheet() can -- this is the SAME latent gap already fixed
+      // for the Balance Sheet export route, just never carried over to
+      // Income Statement's export handler. The FSStructuralImbalanceError
+      // catch is also added for governed consistency with the view route
+      // and getBalanceSheet()'s handling, even though getIncomeStatement()
+      // does not itself compute an independent statement-level balance
+      // check today (no A=L+E-equivalent invariant exists for an Income
+      // Statement) -- this ensures the export route never silently regresses
+      // to an uncaught 500/partial CSV if that ever changes, and keeps the
+      // governed STRUCTURAL_IMBALANCE response shape identical across both
+      // statements and both export/view surfaces.
+      if (error instanceof FSStructuralImbalanceError) {
+        return reply.status(500).send({
+          error: error.code,
+          totalAssets: error.totalAssets,
+          totalLiabilitiesAndEquity: error.totalLiabilitiesAndEquity,
+          delta: error.delta,
+        });
+      }
       if (error instanceof UnclassifiedAccountTypeError) {
         return reply.status(500).send({ error: error.code, accounts: error.accounts });
+      }
+      if (error instanceof StructuralImbalanceError) {
+        return reply.status(500).send({ error: error.code, drSum: error.drSum, crSum: error.crSum, delta: error.delta });
       }
       throw error;
     }
