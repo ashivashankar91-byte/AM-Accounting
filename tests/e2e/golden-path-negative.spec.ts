@@ -269,6 +269,45 @@ test.describe('Golden R0 — gl-service structural/classification hard errors (d
     expect(bsExportBody.error).toBe('STRUCTURAL_IMBALANCE');
     expect(bsDownloadFired).toBe(false);
     await expect(page.getByTestId('bs-structural-imbalance-banner')).toBeVisible();
+
+    // Income Statement refinement (Golden R0 UI convergence, 2026-07-28):
+    // the same real, still one-sided slice must surface through
+    // FinancialStatementService.getIncomeStatement(), which ALSO calls
+    // TrialBalanceService.getReport() first -- the exact deferred defect
+    // corrected this pass (routes.ts's income-statement export route
+    // previously only caught UnclassifiedAccountTypeError, so a TB-level
+    // imbalance fell through to an uncaught 500; IncomeStatement.tsx had no
+    // structural-imbalance banner at all). Proves live, in the browser, that
+    // the fix to routes.ts's IS view/export catch clauses and to
+    // IncomeStatement.tsx's banner are both reachable and correct for a
+    // real backend response, not just unit-mocked.
+    await page.goto(`${BASE}/golden-path/income-statement`);
+    await page.getByTestId('is-entity').fill(GL_ENTITY);
+    await page.getByTestId('is-asof').fill(GL_AS_OF);
+    await page.getByTestId('is-run').click();
+    await expect(page.getByTestId('is-structural-imbalance-banner')).toBeVisible({ timeout: 10_000 });
+    // TB-level shape rendered (drSum/crSum), not the FS-level fields --
+    // if the frontend assumed the FS-level shape this would render "NaN"
+    // instead of the real 75/0 figures from the seeded fixture.
+    await expect(page.getByTestId('is-structural-imbalance-banner')).toContainText('75');
+    await expect(page.getByTestId('is-structural-imbalance-banner')).not.toContainText('NaN');
+
+    // Income Statement export failure behavior mirrors the Trial
+    // Balance/Balance Sheet export proofs above: same real
+    // STRUCTURAL_IMBALANCE contract, no download, no partial/best-effort
+    // file, banner stays the one already shown. This is the exact route
+    // (previously uncaught) fixed this pass.
+    let isDownloadFired = false;
+    page.once('download', () => { isDownloadFired = true; });
+    const [isExportResponse] = await Promise.all([
+      page.waitForResponse((r) => /\/api\/v1\/gl\/reports\/income-statement\/export\?/.test(r.url())),
+      page.getByTestId('is-export').click(),
+    ]);
+    expect(isExportResponse.status()).toBe(500);
+    const isExportBody = await isExportResponse.json();
+    expect(isExportBody.error).toBe('STRUCTURAL_IMBALANCE');
+    expect(isDownloadFired).toBe(false);
+    await expect(page.getByTestId('is-structural-imbalance-banner')).toBeVisible();
   });
 
   test('unclassified account type: real MEMO-type account (balanced ledger) hard-fails BS/IS', async ({ page }) => {
