@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { container } from 'tsyringe';
 import { GLService } from '../application/gl-service';
-import { StructuralImbalanceError, TrialBalanceService } from '../application/trial-balance-service';
+import { StructuralImbalanceError, TrialBalanceService, TrialBalanceRow } from '../application/trial-balance-service';
 import { FSStructuralImbalanceError, FinancialStatementService, UnclassifiedAccountTypeError } from '../application/financial-statement-service';
 import { GLAccountType, authMiddleware, asTenantId } from '@amacc/shared-kernel';
 import { taxRoutes } from './tax-routes';
@@ -131,13 +131,13 @@ const PeriodSchema = z.object({
   month: z.coerce.number().int().min(1).max(12),
 });
 
-function resolvePermission(method: string, url: string): string | null {
+export function resolvePermission(method: string, url: string): string | null {
   if (url.startsWith('/admin/')) return GL_PERMISSIONS.ADMIN_MANAGE;
   if (url === '/fs/oem-mappings/:id' && method === 'PUT') return GL_PERMISSIONS.ADMIN_MANAGE;
   if (url === '/fs/oem-mappings/bulk' && method === 'POST') return GL_PERMISSIONS.ADMIN_MANAGE;
   if (url === '/fs/oem-mappings' && method === 'GET') return GL_PERMISSIONS.LEDGER_VIEW;
   if (url === '/fs/oem-statement/generate' && method === 'POST') return GL_PERMISSIONS.LEDGER_VIEW;
-  if (url === '/reports/trial-balance') return GL_PERMISSIONS.REPORT_TB_VIEW;
+  if (url === '/reports/trial-balance' || url === '/reports/trial-balance/export') return GL_PERMISSIONS.REPORT_TB_VIEW;
   if (
     url === '/reports/balance-sheet' ||
     url === '/reports/balance-sheet/export' ||
@@ -168,7 +168,7 @@ function resolvePermission(method: string, url: string): string | null {
   return null;
 }
 
-function resolveAudit(method: string, url: string) {
+export function resolveAudit(method: string, url: string) {
   if (method !== 'GET' && !(method === 'POST' && url === '/fs/oem-statement/generate')) return null;
   if (url === '/accounts' || url === '/accounts/:id' || url === '/accounts/:accountId/uncleared') {
     return { docType: 'GL_ACCOUNT', docId: (request: any) => String(request.params?.id ?? request.params?.accountId ?? 'accounts') };
@@ -176,7 +176,11 @@ function resolveAudit(method: string, url: string) {
   if (url.startsWith('/journal-entries')) {
     return { docType: 'JOURNAL_ENTRY', docId: (request: any) => String(request.params?.id ?? 'journal-entries') };
   }
-  if (url === '/reports/balance-sheet/export' || url === '/reports/income-statement/export') {
+  if (
+    url === '/reports/balance-sheet/export' ||
+    url === '/reports/income-statement/export' ||
+    url === '/reports/trial-balance/export'
+  ) {
     return { docType: 'GL_LEDGER_REPORT', docId: () => url, action: 'EXPORTED' as const };
   }
   if (
@@ -196,6 +200,53 @@ function resolveAudit(method: string, url: string) {
     return { docType: 'GL_LEDGER_REPORT', docId: () => url };
   }
   return null;
+}
+
+// CSV cell serialization for the trial-balance export. Distinct from the
+// toCsv() helper used by balance-sheet/income-statement export (defined
+// inside glRoutes below) rather than extending it, to avoid any risk of
+// changing those two already-certified exports' output as a side effect of
+// this change -- they are explicitly out of scope for this pass. Exported
+// (module-level, not closure-scoped) so it is directly unit-testable.
+export function tbCsvCell(raw: unknown, protectFormulas: boolean): string {
+  let s = String(raw ?? '');
+  // CSV-formula-injection protection: a cell a spreadsheet would interpret
+  // as a formula (=, +, -, @ prefix) is forced to text with a leading
+  // apostrophe. Only applied to free-text columns (account code/name/type)
+  // -- money columns are pre-formatted decimal strings where a leading "-"
+  // is a legitimate negative amount, not an injection risk, and must stay a
+  // real number in the spreadsheet.
+  if (protectFormulas && /^[=+\-@]/.test(s)) {
+    s = `'${s}`;
+  }
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+export function toTrialBalanceCsv(rows: TrialBalanceRow[]): string {
+  const header = ['Account', 'Name', 'Type', 'Opening', 'Activity', 'Ending', 'Debit', 'Credit'];
+  const lines = [header.join(',')];
+  for (const r of rows) {
+    lines.push(
+      [
+        tbCsvCell(r.accountCode, true),
+        tbCsvCell(r.accountName, true),
+        tbCsvCell(r.accountType, true),
+        tbCsvCell(r.priorBalance.toFixed(2), false),
+        tbCsvCell(r.currentAmount.toFixed(2), false),
+        tbCsvCell(r.endingBalance.toFixed(2), false),
+        tbCsvCell(r.debitBalance.toFixed(2), false),
+        tbCsvCell(r.creditBalance.toFixed(2), false),
+      ].join(','),
+    );
+  }
+  return lines.join('\r\n');
+}
+
+// Normalizes a query value into a filename-safe segment -- prevents HTTP
+// response-header injection (CRLF, quotes) via a maliciously-crafted
+// `entity` query parameter reflected into Content-Disposition.
+export function safeFilenameSegment(s: string): string {
+  return s.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 60);
 }
 
 export async function glRoutes(app: FastifyInstance) {
@@ -644,24 +695,32 @@ export async function glRoutes(app: FastifyInstance) {
     return reply.send(tb);
   });
 
+  // Shared by /reports/trial-balance (view) and /reports/trial-balance/export
+  // -- one query contract for both, so the export can never drift from what
+  // the view accepts.
+  const TBQuerySchema = z.object({
+    entity: z.string().min(1).optional(),
+    company: z.string().min(1).optional(),
+    store: z.string().optional(),
+    dept: z.string().optional(),
+    asOf: z.string().regex(/^\d{4}-\d{2}$/),
+  });
+
+  function requireTbEntity(query: z.infer<typeof TBQuerySchema>, reply: any): string | null {
+    const entity = query.entity ?? query.company;
+    if (!entity) {
+      reply.status(400).send({ error: 'MISSING_ENTITY', message: 'entity query parameter is required' });
+      return null;
+    }
+    return entity;
+  }
+
   // GET /reports/trial-balance — S014 footed trial balance by company/entity slice
   app.get('/reports/trial-balance', async (request, reply) => {
     const tenantId = getTenantId(request);
-    const query = z.object({
-      entity: z.string().min(1).optional(),
-      company: z.string().min(1).optional(),
-      store: z.string().optional(),
-      dept: z.string().optional(),
-      asOf: z.string().regex(/^\d{4}-\d{2}$/),
-    }).parse(request.query);
-
-    const entity = query.entity ?? query.company;
-    if (!entity) {
-      return reply.status(400).send({
-        error: 'MISSING_ENTITY',
-        message: 'entity query parameter is required',
-      });
-    }
+    const query = TBQuerySchema.parse(request.query);
+    const entity = requireTbEntity(query, reply);
+    if (!entity) return;
 
     try {
       const report = await trialBalanceSvc.getReport(tenantId, {
@@ -671,6 +730,44 @@ export async function glRoutes(app: FastifyInstance) {
         asOf: query.asOf,
       });
       return reply.send(report);
+    } catch (error) {
+      if (error instanceof StructuralImbalanceError) {
+        return reply.status(500).send({
+          error: error.code,
+          drSum: error.drSum,
+          crSum: error.crSum,
+          delta: error.delta,
+        });
+      }
+      throw error;
+    }
+  });
+
+  // GET /reports/trial-balance/export — same data, same TrialBalanceService
+  // call, as CSV. No separate calculation path: a StructuralImbalanceError
+  // here means no CSV is ever generated, exactly as the view endpoint
+  // fails closed, and (per attachRouteSecurity) a >=400 response emits no
+  // EXPORTED audit event.
+  app.get('/reports/trial-balance/export', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const query = TBQuerySchema.parse(request.query);
+    const entity = requireTbEntity(query, reply);
+    if (!entity) return;
+
+    try {
+      const report = await trialBalanceSvc.getReport(tenantId, {
+        entity,
+        store: query.store,
+        dept: query.dept,
+        asOf: query.asOf,
+      });
+      const csv = toTrialBalanceCsv(report.accounts);
+      reply.header('Content-Type', 'text/csv; charset=utf-8');
+      reply.header(
+        'Content-Disposition',
+        `attachment; filename="trial-balance-${safeFilenameSegment(entity)}-${safeFilenameSegment(query.asOf)}.csv"`,
+      );
+      return reply.send(csv);
     } catch (error) {
       if (error instanceof StructuralImbalanceError) {
         return reply.status(500).send({
