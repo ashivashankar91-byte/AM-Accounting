@@ -2,7 +2,13 @@ import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
 import { goldenPathApi } from '../../api/client';
-import { EmptyState, ErrorState, LoadingState, MoneyTd, UnauthorizedState, formatMoney } from '../../components/report';
+import {
+  EmptyState, ErrorState, LoadingState, MoneyTd, UnauthorizedState, formatMoney,
+  ReportShell, FilterBar, FilterField, FILTER_CONTROL_CLASS,
+  FinancialTable, ReportThead, ReportTh, ReportTr, ReportTd, TotalsRow,
+  ExportMenu, Drawer, DrawerRow, RelatedLinks,
+} from '../../components/report';
+import { Btn } from '../../components/ui';
 
 interface ActivityLine {
   journalEntryId: string;
@@ -40,6 +46,12 @@ interface AccountActivityView {
 // non-blocking SME question — UXMAP-04) so the range selector offers that
 // one real preset plus an explicit custom date range, not a fabricated
 // preset catalogue.
+//
+// Golden R0 UI convergence — Phase 3: migrated onto the shared
+// ReportShell/FilterBar/FinancialTable/Drawer foundation
+// (components/report, Phase 2). All data-testids, API calls and
+// calculations are unchanged — the drill-through panel (gli-drill-panel)
+// now opens as an actual right-side Drawer instead of an inline div.
 export default function GLInquiry() {
   const { legalEntityId } = useAuth();
   const [accounts, setAccounts] = useState<any[]>([]);
@@ -108,9 +120,9 @@ export default function GLInquiry() {
 
   if (!legalEntityId) {
     return (
-      <div style={{ margin: 40 }}>
-        <p>No legal entity selected.</p>
-        <Link to="/golden-path/select-entity">Select a legal entity</Link>
+      <div className="max-w-[1200px] mx-auto px-6 py-6">
+        <p className="text-slate-600">No legal entity selected.</p>
+        <Link to="/golden-path/select-entity" className="text-[#0B5CAB] hover:underline">Select a legal entity</Link>
       </div>
     );
   }
@@ -184,78 +196,85 @@ export default function GLInquiry() {
   }
 
   return (
-    <div style={{ maxWidth: 960, margin: '40px auto', fontFamily: 'Inter, sans-serif' }}>
-      <h1 style={{ fontSize: 20, fontWeight: 600 }}>GL Inquiry</h1>
+    <ReportShell
+      title="GL Inquiry"
+      description="Account activity for a legal entity and period."
+      actions={report ? (
+        <ExportMenu formats={[{ key: 'csv', label: 'Export CSV', onSelect: doExport, testId: 'gli-export' }]} />
+      ) : undefined}
+    >
       {error && <ErrorState testId="gli-error" message={error} />}
       {unauthorized && <UnauthorizedState testId="gli-unauthorized" message={unauthorized} />}
 
-      <section style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <label>
-          Account{' '}
-          <select data-testid="gli-account" value={accountId} onChange={(e) => setAccountId(e.target.value)} style={{ minWidth: 220 }}>
+      <FilterBar>
+        <FilterField label="Account" width={260}>
+          <select data-testid="gli-account" value={accountId} onChange={(e) => setAccountId(e.target.value)} className={FILTER_CONTROL_CLASS}>
             <option value="">Select an account…</option>
             {accounts.map((a) => (
               <option key={a.id} value={a.id}>{a.accountNumber} {a.name}</option>
             ))}
           </select>
-        </label>
-        <label>
-          Range{' '}
-          <select data-testid="gli-range-mode" value={rangeMode} onChange={(e) => setRangeMode(e.target.value as 'OPEN_MONTH' | 'CUSTOM')}>
+        </FilterField>
+        <FilterField label="Range" width={170}>
+          <select data-testid="gli-range-mode" value={rangeMode} onChange={(e) => setRangeMode(e.target.value as 'OPEN_MONTH' | 'CUSTOM')} className={FILTER_CONTROL_CLASS}>
             <option value="OPEN_MONTH">Current open period</option>
             <option value="CUSTOM">Custom date range</option>
           </select>
-        </label>
+        </FilterField>
         {rangeMode === 'CUSTOM' && (
           <>
-            <label>From <input data-testid="gli-start-date" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} /></label>
-            <label>To <input data-testid="gli-end-date" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></label>
+            <FilterField label="From" width={140}>
+              <input data-testid="gli-start-date" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className={FILTER_CONTROL_CLASS} />
+            </FilterField>
+            <FilterField label="To" width={140}>
+              <input data-testid="gli-end-date" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className={FILTER_CONTROL_CLASS} />
+            </FilterField>
           </>
         )}
-        <label>
-          Store{' '}
-          <select data-testid="gli-store" value={storeId} onChange={(e) => setStoreId(e.target.value)}>
+        <FilterField label="Store" width={140}>
+          <select data-testid="gli-store" value={storeId} onChange={(e) => setStoreId(e.target.value)} className={FILTER_CONTROL_CLASS}>
             <option value="">All stores</option>
             {stores.map((s) => (
               <option key={s.id} value={s.id}>{s.storeCode ?? s.code ?? s.id}</option>
             ))}
           </select>
-        </label>
-        <label>Dept <input data-testid="gli-dept" placeholder="Dept" value={deptCode} onChange={(e) => setDeptCode(e.target.value)} style={{ width: 70 }} /></label>
-        <button data-testid="gli-run" onClick={() => runInquiry(1)} disabled={busy || !accountId}>
+        </FilterField>
+        <FilterField label="Dept" width={90}>
+          <input data-testid="gli-dept" placeholder="Dept" value={deptCode} onChange={(e) => setDeptCode(e.target.value)} className={FILTER_CONTROL_CLASS} />
+        </FilterField>
+        <Btn data-testid="gli-run" size="sm" onClick={() => runInquiry(1)} disabled={busy || !accountId} loading={busy}>
           {busy ? 'Loading…' : 'Run Inquiry'}
-        </button>
-        {report && <button data-testid="gli-export" onClick={doExport}>Export CSV</button>}
-      </section>
+        </Btn>
+      </FilterBar>
 
       {report && (
         <>
-          <p style={{ marginTop: 12 }}>
+          <p className="text-[13px] text-slate-600 mt-1 mb-3">
             Account {report.account.accountNumber} — {report.account.name}
             {' · '}{report.range.preset ? 'Current open period' : `${report.range.startDate} to ${report.range.endDate}`}
             {report.range.periodCode ? ` (${report.range.periodCode})` : ''}
           </p>
 
-          <table style={{ width: '100%', marginTop: 8 }}>
+          <FinancialTable className="mb-4">
             <tbody>
-              <tr data-testid="gli-beginning-balance">
-                <td colSpan={2}>Beginning balance</td>
+              <ReportTr testId="gli-beginning-balance">
+                <ReportTd colSpan={2}>Beginning balance</ReportTd>
                 <MoneyTd value={report.beginningBalance} />
-              </tr>
-              <tr data-testid="gli-period-debit">
-                <td colSpan={2}>Period debit activity</td>
+              </ReportTr>
+              <ReportTr testId="gli-period-debit">
+                <ReportTd colSpan={2}>Period debit activity</ReportTd>
                 <MoneyTd value={report.periodDebitActivity} />
-              </tr>
-              <tr data-testid="gli-period-credit">
-                <td colSpan={2}>Period credit activity</td>
+              </ReportTr>
+              <ReportTr testId="gli-period-credit">
+                <ReportTd colSpan={2}>Period credit activity</ReportTd>
                 <MoneyTd value={report.periodCreditActivity} />
-              </tr>
-              <tr data-testid="gli-ending-balance" style={{ fontWeight: 700, borderTop: '2px solid #333' }}>
-                <td colSpan={2}>Ending balance</td>
+              </ReportTr>
+              <TotalsRow testId="gli-ending-balance">
+                <ReportTd colSpan={2}>Ending balance</ReportTd>
                 <MoneyTd value={report.endingBalance} bold />
-              </tr>
+              </TotalsRow>
             </tbody>
-          </table>
+          </FinancialTable>
 
           {report.lines.length === 0 ? (
             <EmptyState
@@ -264,61 +283,60 @@ export default function GLInquiry() {
               message={`Beginning balance ${formatMoney(report.beginningBalance)}, no transactions matched the selected period, store and department.`}
             />
           ) : (
-            <table data-testid="gli-table" style={{ width: '100%', borderCollapse: 'collapse', marginTop: 16 }}>
-              <thead>
+            <FinancialTable testId="gli-table">
+              <ReportThead>
                 <tr>
-                  <th style={{ textAlign: 'left' }}>Date</th>
-                  <th style={{ textAlign: 'left' }}>Journal #</th>
-                  <th style={{ textAlign: 'left' }}>Source</th>
-                  <th style={{ textAlign: 'left' }}>Memo</th>
-                  <th>Debit</th>
-                  <th>Credit</th>
-                  <th>Running balance</th>
+                  <ReportTh>Date</ReportTh>
+                  <ReportTh>Journal #</ReportTh>
+                  <ReportTh>Source</ReportTh>
+                  <ReportTh>Memo</ReportTh>
+                  <ReportTh align="right">Debit</ReportTh>
+                  <ReportTh align="right">Credit</ReportTh>
+                  <ReportTh align="right">Running balance</ReportTh>
                 </tr>
-              </thead>
+              </ReportThead>
               <tbody>
                 {report.lines.map((l, i) => (
-                  <tr
-                    key={`${l.journalEntryId}-${i}`}
-                    data-testid={`gli-row-${i}`}
-                    onClick={() => drillToJournal(l)}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    <td>{l.entryDate}</td>
-                    <td>{l.journalNumber}</td>
-                    <td>{l.source}</td>
-                    <td>{l.memo}</td>
+                  <ReportTr key={`${l.journalEntryId}-${i}`} testId={`gli-row-${i}`} onClick={() => drillToJournal(l)}>
+                    <ReportTd>{l.entryDate}</ReportTd>
+                    <ReportTd>{l.journalNumber}</ReportTd>
+                    <ReportTd>{l.source}</ReportTd>
+                    <ReportTd>{l.memo}</ReportTd>
                     <MoneyTd value={l.dr || null} />
                     <MoneyTd value={l.cr || null} />
                     <MoneyTd value={l.runningBalance} bold />
-                  </tr>
+                  </ReportTr>
                 ))}
               </tbody>
-            </table>
+            </FinancialTable>
           )}
 
           {report.pagination.totalPages > 1 && (
-            <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
-              <button data-testid="gli-prev-page" disabled={page <= 1} onClick={() => runInquiry(page - 1)}>Previous</button>
-              <span data-testid="gli-page-info">Page {report.pagination.page} of {report.pagination.totalPages}</span>
-              <button data-testid="gli-next-page" disabled={page >= report.pagination.totalPages} onClick={() => runInquiry(page + 1)}>Next</button>
+            <div className="flex items-center gap-3 mt-2 text-[13px]">
+              <Btn data-testid="gli-prev-page" size="sm" variant="secondary" disabled={page <= 1} onClick={() => runInquiry(page - 1)}>Previous</Btn>
+              <span data-testid="gli-page-info" className="text-slate-500">Page {report.pagination.page} of {report.pagination.totalPages}</span>
+              <Btn data-testid="gli-next-page" size="sm" variant="secondary" disabled={page >= report.pagination.totalPages} onClick={() => runInquiry(page + 1)}>Next</Btn>
             </div>
           )}
 
-          {drillLine && (
-            <div data-testid="gli-drill-panel" style={{ marginTop: 16, border: '1px solid #ddd', padding: 12 }}>
-              <div>Journal {drillLine.journalNumber}</div>
-              {drillError && <p data-testid="gli-drill-error" style={{ color: '#92400e' }}>{drillError}</p>}
-              {drillJournal && (
-                <div data-testid="gli-drill-result">
-                  Status {drillJournal.status} — {drillJournal.totalDebits} DR / {drillJournal.totalCredits} CR
-                </div>
-              )}
-            </div>
-          )}
+          <Drawer
+            open={Boolean(drillLine)}
+            onClose={() => setDrillLine(null)}
+            title={`Journal ${drillLine?.journalNumber ?? ''}`}
+            testId="gli-drill-panel"
+          >
+            {drillError && <ErrorState testId="gli-drill-error" message={drillError} />}
+            {drillJournal && (
+              <div data-testid="gli-drill-result">
+                <DrawerRow label="Status" value={drillJournal.status} />
+                <DrawerRow label="Total debits" value={drillJournal.totalDebits} />
+                <DrawerRow label="Total credits" value={drillJournal.totalCredits} />
+              </div>
+            )}
+          </Drawer>
 
           {csv && (
-            <pre data-testid="gli-csv-preview" style={{ marginTop: 16, background: '#f8f8f8', padding: 8, fontSize: 11, overflowX: 'auto' }}>{csv}</pre>
+            <pre data-testid="gli-csv-preview" className="mt-4 bg-slate-50 border border-slate-200 rounded-md p-3 text-[11px] overflow-x-auto">{csv}</pre>
           )}
         </>
       )}
@@ -329,13 +347,13 @@ export default function GLInquiry() {
 
       {busy && <LoadingState testId="gli-loading" label="Loading account activity…" />}
 
-      <p style={{ marginTop: 24 }}>
-        <Link to="/golden-path/gl-search">GL Search</Link>
-        {' · '}
-        <Link to="/golden-path/trial-balance">Trial Balance</Link>
-        {' · '}
-        <Link to="/golden-path/journal">Back to Journal Workflow</Link>
-      </p>
-    </div>
+      <RelatedLinks
+        links={[
+          { label: 'GL Search', to: '/golden-path/gl-search' },
+          { label: 'Trial Balance', to: '/golden-path/trial-balance' },
+          { label: 'Back to Journal Workflow', to: '/golden-path/journal' },
+        ]}
+      />
+    </ReportShell>
   );
 }

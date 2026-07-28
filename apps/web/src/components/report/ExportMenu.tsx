@@ -13,6 +13,8 @@ export interface ExportFormat {
   key: string;
   label: string;
   onSelect: () => void | Promise<void>;
+  /** Preserves each screen's existing Playwright testid (e.g. "tb-export", "bs-export") on the clickable element. */
+  testId?: string;
 }
 
 export function ExportMenu({ formats, disabled }: { formats: ExportFormat[]; disabled?: boolean }) {
@@ -23,7 +25,7 @@ export function ExportMenu({ formats, disabled }: { formats: ExportFormat[]; dis
   if (formats.length === 1) {
     const only = formats[0]!;
     return (
-      <Btn variant="secondary" size="sm" disabled={disabled} onClick={only.onSelect}>
+      <Btn data-testid={only.testId} variant="secondary" size="sm" disabled={disabled} onClick={only.onSelect}>
         {only.label}
       </Btn>
     );
@@ -43,6 +45,7 @@ export function ExportMenu({ formats, disabled }: { formats: ExportFormat[]; dis
             <button
               key={f.key}
               type="button"
+              data-testid={f.testId}
               onClick={() => { setOpen(false); f.onSelect(); }}
               className="w-full text-left px-3 py-1.5 text-[13px] text-slate-700 hover:bg-slate-50"
             >

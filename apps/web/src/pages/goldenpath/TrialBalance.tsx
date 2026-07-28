@@ -200,7 +200,7 @@ export default function TrialBalance() {
       actions={
         <ExportMenu
           disabled={exportBusy}
-          formats={[{ key: 'csv', label: exportBusy ? 'Exporting…' : 'Export CSV', onSelect: doExport }]}
+          formats={[{ key: 'csv', label: exportBusy ? 'Exporting…' : 'Export CSV', onSelect: doExport, testId: 'tb-export' }]}
         />
       }
     >

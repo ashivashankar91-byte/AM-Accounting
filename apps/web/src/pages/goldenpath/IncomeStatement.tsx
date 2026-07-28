@@ -1,7 +1,12 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { goldenPathApi } from '../../api/client';
-import { EmptyState, ErrorState, LoadingState, MoneyTd, UnauthorizedState, formatMoney } from '../../components/report';
+import {
+  EmptyState, ErrorState, LoadingState, MoneyTd, UnauthorizedState, formatMoney,
+  ReportShell, FilterBar, FilterField, FILTER_CONTROL_CLASS,
+  FinancialTable, ReportTr, ReportTd, TotalsRow,
+  ExportMenu, RelatedLinks, Banner,
+} from '../../components/report';
+import { Btn } from '../../components/ui';
 
 interface FSRow {
   accountCode: string;
@@ -51,23 +56,23 @@ interface UnclassifiedError {
 
 function Section({ title, rows, total, testPrefix }: { title: string; rows: FSRow[]; total: number; testPrefix: string }) {
   return (
-    <div style={{ marginTop: 16 }}>
-      <h3 style={{ fontSize: 15, fontWeight: 600 }}>{title}</h3>
-      <table data-testid={`${testPrefix}-table`} style={{ width: '100%', borderCollapse: 'collapse' }}>
+    <div className="mt-4">
+      <h3 className="text-[14px] font-semibold text-slate-900 mb-1.5">{title}</h3>
+      <FinancialTable testId={`${testPrefix}-table`}>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.accountCode} data-testid={`${testPrefix}-row-${r.accountCode}`}>
-              <td>{r.accountCode}</td>
-              <td>{r.accountName}</td>
+            <ReportTr key={r.accountCode} testId={`${testPrefix}-row-${r.accountCode}`}>
+              <ReportTd>{r.accountCode}</ReportTd>
+              <ReportTd>{r.accountName}</ReportTd>
               <MoneyTd value={r.amount} />
-            </tr>
+            </ReportTr>
           ))}
-          <tr data-testid={`${testPrefix}-total`} style={{ fontWeight: 700, borderTop: '1px solid #333' }}>
-            <td colSpan={2}>Total {title}</td>
+          <TotalsRow testId={`${testPrefix}-total`}>
+            <ReportTd colSpan={2}>Total {title}</ReportTd>
             <MoneyTd value={total} bold />
-          </tr>
+          </TotalsRow>
         </tbody>
-      </table>
+      </FinancialTable>
     </div>
   );
 }
@@ -84,13 +89,12 @@ const defaultAsOf = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(
 // bs-current-earnings), the real reconciliation point per the approved
 // contract -- this report has no reconciledToTrialBalance field of its own.
 //
-// PRODUCT CHECKPOINT (Golden R0 UI convergence, 2026-07-28) — Income
-// Statement refinement: adopts the shared goldenpath components and the same
-// unauthorized/export-loading/export-failure/export-unauthorized/empty
-// states already accepted for Balance Sheet. Explicitly NOT added:
-// comparative periods, YTD columns, percentage-of-revenue columns,
-// department-level Gross Profit, or any client-side recomputation of
-// backend totals.
+// Golden R0 UI convergence — Phase 3: migrated onto the shared
+// ReportShell/FilterBar/FinancialTable foundation (components/report,
+// Phase 2). All data-testids, API calls and calculations are unchanged.
+// Explicitly NOT added: comparative periods, YTD columns,
+// percentage-of-revenue columns, department-level Gross Profit, or any
+// client-side recomputation of backend totals.
 export default function IncomeStatement() {
   const [entity, setEntity] = useState('01');
   const [store, setStore] = useState('');
@@ -182,31 +186,38 @@ export default function IncomeStatement() {
   const isEmpty = !!report && report.revenue.rows.length === 0 && report.expense.rows.length === 0;
 
   return (
-    <div style={{ maxWidth: 960, margin: '40px auto', fontFamily: 'Inter, sans-serif' }}>
-      <h1 style={{ fontSize: 20, fontWeight: 600 }}>Income Statement</h1>
+    <ReportShell
+      title="Income Statement"
+      description="Revenue, expense and net income for a legal entity, as of a fiscal month."
+      actions={
+        <ExportMenu
+          disabled={exportBusy}
+          formats={[{ key: 'csv', label: exportBusy ? 'Exporting…' : 'Export CSV', onSelect: doExport, testId: 'is-export' }]}
+        />
+      }
+    >
       {error && <ErrorState testId="is-error" message={error} />}
       {unauthorized && <UnauthorizedState testId="is-unauthorized" message={unauthorized} />}
 
       {imbalance && (
-        <div data-testid="is-structural-imbalance-banner" style={{ background: '#fef2f2', border: '1px solid #b91c1c', color: '#991b1b', padding: 12, marginTop: 12 }}>
-          <strong>STRUCTURAL_IMBALANCE</strong>{' '}
+        <Banner kind="error" testId="is-structural-imbalance-banner" title="STRUCTURAL_IMBALANCE">
           {imbalance.totalAssets !== undefined ? (
             <>
-              — Assets do not equal Liabilities + Equity for this slice; the statement was not rendered.
+              Assets do not equal Liabilities + Equity for this slice; the statement was not rendered.
               <div>Assets {formatMoney(imbalance.totalAssets)} vs Liabilities+Equity {formatMoney(imbalance.totalLiabilitiesAndEquity!)} — delta {formatMoney(imbalance.delta)}</div>
             </>
           ) : (
             <>
-              — the underlying trial balance for this slice does not foot; the statement cannot be produced until it does.
+              The underlying trial balance for this slice does not foot; the statement cannot be produced until it does.
               <div>Debits {formatMoney(imbalance.drSum ?? 0)} vs Credits {formatMoney(imbalance.crSum ?? 0)} — delta {formatMoney(imbalance.delta)}</div>
             </>
           )}
-        </div>
+        </Banner>
       )}
 
       {unclassified && (
-        <div data-testid="is-unclassified-banner" style={{ background: '#fef2f2', border: '1px solid #b91c1c', color: '#991b1b', padding: 12, marginTop: 12 }}>
-          <strong>UNCLASSIFIED_ACCOUNT_TYPE</strong> — {unclassified.accounts.length === 1 ? 'account' : 'accounts'}{' '}
+        <Banner kind="error" testId="is-unclassified-banner" title="UNCLASSIFIED_ACCOUNT_TYPE">
+          {unclassified.accounts.length === 1 ? 'Account' : 'Accounts'}{' '}
           {unclassified.accounts.map((a, i) => (
             <span key={a.accountCode}>
               {i > 0 && ', '}
@@ -214,24 +225,26 @@ export default function IncomeStatement() {
             </span>
           ))}{' '}
           {unclassified.accounts.length === 1 ? 'is' : 'are'} not recognized by the approved Financial Statement Roll-Up Contract. The statement was not rendered.
-        </div>
+        </Banner>
       )}
 
-      <section style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <label>Entity/Company <input data-testid="is-entity" value={entity} onChange={(e) => setEntity(e.target.value)} style={{ width: 60 }} /></label>
-        <label>Store <input data-testid="is-store" value={store} onChange={(e) => setStore(e.target.value)} style={{ width: 70 }} /></label>
-        <label>Dept <input data-testid="is-dept" value={dept} onChange={(e) => setDept(e.target.value)} style={{ width: 70 }} /></label>
-        <label>As of (YYYY-MM) <input data-testid="is-asof" value={asOf} onChange={(e) => setAsOf(e.target.value)} style={{ width: 90 }} /></label>
-        <button data-testid="is-run" onClick={runReport} disabled={busy}>{busy ? 'Loading…' : 'Run Income Statement'}</button>
-        {/* Export is a real, independent server query -- it must not be
-            gated behind a successful view run (that would make it
-            unreachable whenever the last view run hit STRUCTURAL_IMBALANCE
-            or UNCLASSIFIED_ACCOUNT_TYPE, since report stays null on both
-            paths -- the exact gap fixed on the Balance Sheet screen). */}
-        <button data-testid="is-export" onClick={doExport} disabled={exportBusy}>
-          {exportBusy ? 'Exporting…' : 'Export CSV'}
-        </button>
-      </section>
+      <FilterBar>
+        <FilterField label="Entity/Company" width={130}>
+          <input data-testid="is-entity" value={entity} onChange={(e) => setEntity(e.target.value)} className={FILTER_CONTROL_CLASS} />
+        </FilterField>
+        <FilterField label="Store" width={90}>
+          <input data-testid="is-store" value={store} onChange={(e) => setStore(e.target.value)} className={FILTER_CONTROL_CLASS} />
+        </FilterField>
+        <FilterField label="Dept" width={90}>
+          <input data-testid="is-dept" value={dept} onChange={(e) => setDept(e.target.value)} className={FILTER_CONTROL_CLASS} />
+        </FilterField>
+        <FilterField label="As of (YYYY-MM)" width={120}>
+          <input data-testid="is-asof" value={asOf} onChange={(e) => setAsOf(e.target.value)} className={FILTER_CONTROL_CLASS} />
+        </FilterField>
+        <Btn data-testid="is-run" size="sm" onClick={runReport} disabled={busy} loading={busy}>
+          {busy ? 'Loading…' : 'Run Income Statement'}
+        </Btn>
+      </FilterBar>
 
       {busy && <LoadingState testId="is-loading" label="Producing income statement…" />}
       {exportBusy && <LoadingState testId="is-export-loading" label="Preparing export…" />}
@@ -248,7 +261,7 @@ export default function IncomeStatement() {
 
       {report && !isEmpty && (
         <>
-          <p style={{ marginTop: 12 }}>
+          <p className="text-[13px] text-slate-600 mt-1">
             Entity {report.scope.entity} — As of {report.scope.asOf}
             {report.scope.store ? ` — Store ${report.scope.store}` : ''}
             {report.scope.dept ? ` — Dept ${report.scope.dept}` : ''}
@@ -257,25 +270,22 @@ export default function IncomeStatement() {
           <Section title="Revenue" rows={report.revenue.rows} total={report.revenue.total} testPrefix="is-revenue" />
           <Section title="Expense" rows={report.expense.rows} total={report.expense.total} testPrefix="is-expense" />
 
-          <table style={{ width: '100%', marginTop: 8 }}>
+          <FinancialTable className="mt-3">
             <tbody>
-              <tr
-                data-testid="is-net-income"
-                style={{
-                  fontWeight: 700, borderTop: '2px solid #333',
-                  color: report.netIncome >= 0 ? '#166534' : '#991b1b',
-                }}
+              <TotalsRow
+                testId="is-net-income"
+                className={report.netIncome >= 0 ? 'text-emerald-700' : 'text-red-700'}
               >
-                <td colSpan={2}>Net Income</td>
+                <ReportTd colSpan={2}>Net Income</ReportTd>
                 <MoneyTd value={report.netIncome} bold />
-              </tr>
+              </TotalsRow>
             </tbody>
-          </table>
+          </FinancialTable>
 
           {report.excludedAccounts.length > 0 && (
-            <div data-testid="is-excluded-accounts" style={{ marginTop: 16, border: '1px solid #f59e0b', background: '#fffbeb', padding: 8 }}>
+            <div data-testid="is-excluded-accounts" className="mt-4 border border-amber-300 bg-amber-50 rounded-md p-3 text-[13px]">
               <strong>Out-of-scope accounts (excluded, not silently folded into Expense):</strong>
-              <ul>
+              <ul className="mt-1 pl-5 list-disc">
                 {report.excludedAccounts.map((a) => (
                   <li key={a.accountCode}>{a.accountCode} ({a.accountType}) — {a.reason}</li>
                 ))}
@@ -284,7 +294,7 @@ export default function IncomeStatement() {
           )}
 
           {csv && (
-            <pre data-testid="is-csv-preview" style={{ marginTop: 16, background: '#f8f8f8', padding: 8, fontSize: 11, overflowX: 'auto' }}>{csv}</pre>
+            <pre data-testid="is-csv-preview" className="mt-4 bg-slate-50 border border-slate-200 rounded-md p-3 text-[11px] overflow-x-auto">{csv}</pre>
           )}
         </>
       )}
@@ -293,13 +303,13 @@ export default function IncomeStatement() {
         <EmptyState testId="is-initial-state" title="Run an Income Statement to see results." />
       )}
 
-      <p style={{ marginTop: 24 }}>
-        <Link to="/golden-path/balance-sheet">Balance Sheet</Link>
-        {' · '}
-        <Link to="/golden-path/trial-balance">Trial Balance</Link>
-        {' · '}
-        <Link to="/golden-path/journal">Back to Journal Workflow</Link>
-      </p>
-    </div>
+      <RelatedLinks
+        links={[
+          { label: 'Balance Sheet', to: '/golden-path/balance-sheet' },
+          { label: 'Trial Balance', to: '/golden-path/trial-balance' },
+          { label: 'Back to Journal Workflow', to: '/golden-path/journal' },
+        ]}
+      />
+    </ReportShell>
   );
 }

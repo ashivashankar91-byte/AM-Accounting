@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { goldenPathApi } from '../../api/client';
-import { Banner, EmptyState, ErrorState, LoadingState, MoneyTd, UnauthorizedState } from '../../components/report';
+import {
+  Banner, EmptyState, ErrorState, LoadingState, MoneyTd, UnauthorizedState,
+  ReportShell, FilterBar, FilterField, FILTER_CONTROL_CLASS,
+  FinancialTable, ReportThead, ReportTh, ReportTr, ReportTd, RelatedLinks,
+} from '../../components/report';
+import { Btn } from '../../components/ui';
 
 interface GLSearchResultRow {
   journalEntryId: string;
@@ -41,6 +46,12 @@ interface SavedSearch {
 // CHECKPOINT (Golden R0 UI convergence, 2026-07-28): no Account filter (not
 // on the real SearchQuerySchema), no export (no export endpoint exists), no
 // Update/Edit saved-search action (no update endpoint exists).
+//
+// Golden R0 UI convergence — Phase 3: migrated onto the shared
+// ReportShell/FilterBar/FinancialTable foundation (components/report,
+// Phase 2). All data-testids, API calls and validation/error behavior are
+// unchanged — only the surrounding markup changed. No Export action in the
+// header actions area, matching the confirmed absence of an export endpoint.
 export default function GLSearch() {
   const navigate = useNavigate();
 
@@ -207,35 +218,53 @@ export default function GLSearch() {
   }
 
   return (
-    <div style={{ maxWidth: 1000, margin: '40px auto', fontFamily: 'Inter, sans-serif' }}>
-      <h1 style={{ fontSize: 20, fontWeight: 600 }}>GL Search</h1>
+    <ReportShell title="GL Search" description="Search posted GL activity across journals and accounts.">
       {error && <ErrorState testId="gls-error" message={error} />}
       {validationError && <ErrorState testId="gls-validation-error" message={validationError} />}
       {unauthorized && <UnauthorizedState testId="gls-unauthorized" message={unauthorized} />}
 
-      <section style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <label>Entity <input data-testid="gls-entity" value={entityId} onChange={(e) => setEntityId(e.target.value)} style={{ width: 90 }} /></label>
-        <label>Document/Control # <input data-testid="gls-docref" value={docRef} onChange={(e) => setDocRef(e.target.value)} style={{ width: 140 }} /></label>
-        <label>Source <input data-testid="gls-source" value={source} onChange={(e) => setSource(e.target.value)} style={{ width: 70 }} /></label>
-        <label>Memo contains <input data-testid="gls-memo" value={memoContains} onChange={(e) => setMemoContains(e.target.value)} style={{ width: 160 }} /></label>
-        <label>Posted by <input data-testid="gls-posted-by" value={postedBy} onChange={(e) => setPostedBy(e.target.value)} style={{ width: 100 }} /></label>
-      </section>
-      <section style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <label>Amount <input data-testid="gls-amount" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: 90 }} /></label>
-        <label>Amount min <input data-testid="gls-amount-min" value={amountMin} onChange={(e) => setAmountMin(e.target.value)} style={{ width: 90 }} /></label>
-        <label>Amount max <input data-testid="gls-amount-max" value={amountMax} onChange={(e) => setAmountMax(e.target.value)} style={{ width: 90 }} /></label>
-        <label>
-          Direction{' '}
-          <select data-testid="gls-direction" value={direction} onChange={(e) => setDirection(e.target.value as '' | 'DEBIT' | 'CREDIT')}>
+      <FilterBar>
+        <FilterField label="Entity" width={90}>
+          <input data-testid="gls-entity" value={entityId} onChange={(e) => setEntityId(e.target.value)} className={FILTER_CONTROL_CLASS} />
+        </FilterField>
+        <FilterField label="Document/Control #" width={150}>
+          <input data-testid="gls-docref" value={docRef} onChange={(e) => setDocRef(e.target.value)} className={FILTER_CONTROL_CLASS} />
+        </FilterField>
+        <FilterField label="Source" width={80}>
+          <input data-testid="gls-source" value={source} onChange={(e) => setSource(e.target.value)} className={FILTER_CONTROL_CLASS} />
+        </FilterField>
+        <FilterField label="Memo contains" width={170}>
+          <input data-testid="gls-memo" value={memoContains} onChange={(e) => setMemoContains(e.target.value)} className={FILTER_CONTROL_CLASS} />
+        </FilterField>
+        <FilterField label="Posted by" width={110}>
+          <input data-testid="gls-posted-by" value={postedBy} onChange={(e) => setPostedBy(e.target.value)} className={FILTER_CONTROL_CLASS} />
+        </FilterField>
+        <FilterField label="Amount" width={90}>
+          <input data-testid="gls-amount" value={amount} onChange={(e) => setAmount(e.target.value)} className={FILTER_CONTROL_CLASS} />
+        </FilterField>
+        <FilterField label="Amount min" width={90}>
+          <input data-testid="gls-amount-min" value={amountMin} onChange={(e) => setAmountMin(e.target.value)} className={FILTER_CONTROL_CLASS} />
+        </FilterField>
+        <FilterField label="Amount max" width={90}>
+          <input data-testid="gls-amount-max" value={amountMax} onChange={(e) => setAmountMax(e.target.value)} className={FILTER_CONTROL_CLASS} />
+        </FilterField>
+        <FilterField label="Direction" width={100}>
+          <select data-testid="gls-direction" value={direction} onChange={(e) => setDirection(e.target.value as '' | 'DEBIT' | 'CREDIT')} className={FILTER_CONTROL_CLASS}>
             <option value="">Any</option>
             <option value="DEBIT">Debit</option>
             <option value="CREDIT">Credit</option>
           </select>
-        </label>
-        <label>From <input data-testid="gls-start-date" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} /></label>
-        <label>To <input data-testid="gls-end-date" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></label>
-        <button data-testid="gls-run" onClick={() => runSearch(1)} disabled={busy}>{busy ? 'Searching…' : 'Search'}</button>
-      </section>
+        </FilterField>
+        <FilterField label="From" width={140}>
+          <input data-testid="gls-start-date" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className={FILTER_CONTROL_CLASS} />
+        </FilterField>
+        <FilterField label="To" width={140}>
+          <input data-testid="gls-end-date" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className={FILTER_CONTROL_CLASS} />
+        </FilterField>
+        <Btn data-testid="gls-run" size="sm" onClick={() => runSearch(1)} disabled={busy} loading={busy}>
+          {busy ? 'Searching…' : 'Search'}
+        </Btn>
+      </FilterBar>
 
       {busy && <LoadingState testId="gls-loading" label="Searching…" />}
 
@@ -245,46 +274,52 @@ export default function GLSearch() {
 
       {results && results.length > 0 && (
         <>
-          <table data-testid="gls-table" style={{ width: '100%', borderCollapse: 'collapse', marginTop: 16 }}>
-            <thead>
+          <FinancialTable testId="gls-table">
+            <ReportThead>
               <tr>
-                <th style={{ textAlign: 'left' }}>Journal #</th>
-                <th style={{ textAlign: 'left' }}>Account</th>
-                <th>Date</th>
-                <th>Source</th>
-                <th>Debit</th>
-                <th>Credit</th>
-                <th>Open</th>
+                <ReportTh>Journal #</ReportTh>
+                <ReportTh>Account</ReportTh>
+                <ReportTh>Date</ReportTh>
+                <ReportTh>Source</ReportTh>
+                <ReportTh align="right">Debit</ReportTh>
+                <ReportTh align="right">Credit</ReportTh>
+                <ReportTh>Open</ReportTh>
               </tr>
-            </thead>
+            </ReportThead>
             <tbody>
               {results.map((r, i) => (
-                <tr key={`${r.journalEntryId}-${r.accountId}-${i}`} data-testid={`gls-row-${i}`}>
-                  <td>{r.journalNumber}</td>
-                  <td>{r.accountNumber}</td>
-                  <td>{r.entryDate}</td>
-                  <td>{r.source}</td>
+                <ReportTr key={`${r.journalEntryId}-${r.accountId}-${i}`} testId={`gls-row-${i}`}>
+                  <ReportTd>{r.journalNumber}</ReportTd>
+                  <ReportTd>{r.accountNumber}</ReportTd>
+                  <ReportTd>{r.entryDate}</ReportTd>
+                  <ReportTd>{r.source}</ReportTd>
                   <MoneyTd value={r.dr || null} />
                   <MoneyTd value={r.cr || null} />
-                  <td>
-                    <button data-testid={`gls-open-inquiry-${i}`} onClick={() => openInInquiry(r)}>Open in GL Inquiry</button>
-                  </td>
-                </tr>
+                  <ReportTd>
+                    <Btn data-testid={`gls-open-inquiry-${i}`} variant="secondary" size="sm" onClick={() => openInInquiry(r)}>
+                      Open in GL Inquiry
+                    </Btn>
+                  </ReportTd>
+                </ReportTr>
               ))}
             </tbody>
-          </table>
+          </FinancialTable>
           {pagination && pagination.totalPages > 1 && (
-            <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
-              <button data-testid="gls-prev-page" disabled={pagination.page <= 1} onClick={() => runSearch(pagination.page - 1)}>Previous</button>
-              <span data-testid="gls-page-info">Page {pagination.page} of {pagination.totalPages} ({pagination.totalResults} results)</span>
-              <button data-testid="gls-next-page" disabled={pagination.page >= pagination.totalPages} onClick={() => runSearch(pagination.page + 1)}>Next</button>
+            <div className="flex items-center gap-3 mt-2 text-[13px]">
+              <Btn data-testid="gls-prev-page" size="sm" variant="secondary" disabled={pagination.page <= 1} onClick={() => runSearch(pagination.page - 1)}>Previous</Btn>
+              <span data-testid="gls-page-info" className="text-slate-500">Page {pagination.page} of {pagination.totalPages} ({pagination.totalResults} results)</span>
+              <Btn data-testid="gls-next-page" size="sm" variant="secondary" disabled={pagination.page >= pagination.totalPages} onClick={() => runSearch(pagination.page + 1)}>Next</Btn>
             </div>
           )}
 
-          <section style={{ marginTop: 16, display: 'flex', gap: 8, alignItems: 'center' }}>
-            <label>Save this search as <input data-testid="gls-save-name" value={saveName} onChange={(e) => setSaveName(e.target.value)} style={{ width: 200 }} /></label>
-            <button data-testid="gls-save-button" onClick={doSave} disabled={saveBusy || !saveName.trim()}>{saveBusy ? 'Saving…' : 'Save search'}</button>
-          </section>
+          <FilterBar>
+            <FilterField label="Save this search as" width={220}>
+              <input data-testid="gls-save-name" value={saveName} onChange={(e) => setSaveName(e.target.value)} className={FILTER_CONTROL_CLASS} />
+            </FilterField>
+            <Btn data-testid="gls-save-button" size="sm" variant="secondary" onClick={doSave} disabled={saveBusy || !saveName.trim()} loading={saveBusy}>
+              {saveBusy ? 'Saving…' : 'Save search'}
+            </Btn>
+          </FilterBar>
           {saveConflict && <Banner kind="error" testId="gls-save-conflict" title="Duplicate name">{saveConflict}</Banner>}
           {saveSuccess && <Banner kind="success" testId="gls-save-success" title="Search saved" />}
         </>
@@ -294,8 +329,8 @@ export default function GLSearch() {
         <EmptyState testId="gls-initial-state" title="Enter search criteria and run a search." />
       )}
 
-      <section style={{ marginTop: 32 }}>
-        <h2 style={{ fontSize: 16, fontWeight: 600 }}>Saved Searches</h2>
+      <section className="mt-8">
+        <h2 className="text-[15px] font-semibold text-slate-900 mb-2">Saved Searches</h2>
         {savedLoading && <LoadingState testId="gls-saved-loading" label="Loading saved searches…" />}
         {savedError && <ErrorState testId="gls-saved-error" message={savedError} />}
         {deleteSuccess && <Banner kind="success" testId="gls-delete-success" title="Saved search deleted" />}
@@ -303,46 +338,50 @@ export default function GLSearch() {
           <EmptyState testId="gls-saved-empty" title="No saved searches yet" message="Run a search and save it to reuse it later." />
         )}
         {!savedLoading && savedSearches && savedSearches.length > 0 && (
-          <table data-testid="gls-saved-list" style={{ width: '100%', borderCollapse: 'collapse', marginTop: 8 }}>
-            <thead>
+          <FinancialTable testId="gls-saved-list" className="mt-2">
+            <ReportThead>
               <tr>
-                <th style={{ textAlign: 'left' }}>Name</th>
-                <th style={{ textAlign: 'left' }}>Saved</th>
-                <th>Actions</th>
+                <ReportTh>Name</ReportTh>
+                <ReportTh>Saved</ReportTh>
+                <ReportTh align="right">Actions</ReportTh>
               </tr>
-            </thead>
+            </ReportThead>
             <tbody>
               {savedSearches.map((s, i) => (
-                <tr key={s.id} data-testid={`gls-saved-row-${i}`}>
-                  <td data-testid={`gls-saved-name-${i}`}>{s.name}</td>
-                  <td>{s.createdAt.slice(0, 10)}</td>
-                  <td>
-                    <button data-testid={`gls-saved-run-${i}`} onClick={() => doRunSaved(s)} disabled={busy}>Run</button>
-                    {' '}
-                    {deleteConfirmId === s.id ? (
-                      <span data-testid={`gls-delete-confirm-panel-${i}`}>
-                        Delete &ldquo;{s.name}&rdquo;?{' '}
-                        <button data-testid={`gls-delete-confirm-yes-${i}`} onClick={() => doDelete(s.id)} disabled={deleteBusy}>
-                          {deleteBusy ? 'Deleting…' : 'Yes, delete'}
-                        </button>{' '}
-                        <button data-testid={`gls-delete-confirm-no-${i}`} onClick={() => setDeleteConfirmId(null)}>Cancel</button>
-                      </span>
-                    ) : (
-                      <button data-testid={`gls-saved-delete-${i}`} onClick={() => setDeleteConfirmId(s.id)}>Delete</button>
-                    )}
-                  </td>
-                </tr>
+                <ReportTr key={s.id} testId={`gls-saved-row-${i}`}>
+                  <ReportTd className="font-medium" >
+                    <span data-testid={`gls-saved-name-${i}`}>{s.name}</span>
+                  </ReportTd>
+                  <ReportTd>{s.createdAt.slice(0, 10)}</ReportTd>
+                  <ReportTd align="right">
+                    <div className="flex items-center gap-2 justify-end">
+                      <Btn data-testid={`gls-saved-run-${i}`} size="sm" variant="secondary" onClick={() => doRunSaved(s)} disabled={busy}>Run</Btn>
+                      {deleteConfirmId === s.id ? (
+                        <span data-testid={`gls-delete-confirm-panel-${i}`} className="flex items-center gap-2">
+                          <span className="text-slate-500">Delete &ldquo;{s.name}&rdquo;?</span>
+                          <Btn data-testid={`gls-delete-confirm-yes-${i}`} size="sm" variant="danger" onClick={() => doDelete(s.id)} disabled={deleteBusy} loading={deleteBusy}>
+                            {deleteBusy ? 'Deleting…' : 'Yes, delete'}
+                          </Btn>
+                          <Btn data-testid={`gls-delete-confirm-no-${i}`} size="sm" variant="ghost" onClick={() => setDeleteConfirmId(null)}>Cancel</Btn>
+                        </span>
+                      ) : (
+                        <Btn data-testid={`gls-saved-delete-${i}`} size="sm" variant="ghost" onClick={() => setDeleteConfirmId(s.id)}>Delete</Btn>
+                      )}
+                    </div>
+                  </ReportTd>
+                </ReportTr>
               ))}
             </tbody>
-          </table>
+          </FinancialTable>
         )}
       </section>
 
-      <p style={{ marginTop: 24 }}>
-        <Link to="/golden-path/trial-balance">Trial Balance</Link>
-        {' · '}
-        <Link to="/golden-path/journal">Back to Journal Workflow</Link>
-      </p>
-    </div>
+      <RelatedLinks
+        links={[
+          { label: 'Trial Balance', to: '/golden-path/trial-balance' },
+          { label: 'Back to Journal Workflow', to: '/golden-path/journal' },
+        ]}
+      />
+    </ReportShell>
   );
 }
