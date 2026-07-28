@@ -276,6 +276,17 @@ test.describe('Golden R0 — full 16-step browser journey (positive)', () => {
     expect(drTotal).toBe(crTotal);
     expect(drTotal).not.toBe('');
 
+    // Trial Balance export — real server-side audited CSV (replaces the
+    // former client-only generation), same scope as the view above.
+    const [tbExportResponse, tbDownload] = await Promise.all([
+      page.waitForResponse((r) => /\/api\/v1\/gl\/reports\/trial-balance\/export\?/.test(r.url())),
+      page.waitForEvent('download'),
+      page.getByTestId('tb-export').click(),
+    ]);
+    expect(tbExportResponse.status()).toBe(200);
+    expect(tbExportResponse.headers()['content-type']).toContain('text/csv');
+    expect(tbDownload.suggestedFilename()).toContain('trial-balance');
+
     // 11. Open the Balance Sheet (S227, gl-service).
     await page.goto(`${BASE}/golden-path/balance-sheet`);
     await page.getByTestId('bs-entity').fill(GL_ENTITY);

@@ -217,6 +217,24 @@ test.describe('Golden R0 — gl-service structural/classification hard errors (d
     await page.getByTestId('tb-asof').fill(GL_AS_OF);
     await page.getByTestId('tb-run').click();
     await expect(page.getByTestId('tb-structural-imbalance-banner')).toBeVisible({ timeout: 10_000 });
+
+    // Trial Balance export failure behavior: the same real, still-imbalanced
+    // slice must fail the export exactly as it failed the view -- no
+    // downloaded file, the same real STRUCTURAL_IMBALANCE contract, no
+    // partial/best-effort CSV.
+    let downloadFired = false;
+    page.once('download', () => { downloadFired = true; });
+    const [exportResponse] = await Promise.all([
+      page.waitForResponse((r) => /\/api\/v1\/gl\/reports\/trial-balance\/export\?/.test(r.url())),
+      page.getByTestId('tb-export').click(),
+    ]);
+    expect(exportResponse.status()).toBe(500);
+    const exportBody = await exportResponse.json();
+    expect(exportBody.error).toBe('STRUCTURAL_IMBALANCE');
+    expect(downloadFired).toBe(false);
+    // The view's imbalance banner is still the one shown -- the export
+    // failure reuses it rather than replacing it with a different message.
+    await expect(page.getByTestId('tb-structural-imbalance-banner')).toBeVisible();
   });
 
   test('unclassified account type: real MEMO-type account (balanced ledger) hard-fails BS/IS', async ({ page }) => {
