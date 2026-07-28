@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { AlertTriangle, AlertCircle, CheckCircle2, Info, ShieldAlert } from 'lucide-react';
 import { EmptyState as UiEmptyState } from '../ui/EmptyState';
 import { LoadingTable } from '../ui/LoadingTable';
 import { Btn } from '../ui/Btn';
@@ -33,13 +34,14 @@ export function MoneyTd({ value, bold = false, className = '' }: { value: number
 
 type BannerKind = 'error' | 'success' | 'warning' | 'info';
 
-const BANNER_STYLES: Record<BannerKind, { bg: string; border: string; color: string }> = {
-  error: { bg: '#fef2f2', border: '#b91c1c', color: '#991b1b' },
-  success: { bg: '#dcfce7', border: '#166534', color: '#166534' },
-  warning: { bg: '#fffbeb', border: '#f59e0b', color: '#92400e' },
-  info: { bg: '#eff6ff', border: '#1d4ed8', color: '#1d4ed8' },
+const BANNER_STYLES: Record<BannerKind, { bg: string; border: string; color: string; Icon: typeof AlertTriangle }> = {
+  error: { bg: '#fef2f2', border: '#b91c1c', color: '#991b1b', Icon: AlertTriangle },
+  success: { bg: '#dcfce7', border: '#166534', color: '#166534', Icon: CheckCircle2 },
+  warning: { bg: '#fffbeb', border: '#f59e0b', color: '#92400e', Icon: AlertTriangle },
+  info: { bg: '#eff6ff', border: '#1d4ed8', color: '#1d4ed8', Icon: Info },
 };
 
+/** Structural-imbalance / unclassified-account / save-conflict banner. The icon makes the severity legible at a glance (Section 01: "State is explicit"). */
 export function Banner({
   kind, title, testId, children,
 }: { kind: BannerKind; title: string; testId?: string; children?: ReactNode }) {
@@ -48,9 +50,13 @@ export function Banner({
     <div
       data-testid={testId}
       style={{ background: s.bg, border: `1px solid ${s.border}`, color: s.color, padding: 12, marginTop: 12, borderRadius: 4 }}
+      className="flex items-start gap-2.5"
     >
-      <strong>{title}</strong>
-      {children && <div style={{ marginTop: 4 }}>{children}</div>}
+      <s.Icon size={16} className="flex-shrink-0 mt-0.5" />
+      <div>
+        <strong>{title}</strong>
+        {children && <div style={{ marginTop: 4 }}>{children}</div>}
+      </div>
     </div>
   );
 }
@@ -74,21 +80,34 @@ export function EmptyState({ title, message, testId, action }: { title: string; 
   );
 }
 
-/** Error state with an optional Retry action (design Section 02: ErrorState offers Retry/Back). Retry is opt-in via prop — wiring it at each call site is Phase 4 scope. */
-export function ErrorState({ message, testId, onRetry }: { message: string; testId?: string; onRetry?: () => void }) {
+/** Error state with optional Retry/Back actions (design Section 02: ErrorState offers Retry/Back). Both are opt-in via props so existing call sites are unaffected until wired. */
+export function ErrorState({
+  message, testId, onRetry, onBack,
+}: { message: string; testId?: string; onRetry?: () => void; onBack?: () => void }) {
   return (
     <div data-testid={testId} className="mt-3 flex items-center gap-3 text-[13px] text-red-700">
+      <AlertCircle size={15} className="flex-shrink-0" />
       <span>{message}</span>
-      {onRetry && <Btn size="sm" variant="secondary" onClick={onRetry}>Retry</Btn>}
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {onRetry && <Btn size="sm" variant="secondary" onClick={onRetry}>Retry</Btn>}
+        {onBack && <Btn size="sm" variant="ghost" onClick={onBack}>Back</Btn>}
+      </div>
     </div>
   );
 }
 
+/** Unauthorized state. `message` is the real 401/403 body from the backend (already carries the specific permission/scope context — e.g. "Your role does not include ledger search for entity 01" — never fabricated here), surfaced with a permission-denied tag for scannability. */
 export function UnauthorizedState({ message, testId }: { message: string; testId?: string }) {
   return (
     <div data-testid={testId} className="mt-6 p-5 border border-slate-200 rounded-md text-center">
+      <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-2.5 text-slate-400">
+        <ShieldAlert size={18} />
+      </div>
       <p className="font-semibold text-slate-900 m-0">You don&rsquo;t have access to this screen</p>
-      <p className="text-[13px] text-slate-500 mt-1">{message}</p>
+      <span className="inline-block mt-2 text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+        Permission required
+      </span>
+      <p className="text-[13px] text-slate-500 mt-1.5">{message}</p>
     </div>
   );
 }

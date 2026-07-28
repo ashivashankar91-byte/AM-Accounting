@@ -129,6 +129,14 @@ export default function GLSearch() {
     setEndDate(criteria.endDate ?? '');
   }
 
+  // Golden R0 UI convergence — Phase 4: "Clear filters" action for the
+  // no-results empty state. Only clears local filter state — does not
+  // re-run the search itself, so it never fires a query against stale
+  // closure values.
+  function clearFilters() {
+    restoreCriteria({});
+  }
+
   async function runSearch(forPage = 1) {
     setBusy(true);
     setError(null);
@@ -219,7 +227,7 @@ export default function GLSearch() {
 
   return (
     <ReportShell title="GL Search" description="Search posted GL activity across journals and accounts.">
-      {error && <ErrorState testId="gls-error" message={error} />}
+      {error && <ErrorState testId="gls-error" message={error} onRetry={() => runSearch(1)} onBack={() => navigate(-1)} />}
       {validationError && <ErrorState testId="gls-validation-error" message={validationError} />}
       {unauthorized && <UnauthorizedState testId="gls-unauthorized" message={unauthorized} />}
 
@@ -269,7 +277,12 @@ export default function GLSearch() {
       {busy && <LoadingState testId="gls-loading" label="Searching…" />}
 
       {results && results.length === 0 && (
-        <EmptyState testId="gls-empty" title="No matching GL activity found" message="Widen the date range or clear a filter." />
+        <EmptyState
+          testId="gls-empty"
+          title="No matching GL activity found"
+          message="Widen the date range or clear a filter."
+          action={<Btn size="sm" variant="secondary" onClick={clearFilters}>Clear filters</Btn>}
+        />
       )}
 
       {results && results.length > 0 && (

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { goldenPathApi } from '../../api/client';
 import {
   EmptyState, ErrorState, LoadingState, MoneyTd, UnauthorizedState, formatMoney,
@@ -96,6 +97,7 @@ const defaultAsOf = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(
 // percentage-of-revenue columns, department-level Gross Profit, or any
 // client-side recomputation of backend totals.
 export default function IncomeStatement() {
+  const navigate = useNavigate();
   const [entity, setEntity] = useState('01');
   const [store, setStore] = useState('');
   const [dept, setDept] = useState('');
@@ -196,7 +198,7 @@ export default function IncomeStatement() {
         />
       }
     >
-      {error && <ErrorState testId="is-error" message={error} />}
+      {error && <ErrorState testId="is-error" message={error} onRetry={runReport} onBack={() => navigate(-1)} />}
       {unauthorized && <UnauthorizedState testId="is-unauthorized" message={unauthorized} />}
 
       {imbalance && (
@@ -256,6 +258,9 @@ export default function IncomeStatement() {
           testId="is-empty"
           title="No income statement data for this scope"
           message="No revenue or expense accounts were returned for this entity/store/department/period."
+          action={(store || dept) ? (
+            <Btn size="sm" variant="secondary" onClick={() => { setStore(''); setDept(''); }}>Clear store/dept filters</Btn>
+          ) : undefined}
         />
       )}
 

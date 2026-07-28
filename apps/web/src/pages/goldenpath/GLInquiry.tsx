@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
 import { goldenPathApi } from '../../api/client';
 import {
@@ -54,6 +54,7 @@ interface AccountActivityView {
 // now opens as an actual right-side Drawer instead of an inline div.
 export default function GLInquiry() {
   const { legalEntityId } = useAuth();
+  const navigate = useNavigate();
   const [accounts, setAccounts] = useState<any[]>([]);
   const [stores, setStores] = useState<any[]>([]);
   const [accountId, setAccountId] = useState('');
@@ -69,6 +70,7 @@ export default function GLInquiry() {
   const [unauthorized, setUnauthorized] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [csv, setCsv] = useState<string | null>(null);
+  const [exportBusy, setExportBusy] = useState(false);
 
   const [drillLine, setDrillLine] = useState<ActivityLine | null>(null);
   const [drillJournal, setDrillJournal] = useState<any>(null);
@@ -167,7 +169,8 @@ export default function GLInquiry() {
   }
 
   async function doExport() {
-    if (!accountId) return;
+    if (!accountId || exportBusy) return;
+    setExportBusy(true);
     try {
       const text = await goldenPathApi.exportAccountActivity(accountId, buildParams(1));
       setCsv(text);
@@ -180,6 +183,8 @@ export default function GLInquiry() {
       URL.revokeObjectURL(url);
     } catch (err: any) {
       setError(err.message);
+    } finally {
+      setExportBusy(false);
     }
   }
 
@@ -200,10 +205,13 @@ export default function GLInquiry() {
       title="GL Inquiry"
       description="Account activity for a legal entity and period."
       actions={report ? (
-        <ExportMenu formats={[{ key: 'csv', label: 'Export CSV', onSelect: doExport, testId: 'gli-export' }]} />
+        <ExportMenu
+          disabled={exportBusy}
+          formats={[{ key: 'csv', label: exportBusy ? 'Exporting…' : 'Export CSV', onSelect: doExport, testId: 'gli-export' }]}
+        />
       ) : undefined}
     >
-      {error && <ErrorState testId="gli-error" message={error} />}
+      {error && <ErrorState testId="gli-error" message={error} onRetry={() => runInquiry(page)} onBack={() => navigate(-1)} />}
       {unauthorized && <UnauthorizedState testId="gli-unauthorized" message={unauthorized} />}
 
       <FilterBar>

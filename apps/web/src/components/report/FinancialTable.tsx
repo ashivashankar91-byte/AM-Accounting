@@ -29,6 +29,10 @@ export function ReportTh({ children, align = 'left' }: { children: ReactNode; al
   );
 }
 
+// Golden R0 UI convergence — Phase 4: rows with onClick (drill-through) are
+// full keyboard operable — Tab reaches them, Enter/Space activates them,
+// and focus gets a visible outline (Section 01 accessibility rule: "full
+// keyboard operability"). Previously a bare onClick <tr> was mouse-only.
 export function ReportTr({
   children, onClick, testId, className = '',
 }: { children: ReactNode; onClick?: () => void; testId?: string; className?: string }) {
@@ -36,7 +40,15 @@ export function ReportTr({
     <tr
       data-testid={testId}
       onClick={onClick}
-      className={`h-[34px] border-b border-slate-100 ${onClick ? 'cursor-pointer hover:bg-slate-50' : ''} ${className}`}
+      tabIndex={onClick ? 0 : undefined}
+      role={onClick ? 'button' : undefined}
+      onKeyDown={onClick ? (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      } : undefined}
+      className={`h-[34px] border-b border-slate-100 ${onClick ? 'cursor-pointer hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#0B5CAB]' : ''} ${className}`}
     >
       {children}
     </tr>

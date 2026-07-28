@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { goldenPathApi } from '../../api/client';
 import {
   EmptyState, ErrorState, LoadingState, MoneyTd, UnauthorizedState, formatMoney,
@@ -97,6 +98,7 @@ const defaultAsOf = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(
 // recomputation of backend totals -- none of these are supported by the
 // real S227 contract.
 export default function BalanceSheet() {
+  const navigate = useNavigate();
   const [entity, setEntity] = useState('01');
   const [store, setStore] = useState('');
   const [dept, setDept] = useState('');
@@ -198,7 +200,7 @@ export default function BalanceSheet() {
         />
       }
     >
-      {error && <ErrorState testId="bs-error" message={error} />}
+      {error && <ErrorState testId="bs-error" message={error} onRetry={runReport} onBack={() => navigate(-1)} />}
       {unauthorized && <UnauthorizedState testId="bs-unauthorized" message={unauthorized} />}
 
       {imbalance && (
@@ -258,6 +260,9 @@ export default function BalanceSheet() {
           testId="bs-empty"
           title="No balance sheet data for this scope"
           message="No asset, liability or equity accounts were returned for this entity/store/department/period."
+          action={(store || dept) ? (
+            <Btn size="sm" variant="secondary" onClick={() => { setStore(''); setDept(''); }}>Clear store/dept filters</Btn>
+          ) : undefined}
         />
       )}
 

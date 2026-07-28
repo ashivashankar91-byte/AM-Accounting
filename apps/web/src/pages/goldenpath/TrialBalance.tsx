@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
 import { goldenPathApi } from '../../api/client';
 import {
@@ -60,6 +61,7 @@ const defaultAsOf = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(
 // new concept and reports nothing the API didn't already tell this screen.
 export default function TrialBalance() {
   const { legalEntityId } = useAuth();
+  const navigate = useNavigate();
   const [entity, setEntity] = useState('01');
   const [store, setStore] = useState('');
   const [dept, setDept] = useState('');
@@ -204,7 +206,7 @@ export default function TrialBalance() {
         />
       }
     >
-      {error && <ErrorState testId="tb-error" message={error} />}
+      {error && <ErrorState testId="tb-error" message={error} onRetry={runReport} onBack={() => navigate(-1)} />}
       {unauthorized && <UnauthorizedState testId="tb-unauthorized" message={unauthorized} />}
 
       {imbalance && (
@@ -245,6 +247,15 @@ export default function TrialBalance() {
           testId="tb-empty"
           title="No accounts to display"
           message={zeroSuppression ? 'Every account has a zero balance and zero balances are suppressed. Turn off suppression to see all accounts.' : 'No accounts were returned for this scope.'}
+          action={zeroSuppression ? (
+            // Zero-suppression filters the already-fetched report client-side
+            // (see `rows` above) — no re-fetch needed, so no stale-closure risk.
+            <Btn size="sm" variant="secondary" onClick={() => setZeroSuppression(false)}>Show zero balances</Btn>
+          ) : (store || dept) ? (
+            // Store/dept are query params — clear them and let the user
+            // re-run, rather than re-fetching here with a stale closure.
+            <Btn size="sm" variant="secondary" onClick={() => { setStore(''); setDept(''); }}>Clear store/dept filters</Btn>
+          ) : undefined}
         />
       )}
 
