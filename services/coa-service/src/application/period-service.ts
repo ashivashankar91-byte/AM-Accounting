@@ -67,6 +67,26 @@ export class PeriodLockedTerminalError extends Error {
   }
 }
 
+/** S008 BR008-5 / AC008-4 — hard-close refused because open (DRAFT/VALIDATED)
+ * journals are dated inside the period. Carries the named worklist so the
+ * route layer can return 422 { blockingDrafts[] } and the UI can list each
+ * one (id, date, amount, preparer). Decision BLK-02 = block (not auto-roll). */
+export interface BlockingDraft {
+  draftId: string;
+  entryDate: string | null;
+  amount: string;
+  preparer: string;
+}
+export class HardCloseBlockedByDraftsError extends Error {
+  readonly code = 'HARD_CLOSE_BLOCKED_BY_DRAFTS';
+  constructor(readonly blockingDrafts: BlockingDraft[]) {
+    super(
+      `Hard close blocked: ${blockingDrafts.length} open draft journal(s) dated in this period must be posted or voided first`,
+    );
+    this.name = 'HardCloseBlockedByDraftsError';
+  }
+}
+
 const MAX_OPEN_KEY = 'fiscal.max_open_periods';
 const DEFAULT_MAX_OPEN = 2;
 
@@ -103,6 +123,28 @@ export interface PeriodTransitionResult {
   period?: any;
 }
 
+/**
+ * Sum the debit legs of a draft's `lines` JSON as a NUMERIC(15,2) string,
+ * accumulating in integer cents to avoid binary-float drift. Tolerant of
+ * string or numeric `dr` fields and of malformed rows (skipped).
+ */
+function sumDebits(lines: unknown): string {
+  const arr = Array.isArray(lines) ? lines : [];
+  let cents = 0n;
+  for (const raw of arr) {
+    const dr = (raw as any)?.dr;
+    if (dr === null || dr === undefined || dr === '') continue;
+    const n = typeof dr === 'number' ? dr : Number(dr);
+    if (!Number.isFinite(n)) continue;
+    cents += BigInt(Math.round(n * 100));
+  }
+  const negative = cents < 0n;
+  const abs = negative ? -cents : cents;
+  const whole = abs / 100n;
+  const frac = (abs % 100n).toString().padStart(2, '0');
+  return `${negative ? '-' : ''}${whole.toString()}.${frac}`;
+}
+
 @injectable()
 export class PeriodService {
   constructor(
@@ -118,16 +160,71 @@ export class PeriodService {
       where: { tenantId, entityId },
       orderBy: [{ fiscalYear: 'asc' }, { periodNumber: 'asc' }],
     });
-    return periods.map((p) => ({
-      periodId: p.id,
-      periodCode: p.code,
-      periodNumber: p.periodNumber,
-      fiscalYear: p.fiscalYear,
-      status: p.status,
-      adjustmentsOnly: p.adjustmentsOnly,
-      openedBy: p.openedBy,
-      openedAt: p.openedAt,
-    }));
+
+    // S008 — open-draft counts per period (BR008-5 worklist preview on the
+    // board) and the most-recent transition summary per period (§Audit
+    // timeline). Both are read-only enrichments; one query each, bucketed
+    // in memory rather than N per-period round trips.
+    //
+    // The transition summary is sourced from the S007 audit outbox
+    // (docType 'fiscal_period'), not fiscal_period_transition: the latter is
+    // the DB-trigger-owned ledger (id/tenant/entity/period/from/to/actor/at
+    // only — see 20260728010000_s008_period_close_control §3) and deliberately
+    // carries no `reason`, because the trigger that writes it is never handed
+    // one. The audit event, written by applyTransition() in the same
+    // transaction, already carries before.status/after.{status,reason} plus
+    // actor, so it is the correct (and only) source for this enrichment.
+    const openDrafts = await this.prisma.manualJeDraft.findMany({
+      where: {
+        tenantId,
+        entityId,
+        status: { in: ['DRAFT', 'VALIDATED'] },
+        entryDate: { not: null },
+      },
+      select: { entryDate: true },
+    });
+    const auditEvents = await this.prisma.auditOutboxEvent.findMany({
+      where: { tenantId, docType: 'fiscal_period', docId: { in: periods.map((p) => p.id) } },
+      orderBy: { createdAt: 'desc' },
+      select: { docId: true, before: true, after: true, actor: true, createdAt: true },
+    });
+    const latestByPeriod = new Map<string, (typeof auditEvents)[number]>();
+    for (const e of auditEvents) {
+      if (!latestByPeriod.has(e.docId)) latestByPeriod.set(e.docId, e);
+    }
+
+    const draftCountFor = (p: (typeof periods)[number]) =>
+      openDrafts.filter(
+        (d) => d.entryDate && d.entryDate >= p.startDate && d.entryDate <= p.endDate,
+      ).length;
+
+    return periods.map((p) => {
+      const last = latestByPeriod.get(p.id);
+      return {
+        periodId: p.id,
+        periodCode: p.code,
+        periodNumber: p.periodNumber,
+        fiscalYear: p.fiscalYear,
+        status: p.status,
+        adjustmentsOnly: p.adjustmentsOnly,
+        openedBy: p.openedBy,
+        openedAt: p.openedAt,
+        closedBy: p.closedBy,
+        closedAt: p.closedAt,
+        lockedBy: p.lockedBy,
+        lockedAt: p.lockedAt,
+        openDrafts: draftCountFor(p),
+        lastTransition: last
+          ? {
+              fromStatus: (last.before as any)?.status ?? null,
+              toStatus: (last.after as any)?.status ?? null,
+              reason: (last.after as any)?.reason ?? null,
+              actor: last.actor,
+              at: last.createdAt,
+            }
+          : null,
+      };
+    });
   }
 
   // ── Eligibility (GET /periods/{id}/eligibility) ──────────────────────────────
@@ -249,6 +346,15 @@ export class PeriodService {
     if (period.status === 'LOCKED') throw new PeriodLockedTerminalError(period.id);
     if (!canTransition(from, 'HARD_CLOSED')) throw new InvalidTransitionError(from, 'HARD_CLOSED');
     if (!dto.reason?.trim()) throw new PeriodReasonRequiredError('hard-close a period');
+
+    // BR008-5 / AC008-4 — prerequisite: no open (DRAFT/VALIDATED) journals may
+    // be dated inside the period. Decision BLK-02 resolved to block (not
+    // auto-roll): surface the named worklist so the controller can post or
+    // void each blocker, then retry.
+    const blockingDrafts = await this.findBlockingDrafts(period);
+    if (blockingDrafts.length > 0) {
+      throw new HardCloseBlockedByDraftsError(blockingDrafts);
+    }
 
     return this.applyTransition(dto, from, 'HARD_CLOSED', 'HARD_CLOSE');
   }
@@ -411,6 +517,37 @@ export class PeriodService {
       throw new PeriodNotFoundError(periodId);
     }
     return period;
+  }
+
+  /**
+   * S008 BR008-5 / AC008-4 — find open (DRAFT/VALIDATED) journals dated inside
+   * the period that block a hard close. VOIDED and POSTED_LINKED drafts do not
+   * block (posted work is already in the ledger; voided work is inert). The
+   * amount is the sum of debit legs, mirroring how the JE grid presents a
+   * journal's magnitude.
+   */
+  private async findBlockingDrafts(period: {
+    tenantId: string;
+    entityId: string;
+    startDate: Date;
+    endDate: Date;
+  }): Promise<BlockingDraft[]> {
+    const drafts = await this.prisma.manualJeDraft.findMany({
+      where: {
+        tenantId: period.tenantId,
+        entityId: period.entityId,
+        status: { in: ['DRAFT', 'VALIDATED'] },
+        entryDate: { gte: period.startDate, lte: period.endDate },
+      },
+      select: { id: true, entryDate: true, preparer: true, lines: true },
+      orderBy: { entryDate: 'asc' },
+    });
+    return drafts.map((d) => ({
+      draftId: d.id,
+      entryDate: d.entryDate ? d.entryDate.toISOString().slice(0, 10) : null,
+      amount: sumDebits(d.lines),
+      preparer: d.preparer,
+    }));
   }
 
   private async resolveMaxOpen(tenantId: string, entityId: string): Promise<number> {

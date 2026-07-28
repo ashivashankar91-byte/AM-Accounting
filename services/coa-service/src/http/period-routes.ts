@@ -10,6 +10,7 @@ import {
   PeriodReasonRequiredError,
   PeriodConfirmationRequiredError,
   PeriodLockedTerminalError,
+  HardCloseBlockedByDraftsError,
 } from '../application/period-service';
 
 // ── Tenant scoping ─────────────────────────────────────────────────────────────
@@ -46,6 +47,14 @@ export function requirePeriodPermission(permission: string) {
 function handleError(error: unknown, reply: any) {
   if (error instanceof InvalidTransitionError || error instanceof MaxOpenReachedError) {
     return reply.status(422).send({ error: error.code, message: error.message });
+  }
+  if (error instanceof HardCloseBlockedByDraftsError) {
+    // AC008-4 — 422 with the named blocking-drafts worklist.
+    return reply.status(422).send({
+      error: error.code,
+      message: error.message,
+      blockingDrafts: error.blockingDrafts,
+    });
   }
   if (error instanceof PeriodLockedTerminalError) {
     return reply.status(422).send({ error: error.code, message: error.message });
