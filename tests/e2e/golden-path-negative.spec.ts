@@ -235,6 +235,40 @@ test.describe('Golden R0 — gl-service structural/classification hard errors (d
     // The view's imbalance banner is still the one shown -- the export
     // failure reuses it rather than replacing it with a different message.
     await expect(page.getByTestId('tb-structural-imbalance-banner')).toBeVisible();
+
+    // Balance Sheet: the same real, still one-sided slice must surface
+    // through FinancialStatementService.getBalanceSheet(), which calls
+    // TrialBalanceService.getReport() first -- so this exercises the
+    // TB-level StructuralImbalanceError (drSum/crSum/delta shape), NOT the
+    // FS-level FSStructuralImbalanceError (totalAssets/totalLiabilitiesAndEquity
+    // shape). Proves live, in the browser, the fix to routes.ts's BS export
+    // catch clause and to BalanceSheet.tsx's banner shape-branching are both
+    // reachable and correct for a real backend response, not just unit-mocked.
+    await page.goto(`${BASE}/golden-path/balance-sheet`);
+    await page.getByTestId('bs-entity').fill(GL_ENTITY);
+    await page.getByTestId('bs-asof').fill(GL_AS_OF);
+    await page.getByTestId('bs-run').click();
+    await expect(page.getByTestId('bs-structural-imbalance-banner')).toBeVisible({ timeout: 10_000 });
+    // TB-level shape rendered (drSum/crSum), not the FS-level fields --
+    // if the frontend still assumed the FS-level shape this would render
+    // "NaN" instead of the real 75/0 figures from the seeded fixture.
+    await expect(page.getByTestId('bs-structural-imbalance-banner')).toContainText('75');
+    await expect(page.getByTestId('bs-structural-imbalance-banner')).not.toContainText('NaN');
+
+    // Balance Sheet export failure behavior mirrors the Trial Balance export
+    // proof above: same real STRUCTURAL_IMBALANCE contract, no download, no
+    // partial/best-effort file, banner stays the one already shown.
+    let bsDownloadFired = false;
+    page.once('download', () => { bsDownloadFired = true; });
+    const [bsExportResponse] = await Promise.all([
+      page.waitForResponse((r) => /\/api\/v1\/gl\/reports\/balance-sheet\/export\?/.test(r.url())),
+      page.getByTestId('bs-export').click(),
+    ]);
+    expect(bsExportResponse.status()).toBe(500);
+    const bsExportBody = await bsExportResponse.json();
+    expect(bsExportBody.error).toBe('STRUCTURAL_IMBALANCE');
+    expect(bsDownloadFired).toBe(false);
+    await expect(page.getByTestId('bs-structural-imbalance-banner')).toBeVisible();
   });
 
   test('unclassified account type: real MEMO-type account (balanced ledger) hard-fails BS/IS', async ({ page }) => {
