@@ -14,13 +14,17 @@ export function FinancialTable({ children, testId, className = '' }: { children:
 }
 
 export function ReportThead({ children }: { children: ReactNode }) {
-  return <thead className="bg-slate-50">{children}</thead>;
+  // Golden R0 Phase — token alignment: the approved design's shared
+  // ReportScreen/Journal-lines table header is navy (#1E3A5C) with white
+  // text (ReportScreen.html line 119: `background:#1E3A5C;color:#fff`),
+  // not the previous plain bg-slate-50/text-slate-500 treatment.
+  return <thead className="bg-navy text-white">{children}</thead>;
 }
 
 export function ReportTh({ children, align = 'left' }: { children: ReactNode; align?: 'left' | 'right' | 'center' }) {
   return (
     <th
-      className={`h-8 px-3 text-[10.5px] font-semibold uppercase tracking-wide text-slate-500 border-b border-slate-200 whitespace-nowrap ${
+      className={`h-8 px-3 text-[10.5px] font-semibold uppercase tracking-wide whitespace-nowrap ${
         align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left'
       }`}
     >
@@ -71,7 +75,7 @@ export function ReportTd({
 /** Pinned/emphasized totals or section-subtotal row. */
 export function TotalsRow({ children, className = '', testId }: { children: ReactNode; className?: string; testId?: string }) {
   return (
-    <tr data-testid={testId} className={`h-[34px] border-t-2 border-slate-300 font-semibold bg-slate-50 ${className}`}>
+    <tr data-testid={testId} className={`h-[34px] border-t-2 border-navy font-semibold bg-slate-50 ${className}`}>
       {children}
     </tr>
   );

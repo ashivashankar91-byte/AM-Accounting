@@ -12,6 +12,28 @@ code, kbd, pre, .font-mono, [class*="font-mono"] {
   font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace !important;
 }
 
+/* Golden R0 Phase — approved Claude Design typography/palette, scoped to
+   `.gr0-scope` only (the golden-path report + journal foundation). Higher
+   specificity than the two rules above (`.gr0-scope *` beats the bare `*`
+   universal selector; `.gr0-scope .font-mono` beats `.font-mono` even with
+   matching !important) so it overrides them ONLY inside the scope, leaving
+   every other screen in the app byte-identical to before this change. */
+.gr0-scope, .gr0-scope * {
+  font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+.gr0-scope code, .gr0-scope kbd, .gr0-scope pre,
+.gr0-scope .font-mono, .gr0-scope [class*="font-mono"] {
+  font-family: 'IBM Plex Mono', 'JetBrains Mono', monospace !important;
+}
+.gr0-scope {
+  --gr0-primary:        #0B5CAB;
+  --gr0-primary-hover:  #094C90;
+  --gr0-primary-light:  #EEF3FA;
+  --gr0-primary-border: #C6D8EE;
+  --gr0-primary-ring:   #0B5CAB;
+  --gr0-navy:           #1E3A5C;
+}
+
 :root {
   /* ── Brand ── */
   --brand:         #1D4ED8;
@@ -121,6 +143,19 @@ thead {
   position: sticky;
   top: 0;
   z-index: 10;
+}
+/* Golden R0 Phase — scoped override: the global `thead th` rule above (pre-
+   existing, app-wide, used by other screens' tables) paints each <th> cell's
+   own opaque background, which hides the golden-path FinancialTable's own
+   `bg-navy` applied to the <thead> — a <th>'s own background always paints
+   over its ancestor's. `.gr0-scope thead th` has higher specificity than the
+   bare `thead th` above, so with both sides using !important this wins only
+   inside the golden-path report/journal foundation, leaving every other
+   table in the app (dashboards, KPI grids, etc.) untouched. */
+.gr0-scope thead th {
+  background: #1E3A5C !important;
+  color: #fff !important;
+  border-bottom: none !important;
 }
 tbody tr {
   transition: background 120ms ease;

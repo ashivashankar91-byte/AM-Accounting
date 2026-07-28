@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Routes, Route, useLocation, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, BookOpen, CreditCard, Users, Calendar,
   Wrench, Settings as SettingsIcon, Terminal, Search, Bell,
@@ -540,6 +540,11 @@ export default function App() {
                   API only. */}
               <Route path="/golden-path/balance-sheet" element={<GoldenPathProtectedRoute><GoldenPathBalanceSheet /></GoldenPathProtectedRoute>} />
               <Route path="/golden-path/income-statement" element={<GoldenPathProtectedRoute><GoldenPathIncomeStatement /></GoldenPathProtectedRoute>} />
+              {/* Golden R0 Phase — routing alias only, no second implementation.
+                  The canonical GL Inquiry screen/route is /accounting/inquiry/gl
+                  (registered below); this path never had a real route at all,
+                  so it fell through to the app shell's default/dashboard view. */}
+              <Route path="/golden-path/gl-inquiry" element={<Navigate to="/accounting/inquiry/gl" replace />} />
 
               {/* WF-A001 through WF-A010 */}
               <Route path="/accounting/dashboard" element={<DashboardWorkflow />} />

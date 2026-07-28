@@ -33,6 +33,7 @@ async function login(page: any) {
 
 const SCREENS: Array<{ name: string; path: string; testId?: string }> = [
   { name: 'org-hierarchy', path: '/golden-path/org-hierarchy', testId: 'org-tree' },
+  { name: 'journal', path: '/golden-path/journal', testId: 'journal-lines-table' },
   { name: 'trial-balance', path: '/golden-path/trial-balance', testId: 'tb-grand-total' },
   { name: 'balance-sheet', path: '/golden-path/balance-sheet' },
   { name: 'income-statement', path: '/golden-path/income-statement' },
@@ -70,7 +71,14 @@ test.describe('Phase 5 evidence — 200% zoom / accessibility', () => {
         await expect(page.getByTestId(s.testId)).toBeVisible({ timeout: 10_000 }).catch(() => undefined);
       }
       await page.waitForTimeout(300);
+      // Golden R0 Phase — Workstream 3 regression check: the context bar
+      // previously overflowed the viewport at 200% zoom, clipping "Signed
+      // in as" off-screen. document.body.scrollWidth > clientWidth would
+      // catch that regressing again (the ContextBar's own fix uses
+      // flex-wrap, so it should never force page-level horizontal scroll).
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
       await page.screenshot({ path: `${EVIDENCE_DIR}/zoom200-${s.name}.png`, fullPage: true });
+      expect(overflow, `${s.name} should not have unintended horizontal overflow at 200% zoom`).toBe(false);
     }
 
     // Keyboard focus visibility check on a representative screen.

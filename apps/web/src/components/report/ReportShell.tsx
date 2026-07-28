@@ -33,7 +33,13 @@ interface ReportShellProps {
 
 export function ReportShell({ title, description, status, actions, scopeFields, children }: ReportShellProps) {
   return (
-    <div className="max-w-[1200px] mx-auto px-6 py-6">
+    // Golden R0 Phase — token alignment (Workstream 2): `gr0-scope` applies
+    // the approved Claude Design typography (IBM Plex Sans/Mono) and primary
+    // palette (#0B5CAB) to this screen and everything inside it, via the
+    // scoped CSS in index.css — every screen built on ReportShell (GL
+    // Search, GL Inquiry, Trial Balance, Balance Sheet, Income Statement,
+    // Journal Entry) inherits it from this one place.
+    <div className="gr0-scope max-w-[1200px] mx-auto px-6 py-6">
       <PageHeader
         title={title}
         subtitle={description}

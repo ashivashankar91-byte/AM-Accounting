@@ -18,9 +18,14 @@ interface ContextBarProps {
 
 function Field({ label, value, muted = false }: { label: string; value: string; muted?: boolean }) {
   return (
-    <div className="px-4 py-2 border-r border-slate-200 last:border-r-0">
+    // Golden R0 Phase — narrow-width/200%-zoom fix: this used to be a single
+    // nowrap flex row, so a long value (the tenant UUID especially) forced
+    // the whole bar wider than the viewport, clipping "Signed in as" off the
+    // right edge instead of wrapping. min-w-0 + break-words let each field
+    // shrink and wrap its own value instead of pushing siblings off-screen.
+    <div className="px-4 py-2 border-r border-b border-slate-200 last:border-r-0 min-w-0 flex-1 basis-[200px]">
       <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{label}</div>
-      <div className={`text-[13px] font-medium mt-0.5 ${muted ? 'text-slate-400 italic font-normal' : 'text-slate-900'}`}>
+      <div className={`text-[13px] font-medium mt-0.5 break-words ${muted ? 'text-slate-400 italic font-normal' : 'text-slate-900'}`}>
         {value}
       </div>
     </div>
@@ -29,7 +34,10 @@ function Field({ label, value, muted = false }: { label: string; value: string; 
 
 export function ContextBar({ tenantId, legalEntityLabel, userDisplayName }: ContextBarProps) {
   return (
-    <div className="flex items-stretch bg-slate-50 border-b border-slate-200 text-[12.5px]">
+    // flex-wrap (was nowrap): at narrow widths / 200% zoom the three fields
+    // now wrap onto additional rows instead of overflowing the viewport —
+    // all three values stay visible, none are clipped or truncated.
+    <div className="flex flex-wrap items-stretch bg-slate-50 border-b border-slate-200 text-[12.5px]">
       <Field label="Tenant" value={tenantId} />
       <Field
         label="Legal entity"

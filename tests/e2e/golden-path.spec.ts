@@ -225,7 +225,7 @@ test.describe('Golden R0 — full 16-step browser journey (positive)', () => {
     await expect(page.getByTestId('journal-draft-status')).toBeVisible({ timeout: 10_000 });
 
     await page.getByTestId('journal-validate').click();
-    await expect(page.getByTestId('journal-validation-result')).toContainText('true', { timeout: 10_000 });
+    await expect(page.getByTestId('journal-validation-result')).toContainText('Validation passed', { timeout: 10_000 });
 
     await page.getByTestId('journal-post').click();
     await expect(page.getByTestId('journal-view')).toBeVisible({ timeout: 10_000 });
@@ -368,7 +368,7 @@ test.describe('Golden R0 — full 16-step browser journey (positive)', () => {
     await page.getByTestId('journal-create-draft').click();
     await expect(page.getByTestId('journal-draft-status')).toBeVisible({ timeout: 10_000 });
     await page.getByTestId('journal-validate').click();
-    await expect(page.getByTestId('journal-validation-result')).toContainText('true', { timeout: 10_000 });
+    await expect(page.getByTestId('journal-validation-result')).toContainText('Validation passed', { timeout: 10_000 });
     await page.getByTestId('journal-post').click();
     await expect(page.getByTestId('journal-view')).toBeVisible({ timeout: 10_000 });
 

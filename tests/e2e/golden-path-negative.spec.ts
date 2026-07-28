@@ -108,7 +108,7 @@ test.describe('Golden R0 — journal control-plane negatives (coa-service)', () 
     await page.getByTestId('journal-create-draft').click();
     await expect(page.getByTestId('journal-draft-status')).toBeVisible({ timeout: 10_000 });
     await page.getByTestId('journal-validate').click();
-    await expect(page.getByTestId('journal-validation-result')).toContainText('false', { timeout: 10_000 });
+    await expect(page.getByTestId('journal-validation-result')).toContainText('Validation failed', { timeout: 10_000 });
     // BR013-1 fix (Phase 3 full release certification): JournalWorkflow.tsx
     // now renders the real backend-provided validation failure reason and
     // amounts (rule/message per error, plus the real deltaDr/deltaCr) --
@@ -140,7 +140,7 @@ test.describe('Golden R0 — journal control-plane negatives (coa-service)', () 
     await page.getByTestId('journal-create-draft').click();
     await expect(page.getByTestId('journal-draft-status')).toBeVisible({ timeout: 10_000 });
     await page.getByTestId('journal-validate').click();
-    await expect(page.getByTestId('journal-validation-result')).toContainText('true', { timeout: 10_000 });
+    await expect(page.getByTestId('journal-validation-result')).toContainText('Validation passed', { timeout: 10_000 });
 
     await page.getByTestId('journal-post').click();
     await expect(page.getByTestId('journal-view')).toBeVisible({ timeout: 10_000 });
@@ -177,7 +177,7 @@ test.describe('Golden R0 — journal control-plane negatives (coa-service)', () 
     await page.getByTestId('journal-create-draft').click();
     await expect(page.getByTestId('journal-draft-status')).toBeVisible({ timeout: 10_000 });
     await page.getByTestId('journal-validate').click();
-    await expect(page.getByTestId('journal-validation-result')).toContainText('true', { timeout: 10_000 });
+    await expect(page.getByTestId('journal-validation-result')).toContainText('Validation passed', { timeout: 10_000 });
     await page.getByTestId('journal-post').click();
     await expect(page.getByTestId('journal-view')).toBeVisible({ timeout: 10_000 });
 

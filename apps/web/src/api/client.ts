@@ -842,6 +842,9 @@ export const goldenPathApi = {
   listDepartments: (entityId: string) => apiFetch<{ items: any[] }>(`/api/v1/legal-entities/${entityId}/departments`),
 
   listAccounts: (entityId: string) => apiFetch<{ accounts: any[] }>(`/api/v1/coa/accounts?entity=${entityId}`),
+  // Real coa-service GET /journal-sources (source-routes.ts) — used to
+  // display the journal's source with its real name instead of a bare code.
+  listJournalSources: () => apiFetch<any[]>('/api/v1/coa/journal-sources'),
   createAccount: (data: {
     entityId: string; accountNumber: string; name: string; type: string;
     normalBalance: string; postable: boolean; parentId?: string | null;
