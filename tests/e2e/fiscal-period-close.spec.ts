@@ -23,7 +23,17 @@
 import { test, expect } from '@playwright/test';
 
 const BASE = '/amacc';
-const API = 'http://localhost:13100';
+// Real defect found and fixed while running this spec live for the first
+// time: this was hardcoded to :13100 regardless of which gateway the rest
+// of the run (baseURL/API_TARGET) actually targeted, so a run against any
+// other stack silently sent every direct page.request.* call here to
+// whatever happened to be listening on :13100 instead — in one live run
+// that was a stale, pre-S008 checkout, producing a false negative (404s
+// where 403s were expected) that had nothing to do with S008's own
+// correctness. API_BASE_URL lets a real run point this at the same gateway
+// as BASE_URL; :13100 remains the default to match this directory's
+// existing golden-path.spec.ts/golden-path-negative.spec.ts convention.
+const API = process.env['API_BASE_URL'] ?? 'http://localhost:13100';
 const TENANT_A = '1cf31f14-cb0b-4261-a41d-f79953594c86';
 const ADMIN_EMAIL = 'admin@kunes-final-r0.test';
 const CLERK_EMAIL = 'clerk@kunes-final-r0.test';
@@ -125,13 +135,24 @@ test.describe('S008 — period close/reopen/lock lifecycle', () => {
     await expect(page.getByTestId(`period-blocking-draft-${draft.draftId}`)).toBeVisible();
     await expect(page.getByTestId(`period-status-${periodCode}`)).toHaveText('SOFT_CLOSED'); // unchanged — no transition occurred
 
-    // Unblock: post the draft, then retry.
-    await page.request.post(`${API}/api/v1/coa/manual-journals/drafts/${draft.draftId}:validate`, {
-      headers: { Authorization: `Bearer ${token}`, ...authHeader },
+    // Unblock: void the draft, then retry. Real defect found and fixed while
+    // running this spec live for the first time: this previously tried to
+    // *post* the draft here instead — but the period is still SOFT_CLOSED at
+    // this point in the story, and BR013-2 only allows a SOFT_CLOSED posting
+    // for an authorized adjusting entry (isAdjusting=true + a verified
+    // fiscal.je.mark_adjusting attestation), neither of which this draft has.
+    // Posting it was therefore guaranteed to fail validation every time
+    // (confirmed live: BR013-2 "only an authorized adjusting entry... may
+    // post here"), leaving the draft in DRAFT status forever and the retry
+    // below stuck reporting the same blocking-drafts worklist. BR008-5's own
+    // resolved contract is "post OR VOID each blocker" — voiding is the
+    // correct unblock path for a non-adjusting draft in a closed period, and
+    // (unlike posting) does not require the period to be postable at all.
+    const voidResp = await page.request.post(`${API}/api/v1/coa/manual-journals/drafts/${draft.draftId}:void`, {
+      headers: { Authorization: `Bearer ${token}`, ...authHeader, 'Content-Type': 'application/json' },
+      data: { reason: 'S008 E2E: unblock hard-close' },
     });
-    await page.request.post(`${API}/api/v1/coa/manual-journals/drafts/${draft.draftId}:post`, {
-      headers: { Authorization: `Bearer ${token}`, ...authHeader },
-    });
+    expect(voidResp.status(), 'expected the blocking draft to void successfully').toBe(200);
     await page.getByTestId('period-ceremony-cancel').click();
     await page.reload();
     await page.getByTestId(`hard-close-${periodCode}`).click();
@@ -201,11 +222,11 @@ test.describe('S008 — negative: unauthorized soft-close (real least-privilege 
     // golden-path-negative.spec.ts's own finding, so this scenario is proven
     // directly against the gateway rather than by driving the CLERK session
     // through every intermediate screen it cannot reach.
-    const loginResp = await page.request.post(`http://localhost:13100/api/v1/auth/login`, {
+    const loginResp = await page.request.post(`${API}/api/v1/auth/login`, {
       data: { tenantId: TENANT_A, email: CLERK_EMAIL, password: PASSWORD },
     });
     const { accessToken } = await loginResp.json();
-    const resp = await page.request.post(`http://localhost:13100/api/v1/fiscal/periods/00000000-0000-0000-0000-000000000000/soft-close`, {
+    const resp = await page.request.post(`${API}/api/v1/fiscal/periods/00000000-0000-0000-0000-000000000000/soft-close`, {
       headers: { Authorization: `Bearer ${accessToken}`, 'x-tenant-id': TENANT_A, 'Content-Type': 'application/json' },
       data: { reason: 'should be denied' },
     });
