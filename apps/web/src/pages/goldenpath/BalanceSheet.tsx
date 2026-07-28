@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { goldenPathApi } from '../../api/client';
+import { EmptyState, ErrorState, LoadingState, MoneyCell, UnauthorizedState, formatMoney } from '../../components/goldenpath/shared';
 
 interface FSRow {
   accountCode: string;
@@ -19,31 +20,34 @@ interface BalanceSheetReport {
   reconciledToTrialBalance: { drSum: number; crSum: number };
 }
 
+// Real, confirmed defect fix (Golden R0 UI convergence, Balance Sheet
+// refinement, 2026-07-28): getBalanceSheet() calls TrialBalanceService
+// .getReport() first -- if the underlying trial balance itself doesn't
+// foot, it throws the TB-level StructuralImbalanceError, shape
+// {drSum,crSum,delta}, a DIFFERENT real error from FSStructuralImbalanceError
+// (assets != liabilities+equity on an already-footed slice), shape
+// {totalAssets,totalLiabilitiesAndEquity,delta} -- confirmed by reading
+// financial-statement-service.ts and routes.ts directly, both share the
+// error code STRUCTURAL_IMBALANCE but never both sets of fields at once.
+// This screen previously assumed only the FS-level shape, so a TB-level
+// imbalance would have rendered "NaN" for both amounts. Both real shapes
+// are now handled explicitly, never assumed.
 interface StructuralImbalance {
   error: 'STRUCTURAL_IMBALANCE';
-  totalAssets: number;
-  totalLiabilitiesAndEquity: number;
+  totalAssets?: number;
+  totalLiabilitiesAndEquity?: number;
+  drSum?: number;
+  crSum?: number;
   delta: number;
 }
 
 interface UnclassifiedError {
   error: 'UNCLASSIFIED_ACCOUNT_TYPE';
-  // FINAL-R0 defect fix (Golden R0 closure, this pass): the real
-  // gl-service UnclassifiedAccountTypeError contract (financial-statement
-  // -service.ts) always returns a plural `accounts` array -- it supports
-  // reporting MULTIPLE unclassified accounts in one response, not a single
-  // top-level accountCode/accountType. The previous single-field shape here
-  // meant this banner ALWAYS rendered blank codes/types on every real
-  // occurrence of this error (verified live: "account  has account type ,
-  // which is not recognized..."), silently hiding which account(s) were
-  // actually the problem. Found live while writing this closure pass's
-  // negative-scenario Playwright coverage.
+  // FINAL-R0 defect fix (Golden R0 closure): the real gl-service
+  // UnclassifiedAccountTypeError contract (financial-statement-service.ts)
+  // always returns a plural `accounts` array -- supports reporting MULTIPLE
+  // unclassified accounts in one response.
   accounts: Array<{ accountCode: string; accountType: string }>;
-}
-
-function fmt(n: number): string {
-  const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return n < 0 ? `(${abs})` : abs;
 }
 
 function Section({ title, rows, total, testPrefix }: { title: string; rows: FSRow[]; total: number; testPrefix: string }) {
@@ -56,12 +60,12 @@ function Section({ title, rows, total, testPrefix }: { title: string; rows: FSRo
             <tr key={r.accountCode} data-testid={`${testPrefix}-row-${r.accountCode}`}>
               <td>{r.accountCode}</td>
               <td>{r.accountName}</td>
-              <td style={{ textAlign: 'right', fontFamily: 'JetBrains Mono, monospace' }}>{fmt(r.amount)}</td>
+              <MoneyCell value={r.amount} />
             </tr>
           ))}
           <tr data-testid={`${testPrefix}-total`} style={{ fontWeight: 700, borderTop: '1px solid #333' }}>
             <td colSpan={2}>Total {title}</td>
-            <td style={{ textAlign: 'right', fontFamily: 'JetBrains Mono, monospace' }}>{fmt(total)}</td>
+            <MoneyCell value={total} bold />
           </tr>
         </tbody>
       </table>
@@ -77,6 +81,13 @@ const defaultAsOf = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(
 // and the currentEarnings/A=L+E figures shown are exactly what the API
 // returned; no classification, contra-account sign, or net-income
 // calculation happens client-side (per PO instruction #4/#9 for S227).
+//
+// PRODUCT CHECKPOINT (Golden R0 UI convergence, 2026-07-28) — Balance Sheet
+// refinement: adopts the shared goldenpath components, adds the previously
+// missing unauthorized/export-loading/export-failure/export-unauthorized/
+// empty states. Explicitly NOT added: comparative/prior-period columns, a
+// rounding filter, or any client-side recomputation of backend totals --
+// none of these are supported by the real S227 contract.
 export default function BalanceSheet() {
   const [entity, setEntity] = useState('01');
   const [store, setStore] = useState('');
@@ -86,12 +97,17 @@ export default function BalanceSheet() {
   const [imbalance, setImbalance] = useState<StructuralImbalance | null>(null);
   const [unclassified, setUnclassified] = useState<UnclassifiedError | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [unauthorized, setUnauthorized] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [csv, setCsv] = useState<string | null>(null);
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportUnauthorized, setExportUnauthorized] = useState<string | null>(null);
 
   async function runReport() {
     setBusy(true);
     setError(null);
+    setUnauthorized(null);
     setImbalance(null);
     setUnclassified(null);
     setReport(null);
@@ -113,7 +129,7 @@ export default function BalanceSheet() {
       } else if (err.status === 500 && err.body?.error === 'UNCLASSIFIED_ACCOUNT_TYPE') {
         setUnclassified(err.body);
       } else if (err.status === 401 || err.status === 403) {
-        setError(err.message);
+        setUnauthorized(err.message);
       } else {
         setError(err.message);
       }
@@ -123,6 +139,10 @@ export default function BalanceSheet() {
   }
 
   async function doExport() {
+    if (exportBusy) return;
+    setExportBusy(true);
+    setExportError(null);
+    setExportUnauthorized(null);
     try {
       const text = await goldenPathApi.exportBalanceSheet({
         entity,
@@ -139,21 +159,46 @@ export default function BalanceSheet() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (err: any) {
-      setError(err.message);
+      // The export route reuses the identical view computation, so it can
+      // fail with the exact same two real error contracts -- reuse the same
+      // banners rather than inventing a third, different message.
+      if (err.status === 500 && err.body?.error === 'STRUCTURAL_IMBALANCE') {
+        setImbalance(err.body);
+      } else if (err.status === 500 && err.body?.error === 'UNCLASSIFIED_ACCOUNT_TYPE') {
+        setUnclassified(err.body);
+      } else if (err.status === 401 || err.status === 403) {
+        setExportUnauthorized(err.message);
+      } else {
+        setExportError(err.message);
+      }
+    } finally {
+      setExportBusy(false);
     }
   }
 
   const balanced = report ? Math.abs(report.assets.total - report.totalLiabilitiesAndEquity) < 0.005 : false;
+  const isEmpty = !!report && report.assets.rows.length === 0 && report.liabilities.rows.length === 0 && report.equity.rows.length === 0;
 
   return (
     <div style={{ maxWidth: 960, margin: '40px auto', fontFamily: 'Inter, sans-serif' }}>
       <h1 style={{ fontSize: 20, fontWeight: 600 }}>Balance Sheet</h1>
-      {error && <p data-testid="bs-error" style={{ color: '#b91c1c' }}>{error}</p>}
+      {error && <ErrorState testId="bs-error" message={error} />}
+      {unauthorized && <UnauthorizedState testId="bs-unauthorized" message={unauthorized} />}
 
       {imbalance && (
         <div data-testid="bs-structural-imbalance-banner" style={{ background: '#fef2f2', border: '1px solid #b91c1c', color: '#991b1b', padding: 12, marginTop: 12 }}>
-          <strong>STRUCTURAL_IMBALANCE</strong> — Assets do not equal Liabilities + Equity for this slice; the statement was not rendered.
-          <div>Assets {fmt(imbalance.totalAssets)} vs Liabilities+Equity {fmt(imbalance.totalLiabilitiesAndEquity)} — delta {fmt(imbalance.delta)}</div>
+          <strong>STRUCTURAL_IMBALANCE</strong>{' '}
+          {imbalance.totalAssets !== undefined ? (
+            <>
+              — Assets do not equal Liabilities + Equity for this slice; the statement was not rendered.
+              <div>Assets {formatMoney(imbalance.totalAssets)} vs Liabilities+Equity {formatMoney(imbalance.totalLiabilitiesAndEquity!)} — delta {formatMoney(imbalance.delta)}</div>
+            </>
+          ) : (
+            <>
+              — the underlying trial balance for this slice does not foot; the statement cannot be produced until it does.
+              <div>Debits {formatMoney(imbalance.drSum ?? 0)} vs Credits {formatMoney(imbalance.crSum ?? 0)} — delta {formatMoney(imbalance.delta)}</div>
+            </>
+          )}
         </div>
       )}
 
@@ -176,10 +221,30 @@ export default function BalanceSheet() {
         <label>Dept <input data-testid="bs-dept" value={dept} onChange={(e) => setDept(e.target.value)} style={{ width: 70 }} /></label>
         <label>As of (YYYY-MM) <input data-testid="bs-asof" value={asOf} onChange={(e) => setAsOf(e.target.value)} style={{ width: 90 }} /></label>
         <button data-testid="bs-run" onClick={runReport} disabled={busy}>{busy ? 'Loading…' : 'Run Balance Sheet'}</button>
-        {report && <button data-testid="bs-export" onClick={doExport}>Export CSV</button>}
+        {/* Export is a real, independent server query -- it must not be
+            gated behind a successful view run (previously gated behind
+            `report &&`, which made it unreachable whenever the last view
+            run hit STRUCTURAL_IMBALANCE or UNCLASSIFIED_ACCOUNT_TYPE, since
+            report stays null on both paths). */}
+        <button data-testid="bs-export" onClick={doExport} disabled={exportBusy}>
+          {exportBusy ? 'Exporting…' : 'Export CSV'}
+        </button>
       </section>
 
-      {report && (
+      {busy && <LoadingState testId="bs-loading" label="Producing balance sheet…" />}
+      {exportBusy && <LoadingState testId="bs-export-loading" label="Preparing export…" />}
+      {exportError && <ErrorState testId="bs-export-error" message={exportError} />}
+      {exportUnauthorized && <UnauthorizedState testId="bs-export-unauthorized" message={exportUnauthorized} />}
+
+      {report && isEmpty && (
+        <EmptyState
+          testId="bs-empty"
+          title="No balance sheet data for this scope"
+          message="No asset, liability or equity accounts were returned for this entity/store/department/period."
+        />
+      )}
+
+      {report && !isEmpty && (
         <>
           <p style={{ marginTop: 12 }}>
             Entity {report.scope.entity} — As of {report.scope.asOf}
@@ -204,15 +269,15 @@ export default function BalanceSheet() {
             <tbody>
               <tr data-testid="bs-current-earnings">
                 <td colSpan={2}>Current-Period Earnings (included in Equity)</td>
-                <td style={{ textAlign: 'right', fontFamily: 'JetBrains Mono, monospace' }}>{fmt(report.equity.currentEarnings)}</td>
+                <MoneyCell value={report.equity.currentEarnings} />
               </tr>
               <tr data-testid="bs-grand-total" style={{ fontWeight: 700, borderTop: '2px solid #333' }}>
                 <td colSpan={2}>Total Liabilities + Equity</td>
-                <td style={{ textAlign: 'right', fontFamily: 'JetBrains Mono, monospace' }}>{fmt(report.totalLiabilitiesAndEquity)}</td>
+                <MoneyCell value={report.totalLiabilitiesAndEquity} bold />
               </tr>
               <tr data-testid="bs-reconciled-tb" style={{ color: '#555' }}>
                 <td colSpan={2}>Reconciled to Trial Balance (Dr / Cr)</td>
-                <td style={{ textAlign: 'right' }}>{fmt(report.reconciledToTrialBalance.drSum)} / {fmt(report.reconciledToTrialBalance.crSum)}</td>
+                <td style={{ textAlign: 'right' }}>{formatMoney(report.reconciledToTrialBalance.drSum)} / {formatMoney(report.reconciledToTrialBalance.crSum)}</td>
               </tr>
             </tbody>
           </table>
@@ -234,8 +299,8 @@ export default function BalanceSheet() {
         </>
       )}
 
-      {!report && !error && !imbalance && !unclassified && !busy && (
-        <p data-testid="bs-empty-state" style={{ marginTop: 24, color: '#666' }}>Run a Balance Sheet to see results.</p>
+      {!report && !error && !unauthorized && !imbalance && !unclassified && !busy && (
+        <EmptyState testId="bs-initial-state" title="Run a Balance Sheet to see results." />
       )}
 
       <p style={{ marginTop: 24 }}>
