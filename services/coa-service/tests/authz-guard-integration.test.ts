@@ -80,6 +80,10 @@ const ROLE_GRANTS: Record<string, ReadonlySet<string>> = {
     CONFIG_PERMISSIONS.VIEW, CONFIG_PERMISSIONS.MANAGE,
     FISCAL_PERMISSIONS.VIEW, FISCAL_PERMISSIONS.MANAGE,
     PERIOD_PERMISSIONS.VIEW, PERIOD_PERMISSIONS.OPEN,
+    // S008 — ADMIN holds every period-close permission, including the two
+    // elevated, ADMIN-only tiers (reopen_hard_closed, lock).
+    PERIOD_PERMISSIONS.SOFT_CLOSE, PERIOD_PERMISSIONS.HARD_CLOSE, PERIOD_PERMISSIONS.REOPEN,
+    PERIOD_PERMISSIONS.REOPEN_HARD_CLOSED, PERIOD_PERMISSIONS.LOCK,
     SEED_PERMISSIONS.RUN,
     SEQUENCE_PERMISSIONS.GAP_REPORT, SEQUENCE_PERMISSIONS.ALLOCATE,
     SOURCE_PERMISSIONS.VIEW, SOURCE_PERMISSIONS.MANAGE,
@@ -96,6 +100,16 @@ const ROLE_GRANTS: Record<string, ReadonlySet<string>> = {
     JE_DRAFT_PERMISSIONS.CREATE, JE_DRAFT_PERMISSIONS.EDIT, JE_DRAFT_PERMISSIONS.VOID,
     INQUIRY_PERMISSIONS.VIEW,
     SEARCH_PERMISSIONS.SEARCH,
+  ]),
+  // S008 — CONTROLLER: soft-close/hard-close/reopen (SOFT_CLOSED->OPEN) per
+  // the auth-service migration's ADMIN+CONTROLLER grant. Deliberately does
+  // NOT include reopen_hard_closed or lock — those are the ADMIN-only tier;
+  // their absence here is what the dedicated two-tier-separation test below
+  // proves (a role with SOME period-close permissions but not the elevated
+  // ones is still denied on those two, not just a role with none at all).
+  CONTROLLER: new Set([
+    PERIOD_PERMISSIONS.VIEW,
+    PERIOD_PERMISSIONS.SOFT_CLOSE, PERIOD_PERMISSIONS.HARD_CLOSE, PERIOD_PERMISSIONS.REOPEN,
   ]),
   CLERK: new Set([JE_PERMISSIONS.VIEW, JE_DRAFT_PERMISSIONS.CREATE, JE_DRAFT_PERMISSIONS.EDIT, JE_DRAFT_PERMISSIONS.VOID]),
 };
@@ -143,6 +157,11 @@ describe('coa-service route-level authorization (R0 Stabilization Phase 3)', () 
     { story: 'S208', permission: FISCAL_PERMISSIONS.MANAGE, routeFn: fiscalRoutes, serviceToken: 'FiscalCalendarService', prefix: '/fiscal', method: 'POST', path: '/fiscal/entities/e1/fiscal-calendar', grantedRole: 'ADMIN', payload: { fyStartMonth: 1, structure: 'TWELVE' } },
     { story: 'S209', permission: PERIOD_PERMISSIONS.VIEW, routeFn: periodRoutes, serviceToken: 'PeriodService', prefix: '/fiscal', method: 'GET', path: '/fiscal/periods', grantedRole: 'ACCOUNTANT' },
     { story: 'S209', permission: PERIOD_PERMISSIONS.OPEN, routeFn: periodRoutes, serviceToken: 'PeriodService', prefix: '/fiscal', method: 'POST', path: '/fiscal/periods/p1/open', grantedRole: 'ADMIN', payload: {} },
+    { story: 'S008', permission: PERIOD_PERMISSIONS.SOFT_CLOSE, routeFn: periodRoutes, serviceToken: 'PeriodService', prefix: '/fiscal', method: 'POST', path: '/fiscal/periods/p1/soft-close', grantedRole: 'CONTROLLER', payload: { reason: 'x' } },
+    { story: 'S008', permission: PERIOD_PERMISSIONS.HARD_CLOSE, routeFn: periodRoutes, serviceToken: 'PeriodService', prefix: '/fiscal', method: 'POST', path: '/fiscal/periods/p1/hard-close', grantedRole: 'CONTROLLER', payload: { reason: 'x' } },
+    { story: 'S008', permission: PERIOD_PERMISSIONS.REOPEN, routeFn: periodRoutes, serviceToken: 'PeriodService', prefix: '/fiscal', method: 'POST', path: '/fiscal/periods/p1/reopen', grantedRole: 'CONTROLLER', payload: { reason: 'x' } },
+    { story: 'S008', permission: PERIOD_PERMISSIONS.REOPEN_HARD_CLOSED, routeFn: periodRoutes, serviceToken: 'PeriodService', prefix: '/fiscal', method: 'POST', path: '/fiscal/periods/p1/reopen-hard-closed', grantedRole: 'ADMIN', payload: { reason: 'x', confirm: true } },
+    { story: 'S008', permission: PERIOD_PERMISSIONS.LOCK, routeFn: periodRoutes, serviceToken: 'PeriodService', prefix: '/fiscal', method: 'POST', path: '/fiscal/periods/p1/lock', grantedRole: 'ADMIN', payload: { reason: 'x', confirm: true } },
     { story: 'S010', permission: SEED_PERMISSIONS.RUN, routeFn: seedRoutes, serviceToken: 'SeedService', prefix: '/coa', method: 'POST', path: '/coa/seed', grantedRole: 'ADMIN', payload: {} },
     { story: 'S213', permission: SEQUENCE_PERMISSIONS.GAP_REPORT, routeFn: sequenceRoutes, serviceToken: 'SequenceService', prefix: '/coa', method: 'GET', path: '/coa/journals/gap-report', grantedRole: 'ACCOUNTANT' },
     { story: 'S213', permission: SEQUENCE_PERMISSIONS.ALLOCATE, routeFn: sequenceRoutes, serviceToken: 'SequenceService', prefix: '/coa', method: 'POST', path: '/coa/journal-sequences/allocate', grantedRole: 'ADMIN', payload: { sourceCode: 'GJ', periodCode: '2026-01' } },
@@ -206,6 +225,63 @@ describe('coa-service route-level authorization (R0 Stabilization Phase 3)', () 
       });
     });
   }
+
+  // ── S008 — two-tier reopen/lock separation ──────────────────────────────────
+  // The generic loop above proves each permission is enforced against a role
+  // with NO period-close permissions at all. That's not the same as proving
+  // the two-TIER split is real: CONTROLLER genuinely holds three of the five
+  // S008 permissions (soft_close/hard_close/reopen) yet must still be denied
+  // on the two elevated, ADMIN-only ones (reopen_hard_closed, lock) — a
+  // stronger negative than "holds nothing".
+  describe('S008 — reopen-hard-closed and lock are ADMIN-only, not CONTROLLER (two-tier reopen model)', () => {
+    let app: FastifyInstance;
+
+    beforeEach(async () => {
+      container.registerInstance('PeriodService', permissiveFakeService());
+      registerFakeAuthz();
+      app = await buildApp(periodRoutes, '/fiscal');
+    });
+
+    afterEach(async () => {
+      await app.close();
+    });
+
+    it('CONTROLLER (holds soft_close/hard_close/reopen) is denied reopen-hard-closed', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/fiscal/periods/p1/reopen-hard-closed',
+        headers: authed('CONTROLLER'),
+        payload: { reason: 'x', confirm: true },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({ error: 'FORBIDDEN', reason: 'NO_MATCHING_ROLE' });
+    });
+
+    it('CONTROLLER (holds soft_close/hard_close/reopen) is denied lock', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/fiscal/periods/p1/lock',
+        headers: authed('CONTROLLER'),
+        payload: { reason: 'x', confirm: true },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({ error: 'FORBIDDEN', reason: 'NO_MATCHING_ROLE' });
+    });
+
+    it('CONTROLLER can still soft-close, hard-close, and reopen (the ordinary tier is unaffected)', async () => {
+      for (const path of ['/fiscal/periods/p1/soft-close', '/fiscal/periods/p1/hard-close', '/fiscal/periods/p1/reopen']) {
+        const res = await app.inject({ method: 'POST', url: path, headers: authed('CONTROLLER'), payload: { reason: 'x' } });
+        expect(res.statusCode, `expected ${path} to allow CONTROLLER`).not.toBe(403);
+      }
+    });
+
+    it('ADMIN holds both elevated permissions', async () => {
+      for (const path of ['/fiscal/periods/p1/reopen-hard-closed', '/fiscal/periods/p1/lock']) {
+        const res = await app.inject({ method: 'POST', url: path, headers: authed('ADMIN'), payload: { reason: 'x', confirm: true } });
+        expect(res.statusCode, `expected ${path} to allow ADMIN`).not.toBe(403);
+      }
+    });
+  });
 
   // ── draft-routes.ts special cases: requireDraftReader (any-of) + actorOf flags ──
 
