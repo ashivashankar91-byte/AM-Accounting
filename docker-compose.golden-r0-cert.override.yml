@@ -1,0 +1,112 @@
+# DISPOSABLE, ISOLATED Golden R0 certification stack — Phase 5 (product
+# checkpoint) requirement. Distinct project name (amacc-golden-r0-cert),
+# distinct fresh volumes, distinct port range (every port from
+# docker-compose.final-r0-ports.override.yml + 20000), so this can run
+# fully alongside the long-lived amacc-final-r0 stack and the unrelated
+# am-accounting sibling stack without touching either. `ports` uses the
+# same !override merge-control tag for the same reason documented in
+# docker-compose.final-r0-ports.override.yml.
+services:
+  agent-apar:
+    ports: !override
+    - 33023:3023
+  agent-eom:
+    ports: !override
+    - 33021:3021
+  agent-gl:
+    ports: !override
+    - 33020:3020
+  agent-payroll:
+    ports: !override
+    - 33022:3022
+  agent-t1:
+    ports: !override
+    - 33024:3024
+  analytics-service:
+    ports: !override
+    - 33046:3046
+  apar-service:
+    ports: !override
+    - 33013:3013
+  api-gateway:
+    ports: !override
+    - 33100:3000
+  approval-service:
+    ports: !override
+    - 33033:3033
+  audit-service:
+    ports: !override
+    - 33031:3031
+  auth-service:
+    ports: !override
+    - 33001:3001
+  cashflow-service:
+    ports: !override
+    - 33037:3037
+  coa-service:
+    ports: !override
+    - 33016:3016
+  compliance-service:
+    ports: !override
+    - 33043:3043
+  connector-service:
+    ports: !override
+    - 33032:3032
+  document-service:
+    ports: !override
+    - 33038:3038
+  eom-service:
+    ports: !override
+    - 33011:3011
+  fs-service:
+    ports: !override
+    - 33015:3015
+  gl-service:
+    ports: !override
+    - 33010:3010
+  group-service:
+    ports: !override
+    - 33039:3039
+  notification-service:
+    ports: !override
+    - 33030:3030
+  onboarding-service:
+    ports: !override
+    - 33035:3035
+  orchestrator-service:
+    ports: !override
+    - 33048:3048
+  payroll-service:
+    ports: !override
+    - 33012:3012
+  postgres:
+    ports: !override
+    - 25444:5432
+  query-service:
+    ports: !override
+    - 33045:3045
+  rabbitmq:
+    ports: !override
+    - 25446:5672
+    - 25447:15672
+  recon-service:
+    ports: !override
+    - 33014:3014
+  redis:
+    ports: !override
+    - 25445:6379
+  schedule-service:
+    ports: !override
+    - 33018:3018
+  tenant-service:
+    ports: !override
+    - 33002:3002
+  user-service:
+    ports: !override
+    - 33040:3040
+  web:
+    ports: !override
+    - 35174:5174
+  webhook-service:
+    ports: !override
+    - 33036:3036

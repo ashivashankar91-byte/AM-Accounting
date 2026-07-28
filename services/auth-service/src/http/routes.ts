@@ -18,9 +18,11 @@ import {
 // service's own role/user/role-template routes) verifies with
 // AMACC_JWT_SECRET — two different values in .env, so every token this route
 // issued failed signature verification everywhere except here. Unified to
-// AMACC_JWT_SECRET, matching every other consumer. JWT_SECRET remains a
-// required, separate env var used elsewhere (e.g. the internal audit
-// client) — untouched.
+// AMACC_JWT_SECRET, matching every other consumer. The same split recurred
+// in the internal audit outbox drainer's service-token signing
+// (packages/shared-kernel/src/audit/audit-client.ts) and was fixed there
+// too. JWT_SECRET remains a required env var (kept as a documented fallback
+// only) but no longer drives any signature verification path.
 const JWT_SECRET = process.env['AMACC_JWT_SECRET'];
 if (!JWT_SECRET) throw new Error('FATAL: AMACC_JWT_SECRET environment variable is required. auth-service cannot start without it.');
 const JWT_ISSUER = process.env['JWT_ISSUER'] ?? 'amacc';

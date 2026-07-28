@@ -51,6 +51,14 @@
 import { test, expect } from '@playwright/test';
 
 const BASE = '/amacc';
+// Golden R0 UI convergence — Phase 5 (isolated cert environment) fix: this
+// file made several direct `request.*` calls hardcoded to the long-lived
+// amacc-final-r0 stack's gateway port (localhost:13100), so those calls
+// silently exercised the WRONG stack whenever run against a different
+// isolated/disposable environment, even with BASE_URL correctly pointed at
+// that environment's frontend. API_BASE lets the gateway target travel
+// with BASE_URL instead of being pinned to one specific environment.
+const API_BASE = process.env['API_BASE'] ?? 'http://localhost:13100';
 const TENANT_A = '1cf31f14-cb0b-4261-a41d-f79953594c86';
 const TENANT_B = 'e410db34-d007-46f9-8e34-aab2009299c9';
 const ADMIN_EMAIL = 'admin@kunes-final-r0.test';
@@ -89,7 +97,7 @@ async function resolveOpenPeriodEntryDate(page: any, request: any, tenantId: str
     localStorage.getItem('goldenpath.accessToken'),
     localStorage.getItem('goldenpath.legalEntityId'),
   ]);
-  const res = await request.get(`http://localhost:13100/api/v1/fiscal/periods?entity=${entityId}`, {
+  const res = await request.get(`${API_BASE}/api/v1/fiscal/periods?entity=${entityId}`, {
     headers: { Authorization: `Bearer ${token}`, 'x-tenant-id': tenantId },
   });
   if (!res.ok()) {
@@ -149,10 +157,27 @@ test.describe('Golden R0 — full 16-step browser journey (positive)', () => {
     // 5. Fiscal calendar + accounting period — define/generate if this is
     // this entity's first run, then open a period.
     await expect(page.getByTestId('fiscal-calendar-status')).toBeVisible({ timeout: 10_000 });
+    // Real race found live: FiscalPeriod.tsx fetches the calendar + period
+    // board asynchronously on mount (no loading indicator), so an immediate
+    // isEnabled() check below can read the pre-fetch "disabled" default even
+    // when a period is already OPEN in the DB -- this previously caused the
+    // suite to wrongly attempt "generate current fiscal year" against an
+    // already-provisioned year and hit a real 409 FISCAL_YEAR_OVERLAP.
+    // Waiting for the network to go idle lets the real refresh() calls land
+    // before this state is read.
+    await page.waitForLoadState('networkidle');
     if (!(await page.getByTestId('fiscal-continue').isEnabled())) {
       await page.getByTestId('fiscal-define-generate').click();
       await expect(page.getByTestId('period-board')).toBeVisible({ timeout: 10_000 });
       const openButtons = page.locator('[data-testid^="open-period-"]');
+      // Real race found live in this environment: the board renders (header
+      // only) before the async "generate fiscal year" call resolves, so an
+      // immediate openButtons.count() reads 0 and the click below is
+      // skipped entirely -- every period is left stuck at FUTURE and
+      // fiscal-continue never becomes enabled. Wait for the first button to
+      // actually attach (bounded; a no-op if there is genuinely nothing to
+      // open, e.g. a period is already OPEN) before deciding whether to click.
+      await openButtons.first().waitFor({ state: 'visible', timeout: 15_000 }).catch(() => undefined);
       if ((await openButtons.count()) > 0) {
         await openButtons.first().click();
       }
@@ -506,7 +531,7 @@ test.describe('Golden R0 — full 16-step browser journey (positive)', () => {
 
     // 11. Verify unauthorized behavior — real HTTP call, no token, against
     // the real gateway (not a mocked response).
-    const unauthResp = await request.get('http://localhost:13100/api/v1/coa/inquiry/search?sourceCode=ADJ', {
+    const unauthResp = await request.get(`${API_BASE}/api/v1/coa/inquiry/search?sourceCode=ADJ`, {
       headers: { 'x-tenant-id': TENANT_A },
     });
     expect(unauthResp.status()).toBe(401);
@@ -515,30 +540,30 @@ test.describe('Golden R0 — full 16-step browser journey (positive)', () => {
     // tenant A (real), then attempt to run/delete it as a real tenant B
     // session; both must be denied without leaking existence.
     const tenantAToken = await page.evaluate(() => localStorage.getItem('goldenpath.accessToken'));
-    const createResp = await request.post('http://localhost:13100/api/v1/coa/inquiry/searches', {
+    const createResp = await request.post(`${API_BASE}/api/v1/coa/inquiry/searches`, {
       headers: { Authorization: `Bearer ${tenantAToken}`, 'x-tenant-id': TENANT_A },
       data: { name: `E2E-XTenant-${Date.now()}`, criteria: { sourceCode: 'ADJ' } },
     });
     expect(createResp.status()).toBe(201);
     const created = await createResp.json();
 
-    const tenantBLogin = await request.post('http://localhost:13100/api/v1/auth/login', {
+    const tenantBLogin = await request.post(`${API_BASE}/api/v1/auth/login`, {
       data: { tenantId: TENANT_B, email: XT_EMAIL, password: PASSWORD },
     });
     expect(tenantBLogin.status()).toBe(200);
     const tenantBToken = (await tenantBLogin.json()).accessToken;
 
-    const xtRun = await request.get(`http://localhost:13100/api/v1/coa/inquiry/searches/${created.id}/run`, {
+    const xtRun = await request.get(`${API_BASE}/api/v1/coa/inquiry/searches/${created.id}/run`, {
       headers: { Authorization: `Bearer ${tenantBToken}`, 'x-tenant-id': TENANT_B },
     });
     expect(xtRun.status()).toBe(404);
-    const xtDelete = await request.delete(`http://localhost:13100/api/v1/coa/inquiry/searches/${created.id}`, {
+    const xtDelete = await request.delete(`${API_BASE}/api/v1/coa/inquiry/searches/${created.id}`, {
       headers: { Authorization: `Bearer ${tenantBToken}`, 'x-tenant-id': TENANT_B },
     });
     expect(xtDelete.status()).toBe(404);
 
     // Cleanup — delete the real fixture created for step 12 as its real owner.
-    await request.delete(`http://localhost:13100/api/v1/coa/inquiry/searches/${created.id}`, {
+    await request.delete(`${API_BASE}/api/v1/coa/inquiry/searches/${created.id}`, {
       headers: { Authorization: `Bearer ${tenantAToken}`, 'x-tenant-id': TENANT_A },
     });
   });

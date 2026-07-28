@@ -38,14 +38,25 @@ import { test, expect } from '@playwright/test';
 import { execSync } from 'node:child_process';
 
 const BASE = '/amacc';
-const API = 'http://localhost:13100';
+// Golden R0 UI convergence — Phase 5 (isolated cert environment) fix: was
+// hardcoded to the long-lived amacc-final-r0 stack's gateway port, so this
+// suite silently exercised the WRONG stack whenever run against any other
+// isolated/disposable environment (e.g. a fresh-ports cert stack) even with
+// BASE_URL correctly pointed at that environment's frontend. API_BASE lets
+// the gateway target travel with BASE_URL instead of being pinned to one
+// specific long-lived environment.
+const API = process.env['API_BASE'] ?? 'http://localhost:13100';
 const TENANT_A = '1cf31f14-cb0b-4261-a41d-f79953594c86';
 const ADMIN_EMAIL = 'admin@kunes-final-r0.test';
 const PASSWORD = 'FinalR0-Evidence-2026!';
 const CLERK_EMAIL = 'clerk@kunes-final-r0.test';
 const GL_ENTITY = '01';
 const GL_AS_OF = '2026-02';
-const PG_CONTAINER = 'amacc-final-r0-postgres-1';
+// Golden R0 UI convergence — Phase 5 (isolated cert environment) fix: was
+// hardcoded to the long-lived amacc-final-r0 stack's Postgres container, so
+// these direct-SQL scratch fixtures would silently mutate the WRONG
+// database when this suite runs against a different isolated stack.
+const PG_CONTAINER = process.env['PG_CONTAINER'] ?? 'amacc-final-r0-postgres-1';
 
 function psql(sql: string): string {
   return execSync(
@@ -87,7 +98,7 @@ test.describe('Golden R0 — journal control-plane negatives (coa-service)', () 
     await expect(page.getByTestId('journal-line-0-account')).toBeVisible({ timeout: 10_000 });
     await page.getByTestId('journal-entry-date').fill('2026-01-20');
     await page.getByTestId('journal-memo').fill(`E2E-unbalanced-${Date.now()}`);
-    await page.getByTestId('journal-line-0-account').selectOption({ label: '60000 Office Supplies Expense' });
+    await page.getByTestId('journal-line-0-account').selectOption({ label: '60050 Office Supplies Expense' });
     await page.getByTestId('journal-line-0-store').selectOption({ index: 1 });
     await page.getByTestId('journal-line-0-dept').fill('20');
     await page.getByTestId('journal-line-0-dr').fill('50');
@@ -119,7 +130,7 @@ test.describe('Golden R0 — journal control-plane negatives (coa-service)', () 
     await expect(page.getByTestId('journal-line-0-account')).toBeVisible({ timeout: 10_000 });
     await page.getByTestId('journal-entry-date').fill('2026-01-20');
     await page.getByTestId('journal-memo').fill(`E2E-duppost-${Date.now()}`);
-    await page.getByTestId('journal-line-0-account').selectOption({ label: '60000 Office Supplies Expense' });
+    await page.getByTestId('journal-line-0-account').selectOption({ label: '60050 Office Supplies Expense' });
     await page.getByTestId('journal-line-0-store').selectOption({ index: 1 });
     await page.getByTestId('journal-line-0-dept').fill('20');
     await page.getByTestId('journal-line-0-dr').fill('15');
@@ -156,7 +167,7 @@ test.describe('Golden R0 — journal control-plane negatives (coa-service)', () 
     await expect(page.getByTestId('journal-line-0-account')).toBeVisible({ timeout: 10_000 });
     await page.getByTestId('journal-entry-date').fill('2026-01-20');
     await page.getByTestId('journal-memo').fill(`E2E-doublereverse-${Date.now()}`);
-    await page.getByTestId('journal-line-0-account').selectOption({ label: '60000 Office Supplies Expense' });
+    await page.getByTestId('journal-line-0-account').selectOption({ label: '60050 Office Supplies Expense' });
     await page.getByTestId('journal-line-0-store').selectOption({ index: 1 });
     await page.getByTestId('journal-line-0-dept').fill('20');
     await page.getByTestId('journal-line-0-dr').fill('10');

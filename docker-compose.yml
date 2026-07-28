@@ -17,7 +17,11 @@
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-sk-ant-placeholder}
   # AMACC_JWT_SECRET must be set in .env â€” no default allowed in production
   AMACC_JWT_SECRET: ${AMACC_JWT_SECRET:?AMACC_JWT_SECRET is required}
-  # auth-service uses JWT_SECRET (its own issuer)
+  # Golden R0 Phase 5 fix: JWT_SECRET is no longer used by any signature
+  # issuance or verification path (auth-service and every downstream
+  # consumer, including the internal audit outbox drainer, now use
+  # AMACC_JWT_SECRET exclusively) -- kept required here only because some
+  # deployments may still reference it; do not wire new code to it.
   JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
   JWT_ISSUER: amacc
   ADMIN_API_KEY: ${ADMIN_API_KEY:?ADMIN_API_KEY is required}
