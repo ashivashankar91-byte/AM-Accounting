@@ -838,6 +838,36 @@ export const goldenPathApi = {
       body: JSON.stringify({ confirm }),
     }),
 
+  // S008 — soft-close/hard-close/reopen/reopen-hard-closed/lock. All five
+  // share the same {transitioned, status, requiresConfirmation?, message?}
+  // response shape as openPeriod() above; reopen-hard-closed and lock are
+  // two-step (first call without confirm returns requiresConfirmation).
+  softClosePeriod: (periodId: string, reason: string) =>
+    apiFetch<any>(`/api/v1/fiscal/periods/${periodId}/soft-close`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+  hardClosePeriod: (periodId: string, reason: string) =>
+    apiFetch<any>(`/api/v1/fiscal/periods/${periodId}/hard-close`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+  reopenPeriod: (periodId: string, reason: string) =>
+    apiFetch<any>(`/api/v1/fiscal/periods/${periodId}/reopen`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+  reopenHardClosedPeriod: (periodId: string, reason: string, confirm = false) =>
+    apiFetch<any>(`/api/v1/fiscal/periods/${periodId}/reopen-hard-closed`, {
+      method: 'POST',
+      body: JSON.stringify({ reason, confirm }),
+    }),
+  lockPeriod: (periodId: string, reason: string, confirm = false) =>
+    apiFetch<any>(`/api/v1/fiscal/periods/${periodId}/lock`, {
+      method: 'POST',
+      body: JSON.stringify({ reason, confirm }),
+    }),
+
   listStores: (entityId: string) => apiFetch<{ items: any[] }>(`/api/v1/stores?entityId=${entityId}`),
   listDepartments: (entityId: string) => apiFetch<{ items: any[] }>(`/api/v1/legal-entities/${entityId}/departments`),
 

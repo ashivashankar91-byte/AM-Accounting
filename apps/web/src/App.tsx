@@ -98,6 +98,7 @@ import GLInquiry from './pages/goldenpath/GLInquiry';
 import MFGDCSCommunications from './pages/accounting/MFGDCSCommunications';
 import PartsGLAccounts from './pages/accounting/admin/PartsGLAccounts';
 import ServiceGLAccounts from './pages/accounting/admin/ServiceGLAccounts';
+import PeriodControl from './pages/accounting/admin/PeriodControl';
 import TechnicianMasterFile from './pages/service/TechnicianMasterFile';
 import ServiceHistory from './pages/service/ServiceHistory';
 import ReportMate from './pages/reporting/ReportMate';
@@ -226,11 +227,13 @@ const MODULES: AppModule[] = [
     defaultPath: '/accounting/eom',
     matchPrefixes: [
       '/accounting/eom', '/accounting/financial-statements', '/accounting/recurring',
+      '/accounting/admin/periods',
       '/eom', '/financial-statements', '/fs', '/year-end',
     ],
     sections: [
       { title: 'Close', items: [
         { path: '/accounting/eom',                    label: 'End of Month Close' },
+        { path: '/accounting/admin/periods',          label: 'Fiscal Period Control' },
         { path: '/accounting/financial-statements',   label: 'Financial Statements' },
         { path: '/accounting/recurring',              label: 'Recurring Entries' },
         { path: '/year-end',                          label: 'Year-End Close' },
@@ -564,6 +567,7 @@ export default function App() {
               <Route path="/accounting/bank-recon" element={<BankReconWorkflow />} />
               <Route path="/accounting/payroll" element={<PayrollWorkflow />} />
               <Route path="/accounting/eom" element={<EOMWorkflow />} />
+              <Route path="/accounting/admin/periods" element={<PeriodControl />} />
               <Route path="/accounting/financial-statements" element={<FSWorkflow />} />
               <Route path="/accounting/purchase-orders" element={<POWorkflow />} />
               <Route path="/accounting/recurring" element={<RecurringWorkflow />} />
