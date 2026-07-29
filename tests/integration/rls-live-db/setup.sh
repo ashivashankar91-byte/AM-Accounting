@@ -91,8 +91,18 @@ for svc in tenant-service auth-service coa-service audit-service; do
     # synthesized bootstrap. Fixed here by excluding both tables (and their
     # indexes) from the bootstrap output so the real migration.sql — applied
     # further below — is the sole, correct creator of both.
+    # S019/S020 finding (same class as the S008 one above): the posting-engine
+    # tables carry hand-written CHECK constraints + an immutability trigger
+    # that `prisma migrate diff --to-schema-datamodel` cannot express. If the
+    # bootstrap step below created them first, the real migration.sql's
+    # (IF-NOT-EXISTS-rewritten) CREATE TABLE statements would be skipped as
+    # "already exists", silently dropping the CHECK constraints and leaving
+    # the immutability trigger the only defense — untested here. Excluded the
+    # same way: the real migration.sql (applied further below, unrewritten,
+    # as sole creator) is what actually runs.
     eval "$GEN" \
       | sed -E '/^CREATE TABLE "fiscal_period_transition"/,/^\);$/d; /^CREATE TABLE "adjusting_entry_attestation"/,/^\);$/d; /ON "fiscal_period_transition"/d; /ON "adjusting_entry_attestation"/d; /^ALTER TABLE "fiscal_period_transition" ADD CONSTRAINT/d' \
+      | sed -E '/^CREATE TABLE "posting_rule_pack"/,/^\);$/d; /^CREATE TABLE "posting_rule_pack_version"/,/^\);$/d; /^CREATE TABLE "posting_execution"/,/^\);$/d; /^CREATE TABLE "posting_execution_attempt"/,/^\);$/d; /^CREATE TABLE "posting_exception"/,/^\);$/d; /ON "posting_rule_pack"/d; /ON "posting_rule_pack_version"/d; /ON "posting_execution"/d; /ON "posting_execution_attempt"/d; /ON "posting_exception"/d; /^ALTER TABLE "posting_rule_pack_version" ADD CONSTRAINT/d; /^ALTER TABLE "posting_execution" ADD CONSTRAINT/d; /^ALTER TABLE "posting_execution_attempt" ADD CONSTRAINT/d; /^ALTER TABLE "posting_exception" ADD CONSTRAINT/d' \
       | sed -E 's/^CREATE TABLE "/CREATE TABLE IF NOT EXISTS "/g; s/^CREATE (UNIQUE )?INDEX /CREATE \1INDEX IF NOT EXISTS /g' \
       >> "$COMBINED"
   else
@@ -146,6 +156,11 @@ sed -E \
   -e 's/^CREATE (UNIQUE )?INDEX "/CREATE \1INDEX IF NOT EXISTS "/' \
   "$REPO_ROOT/services/coa-service/prisma/migrations/20260728010000_s008_period_close_control/migration.sql" \
   | psql -h "$PGHOST" -p "$PGPORT" -U amacc_test -d "$DB_NAME" -v ON_ERROR_STOP=1 -f -
+
+echo "==> S019/S020: applying posting-engine tables + CHECK constraints + immutability"
+echo "    trigger + RLS (excluded from the bootstrap step above; sole creator here)."
+psql -h "$PGHOST" -p "$PGPORT" -U amacc_test -d "$DB_NAME" -v ON_ERROR_STOP=1 \
+  -f "$REPO_ROOT/services/coa-service/prisma/migrations/20260729010000_add_posting_engine/migration.sql" >/dev/null
 
 echo ""
 echo "==> ready. Connection strings:"

@@ -672,3 +672,148 @@ model RecurringTemplateGeneration {
   @@index([tenantId, batchId])
   @@map("recurring_template_generation")
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// S019/S020 — Posting Engine: DSL rule packs, deterministic evaluation and
+// idempotent posting orchestration. This slice is a CLIENT of PostingService
+// (posting-service.ts) — it never writes journal_entry/journal_line directly.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// S019 — Stable rule-pack identity (one row per packKey per tenant). Versions
+/// carry all the actual content; this row exists so version history has a
+/// stable parent to hang off regardless of how many versions are drafted.
+model PostingRulePack {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  packKey   String   @map("pack_key")
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  versions PostingRulePackVersion[]
+
+  @@unique([tenantId, packKey])
+  @@index([tenantId])
+  @@map("posting_rule_pack")
+}
+
+/// S019 — Immutable-once-activated rule-pack version. `definition` is the
+/// full validated Posting DSL v1 document (canonical AST); `contentHash` is
+/// the stable sha256 over its canonical serialization. Lifecycle: DRAFT ->
+/// VALIDATED -> ACTIVE -> SUPERSEDED (or DRAFT/VALIDATED -> REJECTED). Once a
+/// version reaches ACTIVE, `enforce_posting_rule_pack_version_immutability()`
+/// (see migration 20260729010000_add_posting_engine) blocks any further
+/// change to `definition`/`content_hash` and blocks reverting status back to
+/// DRAFT/VALIDATED — the DB trigger is the real backstop, not just the
+/// application-layer guard in PostingEngineService.
+model PostingRulePackVersion {
+  id                  String    @id @default(uuid())
+  tenantId            String    @map("tenant_id")
+  rulePackId          String    @map("rule_pack_id")
+  packKey             String    @map("pack_key")
+  semver              String
+  dslVersion           Int      @map("dsl_version")
+  eventType           String    @map("event_type")
+  eventSchemaVersions  String[] @map("event_schema_versions")
+  entityId            String    @map("entity_id")
+  effectiveFrom        DateTime @map("effective_from")
+  effectiveTo          DateTime? @map("effective_to")
+  journalSourceCode    String   @map("journal_source_code")
+  matchStrategy        String   @map("match_strategy")
+  noMatchBehavior      String   @map("no_match_behavior")
+  definition           Json
+  contentHash          String   @map("content_hash")
+  status               String   @default("DRAFT") // DRAFT | VALIDATED | ACTIVE | SUPERSEDED | REJECTED
+  validationFindings   Json?    @map("validation_findings")
+  createdBy            String   @map("created_by")
+  createdAt            DateTime @default(now()) @map("created_at")
+  validatedAt          DateTime? @map("validated_at")
+  activatedBy          String?  @map("activated_by")
+  activatedAt          DateTime? @map("activated_at")
+  supersededAt         DateTime? @map("superseded_at")
+
+  rulePack   PostingRulePack    @relation(fields: [rulePackId], references: [id])
+  executions PostingExecution[]
+
+  @@unique([tenantId, packKey, semver])
+  @@index([tenantId, eventType, status])
+  @@index([tenantId, rulePackId])
+  @@map("posting_rule_pack_version")
+}
+
+/// S020 — One row per tenantId+eventId (the idempotency identity). Holds the
+/// approved event representation, the pinned rule-pack version/rule that
+/// evaluated it, and the resulting journal reference (a read-only pointer —
+/// never a foreign key the posting engine can write through).
+model PostingExecution {
+  id                 String    @id @default(uuid())
+  tenantId           String    @map("tenant_id")
+  eventId            String    @map("event_id")
+  eventType          String    @map("event_type")
+  eventSchemaVersion String    @map("event_schema_version")
+  sourceSystem       String    @map("source_system")
+  sourceEntityType   String    @map("source_entity_type")
+  sourceEntityId     String    @map("source_entity_id")
+  correlationId      String    @map("correlation_id")
+  causationId        String?   @map("causation_id")
+  businessDate       DateTime  @map("business_date") @db.Date
+  eventHash          String    @map("event_hash")
+  eventEnvelope      Json      @map("event_envelope")
+  status             String    // POSTED | NO_RULE_MATCH | IDENTITY_CONFLICT | REJECTED | FAILED
+  rulePackVersionId  String?   @map("rule_pack_version_id")
+  ruleId             String?   @map("rule_id")
+  blueprintHash      String?   @map("blueprint_hash")
+  journalEntryId     String?   @map("journal_entry_id")
+  journalNumber      String?   @map("journal_number")
+  failureReason      String?   @map("failure_reason")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  rulePackVersion PostingRulePackVersion? @relation(fields: [rulePackVersionId], references: [id])
+  attempts        PostingExecutionAttempt[]
+  exceptions      PostingException[]
+
+  @@unique([tenantId, eventId])
+  @@index([tenantId, eventType, status])
+  @@index([tenantId, correlationId])
+  @@index([tenantId, sourceEntityId])
+  @@map("posting_execution")
+}
+
+/// S020 — Append-only attempt ledger for a PostingExecution (retry/reconcile
+/// history). Never updated or deleted, only inserted.
+model PostingExecutionAttempt {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  executionId   String   @map("execution_id")
+  attemptNumber Int      @map("attempt_number")
+  outcome       String   // STARTED | POSTED | DUPLICATE | NO_RULE_MATCH | IDENTITY_CONFLICT | REJECTED | FAILED
+  detail        Json?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  execution PostingExecution @relation(fields: [executionId], references: [id])
+
+  @@unique([executionId, attemptNumber])
+  @@index([tenantId])
+  @@map("posting_execution_attempt")
+}
+
+/// S020 — Durable, queryable no-rule-match / identity-conflict record
+/// (BR S020-F/BR S020-3d). Never silently dropped, never marks the event
+/// "successful"; replay is explicitly out of scope for this story.
+model PostingException {
+  id                         String   @id @default(uuid())
+  tenantId                   String   @map("tenant_id")
+  executionId                String   @map("execution_id")
+  reasonCode                 String   @map("reason_code") // NO_RULE_MATCH | EVENT_IDENTITY_CONFLICT
+  reasonDetail                String  @map("reason_detail")
+  eventType                  String   @map("event_type")
+  eventSchemaVersion          String  @map("event_schema_version")
+  rulePackVersionsConsidered  Json    @map("rule_pack_versions_considered")
+  createdAt                  DateTime @default(now()) @map("created_at")
+
+  execution PostingExecution @relation(fields: [executionId], references: [id])
+
+  @@index([tenantId, reasonCode])
+  @@index([tenantId, executionId])
+  @@map("posting_exception")
+}

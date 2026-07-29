@@ -16,6 +16,7 @@ import { recurringTemplateRoutes } from './http/recurring-template-routes';
 import { glInquiryRoutes } from './http/gl-inquiry-routes';
 import { glSearchRoutes } from './http/gl-search-routes';
 import { analysisCodeRoutes } from './http/analysis-code-routes';
+import { postingEngineRoutes } from './http/posting-engine-routes';
 import { CoAService } from './application/coa-service';
 import { ConfigService } from './application/config-service';
 import { FiscalCalendarService } from './application/fiscal-service';
@@ -32,6 +33,7 @@ import { RecurringTemplateService } from './application/recurring-template-servi
 import { GLInquiryService } from './application/gl-inquiry-service';
 import { GLSearchService } from './application/gl-search-service';
 import { AnalysisCodeService } from './application/analysis-code-service';
+import { PostingEngineService } from './application/posting-engine-service';
 import { RabbitMQEventPublisher } from './infrastructure/event-publisher';
 import {
   IEventPublisher, HttpAuthzClient, AuthzClient,
@@ -112,6 +114,11 @@ async function bootstrap() {
   container.register('GLSearchService', { useClass: GLSearchService });
   container.register('AnalysisCodeService', { useClass: AnalysisCodeService });
 
+  // S019/S020: Posting Engine — DSL rule packs + idempotent event-driven
+  // posting orchestration. A client of PostingService.post(), never a second
+  // write path into the ledger.
+  container.register('PostingEngineService', { useClass: PostingEngineService });
+
   // Cache invalidation on config.changed (belt-and-braces; put() also invalidates
   // in-process). Keeps propagation within the <=60s target across replicas.
   try {
@@ -146,6 +153,8 @@ async function bootstrap() {
   await app.register(glInquiryRoutes, { prefix: '/api/v1/coa' });
   await app.register(glSearchRoutes, { prefix: '/api/v1/coa' });
   await app.register(analysisCodeRoutes, { prefix: '/api/v1/coa' });
+
+  await app.register(postingEngineRoutes, { prefix: '/api/v1/coa' });
 
   await app.register(configRoutes, { prefix: '/api/v1/config' });
 

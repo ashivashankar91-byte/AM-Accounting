@@ -62,6 +62,8 @@ import GoldenPathGLSearch from './pages/goldenpath/GLSearch';
 import GoldenPathBalanceSheet from './pages/goldenpath/BalanceSheet';
 import GoldenPathIncomeStatement from './pages/goldenpath/IncomeStatement';
 import AnalysisCodeRegistry from './pages/accounting/admin/AnalysisCodeRegistry';
+import GoldenPathPostingRules from './pages/goldenpath/PostingRules';
+import GoldenPathPostingExecutions from './pages/goldenpath/PostingExecutions';
 import TrialBalance from './pages/TrialBalance';
 import ManualJournalEntry from './pages/ManualJournalEntry';
 import AMACCSync from './pages/AMACCSync';
@@ -558,6 +560,8 @@ export default function App() {
                   analysis-codes), wrapped in the same real-auth Golden Path
                   guard as every other certified P01 screen. */}
               <Route path="/accounting/admin/analysis-codes" element={<GoldenPathProtectedRoute><AnalysisCodeRegistry /></GoldenPathProtectedRoute>} />
+              <Route path="/golden-path/posting-rules" element={<GoldenPathProtectedRoute><GoldenPathPostingRules /></GoldenPathProtectedRoute>} />
+              <Route path="/golden-path/posting-executions" element={<GoldenPathProtectedRoute><GoldenPathPostingExecutions /></GoldenPathProtectedRoute>} />
               {/* Golden R0 Phase — routing alias only, no second implementation.
                   The canonical GL Inquiry screen/route is /accounting/inquiry/gl
                   (registered below); this path never had a real route at all,

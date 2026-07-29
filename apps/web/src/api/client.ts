@@ -1143,3 +1143,40 @@ export const authzApi = {
     return apiFetch<{ allow: boolean; reason?: string; matchedRole?: string }>(`/api/v1/authz/check?${qs.toString()}`);
   },
 };
+
+// S019/S020 — Posting Engine: DSL rule packs + idempotent posting executions.
+export const postingEngineApi = {
+  listRulePacks: () => apiFetch<{ items: Array<{ pack: any; versions: any[] }> }>('/api/v1/coa/posting-engine/rule-packs'),
+  getRulePack: (packKey: string) => apiFetch<{ pack: any; versions: any[] }>(`/api/v1/coa/posting-engine/rule-packs/${encodeURIComponent(packKey)}`),
+  validateDraft: (sourceText: string) =>
+    apiFetch<{ valid: boolean; findings: Array<{ severity: string; code: string; path: string; ruleId?: string; message: string }> }>(
+      '/api/v1/coa/posting-engine/rule-packs/validate',
+      { method: 'POST', body: JSON.stringify({ sourceText }) },
+    ),
+  createRulePackVersion: (packKey: string, sourceText: string) =>
+    apiFetch<any>('/api/v1/coa/posting-engine/rule-packs', { method: 'POST', body: JSON.stringify({ packKey, sourceText }) }),
+  validateVersion: (id: string) =>
+    apiFetch<{ version: any; valid: boolean; findings: any[] }>(`/api/v1/coa/posting-engine/rule-pack-versions/${id}/validate`, { method: 'POST' }),
+  activateVersion: (id: string) =>
+    apiFetch<any>(`/api/v1/coa/posting-engine/rule-pack-versions/${id}/activate`, { method: 'POST' }),
+
+  submitEvent: (envelope: Record<string, unknown>) =>
+    apiFetch<{
+      executionId: string; eventId: string; status: string; idempotent: boolean;
+      rulePackVersionId?: string | null; ruleId?: string | null;
+      journalEntryId?: string | null; journalNumber?: string | null; failureReason?: string | null;
+    }>('/api/v1/coa/posting-engine/events', { method: 'POST', body: JSON.stringify(envelope) }),
+
+  searchExecutions: (params: { correlationId?: string; sourceEntityId?: string; status?: string }) => {
+    const qs = new URLSearchParams();
+    if (params.correlationId) qs.set('correlationId', params.correlationId);
+    if (params.sourceEntityId) qs.set('sourceEntityId', params.sourceEntityId);
+    if (params.status) qs.set('status', params.status);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return apiFetch<{ items: any[] }>(`/api/v1/coa/posting-engine/executions${suffix}`);
+  },
+  getExecutionById: (id: string) => apiFetch<any>(`/api/v1/coa/posting-engine/executions/${id}`),
+  getExecutionByEventId: (eventId: string) => apiFetch<any>(`/api/v1/coa/posting-engine/executions/by-event/${encodeURIComponent(eventId)}`),
+  listExceptions: (reasonCode?: string) =>
+    apiFetch<{ items: any[] }>(`/api/v1/coa/posting-engine/exceptions${reasonCode ? `?reasonCode=${encodeURIComponent(reasonCode)}` : ''}`),
+};
