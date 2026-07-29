@@ -39,11 +39,17 @@
 import { test, expect } from '@playwright/test';
 
 const BASE = '/amacc';
-const API = process.env['API_BASE_URL'] ?? 'http://localhost:13100';
-const TENANT_A = '1cf31f14-cb0b-4261-a41d-f79953594c86';
-const ADMIN_EMAIL = 'admin@kunes-final-r0.test';
-const CLERK_EMAIL = 'clerk@kunes-final-r0.test';
-const PASSWORD = 'FinalR0-Evidence-2026!';
+const API = process.env['API_BASE_URL'] ?? 'http://localhost:43100';
+// R1 Controlled Integration certification run (2026-07-29): this spec's own
+// dedicated docker-compose stack (project amacc-s019-cert, see
+// docker-compose.s019-s020-cert-ports.override.yml) with its own freshly
+// bootstrapped tenant/entity/fixture users — never the shared Final-R0
+// certified tenant (1cf31f14...) other suites use, so this run can never
+// corrupt that shared evidence trail.
+const TENANT_A = process.env['CERT_TENANT_ID'] ?? '1cf31f14-cb0b-4261-a41d-f79953594c86';
+const ADMIN_EMAIL = process.env['CERT_ADMIN_EMAIL'] ?? 'admin@kunes-final-r0.test';
+const CLERK_EMAIL = process.env['CERT_CLERK_EMAIL'] ?? 'clerk@kunes-final-r0.test';
+const PASSWORD = process.env['CERT_PASSWORD'] ?? 'FinalR0-Evidence-2026!';
 // Far-future year dedicated to this spec — never touched by any other suite
 // (fiscal-period-close.spec.ts already claims 2099).
 const YEAR = 2098;
@@ -180,7 +186,7 @@ test.describe('S019/S020 — Posting Engine certification journey', () => {
     await expect(page.getByTestId('posting-rules-version-history')).toBeVisible({ timeout: 10_000 });
     const validVersionRow = page.getByTestId('posting-rules-version-history').locator('tbody tr').first();
     await validVersionRow.getByRole('button', { name: 'View' }).click();
-    await page.getByRole('button', { name: 'Validate' }).click();
+    await page.getByTestId('posting-rules-version-detail').getByRole('button', { name: 'Validate' }).click();
     await expect(page.getByTestId('posting-rules-version-detail-status')).toHaveText('VALIDATED', { timeout: 10_000 });
 
     // ── 3. Unbalanced fixture: validate + confirm activation is blocked ──────
@@ -195,7 +201,7 @@ test.describe('S019/S020 — Posting Engine certification journey', () => {
     await page.getByTestId(`posting-rules-select-${packKeyUnbalanced}`).click();
     const unbalancedVersionRow = page.getByTestId('posting-rules-version-history').locator('tbody tr').first();
     await unbalancedVersionRow.getByRole('button', { name: 'View' }).click();
-    await page.getByRole('button', { name: 'Validate' }).click();
+    await page.getByTestId('posting-rules-version-detail').getByRole('button', { name: 'Validate' }).click();
     // Stays DRAFT (never promoted to VALIDATED) — no Activate button ever renders for it.
     await expect(page.getByTestId('posting-rules-version-detail-status')).toHaveText('DRAFT', { timeout: 10_000 });
     await expect(page.locator('[data-testid^="posting-rules-activate-version-"]')).toHaveCount(0);
@@ -204,7 +210,7 @@ test.describe('S019/S020 — Posting Engine certification journey', () => {
     await page.getByTestId(`posting-rules-select-${packKeyValid}`).click();
     const validRow = page.getByTestId('posting-rules-version-history').locator('tbody tr').first();
     await validRow.getByRole('button', { name: 'View' }).click();
-    await page.getByRole('button', { name: 'Activate' }).click();
+    await page.getByTestId('posting-rules-version-detail').getByRole('button', { name: 'Activate' }).click();
     await expect(page.getByTestId('posting-rules-version-detail-status')).toHaveText('ACTIVE', { timeout: 10_000 });
     await expect(page.getByTestId('posting-rules-version-readonly')).toBeVisible();
 
