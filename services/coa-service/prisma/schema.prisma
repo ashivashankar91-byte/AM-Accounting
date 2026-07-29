@@ -432,6 +432,14 @@ model ManualJeDraft {
   postedJournalNumber String?   @map("posted_journal_number")
   voidedAt            DateTime? @map("voided_at")
   voidReason          String?   @map("void_reason") @db.VarChar(500)
+  // S032 — additive, nullable linkage fields. A draft created by hand (S214's
+  // original path) never sets these; DraftService.create()/postDraft() treat
+  // them as plain passthrough data so pre-S032 behavior is byte-identical
+  // when absent (BR032-3 "generator is a client of the journal lifecycle,
+  // never a second posting path").
+  generatedFromTemplateId String? @map("generated_from_template_id") // S032 BR032-3 generation linkage
+  generationBatchId       String? @map("generation_batch_id") // S032 BR032-4 idempotency batch tag
+  reversalOfJournalId     String? @map("reversal_of_journal_id") // S032 BR032-5 — forwarded into PostingService.post's reversalOf on post (reuses S218 mirrored-linkage semantics)
   createdAt           DateTime  @default(now()) @map("created_at")
   updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at")
   // S008 — draft-side mirror of the adjusting-entry attribute, carried
@@ -449,6 +457,7 @@ model ManualJeDraft {
   @@index([tenantId, preparer])
   @@index([tenantId, status])
   @@index([postedJournalId])
+  @@index([generatedFromTemplateId])
   @@map("manual_je_draft")
 }
 
@@ -582,4 +591,84 @@ model JournalLineAnalysisTag {
   @@index([tenantId, typeId])
   @@index([journalLineId])
   @@map("journal_line_analysis_tag")
+}
+
+/// S032 — Recurring Journal Template master (BR032-1). Entity-scoped like
+/// GlAccount (its lines reference GlAccount rows, which are entity-scoped).
+/// Fixed debit/credit amounts only in R1 (BLK-23 — formula amounts excluded).
+/// sourceCode is always the dedicated 'RT' code (BLK-20), never GJ/88.
+model RecurringJournalTemplate {
+  id           String   @id @default(uuid())
+  tenantId     String   @map("tenant_id")
+  entityId     String   @map("entity_id")
+  code         String   @db.VarChar(40)
+  name         String   @db.VarChar(120)
+  description  String?  @db.VarChar(500)
+  sourceCode   String   @default("RT") @map("source_code")
+  active       Boolean  @default(true)
+  autoReverse  Boolean  @default(false) @map("auto_reverse") // BR032-5
+  version      Int      @default(1) // BR032-7 — generation stamps this version; edits never touch past generations
+  actor        String // creator/last-editor, mirrors ConfigSetting/FiscalCalendar convention
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  lines       RecurringJournalTemplateLine[]
+  generations RecurringTemplateGeneration[]
+
+  @@unique([tenantId, entityId, code])
+  @@index([tenantId, entityId, active])
+  @@map("recurring_journal_template")
+}
+
+/// S032 — fixed template line (BLK-23). Mirrors ManualJeDraft's JSON line
+/// shape as real columns (a template is a governed master record, not a
+/// freeform scratchpad, so BR032-1 validates it fully at save).
+model RecurringJournalTemplateLine {
+  id            String  @id @default(uuid())
+  templateId    String  @map("template_id")
+  tenantId      String  @map("tenant_id")
+  lineIndex     Int     @map("line_index")
+  accountId     String  @map("account_id")
+  accountNumber String  @map("account_number") @db.VarChar(5)
+  storeId       String  @map("store_id")
+  deptCode      String? @map("dept_code")
+  controlNumber String? @map("control_number")
+  applyNumber   String? @map("apply_number")
+  dr            Decimal @default(0) @db.Decimal(15, 2)
+  cr            Decimal @default(0) @db.Decimal(15, 2)
+  memo          String? @db.VarChar(500)
+
+  template RecurringJournalTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId])
+  @@index([tenantId])
+  @@map("recurring_journal_template_line")
+}
+
+/// S032 — one row per (template, period) generation (BR032-4 idempotency —
+/// generating twice for the same template+period returns the existing draft,
+/// never a duplicate). draftId links to the ManualJeDraft created via the
+/// certified S214 path; reversalDraftId is populated once BLK-22's
+/// auto-reverse draft is created at the original's post time (BR032-5).
+model RecurringTemplateGeneration {
+  id                String    @id @default(uuid())
+  tenantId          String    @map("tenant_id")
+  templateId        String    @map("template_id")
+  entityId          String    @map("entity_id")
+  periodId          String    @map("period_id")
+  periodCode        String    @map("period_code")
+  batchId           String    @map("batch_id")
+  draftId           String    @map("draft_id")
+  templateVersion   Int       @map("template_version") // BR032-7 stamp
+  reversalDraftId   String?   @map("reversal_draft_id")
+  reversalPeriodId  String?   @map("reversal_period_id")
+  generatedBy       String    @map("generated_by")
+  generatedAt       DateTime  @default(now()) @map("generated_at")
+
+  template RecurringJournalTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, templateId, periodId])
+  @@unique([tenantId, draftId])
+  @@index([tenantId, batchId])
+  @@map("recurring_template_generation")
 }

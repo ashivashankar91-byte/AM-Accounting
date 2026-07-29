@@ -1103,3 +1103,43 @@ export const goldenPathApi = {
   deactivateAnalysisValue: (typeId: string, id: string, data: { version: number; reason: string }) =>
     apiFetch<any>(`/api/v1/coa/analysis/types/${typeId}/values/${id}/deactivate`, { method: 'POST', body: JSON.stringify(data) }),
 };
+
+// S032 — Recurring Journal Templates: real coa-service registry + manual
+// generation ceremony (BLK-21 — no scheduler). Generation always creates a
+// DRAFT through the certified S214 draft path; posting/reversal-draft
+// posting remain manual human actions on the existing draft workflow.
+export const recurringTemplateApi = {
+  list: (entityId: string, active?: boolean) => {
+    const qs = new URLSearchParams({ entity: entityId });
+    if (active !== undefined) qs.set('active', String(active));
+    return apiFetch<{ templates: any[] }>(`/api/v1/coa/journal-templates?${qs.toString()}`);
+  },
+  get: (id: string) => apiFetch<any>(`/api/v1/coa/journal-templates/${id}`),
+  create: (data: {
+    entityId: string; code: string; name: string; description?: string | null;
+    autoReverse?: boolean; lines: any[];
+  }) => apiFetch<any>('/api/v1/coa/journal-templates', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: { name?: string; description?: string | null; autoReverse?: boolean; lines?: any[] }) =>
+    apiFetch<any>(`/api/v1/coa/journal-templates/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  activate: (id: string) => apiFetch<any>(`/api/v1/coa/journal-templates/${id}/activate`, { method: 'POST' }),
+  deactivate: (id: string) => apiFetch<any>(`/api/v1/coa/journal-templates/${id}/deactivate`, { method: 'POST' }),
+  generate: (data: { entityId: string; periodId: string; templateIds?: string[] | 'ALL' }) =>
+    apiFetch<{ batchId: string; periodCode: string; results: any[] }>('/api/v1/coa/journal-templates:generate', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+};
+
+// S207 — real permission-check API (auth-service AuthzService.check(), the
+// same engine every backend route guard calls). Used client-side ONLY to
+// hide/disable UI affordances the server would reject anyway (authorization-
+// only UX polish) — the server-side guard remains the sole source of truth;
+// a denied action is still rejected server-side even if this check is
+// unreachable or stale.
+export const authzApi = {
+  check: (userId: string, permissionKey: string, tenantId: string, entityId?: string) => {
+    const qs = new URLSearchParams({ user: userId, permission: permissionKey, tenant: tenantId });
+    if (entityId) qs.set('entity', entityId);
+    return apiFetch<{ allow: boolean; reason?: string; matchedRole?: string }>(`/api/v1/authz/check?${qs.toString()}`);
+  },
+};

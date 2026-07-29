@@ -171,6 +171,12 @@ export interface SaveDraftDTO extends DraftPayload {
   tenantId: string;
   preparer: string;
   canMarkAdjusting?: boolean;
+  // S032 — additive, optional linkage set only by RecurringTemplateService's
+  // generate()/handlePosted() paths. Undefined for every hand-typed draft;
+  // behavior is byte-identical to pre-S032 when omitted.
+  generatedFromTemplateId?: string | null;
+  generationBatchId?: string | null;
+  reversalOfJournalId?: string | null;
 }
 
 export interface DraftActor {
@@ -243,6 +249,9 @@ export class DraftService {
           isAdjusting: dto.isAdjusting ?? false,
           adjustingReason: dto.adjustingReason ?? null,
           adjustingCorrectionRef: dto.adjustingCorrectionRef ?? null,
+          generatedFromTemplateId: dto.generatedFromTemplateId ?? null,
+          generationBatchId: dto.generationBatchId ?? null,
+          reversalOfJournalId: dto.reversalOfJournalId ?? null,
         },
       });
       if (dto.isAdjusting) {
@@ -579,6 +588,11 @@ export class DraftService {
       isAdjusting: fresh.isAdjusting ?? false,
       adjustingReason: fresh.adjustingReason ?? null,
       adjustingCorrectionRef: fresh.adjustingCorrectionRef ?? null,
+      // S032/BLK-22 — a draft created as an auto-reverse counterpart carries
+      // reversalOfJournalId; forwarding it here reuses S218's certified
+      // mirrored-linkage semantics on post instead of inventing a second one.
+      // Undefined for every ordinary draft (byte-identical prior behavior).
+      reversalOf: (fresh as any).reversalOfJournalId ?? null,
       lines,
     });
 
@@ -731,6 +745,9 @@ export class DraftService {
       isAdjusting: d.isAdjusting ?? false,
       adjustingReason: d.adjustingReason ?? null,
       adjustingCorrectionRef: d.adjustingCorrectionRef ?? null,
+      generatedFromTemplateId: d.generatedFromTemplateId ?? null,
+      generationBatchId: d.generationBatchId ?? null,
+      reversalOfJournalId: d.reversalOfJournalId ?? null,
     };
   }
 

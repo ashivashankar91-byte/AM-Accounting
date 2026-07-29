@@ -19,6 +19,7 @@ import {
   AdjustingEntryReasonRequiredError,
 } from '../application/draft-service';
 import { PostingViolationError, AnalysisTagViolationError } from '../application/posting-service';
+import { RecurringTemplateService } from '../application/recurring-template-service';
 import { requireJePermission, JE_PERMISSIONS } from './journal-routes';
 
 function getTenantId(request: any): string {
@@ -276,7 +277,19 @@ export async function draftRoutes(app: FastifyInstance) {
         await requireJePermission(JE_PERMISSIONS.POST)(request, reply);
         if (reply.sent) return;
         const result = await svc.postDraft(id, actor); // S216
-        return reply.status(201).send(result);
+        // S032/BLK-22 — if this draft was generated from an autoReverse
+        // template, create its reversal draft now. No-op (null) for every
+        // ordinary draft. Isolated: a failure here never unwinds the
+        // already-successful post, and is surfaced (not silent) in the
+        // response rather than swallowed.
+        let reversalDraft: unknown;
+        try {
+          const recurringTemplateService = container.resolve<RecurringTemplateService>('RecurringTemplateService');
+          reversalDraft = await recurringTemplateService.handlePosted(tenantId, id, result.journalId, result.journalNumber, actor);
+        } catch (hookErr: any) {
+          reversalDraft = { error: 'REVERSAL_DRAFT_HOOK_FAILED', message: hookErr?.message ?? 'Unknown error' };
+        }
+        return reply.status(201).send(reversalDraft ? { ...result, reversalDraft } : result);
       }
       if (action === 'void') {
         // S219 — own void needs je.draft.void; voiding another preparer's draft

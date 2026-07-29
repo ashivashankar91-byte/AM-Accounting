@@ -73,6 +73,8 @@ import JournalEntryList from './pages/accounting/JournalEntryList';
 import JournalEntry from './pages/accounting/JournalEntry';
 import JournalTemplateList from './pages/accounting/JournalTemplateList';
 import JournalTemplateEdit from './pages/accounting/JournalTemplateEdit';
+import RecurringJournalTemplates from './pages/accounting/RecurringJournalTemplates';
+import RecurringJournalTemplateEditor from './pages/accounting/RecurringJournalTemplateEditor';
 import VendorMaintenance from './pages/accounting/VendorMaintenance';
 import CustomerMaintenance from './pages/accounting/CustomerMaintenance';
 import VehicleTransfers from './pages/accounting/VehicleTransfers';
@@ -150,12 +152,14 @@ const MODULES: AppModule[] = [
     matchPrefixes: [
       '/accounting/gl', '/accounting/inquiry', '/accounting/reports/gl',
       '/gl', '/trial-balance', '/manual-entry', '/coa', '/standard-journal-entries',
+      '/accounting/journals',
     ],
     sections: [
       { title: 'Journal Entry', items: [
         { path: '/accounting/gl',           label: 'Journal Entries' },
         { path: '/accounting/gl/entry',     label: 'New Entry' },
         { path: '/accounting/gl/templates', label: 'Templates' },
+        { path: '/accounting/journals/templates', label: 'Recurring Templates (S032)' },
       ]},
       { title: 'Inquiry', items: [
         { path: '/accounting/inquiry',                label: 'Inquiry Menu' },
@@ -568,6 +572,10 @@ export default function App() {
               <Route path="/accounting/gl/templates" element={<JournalTemplateList />} />
               <Route path="/accounting/gl/templates/new" element={<JournalTemplateEdit />} />
               <Route path="/accounting/gl/templates/:id" element={<JournalTemplateEdit />} />
+              {/* S032 — Recurring Journal Templates (real coa-service integration, distinct from the legacy gl-service templates above) */}
+              <Route path="/accounting/journals/templates" element={<RecurringJournalTemplates />} />
+              <Route path="/accounting/journals/templates/new" element={<RecurringJournalTemplateEditor />} />
+              <Route path="/accounting/journals/templates/:id" element={<RecurringJournalTemplateEditor />} />
               <Route path="/accounting/ap" element={<APWorkflow />} />
               <Route path="/accounting/ap/vendors" element={<VendorMaintenance />} />
               <Route path="/accounting/ap/vendors/:id" element={<VendorMaintenance />} />

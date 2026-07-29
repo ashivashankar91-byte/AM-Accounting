@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
 import { goldenPathApi } from '../../api/client';
 import {
@@ -76,6 +76,12 @@ function statusBadge(status: string | null, journalStatus: string | null): Badge
 export default function JournalWorkflow() {
   const { legalEntityId, user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  // S032 — a draft opened via "Open in Journal Entry" from
+  // RecurringJournalTemplates.tsx (generation result) or any other
+  // draft-producing flow. Display-only extension of this certified screen:
+  // no new editor, just a deep-link into the existing one.
+  const deepLinkDraftId = searchParams.get('draftId');
 
   const [accounts, setAccounts] = useState<any[]>([]);
   const [stores, setStores] = useState<any[]>([]);
@@ -130,6 +136,42 @@ export default function JournalWorkflow() {
     // entry itself (tags are an optional, additive feature).
     goldenPathApi.listAnalysisTypes({ status: 'ACTIVE' }).then((r) => setAnalysisTypes(r.items)).catch(() => setAnalysisTypes([]));
   }, [legalEntityId]);
+
+  useEffect(() => {
+    if (!deepLinkDraftId || !legalEntityId) return;
+    setBusy(true);
+    setError(null);
+    goldenPathApi
+      .getDraft(deepLinkDraftId)
+      .then(async (d: any) => {
+        setDraft(d);
+        setDraftId(d.id);
+        setDraftStatus(d.status);
+        if (d.entryDate) setEntryDate(String(d.entryDate).slice(0, 10));
+        if (d.sourceCode) setSourceCode(d.sourceCode);
+        setMemo(d.memo ?? '');
+        const mappedLines: Line[] = (Array.isArray(d.lines) ? d.lines : []).map((l: any) => ({
+          accountId: l.accountId ?? '',
+          storeId: l.storeId ?? '',
+          deptCode: l.deptCode ?? '',
+          dr: l.dr !== undefined && l.dr !== null ? String(l.dr) : '',
+          cr: l.cr !== undefined && l.cr !== null ? String(l.cr) : '',
+          memo: l.memo ?? '',
+          analysisTags: Array.isArray(l.analysisTags) ? l.analysisTags : [],
+        }));
+        if (mappedLines.length > 0) setLines(mappedLines);
+        // Already posted (e.g. re-opening a link after posting elsewhere) —
+        // load the real journal view too so the certified posted-state
+        // rendering (badge, totals, audit link) is shown, same as postDraft().
+        if (d.status === 'POSTED_LINKED' && d.postedJournalNumber) {
+          const view = await goldenPathApi.getJournal(d.postedJournalNumber);
+          setJournal(view);
+        }
+      })
+      .catch((err: any) => setError(err.message))
+      .finally(() => setBusy(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkDraftId, legalEntityId]);
 
   if (!legalEntityId) {
     return (

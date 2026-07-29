@@ -12,6 +12,7 @@ import { sourceRoutes } from './http/source-routes';
 import { sequenceRoutes } from './http/sequence-routes';
 import { journalRoutes } from './http/journal-routes';
 import { draftRoutes } from './http/draft-routes';
+import { recurringTemplateRoutes } from './http/recurring-template-routes';
 import { glInquiryRoutes } from './http/gl-inquiry-routes';
 import { glSearchRoutes } from './http/gl-search-routes';
 import { analysisCodeRoutes } from './http/analysis-code-routes';
@@ -27,6 +28,7 @@ import { PostingService } from './application/posting-service';
 import { JournalViewService } from './application/journal-view-service';
 import { ReversalService } from './application/reversal-service';
 import { DraftService } from './application/draft-service';
+import { RecurringTemplateService } from './application/recurring-template-service';
 import { GLInquiryService } from './application/gl-inquiry-service';
 import { GLSearchService } from './application/gl-search-service';
 import { AnalysisCodeService } from './application/analysis-code-service';
@@ -100,6 +102,10 @@ async function bootstrap() {
   // S214: draft manual JE scratchpad (create/save any state + attachments).
   container.register('DraftService', { useClass: DraftService });
 
+  // S032: recurring journal template registry + manual generation (a client
+  // of the S214 draft path, never a second posting path).
+  container.register('RecurringTemplateService', { useClass: RecurringTemplateService });
+
   // S220: read-only GL account activity inquiry (beginning/period/ending
   // balance, drill-down to S217, CSV export). Depends on AccountService.
   container.register('GLInquiryService', { useClass: GLInquiryService });
@@ -134,6 +140,8 @@ async function bootstrap() {
   await app.register(journalRoutes, { prefix: '/api/v1/coa' });
 
   await app.register(draftRoutes, { prefix: '/api/v1/coa' });
+
+  await app.register(recurringTemplateRoutes, { prefix: '/api/v1/coa' });
 
   await app.register(glInquiryRoutes, { prefix: '/api/v1/coa' });
   await app.register(glSearchRoutes, { prefix: '/api/v1/coa' });

@@ -41,6 +41,7 @@ import { journalRoutes, JE_PERMISSIONS } from '../src/http/journal-routes';
 import { draftRoutes, JE_DRAFT_PERMISSIONS } from '../src/http/draft-routes';
 import { glInquiryRoutes, INQUIRY_PERMISSIONS } from '../src/http/gl-inquiry-routes';
 import { glSearchRoutes, SEARCH_PERMISSIONS } from '../src/http/gl-search-routes';
+import { recurringTemplateRoutes, TEMPLATE_PERMISSIONS } from '../src/http/recurring-template-routes';
 
 const JWT_SECRET = 'coa-authz-test-secret';
 
@@ -92,6 +93,8 @@ const ROLE_GRANTS: Record<string, ReadonlySet<string>> = {
     JE_DRAFT_PERMISSIONS.VOID, JE_DRAFT_PERMISSIONS.VOID_ANY,
     INQUIRY_PERMISSIONS.VIEW,
     SEARCH_PERMISSIONS.SEARCH,
+    // S032 — ADMIN holds all three recurring-template permissions.
+    TEMPLATE_PERMISSIONS.MANAGE, TEMPLATE_PERMISSIONS.GENERATE, TEMPLATE_PERMISSIONS.VIEW,
   ]),
   ACCOUNTANT: new Set([
     ACCOUNT_PERMISSIONS.VIEW, CONFIG_PERMISSIONS.VIEW, FISCAL_PERMISSIONS.VIEW,
@@ -100,6 +103,12 @@ const ROLE_GRANTS: Record<string, ReadonlySet<string>> = {
     JE_DRAFT_PERMISSIONS.CREATE, JE_DRAFT_PERMISSIONS.EDIT, JE_DRAFT_PERMISSIONS.VOID,
     INQUIRY_PERMISSIONS.VIEW,
     SEARCH_PERMISSIONS.SEARCH,
+    // S032 — ACCOUNTANT may view the registry and generate journals from a
+    // template, but (per the certified authorization matrix / db411c9's
+    // corrective pass) does NOT hold MANAGE — deliberately excluded here;
+    // see the dedicated "S032 — Accountant may generate but not manage
+    // templates" describe block below for the differentiated proof.
+    TEMPLATE_PERMISSIONS.GENERATE, TEMPLATE_PERMISSIONS.VIEW,
   ]),
   // S008 — CONTROLLER: soft-close/hard-close/reopen (SOFT_CLOSED->OPEN) per
   // the auth-service migration's ADMIN+CONTROLLER grant. Deliberately does
@@ -110,6 +119,9 @@ const ROLE_GRANTS: Record<string, ReadonlySet<string>> = {
   CONTROLLER: new Set([
     PERIOD_PERMISSIONS.VIEW,
     PERIOD_PERMISSIONS.SOFT_CLOSE, PERIOD_PERMISSIONS.HARD_CLOSE, PERIOD_PERMISSIONS.REOPEN,
+    // S032 — CONTROLLER holds the same recurring-template grants as ADMIN
+    // (view/manage/generate), per the certified authorization matrix.
+    TEMPLATE_PERMISSIONS.MANAGE, TEMPLATE_PERMISSIONS.GENERATE, TEMPLATE_PERMISSIONS.VIEW,
   ]),
   CLERK: new Set([JE_PERMISSIONS.VIEW, JE_DRAFT_PERMISSIONS.CREATE, JE_DRAFT_PERMISSIONS.EDIT, JE_DRAFT_PERMISSIONS.VOID]),
 };
@@ -174,6 +186,8 @@ describe('coa-service route-level authorization (R0 Stabilization Phase 3)', () 
     { story: 'S214', permission: JE_DRAFT_PERMISSIONS.EDIT, routeFn: draftRoutes, serviceToken: 'DraftService', prefix: '/coa', method: 'PUT', path: '/coa/manual-journals/drafts/d1', grantedRole: 'ACCOUNTANT', payload: {} },
     { story: 'S220', permission: INQUIRY_PERMISSIONS.VIEW, routeFn: glInquiryRoutes, serviceToken: 'GLInquiryService', prefix: '/coa', method: 'GET', path: '/coa/inquiry/accounts/acc-1/activity?periodCode=2026-08', grantedRole: 'ACCOUNTANT' },
     { story: 'S221', permission: SEARCH_PERMISSIONS.SEARCH, routeFn: glSearchRoutes, serviceToken: 'GLSearchService', prefix: '/coa', method: 'GET', path: '/coa/inquiry/search?sourceCode=GJ', grantedRole: 'ACCOUNTANT' },
+    { story: 'S032', permission: TEMPLATE_PERMISSIONS.MANAGE, routeFn: recurringTemplateRoutes, serviceToken: 'RecurringTemplateService', prefix: '/coa', method: 'POST', path: '/coa/journal-templates', grantedRole: 'ADMIN', payload: { entityId: 'e1', code: 'RENT', name: 'Rent', lines: [{ accountId: 'a1', storeId: 's1', dr: 100 }, { accountId: 'a2', storeId: 's1', cr: 100 }] } },
+    { story: 'S032', permission: TEMPLATE_PERMISSIONS.GENERATE, routeFn: recurringTemplateRoutes, serviceToken: 'RecurringTemplateService', prefix: '/coa', method: 'POST', path: '/coa/journal-templates:generate', grantedRole: 'ACCOUNTANT', payload: { entityId: 'e1', periodId: 'p1' } },
   ];
 
   for (const c of cases) {
@@ -307,6 +321,107 @@ describe('coa-service route-level authorization (R0 Stabilization Phase 3)', () 
     it('allows CLERK (granted CREATE/EDIT/VOID, though not VIEW_ALL) to hit the reader-gated list endpoint', async () => {
       const res = await app.inject({ method: 'GET', url: '/coa/manual-journals/drafts', headers: authed('CLERK') });
       expect(res.statusCode).not.toBe(403);
+    });
+  });
+
+  // ── S032 — Accountant generate-yes/manage-no separation ─────────────────────
+  // The generic loop above proves MANAGE is enforced against a role with NO
+  // template permissions at all. That's not the same as proving the
+  // GENERATE/MANAGE split is real: ACCOUNTANT genuinely holds
+  // je.template.generate and je.template.view (per the certified
+  // authorization matrix / db411c9's corrective pass) yet must still be
+  // denied on every MANAGE-gated action — a stronger negative than "holds
+  // nothing", the same shape as the S008 two-tier proof above.
+  describe('S032 — Accountant may generate but not manage recurring journal templates', () => {
+    let app: FastifyInstance;
+
+    beforeEach(async () => {
+      container.registerInstance('RecurringTemplateService', permissiveFakeService());
+      registerFakeAuthz();
+      app = await buildApp(recurringTemplateRoutes, '/coa');
+    });
+
+    afterEach(async () => {
+      await app.close();
+    });
+
+    it('Accountant create template -> 403', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/coa/journal-templates',
+        headers: authed('ACCOUNTANT'),
+        payload: { entityId: 'e1', code: 'RENT', name: 'Rent', lines: [{ accountId: 'a1', storeId: 's1', dr: 100 }, { accountId: 'a2', storeId: 's1', cr: 100 }] },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({ error: 'FORBIDDEN', reason: 'NO_MATCHING_ROLE' });
+    });
+
+    it('Accountant update template -> 403', async () => {
+      const res = await app.inject({
+        method: 'PUT',
+        url: '/coa/journal-templates/t1',
+        headers: authed('ACCOUNTANT'),
+        payload: { name: 'Rent (revised)' },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({ error: 'FORBIDDEN', reason: 'NO_MATCHING_ROLE' });
+    });
+
+    it('Accountant deactivate template -> 403', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/coa/journal-templates/t1/deactivate',
+        headers: authed('ACCOUNTANT'),
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({ error: 'FORBIDDEN', reason: 'NO_MATCHING_ROLE' });
+    });
+
+    it('Accountant activate template -> 403 (also MANAGE-gated)', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/coa/journal-templates/t1/activate',
+        headers: authed('ACCOUNTANT'),
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({ error: 'FORBIDDEN', reason: 'NO_MATCHING_ROLE' });
+    });
+
+    it('Accountant generate journal -> allowed', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/coa/journal-templates:generate',
+        headers: authed('ACCOUNTANT'),
+        payload: { entityId: 'e1', periodId: 'p1' },
+      });
+      expect(res.statusCode).not.toBe(401);
+      expect(res.statusCode).not.toBe(403);
+    });
+
+    it('Accountant can list/view templates (requireTemplateReader — any-of MANAGE/GENERATE/VIEW)', async () => {
+      const res = await app.inject({ method: 'GET', url: '/coa/journal-templates', headers: authed('ACCOUNTANT') });
+      expect(res.statusCode).not.toBe(403);
+    });
+
+    it('a role with NO template permissions is denied the reader-gated list endpoint too', async () => {
+      const res = await app.inject({ method: 'GET', url: '/coa/journal-templates', headers: authed('NO_PERMISSIONS_ROLE') });
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({ error: 'FORBIDDEN', message: 'No recurring-template permissions' });
+    });
+
+    it('Controller and Admin (holders of MANAGE) can create/update/deactivate (the manage tier is unaffected)', async () => {
+      for (const role of ['ADMIN', 'CONTROLLER']) {
+        // Only ADMIN is granted MANAGE per the certified matrix; CONTROLLER
+        // is included here to prove it too is denied (matches the S032
+        // matrix: CONTROLLER holds view/manage/generate exactly like ADMIN).
+        const res = await app.inject({
+          method: 'POST',
+          url: '/coa/journal-templates',
+          headers: authed(role),
+          payload: { entityId: 'e1', code: 'RENT', name: 'Rent', lines: [{ accountId: 'a1', storeId: 's1', dr: 100 }, { accountId: 'a2', storeId: 's1', cr: 100 }] },
+        });
+        expect(res.statusCode, `expected create to allow ${role}`).not.toBe(403);
+      }
     });
   });
 });

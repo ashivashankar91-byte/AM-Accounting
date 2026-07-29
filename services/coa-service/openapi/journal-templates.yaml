@@ -1,0 +1,192 @@
+openapi: 3.1.0
+info:
+  title: AMACC Recurring Journal Templates (S032)
+  version: 1.0.0
+  description: >
+    Recurring/auto-reversing journal templates, generated on demand per period
+    (BLK-21 — manual generation only; no scheduler exists in R1). Amounts are
+    fixed at save (BLK-23 — no formula/percent amounts). Generation always
+    creates a DRAFT through the certified S214 draft path
+    (POST /manual-journals/drafts equivalent) — this API is a client of the
+    journal lifecycle, never a second posting path. The dedicated 'RT' journal
+    source (BLK-20) is used for every generated draft, never GJ/88. Templates
+    are dated the target period's END date on generation (BLK-24); an
+    autoReverse template's reversal draft is created dated the following
+    period when the original posts (BLK-22) — posting that reversal remains a
+    manual human action.
+servers:
+  - url: /api/v1/coa
+components:
+  parameters:
+    TenantId:
+      name: x-tenant-id
+      in: header
+      required: true
+      schema: { type: string }
+  schemas:
+    TemplateLine:
+      type: object
+      required: [accountId, storeId]
+      properties:
+        accountId: { type: string }
+        accountNumber: { type: string, nullable: true }
+        storeId: { type: string }
+        deptCode: { type: string, nullable: true }
+        controlNumber: { type: string, nullable: true }
+        applyNumber: { type: string, nullable: true }
+        dr: { type: number, description: Fixed dollars (BLK-23) — exactly one of dr|cr must be > 0 }
+        cr: { type: number }
+        memo: { type: string, nullable: true }
+    TemplatePayload:
+      type: object
+      required: [entityId, code, name, lines]
+      properties:
+        entityId: { type: string }
+        code: { type: string, maxLength: 40 }
+        name: { type: string, maxLength: 120 }
+        description: { type: string, nullable: true, maxLength: 500 }
+        autoReverse: { type: boolean, default: false, description: BR032-5/BLK-22 }
+        lines:
+          type: array
+          minItems: 2
+          items: { $ref: '#/components/schemas/TemplateLine' }
+    Template:
+      type: object
+      properties:
+        id: { type: string }
+        entityId: { type: string }
+        code: { type: string }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        sourceCode: { type: string, enum: [RT], description: BLK-20 — always the dedicated RT source }
+        active: { type: boolean }
+        autoReverse: { type: boolean }
+        version: { type: integer, description: BR032-7 — bumped on edit; past generations keep their stamped version }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/TemplateLine' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    GenerateRequest:
+      type: object
+      required: [entityId, periodId]
+      properties:
+        entityId: { type: string }
+        periodId: { type: string }
+        templateIds:
+          description: Specific template ids, or 'ALL' active templates for the entity (default).
+          oneOf:
+            - type: array
+              items: { type: string }
+            - type: string
+              enum: [ALL]
+    GenerateResultEntry:
+      type: object
+      properties:
+        templateId: { type: string }
+        templateCode: { type: string }
+        draftId: { type: string, nullable: true }
+        idempotent: { type: boolean, nullable: true, description: 'AC032-2 — true when a prior generation for this template+period already exists' }
+        error:
+          type: object
+          nullable: true
+          description: 'AC032-5 — this template failed; others in the batch still succeeded'
+          properties:
+            code: { type: string, enum: [TEMPLATE_INACTIVE, INACTIVE_ACCOUNT, GENERATION_FAILED] }
+            message: { type: string }
+            lineIndex: { type: integer, nullable: true }
+            accountId: { type: string, nullable: true }
+    GenerateResult:
+      type: object
+      properties:
+        batchId: { type: string }
+        periodCode: { type: string }
+        results:
+          type: array
+          items: { $ref: '#/components/schemas/GenerateResultEntry' }
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        message: { type: string }
+paths:
+  /journal-templates:
+    post:
+      summary: Create a recurring journal template (BR032-1 — balanced + shape-valid at save)
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/TemplatePayload' } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/Template' } } } }
+        '409': { description: Duplicate code for this entity, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: Unbalanced / shape-invalid, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: Missing je.template.manage }
+    get:
+      summary: List recurring journal templates
+      parameters:
+        - { $ref: '#/components/parameters/TenantId' }
+        - { name: entity, in: query, schema: { type: string } }
+        - { name: active, in: query, schema: { type: boolean } }
+      responses:
+        '200':
+          description: Template list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  templates: { type: array, items: { $ref: '#/components/schemas/Template' } }
+  /journal-templates/{id}:
+    get:
+      summary: Get a template by id
+      parameters:
+        - { $ref: '#/components/parameters/TenantId' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Template, content: { application/json: { schema: { $ref: '#/components/schemas/Template' } } } }
+        '404': { description: Not found, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    put:
+      summary: Update a template (BR032-7 — bumps version; past generations unaffected)
+      parameters:
+        - { $ref: '#/components/parameters/TenantId' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content: { application/json: { schema: { $ref: '#/components/schemas/TemplatePayload' } } }
+      responses:
+        '200': { description: Updated, content: { application/json: { schema: { $ref: '#/components/schemas/Template' } } } }
+        '422': { description: Unbalanced / shape-invalid, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: Missing je.template.manage }
+  /journal-templates/{id}/activate:
+    post:
+      summary: Reactivate a deactivated template
+      parameters:
+        - { $ref: '#/components/parameters/TenantId' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Template, content: { application/json: { schema: { $ref: '#/components/schemas/Template' } } } }
+  /journal-templates/{id}/deactivate:
+    post:
+      summary: Deactivate a template (excluded from ALL-mode generation going forward)
+      parameters:
+        - { $ref: '#/components/parameters/TenantId' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Template, content: { application/json: { schema: { $ref: '#/components/schemas/Template' } } } }
+  /journal-templates:generate:
+    post:
+      summary: >
+        Generate DRAFT journals for a period (BLK-21 — the only trigger; no
+        scheduler). Idempotent per (template, period) — AC032-2. Refuses the
+        whole call if the target period is not postable (AC032-4); a stale
+        account on one template errors that template by name while the rest
+        of the batch still succeeds (AC032-5).
+      parameters: [{ $ref: '#/components/parameters/TenantId' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/GenerateRequest' } } }
+      responses:
+        '200': { description: Generation batch result, content: { application/json: { schema: { $ref: '#/components/schemas/GenerateResult' } } } }
+        '404': { description: Period not found, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: Target period not eligible (BR032-6), content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: Missing je.template.generate }
