@@ -1,0 +1,10 @@
+screen_id,name,story,route_recommendation,persona,behavior,permissions,audit_events,pattern_notes
+P01-SCR-01,Period Control Board,S008,/accounting/admin/periods,Controller,Timeline + period table + transition ceremonies,fiscal.period.view (+ transition perms per action),fiscal.period.* transition events,NEW PATTERN: Period Status Timeline — no foundation component renders a governed state machine; added to catalogue
+P01-SCR-02,COA Governance,S009,/accounting/admin/coa-governance,Controller,Metadata grid + statement preview + bulk assign,coa.governance.edit / coa.account.view,coa.statement_metadata.changed; coa.statement_line.*,Reuses financial table + drawer + preview card
+P01-SCR-03,Statement Line Registry,S009,/accounting/admin/statement-lines,Controller,"Line CRUD (BS|IS, section, sort)",coa.statementline.manage,coa.statement_line.*,Reuses registry table pattern
+P01-SCR-04,Analysis Code Registry,S011,/accounting/admin/analysis-codes,Controller,"Types + values, activate/deactivate",analysis.code.manage,analysis.type/value.*,Reuses registry + chips; BLOCKED-DOR build
+P01-SCR-05,JE Line Tag Control (embedded),S011,(within JE editor),Accountant,Tag picker on certified line grid,je.create/edit (existing),tags within JE events,Extends JE experience display-only; no new pattern
+P01-SCR-06,Entity Elimination Section (embedded),S003,"(within Entity form, S200 screen)",Controller,Governed flag + consequences + guards,entity.elimination.configure,entity.elimination_changed,Extends existing entity form; badge on list + org tree
+P01-SCR-07,Template Registry,S032,/accounting/journals/templates,Accountant,Template table + activate + last-generated,je.template.manage,je.template.*,Reuses registry table
+P01-SCR-08,Template Editor,S032,/accounting/journals/templates/{id},Accountant,Header + JE-style line grid + balance bar,je.template.manage,je.template.updated,Reuses JE line grid + balance bar exactly
+P01-SCR-09,Generation Ceremony,S032,(dialog from registry),Accountant,Period select + preview + idempotent results,je.template.generate,je.template.generated (batch + per-journal),Reuses ceremony/confirmation pattern

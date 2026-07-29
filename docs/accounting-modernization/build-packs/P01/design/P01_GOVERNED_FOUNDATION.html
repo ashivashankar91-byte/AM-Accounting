@@ -1,0 +1,207 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>P01 Governed Accounting Foundation — AutoMate 2.0 Accounting</title><style>
+:root{--navy:#1B2A4A;--blue:#1D5BD8;--blue-h:#174AB0;--ink:#17202B;--mut:#5B6675;--canvas:#F2F4F7;
+--surf:#FFFFFF;--bord:#DCE1E8;--bord-l:#EAEEF3;--ok:#1B7F4D;--ok-bg:#E9F5EE;--err:#B3261E;--err-bg:#FBEDEB;
+--warn:#9A6700;--warn-bg:#FFF6DE;--info-bg:#EEF3FD;--radius:6px;--mono:'SF Mono',ui-monospace,Menlo,Consolas,monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font:13px/1.45 'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;color:var(--ink);background:var(--canvas)}
+.app{display:grid;grid-template-columns:216px 1fr;min-height:100vh}
+.sidenav{background:var(--navy);color:#C6D0E2;padding:14px 0}
+.sidenav .brand{color:#fff;font-weight:700;font-size:14px;padding:4px 16px 14px;letter-spacing:.2px;border-bottom:1px solid rgba(255,255,255,.12);margin-bottom:10px}
+.sidenav .grp{font-size:10px;text-transform:uppercase;letter-spacing:.8px;color:#8FA0BC;padding:10px 16px 4px}
+.sidenav a{display:block;color:#C6D0E2;text-decoration:none;padding:6px 16px;font-size:12.5px;border-left:3px solid transparent}
+.sidenav a.on{background:rgba(255,255,255,.08);color:#fff;border-left-color:var(--blue)}
+.sidenav a.dis{color:#5F6E88;cursor:not-allowed}
+.main{display:flex;flex-direction:column;min-width:0}
+.ctxbar{background:var(--surf);border-bottom:1px solid var(--bord);padding:8px 20px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.ctxbar .lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--mut);margin-right:2px}
+.sel{border:1px solid var(--bord);border-radius:var(--radius);background:#fff;padding:5px 26px 5px 9px;font-size:12.5px;color:var(--ink);
+appearance:none;background-image:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="8" height="5"><path d="M0 0l4 5 4-5z" fill="%235B6675"/></svg>');background-repeat:no-repeat;background-position:right 8px center}
+.crumb{padding:12px 20px 0;font-size:12px;color:var(--mut)}.crumb b{color:var(--ink);font-weight:600}
+.crumb a{color:var(--blue);text-decoration:none}
+.pagehead{display:flex;align-items:center;gap:12px;padding:6px 20px 12px}
+.pagehead h1{font-size:17px;color:var(--navy);font-weight:700;letter-spacing:.1px}
+.status-pill{font-size:10.5px;font-weight:600;letter-spacing:.4px;padding:3px 8px;border-radius:20px;border:1px solid var(--bord);color:var(--mut);background:#fff}
+.spacer{flex:1}
+.btn{font:600 12.5px 'Inter',system-ui;border-radius:var(--radius);padding:7px 13px;cursor:pointer;border:1px solid var(--bord);background:#fff;color:var(--ink)}
+.btn.pri{background:var(--blue);border-color:var(--blue);color:#fff}.btn.pri:hover{background:var(--blue-h)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.wrap{padding:0 20px 26px;display:flex;flex-direction:column;gap:12px}
+.filterbar{background:var(--surf);border:1px solid var(--bord);border-radius:var(--radius);padding:10px 12px;display:flex;gap:10px;align-items:end;flex-wrap:wrap}
+.f{display:flex;flex-direction:column;gap:3px}.f label{font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--mut);font-weight:600}
+.inp{border:1px solid var(--bord);border-radius:var(--radius);padding:5px 9px;font-size:12.5px;min-width:120px}
+.chips{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--mut)}
+.chip{background:var(--info-bg);border:1px solid #CBD9F6;color:#1D3E86;border-radius:14px;padding:2px 9px;font-size:11.5px;font-weight:600}
+.chip s{opacity:.6;margin-left:5px;cursor:pointer;text-decoration:none}
+.card{background:var(--surf);border:1px solid var(--bord);border-radius:var(--radius);overflow:hidden}
+.card .chd{background:#F7F9FB;border-bottom:1px solid var(--bord);padding:8px 12px;font-weight:700;font-size:12.5px;color:var(--navy);display:flex;gap:10px;align-items:center}
+table.fin{width:100%;border-collapse:collapse;font-size:12.5px}
+table.fin th{background:#F7F9FB;color:var(--mut);font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;text-align:left;padding:7px 10px;border-bottom:1px solid var(--bord);white-space:nowrap;position:sticky;top:0}
+table.fin td{padding:6px 10px;border-bottom:1px solid var(--bord-l);vertical-align:top}
+table.fin tr:hover td{background:#F6F9FE}
+td.num,th.num{text-align:right !important;font-variant-numeric:tabular-nums}
+.acct{font-family:var(--mono);font-size:12px;letter-spacing:.2px}
+a.jlink{color:var(--blue);text-decoration:none;font-family:var(--mono);font-size:12px}a.jlink:hover{text-decoration:underline}
+tr.subt td{background:#F3F6FA;font-weight:700;border-top:1px solid var(--bord)}
+tr.sect td{background:var(--navy);color:#fff;font-weight:700;font-size:11.5px;text-transform:uppercase;letter-spacing:.8px;padding:6px 10px}
+.totfoot{display:flex;gap:26px;align-items:center;background:var(--navy);color:#fff;padding:9px 14px;border-radius:0 0 var(--radius) var(--radius);font-size:12.5px}
+.totfoot .t{display:flex;flex-direction:column}.totfoot .t span{font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:#9FB0CC}
+.totfoot .t b{font-variant-numeric:tabular-nums;font-size:13.5px}
+.badge{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:12px;letter-spacing:.4px}
+.badge.ok{background:var(--ok-bg);color:var(--ok);border:1px solid #BFE3CD}
+.badge.err{background:var(--err-bg);color:var(--err);border:1px solid #F0C4BF}
+.badge.warn{background:var(--warn-bg);color:var(--warn);border:1px solid #EAD9A0}
+.badge.neu{background:#EEF1F5;color:var(--mut);border:1px solid var(--bord)}
+.banner{border-radius:var(--radius);padding:10px 14px;font-size:12.5px;display:flex;gap:10px;align-items:flex-start}
+.banner.err{background:var(--err-bg);border:1px solid #F0C4BF;color:#7C1A14}
+.banner.warn{background:var(--warn-bg);border:1px solid #EAD9A0;color:#6B4A00}
+.banner b{font-weight:700}
+.pager{display:flex;gap:8px;align-items:center;justify-content:flex-end;padding:8px 12px;font-size:12px;color:var(--mut);background:#fff;border-top:1px solid var(--bord-l)}
+.pager .btn{padding:4px 9px}
+.stategrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.state{background:var(--surf);border:1px solid var(--bord);border-radius:var(--radius);overflow:hidden}
+.state .shd{background:#F7F9FB;border-bottom:1px solid var(--bord);padding:6px 10px;font-size:11px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.5px}
+.state .sbody{padding:12px;font-size:12px;color:var(--mut);min-height:74px}
+.skel{height:9px;border-radius:4px;background:linear-gradient(90deg,#EDF0F4,#E2E7EE,#EDF0F4);margin:6px 0}
+.empt{color:var(--mut);text-align:center;padding:14px 6px}.empt b{color:var(--ink)}
+.drawer{border:1px solid var(--bord);border-left:4px solid var(--blue);border-radius:var(--radius);background:#fff}
+.drawer .dhd{padding:9px 12px;border-bottom:1px solid var(--bord);display:flex;gap:10px;align-items:center;font-weight:700;color:var(--navy)}
+.kv{display:grid;grid-template-columns:130px 1fr;gap:3px 10px;padding:10px 12px;font-size:12.5px}
+.kv .k{color:var(--mut)}
+.note{font-size:11.5px;color:var(--mut);padding:2px 2px}
+.flag{font-family:var(--mono);font-size:10.5px;font-weight:700;color:#8A4B00;background:#FFF3E0;border:1px solid #F2D6A6;border-radius:4px;padding:1px 6px;white-space:nowrap}
+.secthead{font-size:13px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.7px;margin:10px 0 2px;border-bottom:2px solid var(--navy);padding-bottom:4px}
+@media (max-width:1100px){.app{grid-template-columns:1fr}.sidenav{display:none}}
+:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+
+.stepper{display:flex;gap:0;background:var(--surf);border:1px solid var(--bord);border-radius:var(--radius);overflow:hidden;margin:0 0 4px}
+.step{flex:1;padding:8px 12px;font-size:11.5px;border-right:1px solid var(--bord-l);color:var(--mut)}
+.step b{display:block;color:var(--navy);font-size:12px}
+.step.cur{background:var(--info-bg)}
+.timeline{display:flex;align-items:center;gap:0;padding:14px 12px;background:var(--surf)}
+.tl{flex:1;text-align:center;position:relative}
+.tl .dot{width:14px;height:14px;border-radius:50%;margin:0 auto 6px;border:3px solid var(--bord);background:#fff}
+.tl.open .dot{border-color:var(--ok);background:var(--ok-bg)}
+.tl.soft .dot{border-color:var(--warn);background:var(--warn-bg)}
+.tl.hard .dot{border-color:var(--navy);background:var(--navy)}
+.tl .lab{font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--mut);font-weight:700}
+.tl .per{font-size:12px;color:var(--ink)}
+.tl:not(:last-child):after{content:"";position:absolute;top:7px;left:50%;width:100%;height:2px;background:var(--bord);z-index:0}
+.tl .dot{position:relative;z-index:1}
+.ceremony{border:1px solid var(--bord);border-left:4px solid var(--warn);border-radius:var(--radius);background:#fff;padding:12px 14px;font-size:12.5px}
+.ceremony h4{color:var(--navy);font-size:13px;margin-bottom:6px}
+.linegrid td input{border:1px solid var(--bord);border-radius:4px;padding:3px 6px;font-size:12px;width:100%}
+.balbar{display:flex;gap:18px;padding:7px 12px;background:var(--info-bg);border-top:1px solid var(--bord);font-size:12px;font-variant-numeric:tabular-nums}
+</style></head><body>
+<div class="app"><nav class="sidenav" aria-label="Accounting navigation"><div class="brand">AutoMate 2.0 · Accounting</div>
+<div class="grp">R1 · P01</div><a class="on" href="#s009">P01 — Governed Foundation</a><div class="grp">Golden R0</div><a class="" href="#">01 — Chart of Accounts</a><a class="" href="#">02 — Journal Entry</a><a class="" href="#">03 — Post / Reverse</a><a class="" href="#">04 — Journal Sources</a><a class="" href="gl-inquiry.html">05 — GL Inquiry</a><a class="" href="gl-search.html">06 — GL Search</a><a class="" href="trial-balance.html">07 — Trial Balance</a><a class="" href="balance-sheet.html">08 — Balance Sheet</a><a class="" href="income-statement.html">09 — Income Statement</a><div class="grp">Coming later</div>
+<a class="dis" title="Not in this pass">Organization Hierarchy</a><a class="dis" title="Not in this pass">Role Templates</a><a class="dis" title="S224 — not yet built">Audit History</a></nav>
+<div class="main">
+<div class="ctxbar" role="group" aria-label="Accounting context">
+<span class="lbl">Entity</span><select class="sel" aria-label="Legal entity"><option>Kunes Ford of Delavan — Ent 01</option><option>Kunes CDJR of Sterling — Ent 02</option></select>
+<span class="lbl">Store</span><select class="sel" aria-label="Store"><option>All stores</option><option selected>Store 01 — Delavan</option></select>
+<span class="lbl">Dept</span><select class="sel" aria-label="Department"><option selected>All departments</option><option>01 New Vehicle</option><option>04 Service</option><option>05 Parts</option></select>
+<span class="lbl">Period</span><select class="sel" aria-label="Fiscal period"><option selected>2026-08 (Open)</option><option>2026-07 (Closed)</option></select>
+<span class="spacer"></span><span class="status-pill">FY2026 · Calendar-aligned</span></div>
+
+<div class="crumb"><a href="#">Accounting</a> / <a href="#">Administration</a> / <b>Governed Foundation (P01)</b></div>
+<div class="pagehead"><h1>P01 — Governed Accounting Foundation</h1><span class="status-pill">Design package · Foundation V1</span></div>
+<div class="wrap">
+<div class="stepper">
+<div class="step cur"><b>1 · Govern the COA</b>S009 statement metadata</div>
+<div class="step"><b>2 · Analysis lens</b>S011 (blocked-DoR)</div>
+<div class="step"><b>3 · Elimination home</b>S003 configuration</div>
+<div class="step"><b>4 · Standard entries</b>S032 templates</div>
+<div class="step"><b>5 · Close the month</b>S008 period control</div>
+</div>
+<section id="s009"><div class="secthead" style="font-size:14px;margin-top:22px">1 · COA Governance & Statement Metadata <span class="status-pill" style="margin-left:8px">S009</span></div>
+<div class="card"><div class="chd">COA Governance — statement metadata <span class="spacer"></span>
+<span class="chip">Filter: Unsupported classification (2)</span><button class="btn">Bulk assign line…</button></div>
+<table class="fin"><thead><tr><th>Account</th><th>Description</th><th>Classification</th><th>Statement line</th><th>Posted activity</th><th></th></tr></thead><tbody>
+<tr><td class="acct">50100</td><td>Cost of Parts Sold</td><td><select class="sel"><option selected>COST_OF_SALES</option></select></td>
+<td><select class="sel"><option selected>IS-COS-PARTS — Cost of Sales · Parts</option><option>Unmapped (classification default)</option></select></td>
+<td><span class="badge warn">Has history</span></td><td><button class="btn pri">Save…</button></td></tr>
+<tr><td class="acct">50200</td><td>Delivery Expense</td><td><select class="sel"><option selected>DISTRIBUTION</option></select></td>
+<td><select class="sel"><option selected>IS-DIST-DLV — Distribution · Delivery</option></select></td>
+<td><span class="badge neu">None</span></td><td><button class="btn pri">Save…</button></td></tr>
+</tbody></table></div>
+<div class="card"><div class="chd">Statement preview — effect of mapping (read-only render of Income Statement section)</div>
+<table class="fin"><tbody>
+<tr class="sect"><td colspan="2">REVENUE</td></tr><tr class="subt"><td>Total Revenue</td><td class="num">90,155.40</td></tr>
+<tr class="sect"><td colspan="2">COST OF SALES</td></tr><tr><td style="padding-left:22px">Cost of Sales · Parts (50100)</td><td class="num">21,406.10</td></tr>
+<tr class="subt"><td><b>GROSS PROFIT</b> <span class="badge ok">Unlocked by S009</span></td><td class="num"><b>68,749.30</b></td></tr>
+</tbody></table>
+<div class="note" style="padding:8px 12px"><span class="flag">SME_VALIDATION_REQUIRED</span> minimal internal line list + Gross Profit placement · <span class="flag">DECISION_REQUIRED</span> reclassification-with-history effective-period rule · <span class="flag">API_CONFIRMATION_REQUIRED</span> classification enum + S227 response versioning. The Golden R0 limitation banner on Balance Sheet / Income Statement retires per-account as mapping lands.</div></div>
+<div class="stategrid">
+<div class="state"><div class="shd">Reclassify with history</div><div class="sbody"><div class="banner warn"><b>50100 has posted activity.</b>&nbsp;Classification changes apply prospectively — choose an effective period. Historical statements are never restated.</div><div style="margin-top:6px">Effective from <select class="sel"><option>2026-10</option></select> · Reason <input class="inp" placeholder="Required"></div></div></div>
+<div class="state"><div class="shd">Line delete blocked</div><div class="sbody"><div class="banner err"><b>IS-COS-PARTS is referenced by 4 accounts.</b>&nbsp;Reassign those accounts first, or deactivate the line instead of deleting it.</div></div></div>
+</div></section><section id="s011"><div class="secthead" style="font-size:14px;margin-top:22px">2 · Analysis Codes <span class="status-pill" style="margin-left:8px">S011</span></div>
+<div class="card"><div class="chd">Analysis codes <span class="spacer"></span><span class="badge warn">BLOCKED-DOR · SES-3 accumulators question</span><button class="btn pri">New type…</button></div>
+<table class="fin"><thead><tr><th>Type</th><th>Values</th><th>Active</th><th></th></tr></thead><tbody>
+<tr><td><b>CAMPAIGN</b> — Marketing campaign</td><td><span class="chip">SPRING-SVC</span> <span class="chip">FALL-TIRE</span></td><td><span class="badge ok">Active</span></td><td><button class="btn">Edit</button></td></tr>
+<tr><td><b>PROJECT</b> — Facility project</td><td><span class="chip">BODYSHOP-26</span></td><td><span class="badge ok">Active</span></td><td><button class="btn">Edit</button></td></tr>
+</tbody></table>
+<div class="note" style="padding:8px 12px">Tags are reporting dimensions only — they never affect balancing or posting (BR011-3). JE line grid gains a tag control; GL Inquiry / Search gain an analysis filter. <span class="flag">DECISION_REQUIRED</span> tag cap + required-per-source · <span class="flag">TECHNICAL_VERIFICATION_REQUIRED</span> certified line-schema extension point.</div></div>
+<div class="stategrid">
+<div class="state"><div class="shd">JE line tagging (S214 grid, reused)</div><div class="sbody"><table class="fin linegrid"><thead><tr><th>Account</th><th class="num">DR</th><th>Tags</th></tr></thead><tbody><tr><td class="acct">60310 Advertising</td><td class="num">1,200.00</td><td><span class="chip">CAMPAIGN: SPRING-SVC</span> <button class="btn" style="padding:1px 7px">+</button></td></tr></tbody></table></div></div>
+<div class="state"><div class="shd">Inactive value</div><div class="sbody"><div class="banner warn"><b>FALL-TIRE is inactive.</b>&nbsp;Inactive values can’t tag new lines; historical lines keep their tags (BR011-4).</div></div></div>
+</div></section><section id="s003"><div class="secthead" style="font-size:14px;margin-top:22px">3 · Elimination Entity Configuration <span class="status-pill" style="margin-left:8px">S003</span></div>
+<div class="card"><div class="chd">Legal entity — Kunes Eliminations LLC <span class="badge neu" style="margin-left:8px">ELIMINATION ENTITY</span></div>
+<div class="kv">
+<span class="k">Elimination entity</span><span><label><input type="checkbox" checked> This entity records intercompany eliminations only</label></span>
+<span class="k">Consequences</span><span>Cannot own stores or franchises · not an operational posting target · badged on entity list and org tree (S202)</span>
+<span class="k">Scope</span><span>All group entities <span class="flag">DECISION_REQUIRED · scoped pairing R1 vs R5 (proposed: flag-only in R1)</span></span>
+<span class="k">Reason</span><span><input class="inp" style="width:100%" placeholder="Required when entity has posted activity"></span>
+</div>
+<div style="padding:0 12px 12px"><button class="btn pri">Save elimination settings</button></div></div>
+<div class="stategrid">
+<div class="state"><div class="shd">Flag blocked — owns stores</div><div class="sbody"><div class="banner err"><b>Kunes Ford of Delavan owns 1 store (Store 01).</b>&nbsp;An elimination entity cannot own stores. Reassign the store first (rule BR003-2).</div></div></div>
+<div class="state"><div class="shd">Store assignment blocked</div><div class="sbody"><div class="banner err"><b>Kunes Eliminations LLC is an elimination entity.</b>&nbsp;Stores cannot be assigned to it (rule BR003-2).</div></div></div>
+</div>
+<div class="note"><span class="flag">SME_VALIDATION_REQUIRED</span> posting-source restriction list · elimination <i>posting</i> and consolidation are R5 (S034/S035) — configuration only here.</div></section><section id="s032"><div class="secthead" style="font-size:14px;margin-top:22px">4 · Recurring Journal Templates <span class="status-pill" style="margin-left:8px">S032</span></div>
+<div class="card"><div class="chd">Recurring journal templates <span class="spacer"></span><button class="btn">Generate for period…</button><button class="btn pri">New template…</button></div>
+<table class="fin"><thead><tr><th>Code</th><th>Name</th><th class="num">Amount</th><th>Auto-reverse</th><th>Last generated</th><th>Active</th><th></th></tr></thead><tbody>
+<tr><td class="acct">RT-RENT</td><td>Monthly rent — Delavan</td><td class="num">18,500.00</td><td><span class="badge neu">No</span></td><td class="note">2026-08 → GJ-D-1031 (posted)</td><td><span class="badge ok">Active</span></td><td><button class="btn">Edit</button></td></tr>
+<tr><td class="acct">RT-UTIL-ACCR</td><td>Utilities accrual</td><td class="num">2,150.00</td><td><span class="badge ok">Yes</span></td><td class="note">2026-08 → posted · reversal drafted 09/01</td><td><span class="badge ok">Active</span></td><td><button class="btn">Edit</button></td></tr>
+</tbody></table></div>
+<div class="ceremony" style="border-left-color:var(--blue)"><h4>Generate for 2026-09 — preview (idempotent by template + period)</h4>
+<table class="fin"><thead><tr><th></th><th>Template</th><th class="num">Amount</th><th>Target date</th><th>Result</th></tr></thead><tbody>
+<tr><td><input type="checkbox" checked></td><td>RT-RENT</td><td class="num">18,500.00</td><td>Sep 30, 2026</td><td><span class="badge neu">Will create draft</span></td></tr>
+<tr><td><input type="checkbox" checked></td><td>RT-UTIL-ACCR</td><td class="num">2,150.00</td><td>Sep 30, 2026</td><td><span class="badge warn">Already generated — will return existing</span></td></tr>
+</tbody></table>
+<div style="margin-top:8px"><button class="btn pri">Generate drafts</button> <button class="btn">Cancel</button></div>
+<div class="note" style="margin-top:6px">Drafts are created through the certified journal lifecycle (S214) and post under existing permissions and posting mode — this pack adds no approval routing and no second posting path. Auto-reverse drafts link via S218 reversal semantics. <span class="flag">TECHNICAL_VERIFICATION_REQUIRED</span> S214/S218/S013 integration points · <span class="flag">DECISION_REQUIRED</span> RT source code · trigger mode · reverse timing · formulas deferred · <span class="flag">SME_VALIDATION_REQUIRED</span> generation date convention</div></div>
+<div class="stategrid">
+<div class="state"><div class="shd">Template editor — balance bar (JE pattern reused)</div><div class="sbody"><div class="balbar"><span>DR <b>18,500.00</b></span><span>CR <b>18,500.00</b></span><span class="badge ok">Balanced — required to save</span></div></div></div>
+<div class="state"><div class="shd">Closed-period refusal</div><div class="sbody"><div class="banner warn"><b>2026-08 is soft closed.</b>&nbsp;Generation is refused by the same period rules as any posting (BR032-6 / S008). Choose an open period.</div></div></div>
+<div class="state"><div class="shd">Partial batch result</div><div class="sbody"><div class="banner err"><b>RT-DEPR failed:</b>&nbsp;line 2 account 17400 is inactive. RT-RENT succeeded → GJ-D-1051. Nothing was silently skipped.</div></div></div>
+</div></section><section id="s008"><div class="secthead" style="font-size:14px;margin-top:22px">5 · Fiscal Period Control <span class="status-pill" style="margin-left:8px">S008</span></div>
+<div class="card"><div class="chd">Fiscal periods — FY2026 <span class="spacer"></span><span class="note">Governed state machine: FUTURE → OPEN → SOFT_CLOSED → HARD_CLOSED (no skips)</span></div>
+<div class="timeline">
+<div class="tl hard"><div class="dot"></div><div class="lab">Hard closed</div><div class="per">2026-06</div></div>
+<div class="tl hard"><div class="dot"></div><div class="lab">Hard closed</div><div class="per">2026-07</div></div>
+<div class="tl soft"><div class="dot"></div><div class="lab">Soft closed</div><div class="per">2026-08</div></div>
+<div class="tl open"><div class="dot"></div><div class="lab">Open</div><div class="per">2026-09</div></div>
+<div class="tl"><div class="dot"></div><div class="lab">Future</div><div class="per">2026-10</div></div>
+<div class="tl"><div class="dot"></div><div class="lab">Future</div><div class="per">2026-11</div></div>
+</div>
+<table class="fin"><thead><tr><th>Period</th><th>Status</th><th>Open drafts</th><th>Last transition</th><th>Actions</th></tr></thead><tbody>
+<tr><td><b>2026-08</b></td><td><span class="badge warn">SOFT CLOSED</span></td><td>0</td><td class="note">Soft closed Sep 3 by m.rivera — "ops cutoff"</td>
+<td><button class="btn pri">Hard close…</button> <button class="btn">Reopen…</button></td></tr>
+<tr><td><b>2026-09</b></td><td><span class="badge ok">OPEN</span></td><td>2 <a class="jlink" href="#">view</a></td><td class="note">Opened Sep 1 by m.rivera</td>
+<td><button class="btn">Soft close…</button></td></tr>
+<tr><td><b>2026-07</b></td><td><span class="badge neu">HARD CLOSED</span></td><td>—</td><td class="note">Hard closed Aug 6 · DB-enforced</td>
+<td><button class="btn" title="fiscal.period.unlock required" disabled>Unlock…</button></td></tr>
+</tbody></table></div>
+<div class="ceremony"><h4>Hard close 2026-08 — ceremony (destructive pattern, Foundation V1)</h4>
+Prerequisites verified: <span class="badge ok">0 open drafts</span> <span class="badge ok">Earlier periods closed</span><br>
+Blocked after close: <b>all postings, all sources, no exceptions — enforced at the database.</b> Reopen requires the unlock ceremony.<br>
+<div style="margin-top:8px">Type the period to confirm: <input class="inp" placeholder="2026-08" style="min-width:110px"> <button class="btn pri">Hard close period</button> <button class="btn">Cancel</button></div>
+<div class="note" style="margin-top:6px"><span class="flag">DECISION_REQUIRED</span> soft-close allowlist · drafts block-vs-roll · unlock single-vs-dual · <span class="flag">SME_VALIDATION_REQUIRED</span> sequential close BR008-6 · <span class="flag">TECHNICAL_VERIFICATION_REQUIRED</span> DB backstop mechanism</div></div>
+<div class="stategrid" style="margin-top:10px">
+<div class="state"><div class="shd">Close blocked — open drafts</div><div class="sbody"><div class="banner err"><b>2 draft journals dated 2026-09 block hard close.</b>&nbsp;GJ-D-1042 (450.00, t.chen) · GJ-D-1044 (86.40, m.rivera). Post or void them, then retry.</div></div></div>
+<div class="state"><div class="shd">Posting into soft-closed</div><div class="sbody"><div class="banner warn"><b>Period 2026-08 is soft closed.</b>&nbsp;Source CR is not on the close allowlist (rule BR008-2). Post to 2026-09 or ask the Controller to reopen.</div></div></div>
+<div class="state"><div class="shd">Reopen ceremony</div><div class="sbody"><b>Reopen 2026-08?</b><div class="note">Reason (required, audited):</div><input class="inp" style="width:100%" placeholder="Late vendor invoice per audit request #A-118"><div style="margin-top:6px"><button class="btn pri">Reopen period</button> <button class="btn">Cancel</button></div></div></div>
+<div class="state"><div class="shd">Concurrency</div><div class="sbody"><div class="banner warn"><b>Period status changed.</b>&nbsp;Another user transitioned 2026-08 while this ceremony was open. Refresh to see the current state.</div></div></div>
+</div></section>
+</div></div></div></body></html>

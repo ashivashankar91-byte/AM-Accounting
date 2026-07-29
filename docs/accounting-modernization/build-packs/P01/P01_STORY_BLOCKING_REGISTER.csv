@@ -1,0 +1,28 @@
+item_id,item,story,screen,acceptance_criterion,blocks_design,blocks_frontend,blocks_backend,blocks_certification,owner
+BLK-01,Soft-close allowlist content (BR008-2),S008,P01-SCR-01,AC008-1,N,PARTIAL (ceremony copy binds to API-declared allowlist),N — implemented on branch,Y — certification confirms implemented allowlist matches product intent (adjusting-entry attestation integration noted in branch evidence),PO + Accounting SME
+BLK-02,Drafts handling at hard close: block vs roll (BR008-5),S008,P01-SCR-01,AC008-4,N,N (worklist UI covers both),N — implemented,Y — confirm implemented behavior = product intent,PO
+BLK-03,Unlock mode: single-permission vs dual-person (BR008 alt),S008,P01-SCR-01,transition history,N,N — moot,N — moot,N — RESOLVED: PO decision "S008 CONTRACT RECONCILIATION" (2026-07-28) confirms LOCKED is terminal with no unlock operation at any layer; this question no longer applies,PO (resolved)
+BLK-04,Sequential-close rule (BR008-6),S008,P01-SCR-01,AC008-5,N,N,N — implemented,Y — SME confirms against legacy month-end practice,Accounting SME (SES-1/2 window)
+BLK-05,S013 posting-gate integration point,S008,P01-SCR-01,AC008-1/2,N,N,N — implemented,"N — RESOLVED: live-code PostingService proof complete (tests/live-db/period-close-live.test.ts) — real PostingService.post() calls, including the AMPR6 case proving the DB trigger is a genuine backstop beyond the app-layer evaluator",Claude Code (resolved)
+BLK-06,DB backstop mechanism + RLS-negative suite,S008,P01-SCR-01,AC008-2,N,N,N — implemented,"N — RESOLVED: automated RLS-negative + concurrency + idempotency Vitest/live-db suite complete (tests/live-db/period-close-live.test.ts, 19 passing) plus route-level authz-guard coverage (tests/authz-guard-integration.test.ts, 102 passing)",Claude Code (resolved)
+BLK-07,Minimal internal statement-line list,S009,P01-SCR-03,AC009-1,N,PARTIAL (registry seed content),PARTIAL (seed migration),Y,Accounting SME
+BLK-08,IS Gross Profit placement / presentation,S009,P01-SCR-02 preview,AC009-1,N,PARTIAL (preview section order),N,Y,Accounting SME
+BLK-09,Reclassification-with-history effective-period rule,S009,P01-SCR-02,AC009-2,N,N (state designed),Y (rule implementation),Y,PO
+BLK-10,Certified classification enum values,S009,P01-SCR-02,AC009-1,N,N,Y (schema extension point),Y,Claude Code (API_CONFIRMATION_REQUIRED)
+BLK-11,S227 statement response versioning for grouped sections,S009,statements 08/09,AC009-1,N,PARTIAL (statement consumption),Y,Y,Claude Code (API_CONFIRMATION_REQUIRED)
+BLK-12,SES-3 accumulators-vs-analysis-codes (AMD-005),S011,P01-SCR-04,scope boundary,N — design done on confirmed model,N for confirmed semantics,N for confirmed semantics,"Y — ISOLATED: only accumulator-adjacent behavior waits; if distinct, returns as separate proposal",Accounting SME (SES-3) + PO
+BLK-13,Tag cap per line,S011,P01-SCR-05,AC011-1,N,PARTIAL (control limit),PARTIAL (constraint),Y,PO
+BLK-14,Required-per-source tagging,S011,P01-SCR-05,AC011-1,N,N (never-required default designed),PARTIAL,Y,PO
+BLK-15,Certified JE line-schema extension point,S011,P01-SCR-05,AC011-1/NEG,N,N,Y,Y,Claude Code (TECHNICAL_VERIFICATION_REQUIRED)
+BLK-16,Pairing scope: flag-only R1 vs scoped pairing,S003,P01-SCR-06,BR003-3,N,N (flag-only designed),N (flag-only),Y — ratify flag-only,PO
+BLK-17,Permission granularity: distinct vs entity.manage,S003,P01-SCR-06,authz,N,N,PARTIAL (catalog entry),Y,PO + Security
+BLK-18,Posting-source restriction list for elimination entities,S003,P01-SCR-06,BR003-2,N,N (copy only),"N (recorded list, enforced R5)",Y,Accounting SME
+BLK-19,S200 entity-model extension point,S003,P01-SCR-06,AC003-1,N,N,Y,Y,Claude Code (TECHNICAL_VERIFICATION_REQUIRED)
+BLK-20,RT journal source: dedicated vs GJ,S032,P01-SCR-08,AC032-1,N,PARTIAL (source display),Y (S212 registry row),Y,PO (with UQ-13 outcome)
+BLK-21,Generation trigger: manual-only R1 (scheduler excluded until approved),S032,P01-SCR-09,AC032-1,N,N — manual ceremony designed; scheduler UI NOT built,N — no scheduler backend until approved,Y for scheduler only; manual path certifies without it,PO
+BLK-22,Auto-reverse draft timing: at post vs at period open,S032,P01-SCR-07,AC032-3,N,N (badge covers both),Y,Y,PO + Accounting SME
+BLK-23,Formula amounts deferral ratification,S032,P01-SCR-08,scope,N,N (fixed-only designed),N (fixed-only),Y — ratify deferral,PO
+BLK-24,Generation target-date convention,S032,P01-SCR-09,AC032-1,N,PARTIAL (preview date),Y,Y,Accounting SME
+BLK-25,S214/S218 integration points for generation + reversal drafts,S032,P01-SCR-09,AC032-1/3/NEG,N,N,Y,Y,Claude Code (TECHNICAL_VERIFICATION_REQUIRED)
+BLK-26,Report-view audit policy (views vs writes) — cross-cutting from Foundation V1,ALL,all report screens,audit mapping,N,N,PARTIAL,Y,PO + Accounting SME
+BLK-27,Permission names vs implemented catalogue (S008 branch includes catalogue),ALL,all,authz mappings,N,N,N,N for S008 — RESOLVED (contract corrected to match the implemented catalogue in P01_STORY_CONTRACTS.md; see PO decision "S008 CONTRACT RECONCILIATION" 2026-07-28); Y still applies for S009/S011/S003/S032 pending their own verification passes,Claude Code (S008 resolved)
