@@ -11,6 +11,8 @@ export const GL_PERMISSIONS = {
   ADMIN_MANAGE: 'gl.admin.manage',
   REPORT_TB_VIEW: 'report.tb.view',
   REPORT_FS_VIEW: 'report.fs.view',
+  STATEMENT_LINE_MANAGE: 'gl.statement_line.manage',
+  STATEMENT_METADATA_MANAGE: 'gl.statement_metadata.manage',
 } as const;
 
 export function getTenantId(request: any, statusCode = 400): TenantId {

@@ -17,8 +17,13 @@ interface FSRow {
 }
 
 interface IncomeStatementReport {
+  schemaVersion?: number;
   scope: { entity: string; store: string | null; dept: string | null; asOf: string };
   revenue: { rows: FSRow[]; total: number };
+  /** S009/BLK-08: new IS section (Revenue -> Cost of Sales -> Gross Profit -> Operating Expenses -> Net Income). */
+  costOfSales: { rows: FSRow[]; total: number };
+  /** S009/BLK-08: Revenue - CostOfSales. */
+  grossProfit: number;
   expense: { rows: FSRow[]; total: number };
   netIncome: number;
   excludedAccounts: Array<{ accountCode: string; accountType: string; reason: string }>;
@@ -53,6 +58,15 @@ interface UnclassifiedError {
   // always returns a plural `accounts` array -- supports reporting MULTIPLE
   // unclassified accounts in one response.
   accounts: Array<{ accountCode: string; accountType: string }>;
+}
+
+// S009/DISTRIBUTION (Product decision, 2026-07-28): a DISTRIBUTION-type
+// account carrying a non-zero resting balance is a posting-expansion
+// invariant violation -- the whole request fails closed, never a partial
+// or misleading statement.
+interface DistributionAnomalyError {
+  error: 'DISTRIBUTION_BALANCE_ANOMALY';
+  accounts: Array<{ accountCode: string; accountName: string; balance: number }>;
 }
 
 function Section({ title, rows, total, testPrefix }: { title: string; rows: FSRow[]; total: number; testPrefix: string }) {
@@ -105,6 +119,7 @@ export default function IncomeStatement() {
   const [report, setReport] = useState<IncomeStatementReport | null>(null);
   const [imbalance, setImbalance] = useState<StructuralImbalance | null>(null);
   const [unclassified, setUnclassified] = useState<UnclassifiedError | null>(null);
+  const [distributionAnomaly, setDistributionAnomaly] = useState<DistributionAnomalyError | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [unauthorized, setUnauthorized] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -119,6 +134,7 @@ export default function IncomeStatement() {
     setUnauthorized(null);
     setImbalance(null);
     setUnclassified(null);
+    setDistributionAnomaly(null);
     setReport(null);
     setCsv(null);
     try {
@@ -137,6 +153,8 @@ export default function IncomeStatement() {
         setImbalance(err.body);
       } else if (err.status === 500 && err.body?.error === 'UNCLASSIFIED_ACCOUNT_TYPE') {
         setUnclassified(err.body);
+      } else if (err.status === 500 && err.body?.error === 'DISTRIBUTION_BALANCE_ANOMALY') {
+        setDistributionAnomaly(err.body);
       } else if (err.status === 401 || err.status === 403) {
         setUnauthorized(err.message);
       } else {
@@ -230,6 +248,21 @@ export default function IncomeStatement() {
         </Banner>
       )}
 
+      {distributionAnomaly && (
+        <Banner kind="error" testId="is-distribution-anomaly-banner" title="DISTRIBUTION_BALANCE_ANOMALY">
+          DISTRIBUTION-type account{distributionAnomaly.accounts.length === 1 ? '' : 's'}{' '}
+          {distributionAnomaly.accounts.map((a, i) => (
+            <span key={a.accountCode}>
+              {i > 0 && ', '}
+              {a.accountCode} ({a.accountName}) = {formatMoney(a.balance)}
+            </span>
+          ))}{' '}
+          unexpectedly carr{distributionAnomaly.accounts.length === 1 ? 'ies' : 'y'} a non-zero balance. This is a
+          posting-expansion data-integrity issue, not a scope gap — the statement was not rendered. Contact your
+          controller; the anomaly has been recorded for investigation.
+        </Banner>
+      )}
+
       <FilterBar>
         <FilterField label="Entity/Company" width={130}>
           <input data-testid="is-entity" value={entity} onChange={(e) => setEntity(e.target.value)} className={FILTER_CONTROL_CLASS} />
@@ -273,6 +306,17 @@ export default function IncomeStatement() {
           </p>
 
           <Section title="Revenue" rows={report.revenue.rows} total={report.revenue.total} testPrefix="is-revenue" />
+          <Section title="Cost of Sales" rows={report.costOfSales.rows} total={report.costOfSales.total} testPrefix="is-cost-of-sales" />
+
+          <FinancialTable className="mt-2">
+            <tbody>
+              <TotalsRow testId="is-gross-profit">
+                <ReportTd colSpan={2}>Gross Profit</ReportTd>
+                <MoneyTd value={report.grossProfit} bold />
+              </TotalsRow>
+            </tbody>
+          </FinancialTable>
+
           <Section title="Expense" rows={report.expense.rows} total={report.expense.total} testPrefix="is-expense" />
 
           <FinancialTable className="mt-3">
@@ -304,7 +348,7 @@ export default function IncomeStatement() {
         </>
       )}
 
-      {!report && !error && !unauthorized && !imbalance && !unclassified && !busy && (
+      {!report && !error && !unauthorized && !imbalance && !unclassified && !distributionAnomaly && !busy && (
         <EmptyState testId="is-initial-state" title="Run an Income Statement to see results." />
       )}
 

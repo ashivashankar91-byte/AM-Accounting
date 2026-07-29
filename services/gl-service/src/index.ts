@@ -16,6 +16,7 @@ import { GLService } from './application/gl-service';
 import { AgentReviewTimeoutJob } from './application/agent-timeout';
 import { TrialBalanceService } from './application/trial-balance-service';
 import { FinancialStatementService } from './application/financial-statement-service';
+import { StatementLineService } from './application/statement-line-service';
 import { GLValidationEngine } from './domain/validation-engine';
 import {
   DuplicateEntryRule,
@@ -84,6 +85,7 @@ async function bootstrap() {
   container.register('GLService', { useClass: GLService });
   container.register(TrialBalanceService, { useClass: TrialBalanceService });
   container.register(FinancialStatementService, { useClass: FinancialStatementService });
+  container.register(StatementLineService, { useClass: StatementLineService });
   container.register(InquiryRepository, { useClass: InquiryRepository });
 
   await app.register(glRoutes, { prefix: '/api/v1/gl' });

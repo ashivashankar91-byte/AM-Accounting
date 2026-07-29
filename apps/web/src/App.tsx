@@ -100,6 +100,7 @@ import MFGDCSCommunications from './pages/accounting/MFGDCSCommunications';
 import PartsGLAccounts from './pages/accounting/admin/PartsGLAccounts';
 import ServiceGLAccounts from './pages/accounting/admin/ServiceGLAccounts';
 import PeriodControl from './pages/accounting/admin/PeriodControl';
+import StatementMetadata from './pages/accounting/admin/StatementMetadata';
 import TechnicianMasterFile from './pages/service/TechnicianMasterFile';
 import ServiceHistory from './pages/service/ServiceHistory';
 import ReportMate from './pages/reporting/ReportMate';
@@ -272,6 +273,7 @@ const MODULES: AppModule[] = [
         { path: '/accounting/admin/parts-gl-accounts',  label: 'Parts GL Accounts' },
         { path: '/accounting/admin/service-gl-accounts', label: 'Service GL Accounts' },
         { path: '/accounting/admin/mfg-dcs',            label: 'MFG/DCS Comms' },
+        { path: '/accounting/admin/statement-metadata', label: 'Statement Metadata' },
       ]},
       { title: 'System', items: [
         { path: '/tenants',        label: 'Tenants' },
@@ -608,6 +610,7 @@ export default function App() {
               <Route path="/accounting/admin/mfg-dcs" element={<MFGDCSCommunications />} />
               <Route path="/accounting/admin/parts-gl-accounts" element={<PartsGLAccounts />} />
               <Route path="/accounting/admin/service-gl-accounts" element={<ServiceGLAccounts />} />
+              <Route path="/accounting/admin/statement-metadata" element={<StatementMetadata />} />
 
               {/* Sprint C — Service */}
               <Route path="/service/admin/technicians" element={<TechnicianMasterFile />} />

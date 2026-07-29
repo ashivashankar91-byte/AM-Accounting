@@ -59,10 +59,71 @@ model GLAccount {
   // See wave-3-schedule-subsystem.md for architecture decision
   distributionsAsSource  GlDistribution[] @relation("DistributionSource")
   distributionsAsTarget  GlDistribution[] @relation("DistributionTarget")
+  /// S009 — current effective statement-line mapping (BR009-1). Optional: an
+  /// account may exist without a statementLine (falls to its `type`'s default
+  /// statement section, BR009-4) but never without a `type` classification.
+  statementLineId    String? @map("statement_line_id")
+  statementLine      StatementLine? @relation(fields: [statementLineId], references: [id])
+  statementLineHistory GLAccountStatementLineHistory[]
 
   @@unique([tenantId, code])
   @@map("gl_accounts")
   @@index([tenantId])
+  @@index([tenantId, statementLineId])
+}
+
+/// S009 — BR009-1: tenant-scoped registry of Balance Sheet / Income Statement
+/// presentation lines a controller can map accounts onto. Seed content is
+/// intentionally empty in v1 — see P01_STORY_BLOCKING_REGISTER.csv BLK-07
+/// (Accounting SME registry-content sign-off still pending).
+model StatementLine {
+  id         String   @id @default(uuid())
+  tenantId   String   @map("tenant_id")
+  code       String
+  name       String
+  statement  String   // BS | IS
+  section    String   // e.g. ASSET, LIABILITY, EQUITY, REVENUE, COST_OF_SALES, EXPENSE
+  sortOrder  Int      @default(0) @map("sort_order")
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at")
+
+  accounts        GLAccount[]
+  mappingHistory  GLAccountStatementLineHistory[]
+
+  @@unique([tenantId, code])
+  @@map("statement_lines")
+  @@index([tenantId])
+}
+
+/// S009 — BR009-3/BLK-09 (Product decision 2026-07-28, Option 2): append-only,
+/// effective-dated statement-line mapping history. A statement request for a
+/// given `asOf` period resolves the row where
+/// `effectiveFrom <= asOf AND (effectiveTo IS NULL OR asOf < effectiveTo)`.
+/// Never updated or deleted in place — reclassifying an account appends a new
+/// row and closes the previous one's `effectiveTo` in the same transaction.
+/// Overlapping effective ranges for the same account are rejected at the
+/// application layer (DB-level exclusion constraint is a documented follow-up
+/// — see S009 implementation notes; Postgres `EXCLUDE USING gist` requires the
+/// `btree_gist` extension, added in the migration).
+model GLAccountStatementLineHistory {
+  id              String    @id @default(uuid())
+  tenantId        String    @map("tenant_id")
+  glAccountId     String    @map("gl_account_id")
+  statementLineId String?   @map("statement_line_id") // null = explicit unmap to type default
+  effectiveFrom   DateTime  @map("effective_from") @db.Date
+  effectiveTo     DateTime? @map("effective_to") @db.Date
+  reason          String
+  actor           String
+  isBootstrap     Boolean   @default(false) @map("is_bootstrap") // governed migration/backdate, per BLK-09
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  glAccount     GLAccount      @relation(fields: [glAccountId], references: [id])
+  statementLine StatementLine? @relation(fields: [statementLineId], references: [id])
+
+  @@map("gl_account_statement_line_history")
+  @@index([tenantId, glAccountId, effectiveFrom], map: "idx_gaslh_account_from")
+  @@index([tenantId, glAccountId, effectiveTo], map: "idx_gaslh_account_to")
 }
 
 /// @cobol-origin GLBYID-FILE — external account ID to GL number mapping

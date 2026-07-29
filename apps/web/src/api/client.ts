@@ -127,6 +127,18 @@ export const glApi = {
   getIncomeStatement: (year: number, month: number) => apiFetch<any>(`/api/v1/gl/income-statement?year=${year}&month=${month}`),
   getCashFlowStatement: (year: number, month: number) => apiFetch<any>(`/api/v1/gl/cash-flow-statement?year=${year}&month=${month}`),
   getPeriods: () => apiFetch<any[]>('/api/v1/gl/periods'),
+  // S009 — statement-line catalog & effective-dated statement-metadata.
+  listStatementLines: () => apiFetch<any[]>('/api/v1/gl/statement-lines'),
+  createStatementLine: (data: { code: string; name: string; statement: 'BS' | 'IS'; section: string; sortOrder?: number }) =>
+    apiFetch<any>('/api/v1/gl/statement-lines', { method: 'POST', body: JSON.stringify(data) }),
+  updateStatementLine: (id: string, data: { name?: string; section?: string; sortOrder?: number; isActive?: boolean }) =>
+    apiFetch<any>(`/api/v1/gl/statement-lines/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  setAccountStatementMetadata: (accountId: string, data: {
+    statementLineId: string | null; effectiveFrom: string; reason: string; actor?: string; isBootstrap?: boolean;
+  }) => apiFetch<any>(`/api/v1/gl/accounts/${accountId}/statement-metadata`, { method: 'PATCH', body: JSON.stringify(data) }),
+  bulkSetAccountStatementMetadata: (mappings: Array<{
+    glAccountId: string; statementLineId: string | null; effectiveFrom: string; reason: string; actor?: string; isBootstrap?: boolean;
+  }>) => apiFetch<any[]>('/api/v1/gl/accounts/statement-metadata/bulk', { method: 'POST', body: JSON.stringify({ mappings }) }),
   // Sales Tax Accrual (Phase 1)
   configureTaxJurisdiction: (data: any) => apiFetch<any>('/api/v1/gl/tax/configure', { method: 'POST', body: JSON.stringify(data) }),
   listTaxRates: (params?: string) => apiFetch<any[]>(`/api/v1/gl/tax/rates${params ? `?${params}` : ''}`),
@@ -964,6 +976,7 @@ export const goldenPathApi = {
     if (params.store) qs.set('store', params.store);
     if (params.dept) qs.set('dept', params.dept);
     return apiFetch<{
+      schemaVersion?: number;
       scope: { entity: string; store: string | null; dept: string | null; asOf: string };
       assets: { rows: Array<{ accountCode: string; accountName: string; accountType: string; amount: number }>; total: number };
       liabilities: { rows: Array<{ accountCode: string; accountName: string; accountType: string; amount: number }>; total: number };
@@ -984,8 +997,13 @@ export const goldenPathApi = {
     if (params.store) qs.set('store', params.store);
     if (params.dept) qs.set('dept', params.dept);
     return apiFetch<{
+      schemaVersion?: number;
       scope: { entity: string; store: string | null; dept: string | null; asOf: string };
       revenue: { rows: Array<{ accountCode: string; accountName: string; accountType: string; amount: number }>; total: number };
+      // S009/BLK-08 (approved 2026-07-28): new IS section, additive per
+      // BLK-11 (schemaVersion 2, no /v2/ route).
+      costOfSales: { rows: Array<{ accountCode: string; accountName: string; accountType: string; amount: number }>; total: number };
+      grossProfit: number;
       expense: { rows: Array<{ accountCode: string; accountName: string; accountType: string; amount: number }>; total: number };
       netIncome: number;
       excludedAccounts: Array<{ accountCode: string; accountType: string; reason: string }>;

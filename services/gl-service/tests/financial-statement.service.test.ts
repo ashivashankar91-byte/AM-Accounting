@@ -2,7 +2,9 @@ import 'reflect-metadata';
 import { describe, expect, it, vi } from 'vitest';
 import { TrialBalanceReport, TrialBalanceService } from '../src/application/trial-balance-service';
 import {
+  DistributionBalanceAnomalyError,
   FSStructuralImbalanceError,
+  FS_SCHEMA_VERSION,
   FinancialStatementService,
   UnclassifiedAccountTypeError,
 } from '../src/application/financial-statement-service';
@@ -36,10 +38,17 @@ function makeMockTrialBalance(report: TrialBalanceReport): TrialBalanceService {
   return { getReport: vi.fn().mockResolvedValue(report) } as unknown as TrialBalanceService;
 }
 
+// S009: FinancialStatementService now also depends on PrismaClient, solely
+// to emit the GL_DISTRIBUTION_BALANCE_ANOMALY_DETECTED outbox event on the
+// (expected-never-in-practice) DISTRIBUTION non-zero-balance path.
+function makeMockPrisma() {
+  return { outboxEvent: { create: vi.fn().mockResolvedValue({}) } } as any;
+}
+
 const BASE_SCOPE = { entity: '01', store: null, dept: null, asOf: '2026-03' };
 
 describe('FinancialStatementService', () => {
-  it('rolls up Assets/Liabilities/Equity/Revenue/Expense into a balanced BS with a contra-asset, ties net income to the BS current-earnings line', async () => {
+  it('rolls up Assets/Liabilities/Equity/Revenue/CostOfSales/Expense into a balanced BS with a contra-asset, ties net income to the BS current-earnings line', async () => {
     const report: TrialBalanceReport = {
       scope: BASE_SCOPE,
       drSum: 1350,
@@ -54,9 +63,10 @@ describe('FinancialStatementService', () => {
         tbRow({ accountCode: '5100', accountName: 'Depreciation Expense', accountType: 'EXPENSE', normalBalance: 'DEBIT', debitBalance: 50, creditBalance: 0 }),
       ],
     };
-    const svc = new FinancialStatementService(makeMockTrialBalance(report));
+    const svc = new FinancialStatementService(makeMockTrialBalance(report), makeMockPrisma());
 
     const bs = await svc.getBalanceSheet('tenant-a', { entity: '01', asOf: '2026-03' });
+    expect(bs.schemaVersion).toBe(FS_SCHEMA_VERSION);
     expect(bs.assets.total).toBe(1150); // 1200 - 50 contra, no special-cased branch
     expect(bs.liabilities.total).toBe(0);
     expect(bs.equity.total).toBe(1150); // 1000 stock + 150 current earnings
@@ -69,13 +79,39 @@ describe('FinancialStatementService', () => {
     expect(bs.assets.rows.map((r) => r.accountCode)).toEqual(['1000', '1090']);
 
     const is = await svc.getIncomeStatement('tenant-a', { entity: '01', asOf: '2026-03' });
+    expect(is.schemaVersion).toBe(FS_SCHEMA_VERSION);
     expect(is.revenue.total).toBe(300);
+    expect(is.costOfSales.total).toBe(0);
+    expect(is.grossProfit).toBe(300);
     expect(is.expense.total).toBe(150);
     expect(is.netIncome).toBe(150);
     expect(is.netIncome).toBe(bs.equity.currentEarnings); // BR227-2 tie test
   });
 
-  it('excludes COST_OF_SALES/DISTRIBUTION rows from both statements but reports them as a diagnostic, never silently into Expense', async () => {
+  it('S009/BLK-08: computes Gross Profit = Revenue - CostOfSales and Net Income = Gross Profit - Expense (Option A)', async () => {
+    const report: TrialBalanceReport = {
+      scope: BASE_SCOPE,
+      drSum: 200,
+      crSum: 200,
+      delta: 0,
+      accounts: [
+        tbRow({ accountCode: '4000', accountName: 'Revenue', accountType: 'REVENUE', normalBalance: 'CREDIT', debitBalance: 0, creditBalance: 200 }),
+        tbRow({ accountCode: '5900', accountName: 'Cost of Goods Sold', accountType: 'COST_OF_SALES', normalBalance: 'DEBIT', debitBalance: 80, creditBalance: 0 }),
+        tbRow({ accountCode: '6000', accountName: 'Rent Expense', accountType: 'EXPENSE', normalBalance: 'DEBIT', debitBalance: 40, creditBalance: 0 }),
+      ],
+    };
+    const svc = new FinancialStatementService(makeMockTrialBalance(report), makeMockPrisma());
+
+    const is = await svc.getIncomeStatement('tenant-a', { entity: '01', asOf: '2026-03' });
+    expect(is.revenue.total).toBe(200);
+    expect(is.costOfSales.total).toBe(80);
+    expect(is.grossProfit).toBe(120); // 200 - 80
+    expect(is.expense.total).toBe(40);
+    expect(is.netIncome).toBe(80); // 120 - 40
+    expect(is.excludedAccounts).toEqual([]);
+  });
+
+  it('S009/DISTRIBUTION: a zero-balance DISTRIBUTION account is excluded from both statements as a diagnostic entry, never folded into Expense', async () => {
     const report: TrialBalanceReport = {
       scope: BASE_SCOPE,
       drSum: 100,
@@ -83,17 +119,53 @@ describe('FinancialStatementService', () => {
       delta: 0,
       accounts: [
         tbRow({ accountCode: '5000', accountName: 'Rent Expense', accountType: 'EXPENSE', normalBalance: 'DEBIT', debitBalance: 50, creditBalance: 0 }),
-        tbRow({ accountCode: '5900', accountName: 'Cost of Goods Sold', accountType: 'COST_OF_SALES', normalBalance: 'DEBIT', debitBalance: 50, creditBalance: 0 }),
+        tbRow({ accountCode: '5800', accountName: 'Distribution Suspense', accountType: 'DISTRIBUTION', normalBalance: 'DEBIT', debitBalance: 0, creditBalance: 0 }),
         tbRow({ accountCode: '4000', accountName: 'Revenue', accountType: 'REVENUE', normalBalance: 'CREDIT', debitBalance: 0, creditBalance: 100 }),
       ],
     };
-    const svc = new FinancialStatementService(makeMockTrialBalance(report));
+    const prisma = makeMockPrisma();
+    const svc = new FinancialStatementService(makeMockTrialBalance(report), prisma);
 
     const is = await svc.getIncomeStatement('tenant-a', { entity: '01', asOf: '2026-03' });
-    expect(is.expense.total).toBe(50); // COST_OF_SALES NOT folded in
+    expect(is.expense.total).toBe(50); // DISTRIBUTION not folded in
     expect(is.excludedAccounts).toEqual([
-      { accountCode: '5900', accountName: 'Cost of Goods Sold', accountType: 'COST_OF_SALES', reason: 'OUT_OF_SCOPE_ACCOUNT_TYPE' },
+      { accountCode: '5800', accountName: 'Distribution Suspense', accountType: 'DISTRIBUTION', reason: 'DISTRIBUTION_ZERO_BALANCE' },
     ]);
+    expect(prisma.outboxEvent.create).not.toHaveBeenCalled();
+  });
+
+  it('S009/DISTRIBUTION: a non-zero-balance DISTRIBUTION account fails the whole request closed, emits an audit outbox event, and is never silently excluded or folded into Expense', async () => {
+    const report: TrialBalanceReport = {
+      scope: BASE_SCOPE,
+      drSum: 150,
+      crSum: 150,
+      delta: 0,
+      accounts: [
+        tbRow({ accountCode: '5000', accountName: 'Rent Expense', accountType: 'EXPENSE', normalBalance: 'DEBIT', debitBalance: 50, creditBalance: 0 }),
+        tbRow({ accountCode: '5800', accountName: 'Distribution Suspense', accountType: 'DISTRIBUTION', normalBalance: 'DEBIT', debitBalance: 50, creditBalance: 0 }),
+        tbRow({ accountCode: '4000', accountName: 'Revenue', accountType: 'REVENUE', normalBalance: 'CREDIT', debitBalance: 0, creditBalance: 100 }),
+      ],
+    };
+    const prisma = makeMockPrisma();
+    const svc = new FinancialStatementService(makeMockTrialBalance(report), prisma);
+
+    await expect(svc.getIncomeStatement('tenant-a', { entity: '01', asOf: '2026-03' })).rejects.toEqual(
+      expect.objectContaining<Partial<DistributionBalanceAnomalyError>>({
+        code: 'DISTRIBUTION_BALANCE_ANOMALY',
+        accounts: [{ accountCode: '5800', accountName: 'Distribution Suspense', balance: 50 }],
+      }),
+    );
+    expect(prisma.outboxEvent.create).toHaveBeenCalledTimes(1);
+    expect(prisma.outboxEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ eventType: 'GL_DISTRIBUTION_BALANCE_ANOMALY_DETECTED' }),
+      }),
+    );
+
+    // Balance sheet path fails closed identically -- same invariant, same guard.
+    await expect(svc.getBalanceSheet('tenant-a', { entity: '01', asOf: '2026-03' })).rejects.toThrow(
+      /posting-expansion invariant violated/,
+    );
   });
 
   it('throws UNCLASSIFIED_ACCOUNT_TYPE instead of silently dropping or misclassifying an account with an unknown type', async () => {
@@ -107,7 +179,7 @@ describe('FinancialStatementService', () => {
         tbRow({ accountCode: '4000', accountName: 'Revenue', accountType: 'REVENUE', normalBalance: 'CREDIT', debitBalance: 0, creditBalance: 100 }),
       ],
     };
-    const svc = new FinancialStatementService(makeMockTrialBalance(report));
+    const svc = new FinancialStatementService(makeMockTrialBalance(report), makeMockPrisma());
 
     await expect(svc.getBalanceSheet('tenant-a', { entity: '01', asOf: '2026-03' })).rejects.toEqual(
       expect.objectContaining<Partial<UnclassifiedAccountTypeError>>({
@@ -122,7 +194,7 @@ describe('FinancialStatementService', () => {
 
   it('returns zeroed statements for an empty slice (no accounts)', async () => {
     const report: TrialBalanceReport = { scope: BASE_SCOPE, drSum: 0, crSum: 0, delta: 0, accounts: [] };
-    const svc = new FinancialStatementService(makeMockTrialBalance(report));
+    const svc = new FinancialStatementService(makeMockTrialBalance(report), makeMockPrisma());
 
     const bs = await svc.getBalanceSheet('tenant-a', { entity: 'EMPTY', asOf: '2026-03' });
     expect(bs.assets.total).toBe(0);
@@ -130,6 +202,7 @@ describe('FinancialStatementService', () => {
 
     const is = await svc.getIncomeStatement('tenant-a', { entity: 'EMPTY', asOf: '2026-03' });
     expect(is.netIncome).toBe(0);
+    expect(is.grossProfit).toBe(0);
   });
 
   it('never returns a forced-balanced statement -- throws FSStructuralImbalanceError if the safety-net equality check ever fails', async () => {
@@ -146,7 +219,7 @@ describe('FinancialStatementService', () => {
       crSum: 0,
       delta: 0,
       accounts: [],
-    }));
+    }), makeMockPrisma());
     expect(svc).toBeInstanceOf(FinancialStatementService);
     // Direct proof the error class carries the fields the route handler maps to a 500 payload.
     const err = new FSStructuralImbalanceError(100, 90, 10);

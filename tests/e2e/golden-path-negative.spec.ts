@@ -12,6 +12,7 @@
  *   - invalid reversal              (real 409 ALREADY_REVERSED)
  *   - unclassified account type     (real UNCLASSIFIED_ACCOUNT_TYPE hard error)
  *   - structural Trial Balance imbalance (real STRUCTURAL_IMBALANCE hard error)
+ *   - DISTRIBUTION posting-expansion anomaly (real DISTRIBUTION_BALANCE_ANOMALY hard error, S009)
  *   - expired/revoked session       (real session-token revocation, GET /auth/session)
  *
  * IMPORTANT — two scenarios below (unclassified account, structural TB
@@ -55,7 +56,9 @@ const GL_AS_OF = '2026-02';
 // Golden R0 UI convergence — Phase 5 (isolated cert environment) fix: was
 // hardcoded to the long-lived amacc-final-r0 stack's Postgres container, so
 // these direct-SQL scratch fixtures would silently mutate the WRONG
-// database when this suite runs against a different isolated stack.
+// database when this suite runs against a different isolated stack. This
+// generic PG_CONTAINER var (rather than a story-specific PG_CONTAINER_S009)
+// already covers the S009 certification use case.
 const PG_CONTAINER = process.env['PG_CONTAINER'] ?? 'amacc-final-r0-postgres-1';
 
 function psql(sql: string): string {
@@ -364,6 +367,82 @@ test.describe('Golden R0 — gl-service structural/classification hard errors (d
     await page.getByTestId('is-asof').fill(GL_AS_OF);
     await page.getByTestId('is-run').click();
     await expect(page.getByTestId('is-unclassified-banner')).toBeVisible({ timeout: 10_000 });
+  });
+});
+
+test.describe('Golden R0 — S009 DISTRIBUTION posting-expansion anomaly (direct-SQL scratch fixture)', () => {
+  test.setTimeout(60_000);
+
+  test.afterAll(async () => {
+    // Same rationale/cleanup discipline as the UNCLASSIFIED_ACCOUNT_TYPE
+    // suite above: restore the certified S014/S222/S227 evidence scope
+    // (entity 01 / 2026-02) exactly, even if a test above failed mid-way.
+    try {
+      psql("DELETE FROM gl_account_period_balances WHERE id IN ('g0-distribution-scratch-bal','g0-distribution-offset-bal');");
+      psql("DELETE FROM gl_accounts WHERE id IN ('g0-distribution-scratch-acct','g0-distribution-offset-acct');");
+    } catch {
+      // best-effort cleanup; a failure here is surfaced by the "evidence
+      // scope restored" check every other test in this repository relies on.
+    }
+  });
+
+  test('non-zero DISTRIBUTION balance fails BS/IS closed with DISTRIBUTION_BALANCE_ANOMALY (S009/DISTRIBUTION decision)', async ({ page }) => {
+    // A real posting flow always expands DISTRIBUTION-type postings into
+    // concrete target-account lines before save (gl-service.ts
+    // expandLines()), so a resting DISTRIBUTION balance can never be
+    // produced through any real user-facing API -- this is seeded via
+    // direct SQL for the same reason the UNCLASSIFIED/STRUCTURAL_IMBALANCE
+    // scratch fixtures above are: it proves the fail-closed guard exists and
+    // fires, not that this state is reachable in normal operation.
+    psql(
+      "INSERT INTO gl_accounts (id, tenant_id, code, name, type, normal_balance, allow_posting, print_code) " +
+      `VALUES ('g0-distribution-scratch-acct', '${TENANT_A}', '9600', 'E2E Distribution Test', 'DISTRIBUTION', 'DEBIT', true, 'D');`,
+    );
+    psql(
+      "INSERT INTO gl_account_period_balances (id, tenant_id, gl_account_id, period_year, period_month, journal_source, company_code, store_id, department_code, running_balance, updated_at) " +
+      `VALUES ('g0-distribution-scratch-bal', '${TENANT_A}', 'g0-distribution-scratch-acct', 2026, 2, 'ADJ', '01', '', '', 40.00, now());`,
+    );
+    // Offsetting real LIABILITY-type balance so the ledger still foots
+    // (drSum=crSum), isolating the DISTRIBUTION_BALANCE_ANOMALY proof from
+    // any STRUCTURAL_IMBALANCE noise.
+    psql(
+      "INSERT INTO gl_accounts (id, tenant_id, code, name, type, normal_balance, allow_posting, print_code) " +
+      `VALUES ('g0-distribution-offset-acct', '${TENANT_A}', '9601', 'E2E Distribution Offset Liability', 'LIABILITY', 'CREDIT', true, 'D');`,
+    );
+    psql(
+      "INSERT INTO gl_account_period_balances (id, tenant_id, gl_account_id, period_year, period_month, journal_source, company_code, store_id, department_code, running_balance, updated_at) " +
+      `VALUES ('g0-distribution-offset-bal', '${TENANT_A}', 'g0-distribution-offset-acct', 2026, 2, 'ADJ', '01', '', '', -40.00, now());`,
+    );
+
+    await login(page, TENANT_A, ADMIN_EMAIL, PASSWORD);
+    await page.waitForURL(/\/golden-path\/select-entity/, { timeout: 15_000 });
+    await page.getByTestId('select-entity-KUNES-01').click();
+    await page.waitForURL(/\/golden-path\/org-hierarchy/, { timeout: 10_000 });
+
+    await page.goto(`${BASE}/golden-path/trial-balance`);
+    await page.getByTestId('tb-entity').fill(GL_ENTITY);
+    await page.getByTestId('tb-asof').fill(GL_AS_OF);
+    await page.getByTestId('tb-run').click();
+    // Ledger foots -- Trial Balance itself is unaffected (S014 never
+    // classifies/excludes anything); DISTRIBUTION is a BS/IS-layer concern.
+    await expect(page.getByTestId('tb-grand-total')).toBeVisible({ timeout: 10_000 });
+
+    await page.goto(`${BASE}/golden-path/balance-sheet`);
+    await page.getByTestId('bs-entity').fill(GL_ENTITY);
+    await page.getByTestId('bs-asof').fill(GL_AS_OF);
+    await page.getByTestId('bs-run').click();
+    await expect(page.getByTestId('bs-distribution-anomaly-banner')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId('bs-distribution-anomaly-banner')).toContainText('9600');
+    // Never folded into Expense, never silently excluded -- no BS content renders at all.
+    await expect(page.getByTestId('bs-balanced-badge')).toHaveCount(0);
+
+    await page.goto(`${BASE}/golden-path/income-statement`);
+    await page.getByTestId('is-entity').fill(GL_ENTITY);
+    await page.getByTestId('is-asof').fill(GL_AS_OF);
+    await page.getByTestId('is-run').click();
+    await expect(page.getByTestId('is-distribution-anomaly-banner')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId('is-distribution-anomaly-banner')).toContainText('9600');
+    await expect(page.getByTestId('is-net-income')).toHaveCount(0);
   });
 });
 

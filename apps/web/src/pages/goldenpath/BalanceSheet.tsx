@@ -56,6 +56,15 @@ interface UnclassifiedError {
   accounts: Array<{ accountCode: string; accountType: string }>;
 }
 
+// S009/DISTRIBUTION (Product decision, 2026-07-28): a DISTRIBUTION-type
+// account carrying a non-zero resting balance is a posting-expansion
+// invariant violation -- the whole request fails closed, never a partial
+// or misleading statement.
+interface DistributionAnomalyError {
+  error: 'DISTRIBUTION_BALANCE_ANOMALY';
+  accounts: Array<{ accountCode: string; accountName: string; balance: number }>;
+}
+
 function Section({ title, rows, total, testPrefix }: { title: string; rows: FSRow[]; total: number; testPrefix: string }) {
   return (
     <div className="mt-4">
@@ -106,6 +115,7 @@ export default function BalanceSheet() {
   const [report, setReport] = useState<BalanceSheetReport | null>(null);
   const [imbalance, setImbalance] = useState<StructuralImbalance | null>(null);
   const [unclassified, setUnclassified] = useState<UnclassifiedError | null>(null);
+  const [distributionAnomaly, setDistributionAnomaly] = useState<DistributionAnomalyError | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [unauthorized, setUnauthorized] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -120,6 +130,7 @@ export default function BalanceSheet() {
     setUnauthorized(null);
     setImbalance(null);
     setUnclassified(null);
+    setDistributionAnomaly(null);
     setReport(null);
     setCsv(null);
     try {
@@ -138,6 +149,8 @@ export default function BalanceSheet() {
         setImbalance(err.body);
       } else if (err.status === 500 && err.body?.error === 'UNCLASSIFIED_ACCOUNT_TYPE') {
         setUnclassified(err.body);
+      } else if (err.status === 500 && err.body?.error === 'DISTRIBUTION_BALANCE_ANOMALY') {
+        setDistributionAnomaly(err.body);
       } else if (err.status === 401 || err.status === 403) {
         setUnauthorized(err.message);
       } else {
@@ -232,6 +245,21 @@ export default function BalanceSheet() {
         </Banner>
       )}
 
+      {distributionAnomaly && (
+        <Banner kind="error" testId="bs-distribution-anomaly-banner" title="DISTRIBUTION_BALANCE_ANOMALY">
+          DISTRIBUTION-type account{distributionAnomaly.accounts.length === 1 ? '' : 's'}{' '}
+          {distributionAnomaly.accounts.map((a, i) => (
+            <span key={a.accountCode}>
+              {i > 0 && ', '}
+              {a.accountCode} ({a.accountName}) = {formatMoney(a.balance)}
+            </span>
+          ))}{' '}
+          unexpectedly carr{distributionAnomaly.accounts.length === 1 ? 'ies' : 'y'} a non-zero balance. This is a
+          posting-expansion data-integrity issue, not a scope gap — the statement was not rendered. Contact your
+          controller; the anomaly has been recorded for investigation.
+        </Banner>
+      )}
+
       <FilterBar>
         <FilterField label="Entity/Company" width={130}>
           <input data-testid="bs-entity" value={entity} onChange={(e) => setEntity(e.target.value)} className={FILTER_CONTROL_CLASS} />
@@ -322,7 +350,7 @@ export default function BalanceSheet() {
         </>
       )}
 
-      {!report && !error && !unauthorized && !imbalance && !unclassified && !busy && (
+      {!report && !error && !unauthorized && !imbalance && !unclassified && !distributionAnomaly && !busy && (
         <EmptyState testId="bs-initial-state" title="Run a Balance Sheet to see results." />
       )}
 

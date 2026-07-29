@@ -324,12 +324,14 @@ test.describe('Golden R0 — full 16-step browser journey (positive)', () => {
     await page.getByTestId('bs-run').click();
     await expect(page.getByTestId('bs-balanced-badge')).toHaveText('BALANCED', { timeout: 10_000 });
 
-    // 12. Open the Income Statement (S227, gl-service).
+    // 12. Open the Income Statement (S227, gl-service). S009/BLK-08 adds
+    // Cost of Sales / Gross Profit as new, additive sections/lines.
     await page.goto(`${BASE}/golden-path/income-statement`);
     await page.getByTestId('is-entity').fill(GL_ENTITY);
     await page.getByTestId('is-asof').fill(GL_AS_OF);
     await page.getByTestId('is-run').click();
     await expect(page.getByTestId('is-net-income')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId('is-gross-profit')).toBeVisible({ timeout: 10_000 });
 
     // 13. Export the supported reports (CSV) — re-run the Balance Sheet
     // (navigation to Income Statement above unmounted the BS page/report

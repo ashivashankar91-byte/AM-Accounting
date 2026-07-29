@@ -3,13 +3,14 @@ import { z } from 'zod';
 import { container } from 'tsyringe';
 import { GLService } from '../application/gl-service';
 import { StructuralImbalanceError, TrialBalanceService, TrialBalanceRow } from '../application/trial-balance-service';
-import { FSStructuralImbalanceError, FinancialStatementService, UnclassifiedAccountTypeError } from '../application/financial-statement-service';
+import { DistributionBalanceAnomalyError, FSStructuralImbalanceError, FinancialStatementService, UnclassifiedAccountTypeError } from '../application/financial-statement-service';
+import { StatementLineNotFoundError, StatementLineService, StatementMetadataOverlapError } from '../application/statement-line-service';
 import { GLAccountType, authMiddleware, asTenantId } from '@amacc/shared-kernel';
 import { taxRoutes } from './tax-routes';
 import { report1099Routes } from './1099-routes';
 import { floorPlanRoutes } from './floor-plan-routes';
 import { withSerializableRetry } from '../lib/serializable-retry';
-import { attachRouteSecurity, getTenantId, GL_PERMISSIONS } from './security';
+import { attachRouteSecurity, getActor, getTenantId, GL_PERMISSIONS } from './security';
 
 const NORMAL_BALANCE_MAP: Record<string, 'DEBIT' | 'CREDIT'> = {
   ASSET: 'DEBIT',
@@ -131,6 +132,45 @@ const PeriodSchema = z.object({
   month: z.coerce.number().int().min(1).max(12),
 });
 
+// S009 — statement-line catalog & effective-dated statement-metadata schemas.
+const CreateStatementLineSchema = z.object({
+  code: z.string().min(1).max(30),
+  name: z.string().min(1).max(200),
+  statement: z.enum(['BS', 'IS']),
+  section: z.string().min(1).max(50),
+  sortOrder: z.number().int().optional(),
+});
+
+const UpdateStatementLineSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  section: z.string().min(1).max(50).optional(),
+  sortOrder: z.number().int().optional(),
+  isActive: z.boolean().optional(),
+});
+
+// BLK-09 (Option 2, approved): every mapping requires effective period,
+// reason, and actor. `actor` defaults to the authenticated caller if omitted.
+const SetStatementMetadataSchema = z.object({
+  statementLineId: z.string().uuid().nullable(),
+  effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'effectiveFrom must be YYYY-MM-DD'),
+  reason: z.string().min(1).max(500),
+  actor: z.string().min(1).max(200).optional(),
+  isBootstrap: z.boolean().optional(),
+});
+
+const BulkSetStatementMetadataSchema = z.object({
+  mappings: z.array(
+    z.object({
+      glAccountId: z.string().uuid(),
+      statementLineId: z.string().uuid().nullable(),
+      effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'effectiveFrom must be YYYY-MM-DD'),
+      reason: z.string().min(1).max(500),
+      actor: z.string().min(1).max(200).optional(),
+      isBootstrap: z.boolean().optional(),
+    }),
+  ).min(1),
+});
+
 export function resolvePermission(method: string, url: string): string | null {
   if (url.startsWith('/admin/')) return GL_PERMISSIONS.ADMIN_MANAGE;
   if (url === '/fs/oem-mappings/:id' && method === 'PUT') return GL_PERMISSIONS.ADMIN_MANAGE;
@@ -150,6 +190,8 @@ export function resolvePermission(method: string, url: string): string | null {
   if (url === '/balance-sheet' || url === '/financial-statements/balance-sheet' || url === '/financial-statements/income-statement') return GL_PERMISSIONS.LEDGER_VIEW;
   if (url === '/income-statement' || url === '/cash-flow-statement' || url === '/financial-statements/consolidated') return GL_PERMISSIONS.LEDGER_VIEW;
   if (url === '/reports/expense-trend') return GL_PERMISSIONS.LEDGER_VIEW;
+  if (url === '/accounts/:id/statement-metadata') return GL_PERMISSIONS.STATEMENT_METADATA_MANAGE;
+  if (url === '/accounts/statement-metadata/bulk') return GL_PERMISSIONS.STATEMENT_METADATA_MANAGE;
   if (url.startsWith('/accounts') || url.startsWith('/journal-entries') || url.startsWith('/cash-receipts')) {
     return method === 'GET' ? GL_PERMISSIONS.LEDGER_VIEW : GL_PERMISSIONS.LEDGER_MANAGE;
   }
@@ -165,6 +207,9 @@ export function resolvePermission(method: string, url: string): string | null {
   }
   if (url.startsWith('/1099/')) return method === 'GET' ? GL_PERMISSIONS.LEDGER_VIEW : GL_PERMISSIONS.LEDGER_MANAGE;
   if (url.startsWith('/floor-plan/')) return method === 'GET' ? GL_PERMISSIONS.LEDGER_VIEW : GL_PERMISSIONS.LEDGER_MANAGE;
+  if (url === '/statement-lines' && method === 'GET') return GL_PERMISSIONS.REPORT_FS_VIEW;
+  if (url === '/statement-lines' && method === 'POST') return GL_PERMISSIONS.STATEMENT_LINE_MANAGE;
+  if (url === '/statement-lines/:id' && method === 'PATCH') return GL_PERMISSIONS.STATEMENT_LINE_MANAGE;
   return null;
 }
 
@@ -223,8 +268,11 @@ export function resolveAudit(method: string, url: string) {
   ) {
     return { docType: 'GL_LEDGER_REPORT', docId: () => url };
   }
-  return null;
-}
+    if (url === '/statement-lines') {
+      return { docType: 'STATEMENT_LINE', docId: () => 'statement-lines' };
+    }
+    return null;
+  }
 
 // CSV cell serialization for the trial-balance export. Distinct from the
 // toCsv() helper used by balance-sheet/income-statement export (defined
@@ -288,6 +336,7 @@ export async function glRoutes(app: FastifyInstance) {
   const svc = container.resolve<GLService>('GLService');
   const trialBalanceSvc = container.resolve(TrialBalanceService);
   const financialStatementSvc = container.resolve(FinancialStatementService);
+  const statementLineSvc = container.resolve(StatementLineService);
 
   // POST /accounts — Create GL account
   app.post('/accounts', async (request, reply) => {
@@ -852,6 +901,9 @@ export async function glRoutes(app: FastifyInstance) {
           delta: error.delta,
         });
       }
+      if (error instanceof DistributionBalanceAnomalyError) {
+        return reply.status(500).send({ error: error.code, accounts: error.accounts });
+      }
       if (error instanceof UnclassifiedAccountTypeError) {
         return reply.status(500).send({ error: error.code, accounts: error.accounts });
       }
@@ -898,6 +950,9 @@ export async function glRoutes(app: FastifyInstance) {
           totalLiabilitiesAndEquity: error.totalLiabilitiesAndEquity,
           delta: error.delta,
         });
+      }
+      if (error instanceof DistributionBalanceAnomalyError) {
+        return reply.status(500).send({ error: error.code, accounts: error.accounts });
       }
       if (error instanceof UnclassifiedAccountTypeError) {
         return reply.status(500).send({ error: error.code, accounts: error.accounts });
@@ -956,6 +1011,9 @@ export async function glRoutes(app: FastifyInstance) {
           delta: error.delta,
         });
       }
+      if (error instanceof DistributionBalanceAnomalyError) {
+        return reply.status(500).send({ error: error.code, accounts: error.accounts });
+      }
       if (error instanceof UnclassifiedAccountTypeError) {
         return reply.status(500).send({ error: error.code, accounts: error.accounts });
       }
@@ -983,6 +1041,8 @@ export async function glRoutes(app: FastifyInstance) {
       });
       const rows = [
         ...report.revenue.rows.map((r) => ({ ...r, section: 'REVENUE' })),
+        ...report.costOfSales.rows.map((r) => ({ ...r, section: 'COST_OF_SALES' })),
+        { accountCode: '', accountName: 'Gross Profit', accountType: '', amount: report.grossProfit, section: 'GROSS_PROFIT' },
         ...report.expense.rows.map((r) => ({ ...r, section: 'EXPENSE' })),
         { accountCode: '', accountName: 'Net Income', accountType: '', amount: report.netIncome, section: 'NET_INCOME' },
       ];
@@ -1014,11 +1074,98 @@ export async function glRoutes(app: FastifyInstance) {
           delta: error.delta,
         });
       }
+      if (error instanceof DistributionBalanceAnomalyError) {
+        return reply.status(500).send({ error: error.code, accounts: error.accounts });
+      }
       if (error instanceof UnclassifiedAccountTypeError) {
         return reply.status(500).send({ error: error.code, accounts: error.accounts });
       }
       if (error instanceof StructuralImbalanceError) {
         return reply.status(500).send({ error: error.code, drSum: error.drSum, crSum: error.crSum, delta: error.delta });
+      }
+      throw error;
+    }
+  });
+
+  // ── S009: Statement-line catalog & effective-dated statement-metadata ─────
+  // gl-service ownership per docs/accounting-modernization/S009_DECISION_MEMO.md.
+
+  // GET /statement-lines — list the BS/IS statement-line catalog.
+  app.get('/statement-lines', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const lines = await statementLineSvc.listStatementLines(tenantId);
+    return reply.send(lines);
+  });
+
+  // POST /statement-lines — create a new statement-line catalog entry.
+  app.post('/statement-lines', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const body = CreateStatementLineSchema.parse(request.body);
+    const actor = getActor(request);
+    const line = await statementLineSvc.createStatementLine(tenantId, body, actor);
+    return reply.status(201).send(line);
+  });
+
+  // PATCH /statement-lines/:id — rename/reorder/activate-deactivate a statement-line entry.
+  app.patch('/statement-lines/:id', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const body = UpdateStatementLineSchema.parse(request.body);
+    const actor = getActor(request);
+    try {
+      const line = await statementLineSvc.updateStatementLine(tenantId, id, body, actor);
+      return reply.send(line);
+    } catch (error) {
+      if (error instanceof StatementLineNotFoundError) {
+        return reply.status(404).send({ error: error.code });
+      }
+      throw error;
+    }
+  });
+
+  // PATCH /accounts/:id/statement-metadata — BLK-09 (Option 2, approved):
+  // create a new effective-dated statement-line mapping for a GL account.
+  // Requires effectiveFrom, reason, and actor (defaults to the authenticated
+  // caller). Non-overlapping ranges are enforced both here and, ultimately,
+  // by the database EXCLUDE constraint.
+  app.patch('/accounts/:id/statement-metadata', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const body = SetStatementMetadataSchema.parse(request.body);
+    const actor = body.actor ?? getActor(request);
+    try {
+      const history = await statementLineSvc.setAccountStatementMetadata(tenantId, {
+        glAccountId: id,
+        statementLineId: body.statementLineId,
+        effectiveFrom: body.effectiveFrom,
+        reason: body.reason,
+        actor,
+        isBootstrap: body.isBootstrap,
+      });
+      return reply.status(201).send(history);
+    } catch (error) {
+      if (error instanceof StatementMetadataOverlapError) {
+        return reply.status(409).send({ error: error.code, glAccountId: error.glAccountId, effectiveFrom: error.effectiveFrom });
+      }
+      throw error;
+    }
+  });
+
+  // POST /accounts/statement-metadata/bulk — same as above, applied to
+  // multiple accounts in one governed request (e.g. bootstrap migration).
+  app.post('/accounts/statement-metadata/bulk', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const body = BulkSetStatementMetadataSchema.parse(request.body);
+    const actor = getActor(request);
+    try {
+      const results = await statementLineSvc.setAccountStatementMetadataBulk(
+        tenantId,
+        body.mappings.map((m) => ({ ...m, actor: m.actor ?? actor })),
+      );
+      return reply.status(201).send(results);
+    } catch (error) {
+      if (error instanceof StatementMetadataOverlapError) {
+        return reply.status(409).send({ error: error.code, glAccountId: error.glAccountId, effectiveFrom: error.effectiveFrom });
       }
       throw error;
     }
