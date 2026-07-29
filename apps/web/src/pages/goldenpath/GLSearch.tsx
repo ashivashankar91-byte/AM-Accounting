@@ -22,6 +22,8 @@ interface GLSearchResultRow {
   memo: string | null;
   dr: number;
   cr: number;
+  /** S011 — analysis tags on this line, for display/filter confirmation. */
+  analysisTags?: { typeId: string; valueId: string }[];
 }
 
 interface Pagination {
@@ -66,6 +68,8 @@ export default function GLSearch() {
   const [direction, setDirection] = useState<'' | 'DEBIT' | 'CREDIT'>('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [analysisValueId, setAnalysisValueId] = useState('');
+  const [analysisTypes, setAnalysisTypes] = useState<any[]>([]);
 
   const [results, setResults] = useState<GLSearchResultRow[] | null>(null);
   const [pagination, setPagination] = useState<Pagination | null>(null);
@@ -99,6 +103,20 @@ export default function GLSearch() {
     loadSavedSearches();
   }, []);
 
+  useEffect(() => {
+    // S011 — populate the analysis-value filter dropdown from the active
+    // tenant registry (read-only; analysis.code.view rides existing
+    // inquiry.search authorization for this screen, same as the rest of the
+    // S221 search form).
+    goldenPathApi.listAnalysisTypes({ status: 'ACTIVE' }).then((r) => setAnalysisTypes(r.items)).catch(() => setAnalysisTypes([]));
+  }, []);
+
+  function tagLabel(typeId: string, valueId: string): string {
+    const type = analysisTypes.find((t: any) => t.id === typeId);
+    const value = type?.values?.find((v: any) => v.id === valueId);
+    return `${type?.code ?? typeId}:${value?.code ?? valueId}`;
+  }
+
   function buildCriteria(): Record<string, string | number | undefined> {
     return {
       entityId: entityId || undefined,
@@ -112,6 +130,8 @@ export default function GLSearch() {
       direction: direction || undefined,
       startDate: startDate || undefined,
       endDate: endDate || undefined,
+      // S011 — restrict search to lines tagged with this analysis-code value.
+      analysisValueId: analysisValueId || undefined,
     };
   }
 
@@ -127,6 +147,7 @@ export default function GLSearch() {
     setDirection(criteria.direction ?? '');
     setStartDate(criteria.startDate ?? '');
     setEndDate(criteria.endDate ?? '');
+    setAnalysisValueId(criteria.analysisValueId ?? '');
   }
 
   // Golden R0 UI convergence — Phase 4: "Clear filters" action for the
@@ -269,6 +290,23 @@ export default function GLSearch() {
         <FilterField label="To" width={140}>
           <input data-testid="gls-end-date" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className={FILTER_CONTROL_CLASS} />
         </FilterField>
+        {analysisTypes.length > 0 && (
+          <FilterField label="Analysis tag" width={160}>
+            <select
+              data-testid="gls-analysis-value"
+              value={analysisValueId}
+              onChange={(e) => setAnalysisValueId(e.target.value)}
+              className={FILTER_CONTROL_CLASS}
+            >
+              <option value="">Any</option>
+              {analysisTypes.map((t: any) =>
+                (t.values ?? []).filter((v: any) => v.isActive).map((v: any) => (
+                  <option key={v.id} value={v.id}>{t.code}:{v.code}</option>
+                )),
+              )}
+            </select>
+          </FilterField>
+        )}
         <Btn data-testid="gls-run" size="sm" onClick={() => runSearch(1)} disabled={busy} loading={busy}>
           {busy ? 'Searching…' : 'Search'}
         </Btn>
@@ -296,6 +334,7 @@ export default function GLSearch() {
                 <ReportTh>Source</ReportTh>
                 <ReportTh align="right">Debit</ReportTh>
                 <ReportTh align="right">Credit</ReportTh>
+                <ReportTh>Tags</ReportTh>
                 <ReportTh>Open</ReportTh>
               </tr>
             </ReportThead>
@@ -308,6 +347,11 @@ export default function GLSearch() {
                   <ReportTd>{r.source}</ReportTd>
                   <MoneyTd value={r.dr || null} />
                   <MoneyTd value={r.cr || null} />
+                  <ReportTd>
+                    <span data-testid={`gls-row-${i}-tags`} className="text-[11px] text-indigo-700">
+                      {(r.analysisTags ?? []).map((t) => tagLabel(t.typeId, t.valueId)).join(', ')}
+                    </span>
+                  </ReportTd>
                   <ReportTd>
                     <Btn data-testid={`gls-open-inquiry-${i}`} variant="secondary" size="sm" onClick={() => openInInquiry(r)}>
                       Open in GL Inquiry

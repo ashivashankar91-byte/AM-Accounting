@@ -10,7 +10,9 @@ import {
 } from '../domain/draft';
 import { PostingService } from './posting-service';
 import { ConfigService } from './config-service';
+import { AnalysisCodeService } from './analysis-code-service';
 import { evaluate, PostingHeaderInput, PostingLineInput } from '../domain/journal-posting';
+import { validateLineTags } from '../domain/analysis-code';
 
 // ── Errors ───────────────────────────────────────────────────────────────────
 
@@ -212,6 +214,7 @@ export class DraftService {
     @inject('IEventPublisher') private readonly events: IEventPublisher,
     @inject('PostingService') private readonly posting: PostingService,
     @inject('ConfigService') private readonly config: ConfigService,
+    @inject('AnalysisCodeService') private readonly analysisCodes: AnalysisCodeService,
   ) {}
 
   /** BR214-1 — save a draft in ANY state (no validation on save). */
@@ -431,6 +434,11 @@ export class DraftService {
       dr: l.dr ?? null,
       cr: l.cr ?? null,
       memo: l.memo ?? null,
+      // S011 P1-F1 — carry tags into validation too (see below): they are still
+      // NEVER passed to evaluate() (BR011-3 — tags never affect posting math,
+      // balancing, or the S013 gate), only to the separate tag evaluator so
+      // Validate and Post share the exact same tag rules (BR215-2 parity).
+      analysisTags: l.analysisTags ?? null,
     }));
 
     let evalResult;
@@ -444,14 +452,29 @@ export class DraftService {
       throw new DraftEngineUnavailableError(); // BR215 negative — blocking, never silent pass
     }
 
+    // S011 P1-F1 — evaluate analysis tags with the SAME evaluator (validateLineTags)
+    // that PostingService.post uses, so a draft that passes Validate cannot later
+    // fail Post on tag data that hasn't changed since (BR215-2 parity extended to
+    // BR011-1/BR011-2/BR011-4). Fail-closed: unknown, inactive, mismatched, over-cap
+    // or duplicate-type tags are surfaced here, before Post is ever attempted.
+    const tagCtx = await this.analysisCodes.loadValidationContext(actor.tenantId);
+    const tagViolations = lines.flatMap((line, i) => validateLineTags(line.analysisTags ?? undefined, tagCtx, i));
+
     const result: ValidationResult = {
-      pass: evalResult.pass,
-      errors: evalResult.violations.map((v) => ({
-        ...(v.lineIndex !== undefined ? { lineIndex: v.lineIndex } : {}),
-        rule: v.rule,
-        message: v.diagnostic,
-        ...(v.field !== undefined ? { field: v.field } : {}),
-      })),
+      pass: evalResult.pass && tagViolations.length === 0,
+      errors: [
+        ...evalResult.violations.map((v) => ({
+          ...(v.lineIndex !== undefined ? { lineIndex: v.lineIndex } : {}),
+          rule: v.rule,
+          message: v.diagnostic,
+          ...(v.field !== undefined ? { field: v.field } : {}),
+        })),
+        ...tagViolations.map((v) => ({
+          ...(v.lineIndex !== undefined ? { lineIndex: v.lineIndex } : {}),
+          rule: v.rule,
+          message: v.message,
+        })),
+      ],
       deltaDr: evalResult.deltaDr,
       deltaCr: evalResult.deltaCr,
     };
@@ -536,6 +559,9 @@ export class DraftService {
       dr: l.dr ?? null,
       cr: l.cr ?? null,
       memo: l.memo ?? null,
+      // S011 — carries tags saved on the draft (any state, BR214-1) through to
+      // the S013 door for fail-closed validation + persistence at post time.
+      analysisTags: l.analysisTags ?? null,
     }));
 
     // (5) BR216-1 — atomic post through the S013 door; idempotent by draft id so a

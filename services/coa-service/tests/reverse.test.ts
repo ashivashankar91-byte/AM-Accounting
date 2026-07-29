@@ -11,6 +11,7 @@
 import 'reflect-metadata';
 import { describe, it, expect } from 'vitest';
 import { PostingService } from '../src/application/posting-service';
+import { AnalysisCodeService } from '../src/application/analysis-code-service';
 import {
   ReversalService,
   ReversalReasonRequiredError,
@@ -152,7 +153,7 @@ const noopEvents = { publish: async () => undefined } as any;
 
 function build() {
   const prisma = makePrisma();
-  const posting = new PostingService(prisma, noopEvents, fakeFiscal() as any, fakeSequence() as any);
+  const posting = new PostingService(prisma, noopEvents, fakeFiscal() as any, fakeSequence() as any, new AnalysisCodeService(prisma, noopEvents));
   const reversal = new ReversalService(prisma, posting);
   return { prisma, posting, reversal };
 }

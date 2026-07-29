@@ -18,6 +18,7 @@ import {
   AdjustingEntryPermissionError,
   AdjustingEntryReasonRequiredError,
 } from '../application/draft-service';
+import { PostingViolationError, AnalysisTagViolationError } from '../application/posting-service';
 import { requireJePermission, JE_PERMISSIONS } from './journal-routes';
 
 function getTenantId(request: any): string {
@@ -117,6 +118,13 @@ function handleError(error: unknown, reply: any) {
       validation: error.validation,
     });
   }
+  if (error instanceof PostingViolationError) {
+    return reply.status(error.status).send({ error: error.code, message: error.message, violations: error.violations });
+  }
+  if (error instanceof AnalysisTagViolationError) {
+    // S011 — tag rejection at the S013 door (cap/inactive/unknown/duplicate).
+    return reply.status(error.status).send({ error: error.code, message: error.message, violations: error.violations });
+  }
   if (error instanceof z.ZodError) {
     return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
   }
@@ -136,6 +144,13 @@ const LineSchema = z.object({
   dr: z.union([z.number(), z.string()]).nullable().optional(),
   cr: z.union([z.number(), z.string()]).nullable().optional(),
   memo: z.string().max(500).nullable().optional(),
+  // S011 P01-SCR-05 — line-level analysis tags; validated (cap/active/type
+  // match) only at post time (BR011-1/BR011-4). Draft save accepts ANY shape
+  // here per BR214-1 ("save in any state").
+  analysisTags: z
+    .array(z.object({ typeId: z.string().min(1), valueId: z.string().min(1) }))
+    .nullable()
+    .optional(),
 });
 
 // BR214-1 — every field optional so ANY state saves.

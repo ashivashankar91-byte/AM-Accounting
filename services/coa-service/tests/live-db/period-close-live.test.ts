@@ -70,6 +70,7 @@ import { PostingService, PostingViolationError } from '../../src/application/pos
 import { FiscalCalendarService } from '../../src/application/fiscal-service';
 import { SequenceService } from '../../src/application/sequence-service';
 import { ConfigService } from '../../src/application/config-service';
+import { AnalysisCodeService } from '../../src/application/analysis-code-service';
 import type { IEventPublisher } from '@amacc/shared-kernel';
 
 const LIVE_DB_URL = process.env['LIVE_DATABASE_URL'];
@@ -130,7 +131,7 @@ describe.skipIf(!LIVE_DB_URL)('S008 Live database — period close control certi
     await prisma.$connect();
     const config = new ConfigService(prisma, noopEvents);
     periodSvc = new PeriodService(prisma, noopEvents, config);
-    posting = new PostingService(prisma, noopEvents, new FiscalCalendarService(prisma, noopEvents), new SequenceService(prisma, noopEvents));
+    posting = new PostingService(prisma, noopEvents, new FiscalCalendarService(prisma, noopEvents), new SequenceService(prisma, noopEvents), new AnalysisCodeService(prisma, noopEvents));
 
     const cal = await prisma.fiscalCalendar.create({
       data: { id: randomUUID(), tenantId: TENANT, entityId: ENTITY, fyStartMonth: 1, structure: 'TWELVE', status: 'DEFINED', actor: 'live-test' },

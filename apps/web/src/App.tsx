@@ -61,6 +61,7 @@ import GoldenPathTrialBalance from './pages/goldenpath/TrialBalance';
 import GoldenPathGLSearch from './pages/goldenpath/GLSearch';
 import GoldenPathBalanceSheet from './pages/goldenpath/BalanceSheet';
 import GoldenPathIncomeStatement from './pages/goldenpath/IncomeStatement';
+import AnalysisCodeRegistry from './pages/accounting/admin/AnalysisCodeRegistry';
 import TrialBalance from './pages/TrialBalance';
 import ManualJournalEntry from './pages/ManualJournalEntry';
 import AMACCSync from './pages/AMACCSync';
@@ -274,6 +275,7 @@ const MODULES: AppModule[] = [
         { path: '/accounting/admin/service-gl-accounts', label: 'Service GL Accounts' },
         { path: '/accounting/admin/mfg-dcs',            label: 'MFG/DCS Comms' },
         { path: '/accounting/admin/statement-metadata', label: 'Statement Metadata' },
+        { path: '/accounting/admin/analysis-codes',     label: 'Analysis Codes' },
       ]},
       { title: 'System', items: [
         { path: '/tenants',        label: 'Tenants' },
@@ -547,6 +549,11 @@ export default function App() {
                   API only. */}
               <Route path="/golden-path/balance-sheet" element={<GoldenPathProtectedRoute><GoldenPathBalanceSheet /></GoldenPathProtectedRoute>} />
               <Route path="/golden-path/income-statement" element={<GoldenPathProtectedRoute><GoldenPathIncomeStatement /></GoldenPathProtectedRoute>} />
+              {/* S011 — Analysis Code Registry (P01-SCR-04). Route matches
+                  the P01 Story Contract literally (/accounting/admin/
+                  analysis-codes), wrapped in the same real-auth Golden Path
+                  guard as every other certified P01 screen. */}
+              <Route path="/accounting/admin/analysis-codes" element={<GoldenPathProtectedRoute><AnalysisCodeRegistry /></GoldenPathProtectedRoute>} />
               {/* Golden R0 Phase — routing alias only, no second implementation.
                   The canonical GL Inquiry screen/route is /accounting/inquiry/gl
                   (registered below); this path never had a real route at all,

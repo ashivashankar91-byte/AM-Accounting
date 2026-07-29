@@ -9,7 +9,7 @@
 import 'reflect-metadata';
 import { describe, it, expect } from 'vitest';
 import { container } from 'tsyringe';
-import { PostingService, PostingViolationError } from '../src/application/posting-service';
+import { PostingService, PostingViolationError, AnalysisTagViolationError } from '../src/application/posting-service';
 
 const TENANT = 'tenant-kunes';
 const ENTITY = 'e1';
@@ -22,6 +22,7 @@ const ACCOUNTS = [
 function makePrisma() {
   const entries: any[] = [];
   const lines: any[] = [];
+  const tags: any[] = [];
   const snaps: any[] = [];
   const outbox: any[] = [];
   const audits: any[] = [];
@@ -34,6 +35,7 @@ function makePrisma() {
   const prisma: any = {
     _entries: entries,
     _lines: lines,
+    _tags: tags,
     _snaps: snaps,
     _outbox: outbox,
     _audits: audits,
@@ -58,6 +60,12 @@ function makePrisma() {
       },
     },
     journalLine: { create: async ({ data }: any) => (lines.push(data), data) },
+    journalLineAnalysisTag: {
+      createMany: async ({ data }: any) => {
+        (data as any[]).forEach((d) => tags.push(d));
+        return { count: data.length };
+      },
+    },
     balanceSnapshot: { create: async ({ data }: any) => (snaps.push(data), data) },
     glAccount: {
       findMany: async ({ where }: any) =>
@@ -114,16 +122,27 @@ function fakeSequence() {
   };
 }
 
-function setup(opts: { periodStatus?: string } = {}) {
+function fakeAnalysisCodes(overrides: { types?: Map<string, any>; values?: Map<string, any> } = {}) {
+  return {
+    loadValidationContext: async (_tenantId: string) => ({
+      types: overrides.types ?? new Map(),
+      values: overrides.values ?? new Map(),
+    }),
+  };
+}
+
+function setup(opts: { periodStatus?: string; analysisCodes?: ReturnType<typeof fakeAnalysisCodes> } = {}) {
   container.reset();
   const prisma = makePrisma();
   const events = { published: [] as any[], publish: async (e: any) => void (events.published as any[]).push(e) };
   const fiscal = fakeFiscal(opts.periodStatus);
   const sequence = fakeSequence();
+  const analysisCodes = opts.analysisCodes ?? fakeAnalysisCodes();
   container.registerInstance('PrismaClient', prisma as any);
   container.registerInstance('IEventPublisher', events as any);
   container.registerInstance('FiscalCalendarService', fiscal as any);
   container.registerInstance('SequenceService', sequence as any);
+  container.registerInstance('AnalysisCodeService', analysisCodes as any);
   container.register('PostingService', { useClass: PostingService });
   return { svc: container.resolve<PostingService>('PostingService'), prisma, events, sequence };
 }
@@ -220,5 +239,93 @@ describe('PostingService.post — event payload', () => {
     expect(payload.journalNumber).toBe('GJ-2026-01-000001');
     expect(payload.lines).toHaveLength(2);
     expect(payload.postedBy).toBe('alice');
+  });
+});
+
+// ── S011 — Analysis Codes / Dimensions: tag persistence at the S013 door ────
+describe('PostingService.post — S011 analysis tag persistence (BR011-1/2)', () => {
+  it('persists a valid tag on a JournalLine atomically with the entry', async () => {
+    const analysisCodes = fakeAnalysisCodes({
+      types: new Map([['t-project', { id: 't-project', isActive: true }]]),
+      values: new Map([['v-alpha', { id: 'v-alpha', typeId: 't-project', isActive: true }]]),
+    });
+    const { svc, prisma } = setup({ analysisCodes });
+    await svc.post(dto({
+      lines: [
+        { accountId: 'a-cash', storeId: '01', dr: 100, analysisTags: [{ typeId: 't-project', valueId: 'v-alpha' }] },
+        { accountId: 'a-rev', storeId: '01', deptCode: 'SVC', cr: 100 },
+      ],
+    }));
+    expect(prisma._tags).toHaveLength(1);
+    expect(prisma._tags[0]).toMatchObject({ typeId: 't-project', valueId: 'v-alpha' });
+    // The tag row must reference the SAME line id just written to _lines,
+    // proving atomic association (not a dangling/out-of-order write).
+    expect(prisma._tags[0].journalLineId).toBe(prisma._lines[0].id);
+  });
+
+  it('rejects an unknown analysis-code value with a 422 AnalysisTagViolationError and writes NOTHING', async () => {
+    const { svc, prisma } = setup(); // empty registry — every tag reference is "unknown"
+    await expect(
+      svc.post(dto({
+        lines: [
+          { accountId: 'a-cash', storeId: '01', dr: 100, analysisTags: [{ typeId: 't-nope', valueId: 'v-nope' }] },
+          { accountId: 'a-rev', storeId: '01', deptCode: 'SVC', cr: 100 },
+        ],
+      })),
+    ).rejects.toBeInstanceOf(AnalysisTagViolationError);
+    expect(prisma._entries).toHaveLength(0);
+    expect(prisma._lines).toHaveLength(0);
+    expect(prisma._tags).toHaveLength(0);
+  });
+
+  it('rejects more than MAX_TAGS_PER_LINE tags on one line (BLK-13 proposed cap) with no partial write', async () => {
+    const analysisCodes = fakeAnalysisCodes({
+      types: new Map([
+        ['t-a', { id: 't-a', isActive: true }],
+        ['t-b', { id: 't-b', isActive: true }],
+        ['t-c', { id: 't-c', isActive: true }],
+        ['t-d', { id: 't-d', isActive: true }],
+      ]),
+      values: new Map([
+        ['v-a', { id: 'v-a', typeId: 't-a', isActive: true }],
+        ['v-b', { id: 'v-b', typeId: 't-b', isActive: true }],
+        ['v-c', { id: 'v-c', typeId: 't-c', isActive: true }],
+        ['v-d', { id: 'v-d', typeId: 't-d', isActive: true }],
+      ]),
+    });
+    const { svc, prisma } = setup({ analysisCodes });
+    await expect(
+      svc.post(dto({
+        lines: [
+          {
+            accountId: 'a-cash', storeId: '01', dr: 100,
+            analysisTags: [
+              { typeId: 't-a', valueId: 'v-a' },
+              { typeId: 't-b', valueId: 'v-b' },
+              { typeId: 't-c', valueId: 'v-c' },
+              { typeId: 't-d', valueId: 'v-d' },
+            ],
+          },
+          { accountId: 'a-rev', storeId: '01', deptCode: 'SVC', cr: 100 },
+        ],
+      })),
+    ).rejects.toBeInstanceOf(AnalysisTagViolationError);
+    expect(prisma._entries).toHaveLength(0);
+  });
+
+  it('never lets tags affect balancing — an otherwise-unbalanced entry still fails BR013-1, not a tag rule (BR011-3)', async () => {
+    const analysisCodes = fakeAnalysisCodes({
+      types: new Map([['t-project', { id: 't-project', isActive: true }]]),
+      values: new Map([['v-alpha', { id: 'v-alpha', typeId: 't-project', isActive: true }]]),
+    });
+    const { svc } = setup({ analysisCodes });
+    await expect(
+      svc.post(dto({
+        lines: [
+          { accountId: 'a-cash', storeId: '01', dr: 100, analysisTags: [{ typeId: 't-project', valueId: 'v-alpha' }] },
+          { accountId: 'a-rev', storeId: '01', deptCode: 'SVC', cr: 90 },
+        ],
+      })),
+    ).rejects.toBeInstanceOf(PostingViolationError); // BR013 rejection, NOT AnalysisTagViolationError
   });
 });

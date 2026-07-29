@@ -380,6 +380,8 @@ model JournalLine {
   createdAt      DateTime @default(now()) @map("created_at")
 
   entry JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  /// S011 — additive, optional (BR011-3: never affects balancing/posting math).
+  analysisTags JournalLineAnalysisTag[]
 
   @@index([journalEntryId])
   @@index([accountId])
@@ -501,4 +503,83 @@ model SavedGlSearch {
   @@unique([tenantId, createdBy, name])
   @@index([tenantId, createdBy])
   @@map("saved_gl_search")
+}
+
+/// S011 — Analysis Codes and Accounting Dimensions (P01, confirmed slice only;
+/// AMD-005/accumulator-adjacent behavior is explicitly excluded — see
+/// P01_STORY_CONTRACTS.md "S011"). A tenant-defined dimension "type" (e.g.
+/// Campaign, Project, Unit Group) — BR011-1. Deactivation only, never delete
+/// (matches department-service.ts's registry convention); a type with any
+/// active value cannot itself be deactivated out from under posted history.
+model AnalysisCodeType {
+  id                  String    @id @default(uuid())
+  tenantId            String    @map("tenant_id")
+  code                String    @db.VarChar(20)
+  name                String    @db.VarChar(120)
+  isActive            Boolean   @default(true) @map("is_active")
+  version             Int       @default(1)
+  createdAt           DateTime  @default(now()) @map("created_at")
+  deactivatedAt        DateTime? @map("deactivated_at")
+  deactivatedBy        String?   @map("deactivated_by")
+  deactivationReason   String?   @map("deactivation_reason")
+
+  values AnalysisCodeValue[]
+  tags   JournalLineAnalysisTag[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, isActive])
+  @@map("analysis_code_type")
+}
+
+/// S011 — a value within a code type (e.g. Campaign="SPRING24") — BR011-1.
+/// BR011-4: inactive values reject on NEW lines but remain valid/immutable on
+/// history already tagged with them.
+model AnalysisCodeValue {
+  id                  String    @id @default(uuid())
+  tenantId            String    @map("tenant_id")
+  typeId              String    @map("type_id")
+  code                String    @db.VarChar(20)
+  name                String    @db.VarChar(120)
+  isActive            Boolean   @default(true) @map("is_active")
+  version             Int       @default(1)
+  createdAt           DateTime  @default(now()) @map("created_at")
+  deactivatedAt        DateTime? @map("deactivated_at")
+  deactivatedBy        String?   @map("deactivated_by")
+  deactivationReason   String?   @map("deactivation_reason")
+
+  type AnalysisCodeType     @relation(fields: [typeId], references: [id], onDelete: Cascade)
+  tags JournalLineAnalysisTag[]
+
+  @@unique([tenantId, typeId, code])
+  @@index([tenantId, typeId, isActive])
+  @@map("analysis_code_value")
+}
+
+/// S011 — BR011-2/BR011-3: additive child row per journal line x tag. Tags
+/// are pure reporting dimensions; they never participate in the BR013
+/// balancing/posting evaluator (domain/journal-posting.ts) and this table is
+/// never read by PostingService's balance math. Written once, at post time,
+/// alongside the JournalLine row it belongs to (same transaction) — BR011-1
+/// AC: "the tag persists immutably with the posted line" (no update path;
+/// only inserted when the line is created).
+model JournalLineAnalysisTag {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  journalLineId  String   @map("journal_line_id")
+  typeId         String   @map("type_id")
+  valueId        String   @map("value_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  line  JournalLine       @relation(fields: [journalLineId], references: [id], onDelete: Cascade)
+  type  AnalysisCodeType  @relation(fields: [typeId], references: [id])
+  value AnalysisCodeValue @relation(fields: [valueId], references: [id])
+
+  // A line may carry 0..N tags but never two values for the SAME type
+  // (proposed default; a line tagged "Campaign=Spring24" and
+  // "Campaign=Fall24" simultaneously is not a defined semantic).
+  @@unique([journalLineId, typeId])
+  @@index([tenantId, valueId])
+  @@index([tenantId, typeId])
+  @@index([journalLineId])
+  @@map("journal_line_analysis_tag")
 }

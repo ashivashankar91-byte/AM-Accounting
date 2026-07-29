@@ -4,6 +4,7 @@ import { IEventPublisher } from '@amacc/shared-kernel';
 import { PrismaClient } from '.prisma/coa-client';
 import { FiscalCalendarService } from './fiscal-service';
 import { SequenceService } from './sequence-service';
+import { AnalysisCodeService } from './analysis-code-service';
 import { withSerializableRetry } from '../lib/serializable-retry';
 import {
   evaluate,
@@ -17,6 +18,7 @@ import {
   Violation,
   SourceClass,
 } from '../domain/journal-posting';
+import { validateLineTags, AnalysisTagViolation } from '../domain/analysis-code';
 
 // ── Errors ───────────────────────────────────────────────────────────────────
 
@@ -37,6 +39,25 @@ export class PostingViolationError extends Error {
   constructor(readonly violations: Violation[]) {
     super('Journal rejected: ' + violations.map((v) => `${v.rule}${v.lineIndex !== undefined ? `[${v.lineIndex}]` : ''}`).join(', '));
     this.name = 'PostingViolationError';
+  }
+}
+
+/**
+ * S011 — BR011-1/BR011-2/BR011-4: one or more lines carry an invalid tag
+ * (unknown/inactive type or value, duplicate type on a line, or over the
+ * cap). Rejected the same way as a BR013 violation — 422, no partial write,
+ * evaluated and enforced BEFORE the journal number is allocated so a tag
+ * rejection never produces a sequence gap.
+ */
+export class AnalysisTagViolationError extends Error {
+  readonly status = 422;
+  readonly code = 'ANALYSIS_TAG_REJECTED';
+  constructor(readonly violations: AnalysisTagViolation[]) {
+    super(
+      'Journal rejected: ' +
+        violations.map((v) => `${v.rule}${v.lineIndex !== undefined ? `[${v.lineIndex}]` : ''}`).join(', '),
+    );
+    this.name = 'AnalysisTagViolationError';
   }
 }
 
@@ -82,6 +103,7 @@ export class PostingService {
     @inject('IEventPublisher') private readonly events: IEventPublisher,
     @inject('FiscalCalendarService') private readonly fiscal: FiscalCalendarService,
     @inject('SequenceService') private readonly sequence: SequenceService,
+    @inject('AnalysisCodeService') private readonly analysisCodes: AnalysisCodeService,
   ) {}
 
   /**
@@ -129,6 +151,22 @@ export class PostingService {
     const result = evaluate(header, dto.lines ?? [], ctx);
     if (!result.pass) {
       throw new PostingViolationError(result.violations); // 422, NO partial write
+    }
+
+    // ── S011 BR011-1/BR011-2/BR011-4 — tags are validated but NEVER passed to
+    // evaluate() above: this is the structural proof of BR011-3 ("tags never
+    // affect posting math, balancing, or the S013 gate"). Checked before the
+    // journal number is allocated so a tag rejection never produces a gap.
+    const anyTags = (dto.lines ?? []).some((l) => (l.analysisTags?.length ?? 0) > 0);
+    if (anyTags) {
+      const tagCtx = await this.analysisCodes.loadValidationContext(dto.tenantId);
+      const tagViolations: AnalysisTagViolation[] = [];
+      (dto.lines ?? []).forEach((line, i) => {
+        tagViolations.push(...validateLineTags(line.analysisTags ?? undefined, tagCtx, i));
+      });
+      if (tagViolations.length > 0) {
+        throw new AnalysisTagViolationError(tagViolations); // 422, NO partial write
+      }
     }
 
     const period = ctx.period!; // guaranteed present + OPEN by a clean evaluation
@@ -179,9 +217,10 @@ export class PostingService {
           const acct = ctx.accounts.get(line.accountId)!;
           const drC = toCents(line.dr);
           const crC = toCents(line.cr);
+          const lineId = crypto.randomUUID();
           await tx.journalLine.create({
             data: {
-              id: crypto.randomUUID(),
+              id: lineId,
               journalEntryId: entryId,
               tenantId: dto.tenantId,
               lineIndex: i,
@@ -196,6 +235,20 @@ export class PostingService {
               memo: line.memo ?? null,
             },
           });
+          // S011 BR011-2 — persist tags atomically with the line they belong
+          // to (same transaction); already validated above (fail-closed,
+          // before allocation) so this insert cannot fail on a bad tag.
+          if (line.analysisTags && line.analysisTags.length > 0) {
+            await tx.journalLineAnalysisTag.createMany({
+              data: line.analysisTags.map((tag) => ({
+                id: crypto.randomUUID(),
+                tenantId: dto.tenantId,
+                journalLineId: lineId,
+                typeId: tag.typeId,
+                valueId: tag.valueId,
+              })),
+            });
+          }
           const agg = perAccount.get(line.accountId) ?? { drC: 0, crC: 0 };
           agg.drC += drC;
           agg.crC += crC;

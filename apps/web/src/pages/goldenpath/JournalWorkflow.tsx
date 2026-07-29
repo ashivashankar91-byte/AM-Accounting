@@ -37,6 +37,11 @@ import { Btn } from '../../components/ui';
 //    surfaced in this pass — no design or product ask named them
 //    explicitly, and every current call site of this draft leaves them
 //    null already.
+interface AnalysisTag {
+  typeId: string;
+  valueId: string;
+}
+
 interface Line {
   accountId: string;
   storeId: string;
@@ -44,9 +49,19 @@ interface Line {
   dr: string;
   cr: string;
   memo: string;
+  // S011 P01-SCR-05 — display-only extension of the certified JE line grid;
+  // does not change draft/post behavior (BR011-3: never read by BR013
+  // balancing), only rides along in the payload for the coa-service door to
+  // validate + persist (posting-service.ts).
+  analysisTags: AnalysisTag[];
 }
 
-const emptyLine = (): Line => ({ accountId: '', storeId: '', deptCode: '', dr: '', cr: '', memo: '' });
+const emptyLine = (): Line => ({ accountId: '', storeId: '', deptCode: '', dr: '', cr: '', memo: '', analysisTags: [] });
+
+// S011 — proposed default cap (BLK-13, PO decision pending); mirrors
+// domain/analysis-code.ts's MAX_TAGS_PER_LINE so the picker's client-side
+// hint matches the server's fail-closed enforcement.
+const MAX_TAGS_PER_LINE = 3;
 
 type BadgeInfo = { label: string; variant: 'warning' | 'info' | 'success' | 'neutral' };
 
@@ -65,6 +80,7 @@ export default function JournalWorkflow() {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [stores, setStores] = useState<any[]>([]);
   const [sources, setSources] = useState<any[]>([]);
+  const [analysisTypes, setAnalysisTypes] = useState<any[]>([]);
   const [pageLoading, setPageLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
   const [unauthorized, setUnauthorized] = useState<string | null>(null);
@@ -103,6 +119,16 @@ export default function JournalWorkflow() {
         else setPageError(err.message);
       })
       .finally(() => setPageLoading(false));
+  }, [legalEntityId]);
+
+  useEffect(() => {
+    if (!legalEntityId) return;
+    // S011 — tenant-scoped (not entity-scoped) registry; loaded once, active
+    // types+values only, so the picker never offers an inactive/unknown pair
+    // that BR011-1 would reject server-side anyway. Kept independent of the
+    // page-load Promise.all above so a registry hiccup never blocks journal
+    // entry itself (tags are an optional, additive feature).
+    goldenPathApi.listAnalysisTypes({ status: 'ACTIVE' }).then((r) => setAnalysisTypes(r.items)).catch(() => setAnalysisTypes([]));
   }, [legalEntityId]);
 
   if (!legalEntityId) {
@@ -145,6 +171,31 @@ export default function JournalWorkflow() {
     setLines((prev) => prev.filter((_, idx) => idx !== i));
   }
 
+  // S011 P01-SCR-05 tag picker helpers — client-side dedupe/cap hints only;
+  // the server (posting-service.ts's validateLineTags call) is the real,
+  // fail-closed enforcement point (BR011-1/BR011-2/BR011-4).
+  function addTag(i: number, typeId: string, valueId: string) {
+    if (!typeId || !valueId) return;
+    setLines((prev) =>
+      prev.map((l, idx) => {
+        if (idx !== i) return l;
+        if (l.analysisTags.length >= MAX_TAGS_PER_LINE) return l;
+        if (l.analysisTags.some((t) => t.typeId === typeId)) return l; // one value per type per line
+        return { ...l, analysisTags: [...l.analysisTags, { typeId, valueId }] };
+      }),
+    );
+  }
+  function removeTag(i: number, typeId: string) {
+    setLines((prev) =>
+      prev.map((l, idx) => (idx === i ? { ...l, analysisTags: l.analysisTags.filter((t) => t.typeId !== typeId) } : l)),
+    );
+  }
+  function tagLabel(typeId: string, valueId: string): string {
+    const type = analysisTypes.find((t: any) => t.id === typeId);
+    const value = type?.values?.find((v: any) => v.id === valueId);
+    return `${type?.code ?? typeId}:${value?.code ?? valueId}`;
+  }
+
   async function createDraft() {
     setError(null);
     setBusy(true);
@@ -161,6 +212,7 @@ export default function JournalWorkflow() {
           dr: l.dr ? Number(l.dr) : 0,
           cr: l.cr ? Number(l.cr) : 0,
           memo: l.memo || null,
+          analysisTags: l.analysisTags,
         })),
       });
       setDraftId(result.draftId);
@@ -401,6 +453,7 @@ export default function JournalWorkflow() {
                 <ReportTh align="right">Debit</ReportTh>
                 <ReportTh align="right">Credit</ReportTh>
                 <ReportTh>Line memo</ReportTh>
+                <ReportTh>Tags</ReportTh>
                 {editable && <ReportTh align="center">Actions</ReportTh>}
               </tr>
             </ReportThead>
@@ -488,6 +541,39 @@ export default function JournalWorkflow() {
                         />
                       ) : (line.memo || '—')}
                     </ReportTd>
+                    <ReportTd data-testid={`journal-line-${i}-tags`}>
+                      {/* S011 P01-SCR-05 — line-level analysis tag picker.
+                          Display-only extension of this certified grid: no
+                          new interaction pattern, just an additional column. */}
+                      {analysisTypes.length > 0 ? (
+                        <div className="flex flex-wrap items-center gap-1">
+                          {line.analysisTags.map((t) => (
+                            <span
+                              key={t.typeId}
+                              data-testid={`journal-line-${i}-tag-chip`}
+                              className="text-[11px] bg-indigo-50 border border-indigo-200 rounded-full px-2 py-0.5"
+                            >
+                              {tagLabel(t.typeId, t.valueId)}
+                              {editable && (
+                                <button
+                                  type="button"
+                                  data-testid={`journal-line-${i}-tag-remove-${t.typeId}`}
+                                  onClick={() => removeTag(i, t.typeId)}
+                                  className="ml-1 text-indigo-700"
+                                >
+                                  ×
+                                </button>
+                              )}
+                            </span>
+                          ))}
+                          {editable && line.analysisTags.length < MAX_TAGS_PER_LINE && (
+                            <TagAdder analysisTypes={analysisTypes} onAdd={(typeId, valueId) => addTag(i, typeId, valueId)} testIdPrefix={`journal-line-${i}`} />
+                          )}
+                        </div>
+                      ) : (
+                        !editable && '—'
+                      )}
+                    </ReportTd>
                     {editable && (
                       <ReportTd align="center">
                         <button
@@ -511,7 +597,7 @@ export default function JournalWorkflow() {
                 </ReportTd>
                 <MoneyTd value={totalDr} bold />
                 <MoneyTd value={totalCr} bold />
-                <ReportTd colSpan={editable ? 2 : 1} className={`font-mono font-semibold text-[13px] ${isBalanced ? 'text-emerald-700' : 'text-red-700'}`}>
+                <ReportTd colSpan={editable ? 3 : 2} className={`font-mono font-semibold text-[13px] ${isBalanced ? 'text-emerald-700' : 'text-red-700'}`}>
                   {isBalanced ? 'In balance' : `${formatMoney(Math.abs(variance))} ${variance > 0 ? 'debit' : 'credit'} short`}
                 </ReportTd>
               </TotalsRow>
@@ -572,5 +658,59 @@ export default function JournalWorkflow() {
         </>
       )}
     </ReportShell>
+  );
+}
+
+// S011 P01-SCR-05 — minimal type->value tag picker used by JournalWorkflow's
+// per-line tag control. Kept as a tiny local component (not a new shared
+// pattern) since the contract scopes this as a "display-only extension" of
+// the existing certified JE editor.
+function TagAdder({
+  analysisTypes,
+  onAdd,
+  testIdPrefix,
+}: {
+  analysisTypes: any[];
+  onAdd: (typeId: string, valueId: string) => void;
+  testIdPrefix: string;
+}) {
+  const [typeId, setTypeId] = useState('');
+  const [valueId, setValueId] = useState('');
+  const selectedType = analysisTypes.find((t: any) => t.id === typeId);
+  const values = (selectedType?.values ?? []).filter((v: any) => v.isActive);
+
+  return (
+    <span className="inline-flex gap-1 items-center">
+      <select
+        data-testid={`${testIdPrefix}-tag-type-select`}
+        value={typeId}
+        onChange={(e) => { setTypeId(e.target.value); setValueId(''); }}
+        className="text-[11px]"
+      >
+        <option value="">+ tag type…</option>
+        {analysisTypes.map((t: any) => <option key={t.id} value={t.id}>{t.code}</option>)}
+      </select>
+      {typeId && (
+        <select
+          data-testid={`${testIdPrefix}-tag-value-select`}
+          value={valueId}
+          onChange={(e) => setValueId(e.target.value)}
+          className="text-[11px]"
+        >
+          <option value="">value…</option>
+          {values.map((v: any) => <option key={v.id} value={v.id}>{v.code}</option>)}
+        </select>
+      )}
+      {typeId && valueId && (
+        <button
+          type="button"
+          data-testid={`${testIdPrefix}-tag-add`}
+          onClick={() => { onAdd(typeId, valueId); setTypeId(''); setValueId(''); }}
+          className="text-[11px]"
+        >
+          Add
+        </button>
+      )}
+    </span>
   );
 }

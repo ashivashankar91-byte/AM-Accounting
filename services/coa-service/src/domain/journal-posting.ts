@@ -26,6 +26,14 @@ export interface PostingLineInput {
   dr?: number | string | null; // dollars; exactly one of dr|cr must be > 0
   cr?: number | string | null;
   memo?: string | null;
+  /**
+   * S011 — BR011-2/BR011-3, additive/optional. Read only by PostingService's
+   * tag-persistence step after a clean evaluate() pass; the shared BR013
+   * evaluator (evaluate(), below) never inspects this field, so tags
+   * provably cannot influence balancing/posting math (BR011-3, NEG: "posting
+   * a JE with no tags behaves byte-identically to pre-S011 behavior").
+   */
+  analysisTags?: { typeId: string; valueId: string }[] | null;
 }
 
 export interface PostingHeaderInput {

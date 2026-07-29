@@ -1079,4 +1079,27 @@ export const goldenPathApi = {
   },
   deleteSavedSearch: (id: string) =>
     apiFetch<void>(`/api/v1/coa/inquiry/searches/${id}`, { method: 'DELETE' }),
+
+  // S011 — Analysis Codes / Dimensions registry (P01-SCR-04) + line tagging
+  // (P01-SCR-05). Registry is a plain type/value CRUD (create/edit/
+  // deactivate, no ceremonies) — same coa-service pattern as accounts/depts.
+  listAnalysisTypes: (params?: { status?: 'ACTIVE' | 'INACTIVE'; search?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set('status', params.status);
+    if (params?.search) qs.set('search', params.search);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return apiFetch<{ items: any[]; total: number }>(`/api/v1/coa/analysis/types${suffix}`);
+  },
+  createAnalysisType: (data: { code: string; name: string }) =>
+    apiFetch<any>('/api/v1/coa/analysis/types', { method: 'POST', body: JSON.stringify(data) }),
+  updateAnalysisType: (id: string, data: { version: number; name?: string }) =>
+    apiFetch<any>(`/api/v1/coa/analysis/types/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deactivateAnalysisType: (id: string, data: { version: number; reason: string }) =>
+    apiFetch<any>(`/api/v1/coa/analysis/types/${id}/deactivate`, { method: 'POST', body: JSON.stringify(data) }),
+  createAnalysisValue: (typeId: string, data: { code: string; name: string }) =>
+    apiFetch<any>(`/api/v1/coa/analysis/types/${typeId}/values`, { method: 'POST', body: JSON.stringify(data) }),
+  updateAnalysisValue: (typeId: string, id: string, data: { version: number; name?: string }) =>
+    apiFetch<any>(`/api/v1/coa/analysis/types/${typeId}/values/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deactivateAnalysisValue: (typeId: string, id: string, data: { version: number; reason: string }) =>
+    apiFetch<any>(`/api/v1/coa/analysis/types/${typeId}/values/${id}/deactivate`, { method: 'POST', body: JSON.stringify(data) }),
 };

@@ -28,6 +28,12 @@ export interface DraftLineInput {
   dr?: number | string | null;
   cr?: number | string | null;
   memo?: string | null;
+  /**
+   * S011 — BR011-2, additive/optional (display-only extension to the JE
+   * editor, P01-SCR-05). Never affects balancing/posting math (BR011-3);
+   * validated + persisted at post time only (see posting-service.ts).
+   */
+  analysisTags?: { typeId: string; valueId: string }[] | null;
 }
 
 export interface AttachmentInput {
@@ -72,5 +78,9 @@ export function normalizeLine(line: DraftLineInput): DraftLineInput {
     dr: n(line.dr),
     cr: n(line.cr),
     memo: s(line.memo),
+    // S011 — preserve as-is (validated only at post time, never at save-draft
+    // time, matching BR214-1 "save in ANY state"); normalize a falsy/empty
+    // array to null so it round-trips identically to an untagged line.
+    analysisTags: line.analysisTags && line.analysisTags.length > 0 ? line.analysisTags : null,
   };
 }

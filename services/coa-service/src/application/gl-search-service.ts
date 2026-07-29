@@ -83,6 +83,8 @@ export interface GLSearchCriteria {
    * either field — documented interpretation, not a new schema concept.
    */
   docRef?: string;
+  /** S011 — restrict results to lines tagged with this analysis-code value. */
+  analysisValueId?: string;
   page?: number;
   pageSize?: number;
 }
@@ -110,6 +112,8 @@ export interface GLSearchResultRow {
   memo: string | null;
   dr: number;
   cr: number;
+  /** S011 — analysis tags on this line, for display/filter confirmation. */
+  analysisTags: { typeId: string; valueId: string }[];
 }
 
 export interface GLSearchResult {
@@ -159,7 +163,7 @@ export class GLSearchService {
       this.prisma.journalLine.count({ where }),
       this.prisma.journalLine.findMany({
         where,
-        include: { entry: true },
+        include: { entry: true, analysisTags: { select: { typeId: true, valueId: true } } },
         // Deterministic, stable ordering (most-recent-first for search UX,
         // then journalNumber/lineIndex as tie-breakers so pagination is
         // never ambiguous across identical timestamps).
@@ -183,6 +187,7 @@ export class GLSearchService {
       memo: l.memo ?? null,
       dr: Number(l.dr),
       cr: Number(l.cr),
+      analysisTags: (l.analysisTags ?? []).map((t) => ({ typeId: t.typeId, valueId: t.valueId })),
     }));
 
     await this.emitAudited(tenantId, actor, criteria, totalResults);
@@ -409,6 +414,7 @@ export class GLSearchService {
     return {
       tenantId,
       entry: entryWhere,
+      ...(c.analysisValueId ? { analysisTags: { some: { valueId: c.analysisValueId } } } : {}),
       ...(and.length > 0 ? { AND: and } : {}),
     };
   }

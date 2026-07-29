@@ -33,6 +33,7 @@ import { PostingService } from '../../src/application/posting-service';
 import { ReversalService } from '../../src/application/reversal-service';
 import { FiscalCalendarService } from '../../src/application/fiscal-service';
 import { SequenceService } from '../../src/application/sequence-service';
+import { AnalysisCodeService } from '../../src/application/analysis-code-service';
 import type { IEventPublisher } from '@amacc/shared-kernel';
 
 const LIVE_DB_URL = process.env['LIVE_DATABASE_URL'];
@@ -91,7 +92,7 @@ describe.skipIf(!LIVE_DB_URL)('Live database — atomic posting, idempotency, re
       data: { id: randomUUID(), tenantId: TENANT, code: SOURCE_CODE, name: 'Live Test Source', sourceClass: 'MANUAL', status: 'ACTIVE' },
     });
 
-    posting = new PostingService(prisma, noopEvents, new FiscalCalendarService(prisma, noopEvents), new SequenceService(prisma, noopEvents));
+    posting = new PostingService(prisma, noopEvents, new FiscalCalendarService(prisma, noopEvents), new SequenceService(prisma, noopEvents), new AnalysisCodeService(prisma, noopEvents));
     reversal = new ReversalService(prisma, posting);
     sequence = new SequenceService(prisma, noopEvents);
   });
