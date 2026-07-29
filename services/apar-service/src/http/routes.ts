@@ -282,7 +282,8 @@ export async function aparRoutes(app: FastifyInstance) {
   // ===== AMACC-CH04 S036A: Internal Vendor Master (hardened S3-07) =====
   //
   // Permission keys — registered in auth-service's S207 catalog via
-  // 20260729010000_extend_authz_catalog_s036a_vendor_master/migration.sql.
+  // 20260729030000_extend_authz_catalog_s036a_vendor_master/migration.sql
+  // (renumbered at r1-integration time; originally 20260729010000).
   const AP_VENDOR_PERMISSIONS = {
     VIEW:               'ap.vendor.view',
     CREATE:             'ap.vendor.create',
