@@ -1160,12 +1160,13 @@
       "title": "Period Close Control",
       "layman": "A Controller/Admin can soft-close, hard-close, reopen, or terminally lock a fiscal period; the database itself enforces the legal state machine, blocks posting into a closed period (except an authorized, attested manual adjusting entry into SOFT_CLOSED), and records every transition on an append-only, RLS-protected ledger with the authenticated actor always taken from the verified JWT.",
       "package": "R1-VERTICAL-SLICE",
-      "status": "INTEGRATED_TECHNICALLY_PENDING_FINAL_PRODUCT_SME_ACCEPTANCE",
+      "status": "S008_INTEGRATED_AND_ACCEPTED_FOR_CONTINUED_INTEGRATION_WITH_DISCLOSED_LIMITATIONS",
       "statusHistory": [
         { "status": "NOT_STARTED", "date": null },
         { "status": "IMPLEMENTED_PENDING_CERTIFICATION", "date": "2026-07-28" },
         { "status": "TECHNICALLY_CERTIFIED_PENDING_PRODUCT_SME_ACCEPTANCE", "date": "2026-07-28", "acceptedCommits": ["ce35c3f", "762e2b4"], "note": "PO checkpoint 'PRODUCT CHECKPOINT — S008 TECHNICAL CERTIFICATION ACCEPTED'. Accepted for engineering implementation and technical certification only; Product/Accounting SME acceptance remains open (see remainingCertificationItems)." },
-        { "status": "INTEGRATED_TECHNICALLY_PENDING_FINAL_PRODUCT_SME_ACCEPTANCE", "date": "2026-07-29", "integratedInto": "r1-integration", "integratedFrom": "r1-s008-period-close-control@6916c2a", "note": "R1 Controlled Integration Step 1B: S008 production code, tests, migrations, and permission catalogue selectively integrated onto the Golden-R0-based r1-integration branch per PRODUCT DECISION — S008 INTEGRATION AUTHORIZATION (2026-07-29). Whole-branch merge was not performed; App.tsx and api/client.ts were hand-ported onto the current Golden R0 shell rather than cherry-picked. Final Accounting-SME acceptance is not claimed by this integration. See knownLimitations for BR008-6." }
+        { "status": "INTEGRATED_TECHNICALLY_PENDING_FINAL_PRODUCT_SME_ACCEPTANCE", "date": "2026-07-29", "integratedInto": "r1-integration", "integratedFrom": "r1-s008-period-close-control@6916c2a", "note": "R1 Controlled Integration Step 1B: S008 production code, tests, migrations, and permission catalogue selectively integrated onto the Golden-R0-based r1-integration branch per PRODUCT DECISION — S008 INTEGRATION AUTHORIZATION (2026-07-29). Whole-branch merge was not performed; App.tsx and api/client.ts were hand-ported onto the current Golden R0 shell rather than cherry-picked. Final Accounting-SME acceptance is not claimed by this integration. See knownLimitations for BR008-6." },
+        { "status": "S008_INTEGRATED_AND_ACCEPTED_FOR_CONTINUED_INTEGRATION_WITH_DISCLOSED_LIMITATIONS", "date": "2026-07-29", "note": "R1 Controlled Integration Step 1D — scoped acceptance checkpoint. Product/Engineering decision: S008 accepted for continued controlled integration based on S008 Playwright 2/2 on the isolated integrated runtime, 86/86 migration replay with all S008 DB objects verified, passing COA/auth/live-Postgres/authorization/TypeScript/build gates, preserved Golden R0 shell/routes, passing visual regression and 200% zoom, and no S008 production defect identified. Golden R0 13/14 and the wider full-E2E failures are disclosed, root-caused release-certification debt (see DEBT-INT-001..003 in INTEGRATION_TEST_DATA_AND_CERTIFICATION_DEBT.md) and do not block S003 selective integration; they do not waive final Wave-0 or demonstration certification. See docs/accounting-modernization/build-packs/R1-INTEGRATION/S008_SCOPED_INTEGRATION_ACCEPTANCE.md." }
       ],
       "completedDate": null,
       "usesStubs": false,
@@ -1262,9 +1263,31 @@
         "NOTE (PO instruction 2026-07-28): no new S008 functionality is to be added while this acceptance review is pending"
       ],
       "knownLimitations": [
-        "BR008-6 (sequential close — hard-close blocked by an earlier still-open period) remains unimplemented and undecided. This is a disclosed, carried-forward gap, not resolved by this integration, and must not be described as implemented."
+        "BR008-6 (sequential close — hard-close blocked by an earlier still-open period) remains unimplemented and undecided. This is a disclosed, carried-forward gap, not resolved by this integration, and must not be described as implemented. (DEBT-INT-004)",
+        "Historical GL fresh-stack fixture absent — the Golden R0 Trial Balance/Balance Sheet/Income Statement historical dataset cannot be reproduced from an empty database, producing the Golden R0 13/14 result. (DEBT-INT-001)",
+        "Unrelated R0 E2E fixtures incomplete — S200/S201/S203 and ad-hoc qa-review.spec.ts fixtures are not seeded on a fresh isolated stack, producing 28 of the 30 full-E2E failures. (DEBT-INT-002)",
+        "Final Product/Accounting-SME acceptance of the Fiscal Period Management workflow is not claimed by this integration."
       ],
       "integrationEvidence": "docs/accounting-modernization/build-packs/R1-INTEGRATION/evidence/S008/",
+      "scopedIntegrationAcceptance": {
+        "date": "2026-07-29",
+        "step": "R1 Controlled Integration Step 1D — S008 scoped acceptance and integration checkpoint",
+        "integrated": true,
+        "integrationBranch": "r1-integration",
+        "integratedRuntimeTested": true,
+        "s008Playwright": "2/2",
+        "goldenR0Regression": "13/14",
+        "finalStatus": "S008_INTEGRATED_AND_ACCEPTED_FOR_CONTINUED_INTEGRATION_WITH_DISCLOSED_LIMITATIONS",
+        "mayProceedToNextIntegrationStory": true,
+        "knownLimitations": [
+          "BR008-6 unresolved (DEBT-INT-004)",
+          "historical GL fresh-stack fixture absent (DEBT-INT-001)",
+          "unrelated R0 E2E fixtures incomplete (DEBT-INT-002)",
+          "final Product/Accounting-SME acceptance not claimed"
+        ],
+        "record": "docs/accounting-modernization/build-packs/R1-INTEGRATION/S008_SCOPED_INTEGRATION_ACCEPTANCE.md",
+        "debtRegister": "docs/accounting-modernization/build-packs/R1-INTEGRATION/INTEGRATION_TEST_DATA_AND_CERTIFICATION_DEBT.md"
+      },
       "integratedRuntimeVerification": {
         "date": "2026-07-29",
         "step": "R1 Controlled Integration Step 1C — S008 isolated integrated-runtime certification",
@@ -1274,7 +1297,13 @@
         "goldenR0PlaywrightResult": "13/14 passing. The one failure (main 16-step journey, at the Trial Balance step) is the same disclosed gl-service historical-certification-evidence gap already carried in PHASE4_FRESH_STACK_PLAYWRIGHT_EXCEPTION.md -- not a defect in the integrated code, confirmed live in the browser as a correct empty state (not an error).",
         "fullE2eResult": "57 discovered/executed, 16 passed, 30 failed, 11 skipped. Every failure is root-caused: 1 is the same gl-service gap, 1 is S008's own dedicated-year spec correctly refusing to re-run against an already-LOCKED terminal period from an earlier run in this session (proof the terminal-state guarantee holds, not a defect), and 28 are missing fixtures for OTHER, pre-existing R0 stories (S200/S201/S203, ad-hoc qa-review.spec.ts) that were out of scope for this pass and were never seeded.",
         "visualRegression": "Passed -- Golden R0 NavRail/Breadcrumb/ContextBar all intact and confirmed responsive at 200% zoom; Period Control (real live board, real open-drafts count, real LOCKED transition from the Playwright run) usable in a real browser; CLERK correctly denied twice with specific permission-named messages; GL Inquiry confirmed still routed to the goldenpath implementation; Trial Balance/Balance Sheet/Income Statement confirmed still the Golden R0 implementations, no pre-convergence page restored.",
-        "verdict": "S008_INTEGRATED_RUNTIME_CERTIFIED_WITH_LIMITATIONS -- not fully certified because Golden R0 Playwright is 13/14, not the required 14/14 (per the disclosed, pre-existing gl-service historical-data reproduction gap). No Phase-10 final certification commit was created; recommendation is STOP on S003 pending an explicit decision on whether that specific, well-understood gap is acceptable to waive.",
+        "verdict": "S008_INTEGRATED_RUNTIME_CERTIFIED_WITH_LIMITATIONS -- Golden R0 Playwright came back 13/14, not 14/14, with the single failure fully root-caused to the disclosed, pre-existing gl-service historical-data reproduction gap (not an S008 defect).",
+        "certificationDecision": {
+          "date": "2026-07-29",
+          "decision": "Product/Engineering explicitly accepted the 13/14 Golden R0 result (matching the already-established PHASE4_FRESH_STACK_PLAYWRIGHT_EXCEPTION.md precedent for this exact class of gap) and authorized creation of the Phase 10 final certification commit for S008 on the isolated integrated runtime.",
+          "scope": "This decision authorizes continued controlled R1 integration (i.e. proceeding to S003). It is not a Wave-0, demonstration, or production-readiness certification, and it does not waive DEBT-INT-001 through DEBT-INT-004 (see docs/accounting-modernization/build-packs/R1-INTEGRATION/INTEGRATION_TEST_DATA_AND_CERTIFICATION_DEBT.md) from final combined-demo/Wave-0 certification.",
+          "reference": "docs/accounting-modernization/build-packs/R1-INTEGRATION/S008_SCOPED_INTEGRATION_ACCEPTANCE.md"
+        },
         "evidence": "docs/accounting-modernization/build-packs/R1-INTEGRATION/evidence/S008/integrated-runtime/"
       },
       "stabilizationReconciliation": {
