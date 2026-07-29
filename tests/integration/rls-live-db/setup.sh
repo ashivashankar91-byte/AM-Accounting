@@ -68,6 +68,27 @@ ALTER DEFAULT PRIVILEGES FOR ROLE amacc_test IN SCHEMA public
   GRANT USAGE, SELECT ON SEQUENCES TO amacc_app;
 SQL
 
+echo "==> AMACC-CH04 S036A: applying apar-service's own migration history via"
+echo "    'prisma migrate deploy' — unlike tenant-service/auth-service/coa-service/"
+echo "    audit-service below, apar-service's prisma/migrations directory is now a"
+echo "    complete, standard folder-per-migration history (fixed as part of S036A;"
+echo "    it previously had no migration_lock.toml and three flat, non-folder .sql"
+echo "    files that 'prisma migrate deploy' could not have run at all), so it does"
+echo "    not need the diff-from-empty bootstrap trick the other four services"
+echo "    require for their own pre-existing history gaps. Run here, immediately"
+echo "    after the ALTER DEFAULT PRIVILEGES above and before any other service"
+echo "    creates a single table: 'prisma migrate deploy' fails with P3005 (\"schema"
+echo "    is not empty\") the moment ANY table exists anywhere in the shared public"
+echo "    schema, even one it doesn't own — so apar-service's real migration history"
+echo "    must be the very first thing applied to this database. New tables created"
+echo "    here (vendors, ap_vendor_number_counters, ap_vendor_duplicate_acknowledgements,"
+echo "    audit_outbox, ar_entries, ap_entries, ap_payments, customers,"
+echo "    purchase_orders, po_lines, ap_bank_accounts, outbox_events) automatically"
+echo "    inherit the amacc_app grant via the ALTER DEFAULT PRIVILEGES set immediately"
+echo "    above — no separate GRANT needed here."
+( cd "$REPO_ROOT/services/apar-service" && \
+  DATABASE_URL="postgresql://amacc_test@localhost:${PGPORT}/${DB_NAME}" npx prisma migrate deploy )
+
 echo "==> generating combined base schema from each service's current Prisma model"
 COMBINED="$SCRATCH/combined_schema.sql"
 : > "$COMBINED"
@@ -161,22 +182,6 @@ echo "==> S019/S020: applying posting-engine tables + CHECK constraints + immuta
 echo "    trigger + RLS (excluded from the bootstrap step above; sole creator here)."
 psql -h "$PGHOST" -p "$PGPORT" -U amacc_test -d "$DB_NAME" -v ON_ERROR_STOP=1 \
   -f "$REPO_ROOT/services/coa-service/prisma/migrations/20260729010000_add_posting_engine/migration.sql" >/dev/null
-
-echo "==> AMACC-CH04 S036A: applying apar-service's own migration history via"
-echo "    'prisma migrate deploy' — unlike tenant-service/auth-service/coa-service/"
-echo "    audit-service above, apar-service's prisma/migrations directory is now a"
-echo "    complete, standard folder-per-migration history (fixed as part of S036A;"
-echo "    it previously had no migration_lock.toml and three flat, non-folder .sql"
-echo "    files that 'prisma migrate deploy' could not have run at all), so it does"
-echo "    not need the diff-from-empty bootstrap trick the other four services"
-echo "    require for their own pre-existing history gaps. New tables created here"
-echo "    (vendors, ap_vendor_number_counters, ap_vendor_duplicate_acknowledgements,"
-echo "    audit_outbox, ar_entries, ap_entries, ap_payments, customers,"
-echo "    purchase_orders, po_lines, ap_bank_accounts, outbox_events) automatically"
-echo "    inherit the amacc_app grant via the ALTER DEFAULT PRIVILEGES set at the"
-echo "    top of this script — no separate GRANT needed here."
-( cd "$REPO_ROOT/services/apar-service" && \
-  DATABASE_URL="postgresql://amacc_test@localhost:${PGPORT}/${DB_NAME}" npx prisma migrate deploy )
 
 echo ""
 echo "==> ready. Connection strings:"
