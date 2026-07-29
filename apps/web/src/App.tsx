@@ -31,7 +31,6 @@ import JournalSources from './pages/JournalSources';
 import Setup from './pages/Setup';
 import ChartOfAccounts from './pages/ChartOfAccounts';
 import PurchaseOrders from './pages/PurchaseOrders';
-import VendorManagement from './pages/VendorManagement';
 import Intercompany from './pages/Intercompany';
 import GroupDashboard from './pages/GroupDashboard';
 import WarrantyDCS from './pages/WarrantyDCS';
@@ -503,7 +502,10 @@ export default function App() {
               <Route path="/cash-receipts" element={<CashReceipts />} />
               <Route path="/bank-deposits" element={<BankDeposits />} />
               <Route path="/po" element={<PurchaseOrders />} />
-              <Route path="/vendors" element={<VendorManagement />} />
+              {/* AMACC-CH04 S036A: /vendors was a disconnected mock page (VendorManagement.tsx,
+                  hardcoded sample data, no API calls, unlinked from nav) — converged onto the
+                  one real, wired vendor-master surface at /accounting/ap/vendors. */}
+              <Route path="/vendors" element={<Navigate to="/accounting/ap/vendors" replace />} />
               <Route path="/payroll" element={<Payroll />} />
               <Route path="/recon" element={<Reconciliation />} />
               <Route path="/intercompany" element={<Intercompany />} />

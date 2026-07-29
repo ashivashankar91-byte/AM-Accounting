@@ -172,32 +172,63 @@ model Customer {
 }
 
 /// S3-07: Vendor master — AP_VENDOR legacy equivalent
+/// AMACC-CH04 S036A: hardened in place (additive-only) — tenant isolation/RLS,
+/// lifecycle (ACTIVE/INACTIVE/DELETED), optimistic concurrency, duplicate
+/// detection and sensitive-field masking. See MODULE_STATE.md / S036A commit
+/// for the convergence decision: this stays the single vendor system of
+/// record — no parallel `ap_vendors` table was created.
 model Vendor {
   id                   String    @id @default(uuid())
   tenantId             String    @map("tenant_id")
   vendorNumber         String    @db.VarChar(20) @map("vendor_number")
+  /// S036A: uppercased/trimmed comparison form of vendorNumber. Backfilled
+  /// for existing rows; maintained by VendorService on every write.
+  normalizedVendorNumber String  @map("normalized_vendor_number")
   vendorName           String    @map("vendor_name")
+  /// S036A: lower/trimmed comparison form of vendorName — duplicate-name
+  /// candidate signal (paired with postalCode/zip).
+  normalizedVendorName String    @map("normalized_vendor_name")
   dba                  String?
+  /// S036A: SUPPLIER | SERVICE_PROVIDER | GOVERNMENT | OTHER
+  vendorType           String    @default("OTHER") @map("vendor_type")
   contactName          String?   @map("contact_name")
   phone                String?
+  /// S036A: digits-only comparison form of phone — duplicate candidate signal.
+  normalizedPhone      String?   @map("normalized_phone")
   fax                  String?
   email                String?
+  /// S036A: lowercased/trimmed comparison form of email — duplicate candidate signal.
+  normalizedEmail      String?   @map("normalized_email")
   address1             String?   @map("address1")
   address2             String?   @map("address2")
   city                 String?
   state                String?   @db.VarChar(2)
   zip                  String?   @db.VarChar(10)
+  /// S036A: tax identifier. NO NEW PLAINTEXT WRITES — create/edit disabled at
+  /// the API layer pending an approved encrypted-field platform mechanism
+  /// (none exists repository-wide as of this migration). Existing plaintext
+  /// values are preserved untouched (no destructive/transforming migration).
+  /// API responses mask to last-4 only; full reveal is not implemented this
+  /// slice even with AP_VENDOR_TAX_IDENTIFIER_VIEW (see docs — security
+  /// dependency, not invented cryptography).
   taxId                String?   @map("tax_id")
   is1099Misc           Boolean   @default(false) @map("is_1099_misc")
   is1099Nec            Boolean   @default(false) @map("is_1099_nec")
   income1099Type       String?   @map("income_1099_type")
   w9OnFile             Boolean   @default(false) @map("w9_on_file")
   w9ReceivedDate       DateTime? @map("w9_received_date")
+  /// Opaque payment-terms code — S036A preserves this as-is (no new reference
+  /// subsystem introduced; no accepted payment-terms reference data source
+  /// exists in the repository).
   paymentTerms         String    @default("Net30") @map("payment_terms")
   defaultGlAccount     String?   @map("default_gl_account")
+  /// S036A out of scope (payment-run mechanics). Untouched, no longer
+  /// writable via the hardened create/update API.
   paymentMethod        String    @default("Check") @map("payment_method")
   discountPercent      Decimal   @default(0) @db.Decimal(5, 2) @map("discount_percent")
   discountDays         Int       @default(0) @map("discount_days")
+  /// S036A out of scope (banking storage). Untouched, no longer writable via
+  /// the hardened create/update API — hidden/disabled at the UI layer too.
   bankName             String?   @map("bank_name")
   bankRoutingNumber    String?   @db.VarChar(9) @map("bank_routing_number")
   bankAccountNumber    String?   @map("bank_account_number")
@@ -206,7 +237,23 @@ model Vendor {
   holdPayments         Boolean   @default(false) @map("hold_payments")
   defaultExpenseAccount String?  @map("default_expense_account")
   notes                String?
+  /// S036A: ACTIVE | INACTIVE | DELETED. isActive below is kept in sync by
+  /// VendorService for read-path backward compatibility with pre-S036A
+  /// consumers (1099 listing, payment-reconciliation join) that filter on it
+  /// directly.
+  status               String    @default("ACTIVE")
   isActive             Boolean   @default(true) @map("is_active")
+  /// Optimistic-concurrency version. Incremented on every update/lifecycle change.
+  version              Int       @default(1)
+  inactiveReason       String?   @map("inactive_reason")
+  inactivatedAt        DateTime? @map("inactivated_at")
+  inactivatedBy        String?   @map("inactivated_by")
+  reactivatedAt        DateTime? @map("reactivated_at")
+  reactivatedBy        String?   @map("reactivated_by")
+  /// Logical delete only — a row is never physically removed (BR-AP-001).
+  deletedAt            DateTime? @map("deleted_at")
+  deletedBy            String?   @map("deleted_by")
+  deleteReason         String?   @map("delete_reason")
   createdAt            DateTime  @default(now()) @map("created_at")
   updatedAt            DateTime  @updatedAt @map("updated_at")
 
@@ -214,6 +261,68 @@ model Vendor {
   @@map("vendors")
   @@index([tenantId])
   @@index([tenantId, isActive])
+  @@index([tenantId, status])
+  @@index([tenantId, normalizedVendorNumber])
+  @@index([tenantId, normalizedVendorName])
+  @@index([tenantId, normalizedEmail])
+  @@index([tenantId, normalizedPhone])
+}
+
+/// S036A: per-tenant atomic vendor-number counter. Replaces the pre-existing
+/// `count()+1` generation in routes.ts, which raced under concurrent creates
+/// (two requests could both read the same count and collide on the
+/// tenantId+vendorNumber unique constraint). An UPDATE ... RETURNING against
+/// this row is atomic under Postgres row locking — no SERIALIZABLE/retry
+/// helper needed.
+model ApVendorNumberCounter {
+  tenantId   String @id @map("tenant_id")
+  nextNumber Int    @default(1) @map("next_number")
+
+  @@map("ap_vendor_number_counters")
+}
+
+/// S036A: persisted record of a user acknowledging a duplicate-vendor
+/// warning and choosing to create the vendor anyway. Requires
+/// AP_VENDOR_DUPLICATE_OVERRIDE (server-enforced) and an explicit reason.
+model ApVendorDuplicateAcknowledgement {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  vendorId       String   @map("vendor_id")
+  /// Array of { type, candidateVendorId, candidateVendorNumber, candidateVendorName }.
+  /// Never includes full protected values (no raw taxId/email/phone stored here).
+  matchedSignals Json     @map("matched_signals")
+  reason         String
+  actor          String
+  correlationId  String?  @map("correlation_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, vendorId])
+  @@map("ap_vendor_duplicate_acknowledgements")
+}
+
+/// S036A: apar-service had no audit mechanism at all before this (matches the
+/// R0 Stabilization Phase 4 AuditPort pattern already shipped in
+/// tenant-service/auth-service/coa-service). Every vendor create/update/
+/// inactivate/reactivate/delete/duplicate-acknowledge/eligibility-denial/
+/// sensitive-field-view writes a before/after record here; AuditOutboxDrainer
+/// (wired in src/index.ts) drains unpublished rows to the real S007
+/// audit-service.
+model AuditOutboxEvent {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  docType     String    @map("doc_type")
+  docId       String    @map("doc_id")
+  action      String
+  before      Json?
+  after       Json?
+  actor       String
+  publishedAt DateTime? @map("published_at")
+  retryCount  Int       @default(0) @map("retry_count")
+  lastError   String?   @map("last_error")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([publishedAt, retryCount])
+  @@map("audit_outbox")
 }
 
 /// S6-01/02/03: Purchase Order master — PO state machine with Cancel vs Void separation

@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Search, Check, AlertCircle, UserX, RefreshCw, ChevronRight, AlertTriangle } from 'lucide-react';
+import { Plus, Search, Check, AlertCircle, UserX, RefreshCw, ChevronRight, AlertTriangle, Lock, History, ShieldOff } from 'lucide-react';
 import { aparApi } from '../../api/client';
 import PageLoader from '../../components/PageLoader';
+
+const VENDOR_TYPES = ['SUPPLIER', 'SERVICE_PROVIDER', 'GOVERNMENT', 'OTHER'] as const;
 
 interface VendorForm {
   vendorNumber: string;
   vendorName: string;
+  vendorType: string;
   dba: string;
   contactName: string;
   phone: string;
@@ -18,7 +21,6 @@ interface VendorForm {
   city: string;
   state: string;
   zip: string;
-  taxId: string;
   is1099Misc: boolean;
   is1099Nec: boolean;
   income1099Type: string;
@@ -29,10 +31,6 @@ interface VendorForm {
   paymentMethod: string;
   discountPercent: string;
   discountDays: string;
-  bankName: string;
-  bankRoutingNumber: string;
-  bankAccountNumber: string;
-  bankAccountType: string;
   separateCheck: boolean;
   holdPayments: boolean;
   defaultExpenseAccount: string;
@@ -40,19 +38,19 @@ interface VendorForm {
 }
 
 const emptyForm = (): VendorForm => ({
-  vendorNumber: '', vendorName: '', dba: '', contactName: '',
+  vendorNumber: '', vendorName: '', vendorType: 'OTHER', dba: '', contactName: '',
   phone: '', fax: '', email: '',
   address1: '', address2: '', city: '', state: '', zip: '',
-  taxId: '', is1099Misc: false, is1099Nec: false, income1099Type: '', w9OnFile: false, w9ReceivedDate: '',
+  is1099Misc: false, is1099Nec: false, income1099Type: '', w9OnFile: false, w9ReceivedDate: '',
   paymentTerms: 'Net30', defaultGlAccount: '', paymentMethod: 'Check',
   discountPercent: '0', discountDays: '0',
-  bankName: '', bankRoutingNumber: '', bankAccountNumber: '', bankAccountType: '',
   separateCheck: false, holdPayments: false, defaultExpenseAccount: '', notes: '',
 });
 
 const vendorToForm = (v: any): VendorForm => ({
   vendorNumber: v.vendorNumber ?? '',
   vendorName: v.vendorName ?? '',
+  vendorType: v.vendorType ?? 'OTHER',
   dba: v.dba ?? '',
   contactName: v.contactName ?? '',
   phone: v.phone ?? '',
@@ -63,7 +61,6 @@ const vendorToForm = (v: any): VendorForm => ({
   city: v.city ?? '',
   state: v.state ?? '',
   zip: v.zip ?? '',
-  taxId: v.taxId ?? '',
   is1099Misc: v.is1099Misc ?? false,
   is1099Nec: v.is1099Nec ?? false,
   income1099Type: v.income1099Type ?? '',
@@ -74,17 +71,13 @@ const vendorToForm = (v: any): VendorForm => ({
   paymentMethod: v.paymentMethod ?? 'Check',
   discountPercent: v.discountPercent != null ? String(v.discountPercent) : '0',
   discountDays: v.discountDays != null ? String(v.discountDays) : '0',
-  bankName: v.bankName ?? '',
-  bankRoutingNumber: v.bankRoutingNumber ?? '',
-  bankAccountNumber: v.bankAccountNumber ?? '',
-  bankAccountType: v.bankAccountType ?? '',
   separateCheck: v.separateCheck ?? false,
   holdPayments: v.holdPayments ?? false,
   defaultExpenseAccount: v.defaultExpenseAccount ?? '',
   notes: v.notes ?? '',
 });
 
-type Section = 'address' | 'contact' | 'tax' | 'payment' | 'banking';
+type Section = 'address' | 'contact' | 'tax' | 'payment' | 'banking' | 'audit';
 
 const SECTIONS: { key: Section; label: string }[] = [
   { key: 'address',  label: 'Address' },
@@ -92,7 +85,22 @@ const SECTIONS: { key: Section; label: string }[] = [
   { key: 'tax',      label: 'Tax / 1099' },
   { key: 'payment',  label: 'Payment Terms' },
   { key: 'banking',  label: 'Banking' },
+  { key: 'audit',    label: 'Audit History' },
 ];
+
+function StatusBadge({ status }: { status?: string }) {
+  if (!status) return null;
+  const styles: Record<string, string> = {
+    ACTIVE: 'bg-green-100 text-green-700',
+    INACTIVE: 'bg-gray-200 text-gray-600',
+    DELETED: 'bg-red-100 text-red-700',
+  };
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${styles[status] ?? 'bg-gray-100 text-gray-600'}`}>
+      {status}
+    </span>
+  );
+}
 
 export default function VendorMaintenance() {
   const { id } = useParams<{ id?: string }>();
@@ -100,26 +108,38 @@ export default function VendorMaintenance() {
   const queryClient = useQueryClient();
 
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('');
   const [selectedId, setSelectedId] = useState<string | null>(id ?? null);
   const [form, setForm] = useState<VendorForm>(emptyForm());
   const [section, setSection] = useState<Section>('address');
   const [isDirty, setIsDirty] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
   const [isNew, setIsNew] = useState(false);
-  const [confirmDeactivate, setConfirmDeactivate] = useState(false);
-  // S7-06: duplicate tax ID warning state
-  const [dupTaxIdWarning, setDupTaxIdWarning] = useState<{ name: string; vendorNumber: string } | null>(null);
+  const [confirmInactivate, setConfirmInactivate] = useState(false);
+  const [inactivateReason, setInactivateReason] = useState('');
+  const [confirmReactivate, setConfirmReactivate] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteReason, setDeleteReason] = useState('');
+  const [deleteConflict, setDeleteConflict] = useState<{ purchaseOrders: number; apEntries: number } | null>(null);
+  const [versionConflict, setVersionConflict] = useState(false);
+  const [unauthorized, setUnauthorized] = useState<string | null>(null);
 
-  // Sync URL param → selectedId
+  // S036A duplicate-vendor warning state
+  const [dupCandidates, setDupCandidates] = useState<any[] | null>(null);
+  const [overrideReason, setOverrideReason] = useState('');
+  const [overrideForbidden, setOverrideForbidden] = useState(false);
+  const [pendingCreate, setPendingCreate] = useState<any | null>(null);
+
   useEffect(() => { if (id) setSelectedId(id); }, [id]);
 
-  const { data: vendors, isLoading: listLoading, refetch } = useQuery({
-    queryKey: ['vendors'],
-    queryFn: () => aparApi.getVendors(),
+  const { data: vendorsResult, isLoading: listLoading, isError: listError, refetch: refetchList } = useQuery({
+    queryKey: ['vendors', statusFilter],
+    queryFn: () => aparApi.getVendors(statusFilter ? `status=${statusFilter}` : undefined),
     retry: false,
   });
+  const vendors: any[] = (vendorsResult as any)?.items ?? (Array.isArray(vendorsResult) ? vendorsResult : []);
 
-  const { data: vendorDetail, isLoading: detailLoading } = useQuery({
+  const { data: vendorDetail, isLoading: detailLoading, isError: detailError, error: detailErrorObj } = useQuery({
     queryKey: ['vendor', selectedId],
     queryFn: () => aparApi.getVendor(selectedId!),
     enabled: !!selectedId && !isNew,
@@ -133,6 +153,30 @@ export default function VendorMaintenance() {
     }
   }, [vendorDetail]);
 
+  const { data: auditEvents, isLoading: auditLoading, isError: auditError } = useQuery({
+    queryKey: ['vendor-audit', selectedId],
+    queryFn: () => aparApi.getVendorAuditEvents(selectedId!),
+    enabled: !!selectedId && !isNew && section === 'audit',
+    retry: false,
+  });
+
+  function handleMutationError(err: any) {
+    const status = err?.status;
+    if (err?.body?.error === 'VERSION_CONFLICT') {
+      setVersionConflict(true);
+      return;
+    }
+    if (status === 403 || err?.body?.error === 'FORBIDDEN' || err?.body?.error === 'DUPLICATE_VENDOR_OVERRIDE_FORBIDDEN') {
+      setUnauthorized(err?.body?.message || 'You do not have permission to perform this action.');
+      return;
+    }
+    if (err?.body?.error === 'VENDOR_HAS_REFERENCES') {
+      setDeleteConflict(err.body.references ?? { purchaseOrders: 0, apEntries: 0 });
+      return;
+    }
+    setNotification({ type: 'error', msg: err?.body?.message || err.message || 'Request failed' });
+  }
+
   const saveMut = useMutation({
     mutationFn: (data: any) =>
       selectedId && !isNew
@@ -143,72 +187,127 @@ export default function VendorMaintenance() {
       queryClient.invalidateQueries({ queryKey: ['vendor', selectedId] });
       setIsDirty(false);
       setIsNew(false);
+      setDupCandidates(null);
+      setOverrideReason('');
+      setOverrideForbidden(false);
+      setPendingCreate(null);
       setSelectedId(result.id);
       navigate(`/accounting/ap/vendors/${result.id}`, { replace: true });
       setNotification({ type: 'success', msg: 'Vendor saved.' });
       setTimeout(() => setNotification(null), 3000);
     },
-    onError: (err: any) => {
-      setNotification({ type: 'error', msg: err.message || 'Save failed' });
+    onError: (err: any, variables: any) => {
+      // Defense in depth: the pre-flight checkVendorDuplicates() call in
+      // handleSave() normally catches this before create is ever attempted,
+      // but a duplicate could also appear from a race between the check and
+      // the create — this branch handles that race the same way.
+      if (err?.body?.error === 'DUPLICATE_VENDOR_ACKNOWLEDGEMENT_REQUIRED') {
+        setDupCandidates(err.body.candidates ?? []);
+        setPendingCreate(variables ?? null);
+        return;
+      }
+      handleMutationError(err);
     },
   });
 
-  const deactivateMut = useMutation({
-    mutationFn: () => aparApi.deactivateVendor(selectedId!),
+  const inactivateMut = useMutation({
+    mutationFn: () => aparApi.inactivateVendor(selectedId!, { version: vendorDetail!.version, reason: inactivateReason }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vendors'] });
-      setConfirmDeactivate(false);
+      queryClient.invalidateQueries({ queryKey: ['vendor', selectedId] });
+      setConfirmInactivate(false);
+      setInactivateReason('');
+      setNotification({ type: 'success', msg: 'Vendor inactivated.' });
+      setTimeout(() => setNotification(null), 3000);
+    },
+    onError: handleMutationError,
+  });
+
+  const reactivateMut = useMutation({
+    mutationFn: () => aparApi.reactivateVendor(selectedId!, { version: vendorDetail!.version }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vendors'] });
+      queryClient.invalidateQueries({ queryKey: ['vendor', selectedId] });
+      setConfirmReactivate(false);
+      setNotification({ type: 'success', msg: 'Vendor reactivated.' });
+      setTimeout(() => setNotification(null), 3000);
+    },
+    onError: handleMutationError,
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: () => aparApi.deleteVendor(selectedId!, { version: vendorDetail!.version, reason: deleteReason || undefined }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vendors'] });
+      setConfirmDelete(false);
+      setDeleteReason('');
       setSelectedId(null);
       setForm(emptyForm());
-      setNotification({ type: 'success', msg: 'Vendor deactivated.' });
+      setNotification({ type: 'success', msg: 'Vendor deleted.' });
       navigate('/accounting/ap/vendors', { replace: true });
       setTimeout(() => setNotification(null), 3000);
     },
+    onError: (err: any) => {
+      setConfirmDelete(false);
+      handleMutationError(err);
+    },
   });
-
-  // S7-07: YTD payments query for 1099 threshold badge
-  const is1099Eligible = form.is1099Misc || form.is1099Nec;
-  const { data: ytdData } = useQuery({
-    queryKey: ['vendor-ytd', selectedId],
-    queryFn: () => aparApi.getVendorYtdPayments(selectedId!),
-    enabled: !!selectedId && !isNew && is1099Eligible,
-    retry: false,
-  });
-  const ytdTotal: number = (ytdData as any)?.ytdTotal ?? 0;
-
-  // S7-06: blur handler for tax ID duplicate detection
-  async function handleTaxIdBlur() {
-    const taxId = form.taxId.trim();
-    if (!taxId || taxId.length < 4) return;
-    try {
-      const matches = await aparApi.getVendorsByTaxId(taxId) as any[];
-      const others = matches.filter((v: any) => v.id !== selectedId);
-      if (others.length > 0) {
-        setDupTaxIdWarning({ name: others[0].vendorName, vendorNumber: others[0].vendorNumber ?? others[0].id });
-      }
-    } catch {
-      // best-effort
-    }
-  }
 
   const setField = (field: keyof VendorForm, val: any) => {
     setForm(prev => ({ ...prev, [field]: val }));
     setIsDirty(true);
   };
 
+  function buildPayload() {
+    return {
+      ...form,
+      discountPercent: parseFloat(form.discountPercent) || 0,
+      discountDays: parseInt(form.discountDays) || 0,
+      w9ReceivedDate: form.w9ReceivedDate || undefined,
+      vendorNumber: isNew ? (form.vendorNumber || undefined) : undefined,
+      version: !isNew ? vendorDetail?.version : undefined,
+    };
+  }
+
   const handleSave = () => {
     if (!form.vendorName.trim()) {
       setNotification({ type: 'error', msg: 'Vendor name is required.' });
       return;
     }
-    const payload = {
-      ...form,
-      discountPercent: parseFloat(form.discountPercent) || 0,
-      discountDays: parseInt(form.discountDays) || 0,
-      w9ReceivedDate: form.w9ReceivedDate || undefined,
-      vendorNumber: form.vendorNumber || undefined,
-    };
-    saveMut.mutate(payload);
+    const payload = buildPayload();
+    if (isNew) {
+      // S036A: check for duplicates before attempting create, so the warning
+      // can be shown without relying on a 409 round-trip.
+      aparApi.checkVendorDuplicates({ vendorName: form.vendorName, email: form.email || undefined, phone: form.phone || undefined, zip: form.zip || undefined })
+        .then((res: any) => {
+          if (res.candidates?.length > 0) {
+            setDupCandidates(res.candidates);
+            setPendingCreate(payload);
+          } else {
+            saveMut.mutate(payload);
+          }
+        })
+        .catch(() => saveMut.mutate(payload));
+    } else {
+      saveMut.mutate(payload);
+    }
+  };
+
+  const handleCreateAnyway = () => {
+    if (!overrideReason.trim()) return;
+    setOverrideForbidden(false);
+    saveMut.mutate(
+      { ...pendingCreate, override: { reason: overrideReason } },
+      {
+        onError: (err: any) => {
+          if (err?.body?.error === 'DUPLICATE_VENDOR_OVERRIDE_FORBIDDEN') {
+            setOverrideForbidden(true);
+            return;
+          }
+          handleMutationError(err);
+        },
+      },
+    );
   };
 
   const handleNew = () => {
@@ -220,15 +319,30 @@ export default function VendorMaintenance() {
     navigate('/accounting/ap/vendors', { replace: true });
   };
 
-  const filteredVendors = ((vendors ?? []) as any[]).filter(v =>
+  const filteredVendors = vendors.filter(v =>
     !search ||
     v.vendorNumber?.toLowerCase().includes(search.toLowerCase()) ||
     v.vendorName?.toLowerCase().includes(search.toLowerCase())
   );
 
-  const selectedVendor = (vendors ?? []).find((v: any) => v.id === selectedId) as any;
+  const selectedVendor = vendors.find((v: any) => v.id === selectedId) as any;
+  const isEligibleActions = !!vendorDetail && vendorDetail.status !== 'DELETED';
 
   if (listLoading) return <PageLoader page="Vendor Maintenance" service="apar-service" port={3013} />;
+
+  if (listError) {
+    return (
+      <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
+        <div className="text-center">
+          <AlertCircle className="w-10 h-10 mx-auto mb-3 text-red-400" />
+          <p className="text-sm text-gray-600 mb-3">Could not load vendors.</p>
+          <button onClick={() => refetchList()} className="text-sm text-brand hover:underline inline-flex items-center gap-1">
+            <RefreshCw className="w-3.5 h-3.5" /> Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
@@ -246,6 +360,15 @@ export default function VendorMaintenance() {
               className="w-full pl-8 pr-2 py-1.5 text-sm border rounded focus:ring-2 focus:ring-brand focus:outline-none"
             />
           </div>
+          <select
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value)}
+            className="w-full border rounded px-2 py-1.5 text-sm"
+          >
+            <option value="">Active + Inactive</option>
+            <option value="ACTIVE">Active only</option>
+            <option value="INACTIVE">Inactive only</option>
+          </select>
           <button
             onClick={handleNew}
             className="w-full flex items-center justify-center gap-1.5 bg-brand text-white py-1.5 rounded text-sm font-medium hover:bg-brand"
@@ -267,8 +390,11 @@ export default function VendorMaintenance() {
                 v.id === selectedId ? 'bg-brand-light border-l-2 border-l-blue-600' : ''
               }`}
             >
-              <div>
-                <div className="text-sm font-medium truncate">{v.vendorName}</div>
+              <div className="min-w-0">
+                <div className="text-sm font-medium truncate flex items-center gap-1.5">
+                  {v.vendorName}
+                  {v.status === 'INACTIVE' && <span className="text-[10px] uppercase font-bold text-gray-400">Inactive</span>}
+                </div>
                 <div className="text-xs font-mono text-gray-500">{v.vendorNumber}</div>
               </div>
               {v.holdPayments && (
@@ -292,16 +418,33 @@ export default function VendorMaintenance() {
               <p className="text-sm">Select a vendor or click New Vendor</p>
             </div>
           </div>
+        ) : detailError ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              {(detailErrorObj as any)?.status === 403 ? (
+                <>
+                  <ShieldOff className="w-10 h-10 mx-auto mb-3 text-amber-400" />
+                  <p className="text-sm text-gray-600">You don't have permission to view this vendor.</p>
+                </>
+              ) : (
+                <>
+                  <AlertCircle className="w-10 h-10 mx-auto mb-3 text-gray-300" />
+                  <p className="text-sm text-gray-600">Vendor not found.</p>
+                </>
+              )}
+            </div>
+          </div>
         ) : (
           <>
             {/* Detail Header */}
             <div className="bg-white border-b px-6 py-3 flex items-center justify-between">
               <div>
-                <h2 className="font-bold text-lg">
-                  {isNew ? 'New Vendor' : (selectedVendor?.vendorName ?? 'Vendor Detail')}
+                <h2 className="font-bold text-lg flex items-center gap-2">
+                  {isNew ? 'New Vendor' : (selectedVendor?.vendorName ?? vendorDetail?.vendorName ?? 'Vendor Detail')}
+                  {!isNew && <StatusBadge status={vendorDetail?.status ?? selectedVendor?.status} />}
                 </h2>
-                {!isNew && selectedVendor && (
-                  <p className="text-xs text-gray-500 font-mono">#{selectedVendor.vendorNumber}</p>
+                {!isNew && (selectedVendor || vendorDetail) && (
+                  <p className="text-xs text-gray-500 font-mono">#{(selectedVendor ?? vendorDetail)?.vendorNumber}</p>
                 )}
               </div>
               <div className="flex gap-2 items-center">
@@ -313,25 +456,61 @@ export default function VendorMaintenance() {
                     {notification.msg}
                   </div>
                 )}
-                {!isNew && selectedId && (
+                {!isNew && vendorDetail?.status === 'ACTIVE' && (
                   <button
-                    onClick={() => setConfirmDeactivate(true)}
+                    onClick={() => setConfirmInactivate(true)}
                     className="text-xs border border-red-200 text-red-600 px-3 py-1.5 rounded hover:bg-red-50"
                   >
                     <UserX className="w-3.5 h-3.5 inline mr-1" />
-                    Deactivate
+                    Inactivate
                   </button>
                 )}
-                <button
-                  onClick={handleSave}
-                  disabled={saveMut.isPending}
-                  className="flex items-center gap-2 bg-brand text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-brand disabled:opacity-40"
-                >
-                  <Check className="w-4 h-4" />
-                  {saveMut.isPending ? 'Saving...' : isDirty ? 'Save *' : 'Save'}
-                </button>
+                {!isNew && vendorDetail?.status === 'INACTIVE' && (
+                  <>
+                    <button
+                      onClick={() => setConfirmReactivate(true)}
+                      className="text-xs border border-green-200 text-green-700 px-3 py-1.5 rounded hover:bg-green-50"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 inline mr-1" />
+                      Reactivate
+                    </button>
+                    <button
+                      onClick={() => setConfirmDelete(true)}
+                      className="text-xs border border-red-300 text-red-700 px-3 py-1.5 rounded hover:bg-red-50"
+                    >
+                      Delete
+                    </button>
+                  </>
+                )}
+                {isEligibleActions && (
+                  <button
+                    onClick={handleSave}
+                    disabled={saveMut.isPending || vendorDetail?.status === 'INACTIVE'}
+                    className="flex items-center gap-2 bg-brand text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-brand disabled:opacity-40"
+                  >
+                    <Check className="w-4 h-4" />
+                    {saveMut.isPending ? 'Saving...' : isDirty ? 'Save *' : 'Save'}
+                  </button>
+                )}
+                {isNew && (
+                  <button
+                    onClick={handleSave}
+                    disabled={saveMut.isPending}
+                    className="flex items-center gap-2 bg-brand text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-brand disabled:opacity-40"
+                  >
+                    <Check className="w-4 h-4" />
+                    {saveMut.isPending ? 'Saving...' : 'Save'}
+                  </button>
+                )}
               </div>
             </div>
+
+            {unauthorized && (
+              <div className="bg-amber-50 border-b border-amber-200 px-6 py-2 flex items-center gap-2 text-sm text-amber-800">
+                <ShieldOff className="w-4 h-4" /> {unauthorized}
+                <button className="ml-auto text-xs underline" onClick={() => setUnauthorized(null)}>Dismiss</button>
+              </div>
+            )}
 
             {/* Section Tabs */}
             <div className="bg-white border-b px-6 flex gap-0">
@@ -356,6 +535,17 @@ export default function VendorMaintenance() {
                 <p className="text-sm text-gray-400">Loading...</p>
               ) : (
                 <>
+                  {vendorDetail?.status === 'INACTIVE' && (
+                    <div className="mb-4 flex items-start gap-2 p-3 bg-gray-100 border border-gray-300 rounded-lg">
+                      <UserX className="w-4 h-4 text-gray-500 mt-0.5 shrink-0" />
+                      <div className="text-sm text-gray-700">
+                        <p className="font-medium">This vendor is inactive.</p>
+                        <p>New-invoice eligibility is blocked. Reactivate to resume use.</p>
+                        {vendorDetail.inactiveReason && <p className="text-gray-500 mt-1">Reason: {vendorDetail.inactiveReason}</p>}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Always-visible top row */}
                   <div className="bg-white rounded-lg shadow p-5 mb-4 grid grid-cols-3 gap-4">
                     <div>
@@ -369,15 +559,27 @@ export default function VendorMaintenance() {
                         className={`w-full border rounded px-3 py-2 text-sm font-mono ${!isNew ? 'bg-gray-50 text-gray-500' : ''}`}
                       />
                     </div>
-                    <div className="col-span-2">
+                    <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Vendor Name *</label>
                       <input
                         type="text"
                         value={form.vendorName}
                         onChange={e => setField('vendorName', e.target.value)}
                         placeholder="Company or individual name"
-                        className="w-full border rounded px-3 py-2 text-sm"
+                        disabled={vendorDetail?.status === 'INACTIVE'}
+                        className="w-full border rounded px-3 py-2 text-sm disabled:bg-gray-50"
                       />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Vendor Type</label>
+                      <select
+                        value={form.vendorType}
+                        onChange={e => setField('vendorType', e.target.value)}
+                        disabled={vendorDetail?.status === 'INACTIVE'}
+                        className="w-full border rounded px-3 py-2 text-sm disabled:bg-gray-50"
+                      >
+                        {VENDOR_TYPES.map(t => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
+                      </select>
                     </div>
                   </div>
 
@@ -453,15 +655,13 @@ export default function VendorMaintenance() {
                     <div className="bg-white rounded-lg shadow p-5 grid grid-cols-2 gap-4">
                       <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">Tax ID (EIN/SSN)</label>
-                        <input
-                          type="text"
-                          value={form.taxId}
-                          onChange={e => setField('taxId', e.target.value)}
-                          onBlur={handleTaxIdBlur}
-                          placeholder="XX-XXXXXXX"
-                          className="w-full border rounded px-3 py-2 text-sm font-mono"
-                        />
-                        <p className="text-xs text-gray-400 mt-1">Stored encrypted. Masked in display.</p>
+                        <div className="w-full border rounded px-3 py-2 text-sm font-mono bg-gray-50 text-gray-500 flex items-center gap-2">
+                          <Lock className="w-3.5 h-3.5" />
+                          {!isNew && vendorDetail?.taxIdMasked ? vendorDetail.taxIdMasked : 'Not on file'}
+                        </div>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Create/edit disabled pending an approved encrypted-field platform mechanism (security dependency — see S036A blockers). Masked to last 4 digits; full reveal is not available in this release.
+                        </p>
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">1099 Type</label>
@@ -489,42 +689,6 @@ export default function VendorMaintenance() {
                         <label className="block text-xs font-medium text-gray-600 mb-1">W-9 Received Date</label>
                         <input type="date" value={form.w9ReceivedDate} onChange={e => setField('w9ReceivedDate', e.target.value)} className="w-full border rounded px-3 py-2 text-sm" />
                       </div>
-
-                      {/* S7-07: YTD 1099 threshold badge */}
-                      {is1099Eligible && selectedId && !isNew && (
-                        <div className="col-span-2 flex items-center gap-3 p-3 rounded-lg border bg-gray-50">
-                          <span className="text-xs font-medium text-gray-600">YTD Payments (1099 Threshold):</span>
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                            ytdTotal >= 600
-                              ? 'bg-green-100 text-green-800'
-                              : ytdTotal > 0
-                              ? 'bg-amber-100 text-amber-800'
-                              : 'bg-gray-100 text-gray-600'
-                          }`}>
-                            ${ytdTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            {ytdTotal >= 600 ? ' ✓ Threshold Met' : ytdTotal > 0 ? ' — Below $600' : ' — No Payments'}
-                          </span>
-                        </div>
-                      )}
-
-                      {/* S7-07: W-9 warnings */}
-                      {is1099Eligible && !form.w9OnFile && (
-                        <div className="col-span-2 flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
-                          <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
-                          <p className="text-sm text-red-700">W-9 not on file. Required before issuing 1099.</p>
-                        </div>
-                      )}
-                      {is1099Eligible && form.w9OnFile && form.w9ReceivedDate && (() => {
-                        const received = new Date(form.w9ReceivedDate);
-                        const threeYearsAgo = new Date();
-                        threeYearsAgo.setFullYear(threeYearsAgo.getFullYear() - 3);
-                        return received < threeYearsAgo;
-                      })() && (
-                        <div className="col-span-2 flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                          <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
-                          <p className="text-sm text-amber-700">W-9 on file is over 3 years old. Consider requesting a new W-9.</p>
-                        </div>
-                      )}
                     </div>
                   )}
 
@@ -577,45 +741,41 @@ export default function VendorMaintenance() {
                     </div>
                   )}
 
-                  {/* Section: Banking */}
+                  {/* Section: Banking — S036A: out of scope, hidden/disabled */}
                   {section === 'banking' && (
-                    <div className="bg-white rounded-lg shadow p-5 grid grid-cols-2 gap-4">
-                      <p className="col-span-2 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-                        Bank information is sensitive. Only users with AP Admin role can view account numbers.
+                    <div className="bg-white rounded-lg shadow p-5">
+                      <p className="text-sm text-gray-500 flex items-start gap-2">
+                        <Lock className="w-4 h-4 mt-0.5 shrink-0" />
+                        Banking information and payment-run functionality are out of scope for vendor-master
+                        maintenance. Bank account setup is managed elsewhere and is not editable from this screen.
                       </p>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Bank Name</label>
-                        <input type="text" value={form.bankName} onChange={e => setField('bankName', e.target.value)} className="w-full border rounded px-3 py-2 text-sm" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Account Type</label>
-                        <select value={form.bankAccountType} onChange={e => setField('bankAccountType', e.target.value)} className="w-full border rounded px-3 py-2 text-sm">
-                          <option value="">— Select —</option>
-                          <option>Checking</option>
-                          <option>Savings</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Routing Number</label>
-                        <input
-                          type="text"
-                          value={form.bankRoutingNumber}
-                          onChange={e => setField('bankRoutingNumber', e.target.value.replace(/\D/g, '').slice(0, 9))}
-                          maxLength={9}
-                          placeholder="9 digits"
-                          className="w-full border rounded px-3 py-2 text-sm font-mono"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Account Number</label>
-                        <input
-                          type="text"
-                          value={form.bankAccountNumber}
-                          onChange={e => setField('bankAccountNumber', e.target.value)}
-                          placeholder="Stored encrypted"
-                          className="w-full border rounded px-3 py-2 text-sm font-mono"
-                        />
-                      </div>
+                    </div>
+                  )}
+
+                  {/* Section: Audit History */}
+                  {section === 'audit' && (
+                    <div className="bg-white rounded-lg shadow p-5">
+                      {auditLoading ? (
+                        <p className="text-sm text-gray-400">Loading audit history...</p>
+                      ) : auditError ? (
+                        <p className="text-sm text-red-600">Could not load audit history.</p>
+                      ) : !auditEvents || (auditEvents as any[]).length === 0 ? (
+                        <p className="text-sm text-gray-400">No audit events recorded yet.</p>
+                      ) : (
+                        <ul className="space-y-3">
+                          {(auditEvents as any[]).map((e: any, i: number) => (
+                            <li key={e.id ?? i} className="flex items-start gap-3 text-sm border-b pb-2 last:border-0">
+                              <History className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+                              <div>
+                                <p className="font-medium">{e.action}</p>
+                                <p className="text-xs text-gray-500">
+                                  {e.actorName ?? e.actorId ?? 'system'} · {e.occurredAt ? new Date(e.occurredAt).toLocaleString() : ''}
+                                </p>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </div>
                   )}
                 </>
@@ -625,62 +785,185 @@ export default function VendorMaintenance() {
         )}
       </div>
 
-      {/* Deactivate Confirmation */}
-      {confirmDeactivate && (
+      {/* Inactivate Confirmation */}
+      {confirmInactivate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-xl shadow-2xl w-96 p-6 space-y-4">
-            <h3 className="font-bold text-lg text-red-700">Deactivate Vendor?</h3>
+            <h3 className="font-bold text-lg text-red-700">Inactivate Vendor?</h3>
             <p className="text-sm text-gray-600">
-              {selectedVendor?.vendorName} will be deactivated and will no longer appear in AP invoice lookups.
-              Existing invoices are not affected. This can be reversed by an administrator.
+              {vendorDetail?.vendorName} will be inactivated. New invoices will be blocked. Existing invoices are not affected.
             </p>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Reason *</label>
+              <textarea value={inactivateReason} onChange={e => setInactivateReason(e.target.value)} rows={2} className="w-full border rounded px-3 py-2 text-sm" placeholder="Required" />
+            </div>
             <div className="flex gap-3 justify-end">
-              <button onClick={() => setConfirmDeactivate(false)} className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
+              <button onClick={() => { setConfirmInactivate(false); setInactivateReason(''); }} className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
                 Cancel
               </button>
               <button
-                onClick={() => deactivateMut.mutate()}
-                disabled={deactivateMut.isPending}
+                onClick={() => inactivateMut.mutate()}
+                disabled={inactivateMut.isPending || !inactivateReason.trim()}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-40"
               >
-                {deactivateMut.isPending ? 'Deactivating...' : 'Deactivate'}
+                {inactivateMut.isPending ? 'Inactivating...' : 'Inactivate'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* S7-06: Duplicate Tax ID warning dialog */}
-      {dupTaxIdWarning && (
+      {/* Reactivate Confirmation */}
+      {confirmReactivate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-xl shadow-2xl w-[420px] p-6 space-y-4">
+          <div className="bg-white rounded-xl shadow-2xl w-96 p-6 space-y-4">
+            <h3 className="font-bold text-lg text-green-700">Reactivate Vendor?</h3>
+            <p className="text-sm text-gray-600">
+              {vendorDetail?.vendorName} will become active again and be eligible for new invoices.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setConfirmReactivate(false)} className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
+                Cancel
+              </button>
+              <button
+                onClick={() => reactivateMut.mutate()}
+                disabled={reactivateMut.isPending}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-40"
+              >
+                {reactivateMut.isPending ? 'Reactivating...' : 'Reactivate'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation / Reference Conflict */}
+      {(confirmDelete || deleteConflict) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-2xl w-96 p-6 space-y-4">
+            {deleteConflict ? (
+              <>
+                <h3 className="font-bold text-lg text-red-700">Cannot Delete Vendor</h3>
+                <p className="text-sm text-gray-600">
+                  This vendor is referenced by {deleteConflict.purchaseOrders} purchase order(s) and {deleteConflict.apEntries} AP invoice(s).
+                  Referenced vendors cannot be deleted — inactivate it instead.
+                </p>
+                <div className="flex justify-end">
+                  <button onClick={() => setDeleteConflict(null)} className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
+                    Close
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 className="font-bold text-lg text-red-700">Delete Vendor?</h3>
+                <p className="text-sm text-gray-600">
+                  This is a logical delete — the vendor will no longer appear in vendor lookups, but its audit history is retained.
+                  This is only possible if the vendor has no referencing transactions.
+                </p>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Reason (optional)</label>
+                  <input value={deleteReason} onChange={e => setDeleteReason(e.target.value)} className="w-full border rounded px-3 py-2 text-sm" />
+                </div>
+                <div className="flex gap-3 justify-end">
+                  <button onClick={() => { setConfirmDelete(false); setDeleteReason(''); }} className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => deleteMut.mutate()}
+                    disabled={deleteMut.isPending}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-40"
+                  >
+                    {deleteMut.isPending ? 'Deleting...' : 'Delete'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Version Conflict */}
+      {versionConflict && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-2xl w-96 p-6 space-y-4">
             <div className="flex items-start gap-3">
               <AlertTriangle className="w-6 h-6 text-amber-500 shrink-0 mt-0.5" />
               <div>
-                <h3 className="font-bold text-base text-amber-700">Duplicate Tax ID Detected</h3>
+                <h3 className="font-bold text-base text-amber-700">This vendor changed</h3>
                 <p className="text-sm text-gray-600 mt-1">
-                  Another vendor already has this Tax ID on file:
-                </p>
-                <p className="text-sm font-semibold text-gray-800 mt-1">
-                  {dupTaxIdWarning.name} (Vendor# {dupTaxIdWarning.vendorNumber})
-                </p>
-                <p className="text-sm text-gray-500 mt-2">
-                  This may be a duplicate vendor. Review before saving.
+                  Someone else updated this vendor since you loaded it. Reload to see the latest version before trying again.
                 </p>
               </div>
             </div>
-            <div className="flex gap-3 justify-end pt-2">
+            <div className="flex justify-end">
               <button
-                onClick={() => { setField('taxId', ''); setDupTaxIdWarning(null); }}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                Clear Tax ID
-              </button>
-              <button
-                onClick={() => setDupTaxIdWarning(null)}
+                onClick={() => {
+                  setVersionConflict(false);
+                  queryClient.invalidateQueries({ queryKey: ['vendor', selectedId] });
+                  queryClient.invalidateQueries({ queryKey: ['vendors'] });
+                }}
                 className="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
               >
-                Continue Anyway
+                Reload
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* S036A: Duplicate-vendor warning dialog */}
+      {dupCandidates && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-2xl w-[480px] p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-6 h-6 text-amber-500 shrink-0 mt-0.5" />
+              <div>
+                <h3 className="font-bold text-base text-amber-700">Possible Duplicate Vendor{dupCandidates.length > 1 ? 's' : ''}</h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  {dupCandidates.length} existing vendor{dupCandidates.length > 1 ? 's' : ''} may match this one:
+                </p>
+              </div>
+            </div>
+            <ul className="space-y-2 max-h-48 overflow-auto">
+              {dupCandidates.map((c: any) => (
+                <li key={c.vendorId} className="border rounded-lg p-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800">{c.vendorName} <span className="font-mono text-xs text-gray-500">#{c.vendorNumber}</span></p>
+                    <p className="text-xs text-gray-500">Matched: {c.matchedSignals?.join(', ')}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <StatusBadge status={c.status} />
+                    <button
+                      className="text-xs text-brand hover:underline"
+                      onClick={() => { setDupCandidates(null); setPendingCreate(null); navigate(`/accounting/ap/vendors/${c.vendorId}`); }}
+                    >
+                      Open
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Reason to create anyway *</label>
+              <input value={overrideReason} onChange={e => setOverrideReason(e.target.value)} className="w-full border rounded px-3 py-2 text-sm" placeholder="Required to override" />
+            </div>
+            {overrideForbidden && (
+              <p className="text-xs text-red-600 flex items-center gap-1"><ShieldOff className="w-3.5 h-3.5" /> You don't have permission to create a vendor anyway. Ask an administrator.</p>
+            )}
+            <div className="flex gap-3 justify-end pt-2">
+              <button
+                onClick={() => { setDupCandidates(null); setPendingCreate(null); setOverrideReason(''); setOverrideForbidden(false); }}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateAnyway}
+                disabled={!overrideReason.trim() || saveMut.isPending}
+                className="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 disabled:opacity-40"
+              >
+                Create Anyway
               </button>
             </div>
           </div>

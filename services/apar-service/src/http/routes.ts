@@ -3,7 +3,15 @@ import { z } from 'zod';
 import { container } from 'tsyringe';
 import { APARService } from '../application/apar-service';
 import { FinanceChargeJob } from '../application/finance-charge-job';
-import { asTenantId, AREntryType, authMiddleware } from '@amacc/shared-kernel';
+import { asTenantId, AREntryType, authMiddleware, createAuthzGuard, AuthzClient } from '@amacc/shared-kernel';
+import {
+  VendorService,
+  VendorNotFoundError,
+  VendorConflictError,
+  VendorValidationError,
+  VendorHasReferencesError,
+  DuplicateVendorAcknowledgementRequiredError,
+} from '../application/vendor-service';
 
 function getTenantId(request: any) {
   const id = request.headers['x-tenant-id'] as string;
@@ -57,6 +65,9 @@ export async function aparRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authMiddleware(JWT_SECRET));
 
   const svc = container.resolve<APARService>('APARService');
+  const vendorSvc = container.resolve<VendorService>('VendorService');
+  const authzClient = container.resolve<AuthzClient>('AuthzClient');
+  const requirePermission = createAuthzGuard(authzClient, { getTenantId });
 
   app.post('/ar', async (request, reply) => {
     const tenantId = getTenantId(request);
@@ -268,10 +279,35 @@ export async function aparRoutes(app: FastifyInstance) {
     return reply.send(result);
   });
 
-  // ===== S3-07: Vendor CRUD =====
+  // ===== AMACC-CH04 S036A: Internal Vendor Master (hardened S3-07) =====
+  //
+  // Permission keys — registered in auth-service's S207 catalog via
+  // 20260729010000_extend_authz_catalog_s036a_vendor_master/migration.sql.
+  const AP_VENDOR_PERMISSIONS = {
+    VIEW:               'ap.vendor.view',
+    CREATE:             'ap.vendor.create',
+    EDIT:               'ap.vendor.edit',
+    INACTIVATE:         'ap.vendor.inactivate',
+    REACTIVATE:         'ap.vendor.reactivate',
+    DELETE:             'ap.vendor.delete',
+    DUPLICATE_OVERRIDE: 'ap.vendor.duplicate_override',
+    AUDIT_VIEW:         'ap.vendor.audit_view',
+    TAX_IDENTIFIER_VIEW: 'ap.vendor.tax_identifier_view',
+  } as const;
+
+  const VENDOR_TYPE_ENUM = z.enum(['SUPPLIER', 'SERVICE_PROVIDER', 'GOVERNMENT', 'OTHER']);
+
+  // NOTE: taxId and the four banking fields (bankName/bankRoutingNumber/
+  // bankAccountNumber/bankAccountType) are deliberately ABSENT from this
+  // schema. S036A disables new plaintext tax-ID writes (no approved
+  // encrypted-field mechanism exists repository-wide) and banking storage is
+  // out of S036A's scope boundary — both fields remain readable (masked, for
+  // tax ID) but are no longer writable through this API. See
+  // services/apar-service/src/application/vendor-service.ts header comments.
   const VendorCreateSchema = z.object({
     vendorNumber:         z.string().max(20).optional(),
     vendorName:           z.string().min(1),
+    vendorType:           VENDOR_TYPE_ENUM.optional(),
     dba:                  z.string().optional(),
     contactName:          z.string().optional(),
     phone:                z.string().optional(),
@@ -282,7 +318,6 @@ export async function aparRoutes(app: FastifyInstance) {
     city:                 z.string().optional(),
     state:                z.string().max(2).optional(),
     zip:                  z.string().max(10).optional(),
-    taxId:                z.string().optional(),
     is1099Misc:           z.boolean().default(false),
     is1099Nec:            z.boolean().default(false),
     income1099Type:       z.string().optional(),
@@ -293,131 +328,236 @@ export async function aparRoutes(app: FastifyInstance) {
     paymentMethod:        z.string().default('Check'),
     discountPercent:      z.number().min(0).max(100).default(0),
     discountDays:         z.number().int().min(0).default(0),
-    bankName:             z.string().optional(),
-    bankRoutingNumber:    z.string().max(9).optional(),
-    bankAccountNumber:    z.string().optional(),
-    bankAccountType:      z.string().optional(),
     separateCheck:        z.boolean().default(false),
     holdPayments:         z.boolean().default(false),
     defaultExpenseAccount: z.string().optional(),
     notes:                z.string().optional(),
+    // S036A duplicate-vendor override — permission checked explicitly below,
+    // independent of the CREATE permission gating this whole route.
+    override:             z.object({ reason: z.string().min(1).max(500) }).optional(),
   });
 
-  // GET /vendors
-  app.get('/vendors', async (request, reply) => {
-    const tenantId = getTenantId(request);
-    const { q, active, taxId } = request.query as { q?: string; active?: string; taxId?: string };
-    const prisma = (app as any).prisma;
-    const vendors = await prisma.vendor.findMany({
-      where: {
-        tenantId,
-        ...(active !== 'false' ? { isActive: true } : {}),
-        ...(taxId ? { taxId } : {}),
-        ...(q ? { OR: [
-          { vendorNumber: { contains: q, mode: 'insensitive' } },
-          { vendorName:   { contains: q, mode: 'insensitive' } },
-        ]} : {}),
-      },
-      orderBy: { vendorNumber: 'asc' },
-    });
-    return reply.send(vendors);
+  const VendorUpdateSchema = VendorCreateSchema.omit({ vendorNumber: true, override: true }).partial().extend({
+    version: z.number().int().min(1),
   });
 
-  // GET /vendors/:id
-  app.get('/vendors/:id', async (request, reply) => {
-    const tenantId = getTenantId(request);
-    const { id } = request.params as { id: string };
-    const prisma = (app as any).prisma;
-    const vendor = await prisma.vendor.findFirst({ where: { id, tenantId } });
-    if (!vendor) return reply.status(404).send({ error: 'NOT_FOUND' });
-    return reply.send(vendor);
+  const DuplicateCheckSchema = z.object({
+    vendorName: z.string().optional(),
+    email: z.string().optional(),
+    phone: z.string().optional(),
+    zip: z.string().optional(),
+    excludeVendorId: z.string().optional(),
   });
 
-  // POST /vendors
-  app.post('/vendors', async (request, reply) => {
-    const tenantId = getTenantId(request);
-    const body = VendorCreateSchema.parse(request.body);
-    const prisma = (app as any).prisma;
-    // Auto-generate vendorNumber if not provided
-    let vendorNumber = body.vendorNumber;
-    if (!vendorNumber) {
-      const count = await prisma.vendor.count({ where: { tenantId } });
-      vendorNumber = String(count + 1).padStart(6, '0');
+  const InactivateSchema = z.object({ version: z.number().int().min(1), reason: z.string().min(1).max(500) });
+  const ReactivateSchema = z.object({ version: z.number().int().min(1) });
+  const DeleteSchema = z.object({ version: z.number().int().min(1), reason: z.string().max(500).optional() });
+
+  function handleVendorError(error: unknown, reply: any) {
+    if (error instanceof VendorNotFoundError) {
+      return reply.status(404).send({ error: 'VENDOR_NOT_FOUND', message: error.message });
     }
-    const exists = await prisma.vendor.findFirst({ where: { tenantId, vendorNumber } });
-    if (exists) return reply.status(409).send({ error: 'DUPLICATE_VENDOR_NUMBER' });
-    const vendor = await prisma.vendor.create({
-      data: {
+    if (error instanceof DuplicateVendorAcknowledgementRequiredError) {
+      return reply.status(409).send({
+        error: 'DUPLICATE_VENDOR_ACKNOWLEDGEMENT_REQUIRED',
+        message: error.message,
+        candidates: error.candidates,
+      });
+    }
+    if (error instanceof VendorHasReferencesError) {
+      return reply.status(409).send({ error: 'VENDOR_HAS_REFERENCES', message: error.message, references: error.references });
+    }
+    if (error instanceof VendorConflictError) {
+      return reply.status(409).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof VendorValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) {
+      return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    }
+    throw error;
+  }
+
+  // ── GET /vendors — list (search/status/vendorType filter) ──────────────────
+  app.get('/vendors', { preHandler: requirePermission(AP_VENDOR_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { q, status, vendorType, page, pageSize } = request.query as {
+      q?: string; status?: string; vendorType?: string; page?: string; pageSize?: string;
+    };
+    try {
+      const result = await vendorSvc.list({
         tenantId,
-        vendorNumber,
-        vendorName: body.vendorName,
-        dba: body.dba ?? null,
-        contactName: body.contactName ?? null,
-        phone: body.phone ?? null,
-        fax: body.fax ?? null,
-        email: body.email || null,
-        address1: body.address1 ?? null,
-        address2: body.address2 ?? null,
-        city: body.city ?? null,
-        state: body.state ?? null,
-        zip: body.zip ?? null,
-        taxId: body.taxId ?? null,
-        is1099Misc: body.is1099Misc,
-        is1099Nec: body.is1099Nec,
-        income1099Type: body.income1099Type ?? null,
-        w9OnFile: body.w9OnFile,
-        w9ReceivedDate: body.w9ReceivedDate ? new Date(body.w9ReceivedDate) : null,
-        paymentTerms: body.paymentTerms,
-        defaultGlAccount: body.defaultGlAccount ?? null,
-        paymentMethod: body.paymentMethod,
-        discountPercent: String(body.discountPercent),
-        discountDays: body.discountDays,
-        bankName: body.bankName ?? null,
-        bankRoutingNumber: body.bankRoutingNumber ?? null,
-        bankAccountNumber: body.bankAccountNumber ?? null,
-        bankAccountType: body.bankAccountType ?? null,
-        separateCheck: body.separateCheck,
-        holdPayments: body.holdPayments,
-        defaultExpenseAccount: body.defaultExpenseAccount ?? null,
-        notes: body.notes ?? null,
-      },
-    });
-    return reply.status(201).send(vendor);
+        search: q?.trim() || undefined,
+        status: status || undefined,
+        vendorType: vendorType || undefined,
+        page: page ? parseInt(page, 10) : 1,
+        pageSize: pageSize ? parseInt(pageSize, 10) : 50,
+      });
+      return reply.send(result);
+    } catch (err) {
+      return handleVendorError(err, reply);
+    }
   });
 
-  // PUT /vendors/:id
-  app.put('/vendors/:id', async (request, reply) => {
+  // ── POST /vendors/duplicate-check — candidate duplicate signals ────────────
+  app.post('/vendors/duplicate-check', { preHandler: requirePermission(AP_VENDOR_PERMISSIONS.CREATE) }, async (request, reply) => {
     const tenantId = getTenantId(request);
-    const { id } = request.params as { id: string };
-    const body = VendorCreateSchema.partial().parse(request.body);
-    const prisma = (app as any).prisma;
-    const existing = await prisma.vendor.findFirst({ where: { id, tenantId } });
-    if (!existing) return reply.status(404).send({ error: 'NOT_FOUND' });
-    const vendor = await prisma.vendor.update({
-      where: { id },
-      data: {
-        ...body,
-        discountPercent: body.discountPercent !== undefined ? String(body.discountPercent) : undefined,
-        w9ReceivedDate: body.w9ReceivedDate ? new Date(body.w9ReceivedDate) : undefined,
-        email: body.email === '' ? null : body.email,
-        updatedAt: new Date(),
-      },
-    });
-    return reply.send(vendor);
+    try {
+      const body = DuplicateCheckSchema.parse(request.body);
+      const candidates = await vendorSvc.checkDuplicates({ tenantId, ...body });
+      return reply.send({ candidates });
+    } catch (err) {
+      return handleVendorError(err, reply);
+    }
   });
 
-  // PATCH /vendors/:id — soft deactivate (BR-AP-001)
-  app.patch('/vendors/:id', async (request, reply) => {
+  // ── GET /vendors/:id — detail ───────────────────────────────────────────────
+  app.get('/vendors/:id', { preHandler: requirePermission(AP_VENDOR_PERMISSIONS.VIEW) }, async (request, reply) => {
     const tenantId = getTenantId(request);
     const { id } = request.params as { id: string };
-    const prisma = (app as any).prisma;
-    const existing = await prisma.vendor.findFirst({ where: { id, tenantId } });
-    if (!existing) return reply.status(404).send({ error: 'NOT_FOUND' });
-    const vendor = await prisma.vendor.update({
-      where: { id },
-      data: { isActive: false, updatedAt: new Date() },
-    });
-    return reply.send(vendor);
+    try {
+      const vendor = await vendorSvc.getById(tenantId, id);
+      return reply.send(vendor);
+    } catch (err) {
+      return handleVendorError(err, reply);
+    }
+  });
+
+  // ── POST /vendors — create ──────────────────────────────────────────────────
+  app.post('/vendors', { preHandler: requirePermission(AP_VENDOR_PERMISSIONS.CREATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = VendorCreateSchema.parse(request.body);
+
+      // Duplicate-override permission is independent of CREATE — checked
+      // explicitly (not a static preHandler) because it only applies when
+      // the caller is actually attempting to bypass a duplicate warning.
+      if (body.override) {
+        const result = await authzClient.check({
+          userId: (request as any).user?.sub,
+          permissionKey: AP_VENDOR_PERMISSIONS.DUPLICATE_OVERRIDE,
+          scope: { tenantId },
+          route: (request as any).routeOptions?.url ?? request.url,
+        });
+        if (!result.allow) {
+          return reply.status(403).send({
+            error: 'DUPLICATE_VENDOR_OVERRIDE_FORBIDDEN',
+            message: `Missing required permission: ${AP_VENDOR_PERMISSIONS.DUPLICATE_OVERRIDE}`,
+          });
+        }
+      }
+
+      const vendor = await vendorSvc.create(
+        {
+          ...body,
+          tenantId,
+          email: body.email || undefined,
+          w9ReceivedDate: body.w9ReceivedDate ? new Date(body.w9ReceivedDate) : undefined,
+        },
+        actor,
+        correlationId,
+      );
+      return reply.status(201).send(vendor);
+    } catch (err) {
+      return handleVendorError(err, reply);
+    }
+  });
+
+  // ── PATCH /vendors/:id — update ─────────────────────────────────────────────
+  app.patch('/vendors/:id', { preHandler: requirePermission(AP_VENDOR_PERMISSIONS.EDIT) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    try {
+      const body = VendorUpdateSchema.parse(request.body);
+      const vendor = await vendorSvc.update(
+        tenantId,
+        id,
+        {
+          ...body,
+          email: body.email || undefined,
+          w9ReceivedDate: body.w9ReceivedDate ? new Date(body.w9ReceivedDate) : undefined,
+        },
+        actor,
+      );
+      return reply.send(vendor);
+    } catch (err) {
+      return handleVendorError(err, reply);
+    }
+  });
+
+  // ── DELETE /vendors/:id — guarded logical delete ────────────────────────────
+  app.delete('/vendors/:id', { preHandler: requirePermission(AP_VENDOR_PERMISSIONS.DELETE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    try {
+      const body = DeleteSchema.parse(request.body ?? {});
+      const vendor = await vendorSvc.delete(tenantId, id, body, actor);
+      return reply.send(vendor);
+    } catch (err) {
+      return handleVendorError(err, reply);
+    }
+  });
+
+  // ── POST /vendors/:id/inactivate ────────────────────────────────────────────
+  app.post('/vendors/:id/inactivate', { preHandler: requirePermission(AP_VENDOR_PERMISSIONS.INACTIVATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    try {
+      const body = InactivateSchema.parse(request.body);
+      const vendor = await vendorSvc.inactivate(tenantId, id, body, actor);
+      return reply.send(vendor);
+    } catch (err) {
+      return handleVendorError(err, reply);
+    }
+  });
+
+  // ── POST /vendors/:id/reactivate ────────────────────────────────────────────
+  app.post('/vendors/:id/reactivate', { preHandler: requirePermission(AP_VENDOR_PERMISSIONS.REACTIVATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    try {
+      const body = ReactivateSchema.parse(request.body);
+      const vendor = await vendorSvc.reactivate(tenantId, id, body, actor);
+      return reply.send(vendor);
+    } catch (err) {
+      return handleVendorError(err, reply);
+    }
+  });
+
+  // ── GET /vendors/:id/eligibility — new-invoice eligibility ──────────────────
+  app.get('/vendors/:id/eligibility', { preHandler: requirePermission(AP_VENDOR_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    try {
+      const result = await vendorSvc.eligibility(tenantId, id, actor);
+      return reply.send(result);
+    } catch (err) {
+      return handleVendorError(err, reply);
+    }
+  });
+
+  // ── GET /vendors/:id/audit-events — history from audit-service ─────────────
+  app.get('/vendors/:id/audit-events', { preHandler: requirePermission(AP_VENDOR_PERMISSIONS.AUDIT_VIEW) }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const auditUrl =
+      (process.env['AUDIT_SERVICE_URL'] ?? 'http://audit-service:3031') +
+      `/api/v1/audit/entity/Vendor/${id}`;
+    try {
+      const res = await fetch(auditUrl, { headers: { 'x-tenant-id': getTenantId(request) } });
+      if (!res.ok) return reply.send([]);
+      const data = await res.json();
+      return reply.send(data);
+    } catch {
+      return reply.send([]);
+    }
   });
 
   // ===== S3-08: AP Payment Void =====

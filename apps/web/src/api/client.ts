@@ -421,12 +421,21 @@ export const aparApi = {
   postReceipt: (id: string) => apiFetch<any>(`/api/v1/apar/ar/${id}/post`, { method: 'POST' }),
   getAP: () => apiFetch<any[]>('/api/v1/apar/ap'),
   createAP: (data: any) => apiFetch<any>('/api/v1/apar/ap', { method: 'POST', body: JSON.stringify(data) }),
-  // Vendor maintenance (S3-07)
-  getVendors: (params?: string) => apiFetch<any[]>(`/api/v1/apar/vendors${params ? `?${params}` : ''}`),
+  // Vendor maintenance (S3-07, hardened AMACC-CH04 S036A)
+  getVendors: (params?: string) => apiFetch<any>(`/api/v1/apar/vendors${params ? `?${params}` : ''}`),
   getVendor: (id: string) => apiFetch<any>(`/api/v1/apar/vendors/${id}`),
   createVendor: (data: any) => apiFetch<any>('/api/v1/apar/vendors', { method: 'POST', body: JSON.stringify(data) }),
-  updateVendor: (id: string, data: any) => apiFetch<any>(`/api/v1/apar/vendors/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  deactivateVendor: (id: string) => apiFetch<any>(`/api/v1/apar/vendors/${id}`, { method: 'PATCH', body: JSON.stringify({ isActive: false }) }),
+  updateVendor: (id: string, data: any) => apiFetch<any>(`/api/v1/apar/vendors/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  checkVendorDuplicates: (data: { vendorName?: string; email?: string; phone?: string; zip?: string; excludeVendorId?: string }) =>
+    apiFetch<{ candidates: any[] }>('/api/v1/apar/vendors/duplicate-check', { method: 'POST', body: JSON.stringify(data) }),
+  inactivateVendor: (id: string, data: { version: number; reason: string }) =>
+    apiFetch<any>(`/api/v1/apar/vendors/${id}/inactivate`, { method: 'POST', body: JSON.stringify(data) }),
+  reactivateVendor: (id: string, data: { version: number }) =>
+    apiFetch<any>(`/api/v1/apar/vendors/${id}/reactivate`, { method: 'POST', body: JSON.stringify(data) }),
+  deleteVendor: (id: string, data: { version: number; reason?: string }) =>
+    apiFetch<any>(`/api/v1/apar/vendors/${id}`, { method: 'DELETE', body: JSON.stringify(data) }),
+  getVendorEligibility: (id: string) => apiFetch<{ eligible: boolean; status: string; reason: string | null }>(`/api/v1/apar/vendors/${id}/eligibility`),
+  getVendorAuditEvents: (id: string) => apiFetch<any[]>(`/api/v1/apar/vendors/${id}/audit-events`),
   // AP Payments (S3-08/09)
   getPayments: (params?: string) => apiFetch<any[]>(`/api/v1/apar/ap-payments${params ? `?${params}` : ''}`),
   voidPayment: (id: string, data: any) => apiFetch<any>(`/api/v1/apar/ap-payments/${id}/void`, { method: 'POST', body: JSON.stringify(data) }),
@@ -440,8 +449,6 @@ export const aparApi = {
   getInvoices: (params?: string) => apiFetch<any[]>(`/api/v1/apar/ap${params ? `?${params}` : ''}`),
   // S7-03: ACH / NACHA generation
   generateAch: (data: { bankAccountId: string; paymentIds: string[] }) => apiFetch<any>('/api/v1/ap/payments/generate-ach', { method: 'POST', body: JSON.stringify(data) }),
-  // S7-06: Vendor duplicate tax ID check
-  getVendorsByTaxId: (taxId: string) => apiFetch<any[]>(`/api/v1/apar/vendors?taxId=${encodeURIComponent(taxId)}`),
   // S7-07: Vendor 1099 YTD payments
   getVendorYtdPayments: (vendorId: string) => apiFetch<any>(`/api/v1/apar/vendors/${vendorId}/ytd-payments`),
 };
@@ -589,14 +596,6 @@ export const purchaseOrderApi = {
   export1099FIRE: (data: any) => apiFetch<any>('/api/v1/ap/1099/export-fire', { method: 'POST', body: JSON.stringify(data) }),
   // S6-09: Positive Pay export
   positivePayExport: (data: any) => apiFetch<any>('/api/v1/ap/payments/positive-pay-export', { method: 'POST', body: JSON.stringify(data) }),
-};
-
-// Vendor API
-export const vendorApi = {
-  list: (params?: string) => apiFetch<any[]>(`/api/v1/vendors${params ? `?${params}` : ''}`),
-  getById: (id: string) => apiFetch<any>(`/api/v1/vendors/${id}`),
-  create: (data: any) => apiFetch<any>('/api/v1/vendors', { method: 'POST', body: JSON.stringify(data) }),
-  update: (id: string, data: any) => apiFetch<any>(`/api/v1/vendors/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
 };
 
 // Intercompany API

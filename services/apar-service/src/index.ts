@@ -8,7 +8,12 @@ import { RabbitMQEventPublisher } from './infrastructure/event-publisher';
 import { PrismaAREntryRepository } from './infrastructure/ar-repository';
 import { PrismaAPEntryRepository } from './infrastructure/ap-repository';
 import { APARService } from './application/apar-service';
-import { IEventPublisher, IAREntryRepository, IAPEntryRepository, OutboxProcessor } from '@amacc/shared-kernel';
+import { VendorService } from './application/vendor-service';
+import {
+  IEventPublisher, IAREntryRepository, IAPEntryRepository, OutboxProcessor,
+  HttpAuthzClient, AuthzClient, HttpAuditClient, AuditOutboxDrainer, makePrismaAuditOutboxStore,
+  createTenantRlsMiddleware, tenantContextHook,
+} from '@amacc/shared-kernel';
 import pino from 'pino';
 
 const logger = pino({ name: 'apar-service' });
@@ -18,6 +23,15 @@ async function bootstrap() {
   await app.register(cors, { origin: true });
   const prisma = new PrismaClient();
   await prisma.$connect();
+
+  // AMACC-CH04 S036A: set app.current_tenant_id on every query, enforced by
+  // RLS policies on vendors/ap_vendor_number_counters/
+  // ap_vendor_duplicate_acknowledgements (migration
+  // 20260729010001_add_rls_policies_apar_svc). Harmless no-op for this
+  // service's other, non-RLS tables.
+  (prisma as any).$use(createTenantRlsMiddleware(prisma));
+  app.addHook('preHandler', tenantContextHook);
+
   const eventPublisher = new RabbitMQEventPublisher({ url: process.env['RABBITMQ_URL'] ?? 'amqp://localhost:5672' });
   await eventPublisher.connect();
 
@@ -28,11 +42,29 @@ async function bootstrap() {
   container.register<IAREntryRepository>('IAREntryRepository', { useClass: PrismaAREntryRepository });
   container.register<IAPEntryRepository>('IAPEntryRepository', { useClass: PrismaAPEntryRepository });
   container.register('APARService', { useClass: APARService });
+  container.register('VendorService', { useClass: VendorService });
+  container.registerInstance<AuthzClient>('AuthzClient', new HttpAuthzClient({
+    onError: (err: unknown, req: any) => logger.error({ err, permission: req.permissionKey }, 'authz/check failed'),
+  }));
 
   await app.register(aparRoutes, { prefix: '/api/v1/apar' });
   app.get('/health', async () => ({ status: 'ok', service: 'apar-service' }));
 
+  // AMACC-CH04 S036A: apar-service had no audit mechanism at all before
+  // this — drain audit_outbox to the real S007 audit-service (same pattern
+  // as tenant-service/auth-service/coa-service).
+  const auditDrainer = new AuditOutboxDrainer(
+    makePrismaAuditOutboxStore((prisma as any).auditOutboxEvent),
+    new HttpAuditClient(),
+    {
+      serviceName: 'apar-service',
+      onFailed: (row: any, err: unknown, willRetry: boolean) => logger.error({ outboxId: row.id, err, willRetry }, 'audit outbox delivery failed'),
+    },
+  );
+  const stopAuditDrainer = auditDrainer.start(5000);
+
   app.addHook('onClose', async () => {
+    stopAuditDrainer();
     outboxProcessor.stop();
     await prisma.$disconnect();
   });
