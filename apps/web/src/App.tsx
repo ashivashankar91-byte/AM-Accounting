@@ -51,6 +51,7 @@ import GoldenPathLogin from './pages/goldenpath/Login';
 import GoldenPathProtectedRoute from './pages/goldenpath/ProtectedRoute';
 import GoldenPathSelectEntity from './pages/goldenpath/SelectEntity';
 import GoldenPathOrgHierarchy from './pages/goldenpath/OrgHierarchy';
+import GoldenPathEntityElimination from './pages/goldenpath/EntityElimination';
 import GoldenPathRoleTemplates from './pages/goldenpath/RoleTemplates';
 import GoldenPathFiscalPeriod from './pages/goldenpath/FiscalPeriod';
 import GoldenPathChartOfAccounts from './pages/goldenpath/ChartOfAccounts';
@@ -525,6 +526,7 @@ export default function App() {
                   added for the Golden R0 final closure browser certification
                   (steps 3/4 of the required 16-step journey). */}
               <Route path="/golden-path/org-hierarchy" element={<GoldenPathProtectedRoute><GoldenPathOrgHierarchy /></GoldenPathProtectedRoute>} />
+              <Route path="/golden-path/entity-elimination" element={<GoldenPathProtectedRoute><GoldenPathEntityElimination /></GoldenPathProtectedRoute>} />
               <Route path="/golden-path/role-templates" element={<GoldenPathProtectedRoute><GoldenPathRoleTemplates /></GoldenPathProtectedRoute>} />
               <Route path="/golden-path/fiscal" element={<GoldenPathProtectedRoute><GoldenPathFiscalPeriod /></GoldenPathProtectedRoute>} />
               <Route path="/golden-path/coa" element={<GoldenPathProtectedRoute><GoldenPathChartOfAccounts /></GoldenPathProtectedRoute>} />

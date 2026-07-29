@@ -819,6 +819,13 @@ export const developerApi = {
 export const goldenPathApi = {
   listLegalEntities: () => apiFetch<{ items: any[]; total: number }>('/api/v1/legal-entities'),
 
+  // ACC-S003: elimination-entity configuration ceremony.
+  configureElimination: (entityId: string, data: { version: number; isElimination: boolean; reason?: string }) =>
+    apiFetch<any>(`/api/v1/legal-entities/${entityId}/elimination`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
   getFiscalCalendar: (entityId: string) => apiFetch<any>(`/api/v1/fiscal/entities/${entityId}/fiscal-calendar`),
   defineFiscalCalendar: (entityId: string, fyStartMonth: number) =>
     apiFetch<any>(`/api/v1/fiscal/entities/${entityId}/fiscal-calendar`, {

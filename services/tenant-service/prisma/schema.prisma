@@ -56,6 +56,15 @@ model LegalEntity {
   deactivatedAt      DateTime? @map("deactivated_at")
   deactivatedBy      String?   @map("deactivated_by")
   deactivationReason String?   @map("deactivation_reason")
+  /// ACC-S003: designates this entity as an elimination entity within the
+  /// group. Flag-only in R1 — no scoped pairing metadata, no posting
+  /// behavior. An elimination entity cannot own stores (enforced both
+  /// directions — see BR003-2/BR003-3 in P01_STORY_CONTRACTS.md).
+  isElimination           Boolean   @default(false) @map("is_elimination")
+  eliminationChangedAt    DateTime? @map("elimination_changed_at")
+  eliminationChangedBy    String?   @map("elimination_changed_by")
+  /// Required when has_posted_journals = true (BR003-4); optional otherwise.
+  eliminationChangeReason String?   @map("elimination_change_reason")
   createdAt          DateTime  @default(now()) @map("created_at")
   updatedAt          DateTime  @updatedAt @map("updated_at")
 

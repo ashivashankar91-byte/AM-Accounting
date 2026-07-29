@@ -14,6 +14,7 @@ interface OrgNode {
   effectiveFrom: string | null;
   effectiveTo: string | null;
   children?: OrgNode[];
+  isElimination?: boolean;
 }
 
 // FINAL-R0 / S202 — Dealer Group Hierarchy Screen. Consumes the real
@@ -57,6 +58,14 @@ function Node({ node, depth }: { node: OrgNode; depth: number }) {
         >
           {node.status}
         </span>
+        {node.type === 'ENTITY' && node.isElimination && (
+          <span
+            data-testid={`elimination-badge-${node.id}`}
+            style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: '#fef3c7', color: '#92400e' }}
+          >
+            Elimination
+          </span>
+        )}
       </div>
       {open && hasChildren && (
         <ul className="list-none p-0">
@@ -112,6 +121,8 @@ export default function OrgHierarchy() {
 
       <p className="mt-6 text-[13px] flex items-center gap-2">
         <Link to="/golden-path/role-templates" className="text-[#0B5CAB] hover:underline">Role Templates</Link>
+        <span className="text-slate-300">&middot;</span>
+        <Link to="/golden-path/entity-elimination" className="text-[#0B5CAB] hover:underline">Elimination Entity Configuration</Link>
         <span className="text-slate-300">&middot;</span>
         <Link to="/golden-path/fiscal" className="text-[#0B5CAB] hover:underline">Continue to Fiscal Period</Link>
       </p>

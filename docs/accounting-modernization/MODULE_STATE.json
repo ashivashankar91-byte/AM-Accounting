@@ -1312,6 +1312,61 @@
         "promotedBecause": "Every item the prior round listed as outstanding is now complete and independently verified: automated live-db concurrency/idempotency/RLS-negative suite, live-code PostingService proof, route-level authz-guard coverage (including the two-tier-separation proof), a real live-gateway authorization certification, the P01-SCR-01 frontend (browser-verified), and the Playwright lifecycle spec (actually executed, both tests passing). Promoted to TECHNICALLY_CERTIFIED_PENDING_PRODUCT_SME_ACCEPTANCE rather than DONE or DONE_PENDING_INTEGRATION because Product review and Accounting SME confirmation of the business behavior (OPEN/SOFT_CLOSED/adjusting-entry/HARD_CLOSED/two-tier reopen/terminal LOCKED) have not yet occurred -- accepted as a PO checkpoint for engineering implementation and technical certification only, per 'PRODUCT CHECKPOINT — S008 TECHNICAL CERTIFICATION ACCEPTED' (2026-07-28, commits ce35c3f/762e2b4). No new S008 functionality is to be added while this acceptance review is pending.",
         "reference": "docs/accounting-modernization/stabilization/STORY_CERTIFICATION_MATRIX.csv; docs/accounting-modernization/S008_CERTIFICATION_REPORT.md; docs/accounting-modernization/S008_LIVE_GATEWAY_CERTIFICATION_REPORT.md; branch r1-s008-period-close-control"
       }
+    },
+    "S003": {
+      "title": "Elimination Entity Configuration",
+      "layman": "A Controller/Admin can flag a legal entity as an intercompany elimination entity (and unflag it) with a mandatory reason for every change; the entity is visually badged across the org hierarchy and cannot own active stores. No elimination journals, entity pairing, consolidation math, or intercompany balancing exist yet -- this is configuration only.",
+      "package": "R1-VERTICAL-SLICE",
+      "status": "S003_INTEGRATED_TECHNICALLY_PENDING_COMBINED_DEMO_CERTIFICATION",
+      "completedDate": null,
+      "usesStubs": false,
+      "dependencies": [
+        "S200",
+        "S207",
+        "S007"
+      ],
+      "branch": "r1-s003-elimination-configuration",
+      "commits": [
+        {
+          "hash": "2f10f14",
+          "summary": "S003 full vertical slice: additive schema migration (LegalEntity.isEliminationEntity/eliminationReason/eliminationChangedAt/eliminationChangedBy + version column), configureElimination() service method with version-conflict/no-op/OWNS_STORES guards, PATCH /legal-entities/:id/elimination route, auth-service acct.entity.elimination_configure permission catalog migration (ADMIN+CONTROLLER), org-service tree annotation with elimination badge, EntityElimination.tsx frontend screen (loading/empty/validation/error/unauthorized states), legal-entity-elimination.test.ts, legal-entity-authz.test.ts additions, elimination-entity.spec.ts Playwright"
+        },
+        {
+          "hash": "b55ff49",
+          "summary": "S003 Product-directed reason-rule correction: reason is now required for every elimination-designation change unconditionally (removed the hasPostedJournals && guard condition in legal-entity-service.ts configureElimination()); frontend reason field now always rendered (was previously conditional on hasPostedJournals); tests updated/added to prove reason is required even when hasPostedJournals is false; Playwright spec updated to supply a reason on every confirm action"
+        },
+        {
+          "hash": "dcff22f",
+          "summary": "docs(S003): Product/SME acceptance package (no functional changes) -- created P01_S003_CERTIFICATION_EVIDENCE.md and P01_S003_DEMO_SCRIPT.md, added the initial S003 MODULE_STATE.json and STORY_CERTIFICATION_MATRIX.csv entries"
+        },
+        {
+          "hash": "29f12f8",
+          "summary": "S003 P1 corrective pass: configureElimination optimistic concurrency changed from read-then-update to a single atomic conditional UPDATE (WHERE id AND version match) so exactly one concurrent request wins and losers receive 409 VERSION_CONFLICT; reverse ownership guard (OWNS_STORES / ELIMINATION_ENTITY_CANNOT_OWN_STORES) extended to cover inactive-store and indirect re-parent paths in franchise-service.ts/org-service.ts; franchise-isolation.test.ts, franchise.test.ts, legal-entity-elimination.test.ts extended; new services/tenant-service/tests/live-db/elimination-guards-live.test.ts (two-way and ten-way concurrency proof) and vitest.config.ts (Prisma-client resolver alias for live-db tests); P01_STORY_BLOCKING_REGISTER.csv BLK-28/BLK-29 added"
+        }
+      ],
+      "completionEvidence": {
+        "vitestCount": "tenant-service 191/191 passed (full suite, includes 9 tests in legal-entity-elimination.test.ts plus legal-entity-authz.test.ts and store.test.ts additions for S003)",
+        "playwrightCount": "5/5 passed -- real browser execution (chromium) against a live gateway+services+Postgres stack, not typecheck-only. tests/e2e/elimination-entity.spec.ts: entity list/hierarchy load, happy-path flag with reason + badge, OWNS_STORES guard, reverse-direction OWNS_STORES guard via direct API, unauthorized (CLERK) 403",
+        "notes": "Certified against a fresh, disposable Postgres 15 cluster (initdb/pg_ctl, never the shared amacc dev DB), per the pattern in tests/integration/rls-live-db/setup.sh and docs/accounting-modernization/stabilization/LIVE_DATABASE_TEST_REPORT.md. Migration proof: tenant-service 10/10 migrations applied clean from empty (incl. 20260728110000_add_legal_entity_elimination), auth-service 18/18 migrations applied clean from empty (incl. 20260728120000_extend_authz_catalog_s003_elimination_entity). Live gateway proof via real JWT through api-gateway->tenant-service: authorized PATCH /api/v1/legal-entities/:id/elimination = 200; unauthorized CLERK role = 403 NO_MATCHING_ROLE; cross-tenant entity id = 404; stale version = 409 VERSION_CONFLICT; no-op (re-flagging same value) = 422 NO_CHANGE; omitted reason (including on an entity with zero posted journals, proving the corrected unconditional rule) = 422 REASON_REQUIRED; reverse-direction OWNS_STORES guard (creating a store under an already-eliminated entity) = 409. audit_outbox rows queried directly and confirmed persisted: LegalEntity/CREATE and LegalEntity/ELIMINATION_CHANGED events with full before/after JSON including the reason text and changedBy actor. apps/web production build (vite build) succeeded. Both tenant-service and auth-service tsc --noEmit clean. Full evidence detail: docs/accounting-modernization/build-packs/P01/P01_S003_CERTIFICATION_EVIDENCE.md"
+      },
+      "remainingCertificationItems": [
+        "Product Owner acceptance of the flag-only R1 scope (no entity-pairing workflow, no consolidation calculations, no automated elimination journals, no posting-restriction enforcement)",
+        "Accounting SME acceptance of the corrected unconditional reason-required rule and the OWNS_STORES guard direction",
+        "Live Product/SME demonstration walkthrough (script: docs/accounting-modernization/build-packs/P01/P01_S003_DEMO_SCRIPT.md) and sign-off recorded in this file and STORY_CERTIFICATION_MATRIX.csv before promotion to DONE_PENDING_INTEGRATION or DONE",
+        "Resolution of open blocking-register items BLK-16 (pairing scope), BLK-17 (permission granularity), BLK-18 (posting-source restriction list, deferred to a later release) per P01_STORY_BLOCKING_REGISTER.csv"
+      ],
+      "stabilizationReconciliation": {
+        "phase": "R1 Vertical Slice -- S003 Elimination Entity Configuration",
+        "priorStatus": "IMPLEMENTED_PENDING_CERTIFICATION (commit 2f10f14, corrected at commit b55ff49)",
+        "promotedBecause": "Full live certification completed against a fresh, disposable PostgreSQL instance: real migrations from empty, full vitest suite green, real gateway authorization/tenant-isolation/version-conflict/reason-rule/OWNS_STORES proofs via curl+JWT, persisted audit_outbox evidence confirmed by direct query, real-browser Playwright execution (not typecheck-only), and a clean production frontend build. Status is capped at TECHNICALLY_CERTIFIED_PENDING_PRODUCT_SME_ACCEPTANCE rather than DONE or DONE_PENDING_INTEGRATION because Product Owner and Accounting SME acceptance of the R1 scope (flag-only, unconditional reason rule, OWNS_STORES guard) has not yet occurred.",
+        "reference": "docs/accounting-modernization/stabilization/STORY_CERTIFICATION_MATRIX.csv; branch r1-s003-elimination-configuration; docs/accounting-modernization/build-packs/P01/P01_S003_CERTIFICATION_EVIDENCE.md; docs/accounting-modernization/build-packs/P01/P01_S003_DEMO_SCRIPT.md"
+      },
+      "statusHistory": [
+        { "status": "NOT_STARTED", "date": null },
+        { "status": "IMPLEMENTED_PENDING_CERTIFICATION", "date": "2026-07-28", "acceptedCommits": ["2f10f14", "b55ff49"] },
+        { "status": "TECHNICALLY_CERTIFIED_PENDING_PRODUCT_SME_ACCEPTANCE", "date": "2026-07-28", "acceptedCommits": ["2f10f14", "b55ff49"], "note": "docs(S003) commit dcff22f: documentation-only move ahead of Product/SME review. No functional changes." },
+        { "status": "S003_INTEGRATED_TECHNICALLY_PENDING_COMBINED_DEMO_CERTIFICATION", "date": "2026-07-29", "integratedInto": "r1-integration", "integratedFrom": "r1-s003-elimination-configuration@29f12f8", "note": "R1 Controlled Integration Step 2B: S003-owned commits (2f10f14 feature slice, b55ff49 reason-rule correction, dcff22f docs/acceptance package, 29f12f8 P1 concurrency/franchise-guard corrections) selectively cherry-picked onto r1-integration. Whole-branch merge was not performed. App.tsx, api/client.ts, and OrgHierarchy.tsx were manually reconciled (auto-merge succeeded on App.tsx; client.ts and OrgHierarchy.tsx conflicts resolved by hand, preserving the full Golden R0 + S008 shell and adding only the S003 route/method/nav-link/badge). MODULE_STATE.json, STORY_CERTIFICATION_MATRIX.csv, and P01_STORY_BLOCKING_REGISTER.csv were reconciled by hand to preserve every existing Golden R0/S008 record and append only S003 content. services/coa-service/period-service.ts, period-routes.ts, and period.test.ts (S008 BR008-5 hard-close-block machinery) were left untouched. /intercompany/eliminate (gl-service, pre-dates S003) was not modified and is not wired to elimination configuration. Final Product/Accounting-SME acceptance and combined-demo/Wave-0 certification are not claimed by this integration." }
+      ]
     }
   },
   "sequence": [

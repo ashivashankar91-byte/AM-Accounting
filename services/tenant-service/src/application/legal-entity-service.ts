@@ -45,6 +45,15 @@ export interface DeactivateLegalEntityDTO {
   deactivatedBy: string;
 }
 
+export interface ConfigureEliminationDTO {
+  /** optimistic-lock version */
+  version: number;
+  isElimination: boolean;
+  /** Required when the entity has posted journals (BR003-4); optional otherwise. */
+  reason?: string;
+  actor: string;
+}
+
 export interface LegalEntityListQuery {
   tenantId: string;
   search?: string;
@@ -265,6 +274,94 @@ export class LegalEntityService {
       entityCode:        entity.entityCode,
       reason:            dto.reason,
       deactivatedBy:     dto.deactivatedBy,
+    });
+
+    return entity;
+  }
+
+  /**
+   * ACC-S003 — configure the elimination-entity flag. Flag-only (no scoped
+   * pairing) per R1 scope. Guards (BR003-2): cannot flag an entity that
+   * currently owns one or more ACTIVE stores (422 OWNS_STORES). BR003-4:
+   * a reason is required for every change to the elimination designation.
+   */
+  async configureElimination(tenantId: string, id: string, dto: ConfigureEliminationDTO) {
+    const current = await this.prisma.legalEntity.findFirst({ where: { id, tenantId } });
+    if (!current) throw new LegalEntityNotFoundError(id);
+
+    if (current.version !== dto.version) {
+      throw new LegalEntityConflictError(
+        'VERSION_CONFLICT',
+        `Version conflict: expected ${dto.version}, current is ${current.version}`,
+      );
+    }
+
+    if (current.isElimination === dto.isElimination) {
+      throw new LegalEntityValidationError(
+        'NO_CHANGE',
+        `Legal entity is already ${dto.isElimination ? '' : 'not '}an elimination entity`,
+      );
+    }
+
+    if (!dto.reason?.trim()) {
+      throw new LegalEntityValidationError(
+        'REASON_REQUIRED',
+        'A reason is required to change the elimination designation',
+      );
+    }
+
+    if (dto.isElimination) {
+      const ownedStores = await this.prisma.store.findMany({
+        where: { tenantId, entityId: id, status: 'ACTIVE' },
+        select: { id: true, storeCode: true, storeName: true },
+      });
+      if (ownedStores.length > 0) {
+        const err = new LegalEntityValidationError(
+          'OWNS_STORES',
+          `Cannot designate this entity as an elimination entity — it owns ${ownedStores.length} active store(s)`,
+        );
+        (err as any).ownedStores = ownedStores;
+        throw err;
+      }
+    }
+
+    // P1-F1 corrective fix: the pre-checks above (NO_CHANGE, REASON_REQUIRED,
+    // OWNS_STORES) read `current` for business validation only. The actual
+    // mutation below is NOT conditioned on that stale read — it is an atomic
+    // conditional update (`updateMany` scoped by id + tenantId + the exact
+    // expected version). Two concurrent requests racing on the same expected
+    // version can both pass the pre-checks, but Postgres serializes the two
+    // UPDATE statements: only the first to commit matches the WHERE clause
+    // (version still equals dto.version) and the second's row-count is 0,
+    // which we surface as a genuine 409 VERSION_CONFLICT — never a silent
+    // lost update.
+    const entity = await this.prisma.$transaction(async (tx: any) => {
+      const { count } = await tx.legalEntity.updateMany({
+        where: { id, tenantId, version: dto.version },
+        data: {
+          isElimination:           dto.isElimination,
+          version:                 { increment: 1 },
+          eliminationChangedAt:    new Date(),
+          eliminationChangedBy:    dto.actor,
+          eliminationChangeReason: dto.reason ?? null,
+        },
+      });
+      if (count !== 1) {
+        throw new LegalEntityConflictError(
+          'VERSION_CONFLICT',
+          `Version conflict: expected ${dto.version}, entity was updated concurrently`,
+        );
+      }
+      const e = await tx.legalEntity.findFirst({ where: { id, tenantId } });
+      await this._audit(tenantId, 'LegalEntity', id, 'ELIMINATION_CHANGED', current, e, dto.actor, tx);
+      return e;
+    });
+
+    await this._writeOutbox(tenantId, 'LEGAL_ENTITY_ELIMINATION_CHANGED', id, {
+      entityCode:    entity.entityCode,
+      isElimination: entity.isElimination,
+      reason:        dto.reason ?? null,
+      actor:         dto.actor,
     });
 
     return entity;

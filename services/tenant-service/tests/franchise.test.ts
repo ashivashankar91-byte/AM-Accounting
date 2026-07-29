@@ -49,8 +49,18 @@ const ACTIVE_FR = {
 function makePrisma(overrides: Record<string, any> = {}) {
   const client: any = {
     store: {
-      findFirst: async () => ({ id: STORE_ID, tenantId: TENANT }),
+      findFirst: async () => ({ id: STORE_ID, tenantId: TENANT, entityId: 'entity-001' }),
       ...overrides.store,
+    },
+    // P1-F2 reverse ownership guard fixtures: no re-parent override, and the
+    // owning entity is not an elimination entity, unless a test overrides.
+    orgReparentEvent: {
+      findFirst: async () => null,
+      ...overrides.orgReparentEvent,
+    },
+    legalEntity: {
+      findFirst: async () => ({ id: 'entity-001', tenantId: TENANT, isElimination: false }),
+      ...overrides.legalEntity,
     },
     oemRef: {
       findFirst: async ({ where }: any) => {
@@ -164,6 +174,52 @@ describe('FranchiseService.create', () => {
     await expect(
       svc.create({ tenantId: TENANT, storeId: STORE_ID, oemCode: 'FORD', dealerCode: '54321', effectiveFrom: '02/01/2026' }),
     ).rejects.toMatchObject({ code: 'INVALID_DATE' });
+  });
+
+  // ── P1-F2: reverse ownership guard (elimination entity) ──────────────────
+
+  it('P1-F2a: rejects a franchise on a store directly owned by an elimination entity', async () => {
+    const svc = makeSvc({
+      legalEntity: { findFirst: async () => ({ id: 'entity-001', tenantId: TENANT, isElimination: true }) },
+    });
+    await expect(
+      svc.create({ tenantId: TENANT, storeId: STORE_ID, oemCode: 'FORD', dealerCode: '54321', effectiveFrom: '2026-02-01' }),
+    ).rejects.toMatchObject({ code: 'ELIMINATION_ENTITY_CANNOT_OWN_STORES' });
+  });
+
+  it('P1-F2a (inactive store): rejects a franchise even when the store itself is INACTIVE, as long as its owning entity is an elimination entity', async () => {
+    const svc = makeSvc({
+      store: { findFirst: async () => ({ id: STORE_ID, tenantId: TENANT, entityId: 'entity-001', status: 'INACTIVE' }) },
+      legalEntity: { findFirst: async () => ({ id: 'entity-001', tenantId: TENANT, isElimination: true }) },
+    });
+    await expect(
+      svc.create({ tenantId: TENANT, storeId: STORE_ID, oemCode: 'FORD', dealerCode: '54321', effectiveFrom: '2026-02-01' }),
+    ).rejects.toBeInstanceOf(FranchiseConflictError);
+  });
+
+  it('P1-F2b: rejects a franchise on a store indirectly re-parented beneath an elimination entity (S202 override)', async () => {
+    const svc = makeSvc({
+      // Base entityId is a normal entity, but a re-parent override moved the
+      // store under a different (elimination) entity.
+      orgReparentEvent: {
+        findFirst: async () => ({ newParentId: 'entity-elim-002', effectiveFrom: new Date('2026-01-01') }),
+      },
+      legalEntity: {
+        findFirst: async ({ where }: any) =>
+          where.id === 'entity-elim-002'
+            ? { id: 'entity-elim-002', tenantId: TENANT, isElimination: true }
+            : { id: 'entity-001', tenantId: TENANT, isElimination: false },
+      },
+    });
+    await expect(
+      svc.create({ tenantId: TENANT, storeId: STORE_ID, oemCode: 'FORD', dealerCode: '54321', effectiveFrom: '2026-02-01' }),
+    ).rejects.toMatchObject({ code: 'ELIMINATION_ENTITY_CANNOT_OWN_STORES' });
+  });
+
+  it('P1-F2c: unrelated (non-elimination) entities remain unaffected — franchise creation still succeeds', async () => {
+    const svc = makeSvc();
+    const fr = await svc.create({ tenantId: TENANT, storeId: STORE_ID, oemCode: 'FORD', dealerCode: '54321', effectiveFrom: '2026-02-01' });
+    expect(fr.oemCode).toBe('FORD');
   });
 });
 

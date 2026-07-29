@@ -27,6 +27,8 @@ export interface OrgNode {
   effectiveFrom: string | null;
   effectiveTo: string | null;
   children: OrgNode[];
+  /** ACC-S003: elimination-entity annotation. Only ever set on ENTITY nodes. */
+  isElimination?: boolean;
 }
 
 export interface OrgTreeRow {
@@ -105,7 +107,7 @@ export class OrgService {
       nodesById.set(e.id, {
         type: 'ENTITY', id: e.id, code: e.entityCode, name: e.legalName,
         status: e.status, effectiveFrom: this._toIsoDate(e.effectiveDate), effectiveTo: null,
-        children: [],
+        children: [], isElimination: e.isElimination,
       });
     }
     for (const s of stores) {
@@ -169,12 +171,39 @@ export class OrgService {
       if (!newParent) {
         throw new OrgValidationError('PARENT_NOT_FOUND', `LegalEntity not found for new parent: ${newParentId}`);
       }
+      // P1-F2 corrective fix (reverse ownership guard, direct path): the
+      // same invariant enforced at store-creation time
+      // (ELIMINATION_ENTITY_CANNOT_OWN_STORES in store-service.create) was
+      // missing here, so a store could be moved beneath an elimination
+      // entity via re-parent even though it could never have been *created*
+      // there.
+      if (newParent.isElimination) {
+        throw new OrgValidationError(
+          'ELIMINATION_ENTITY_CANNOT_OWN_STORES',
+          `Legal entity '${newParentId}' is an elimination entity and cannot own stores`,
+        );
+      }
     } else if (nodeType === 'FRANCHISE') {
       const franchise = await this.prisma.franchise.findFirst({ where: { id: nodeId, tenantId } });
       if (!franchise) throw new OrgNodeNotFoundError('Franchise', nodeId);
       const newParent = await this.prisma.store.findFirst({ where: { id: newParentId, tenantId } });
       if (!newParent) {
         throw new OrgValidationError('PARENT_NOT_FOUND', `Store not found for new parent: ${newParentId}`);
+      }
+      // P1-F2 corrective fix (reverse ownership guard, indirect path): a
+      // franchise re-parented onto a store does not directly reference a
+      // legal entity, so the guard must walk up to the store's *currently
+      // resolved* owning entity (honoring any prior STORE re-parent
+      // override, not just the immutable base FK) and reject if that
+      // entity is an elimination entity — regardless of the store's own
+      // ACTIVE/INACTIVE status.
+      const ownerEntityId = await this._resolveCurrentParent(tenantId, 'STORE', newParentId);
+      const ownerEntity = await this.prisma.legalEntity.findFirst({ where: { id: ownerEntityId, tenantId } });
+      if (ownerEntity?.isElimination) {
+        throw new OrgValidationError(
+          'ELIMINATION_ENTITY_CANNOT_OWN_STORES',
+          `Store '${newParentId}' is owned by an elimination entity and cannot receive a franchise`,
+        );
       }
     } else {
       throw new OrgValidationError('INVALID_NODE_TYPE', `nodeType must be STORE or FRANCHISE, got ${nodeType}`);
