@@ -13,25 +13,26 @@
 --     (no-rule-match / identity-conflict records).
 -- Additive-only. No existing key or grant is modified or removed.
 --
--- Version note: 1.12.0 is the highest version declared anywhere in this
--- migration history as of this writing (20260728060000_extend_authz_catalog_
--- s009_statement_metadata). Per that same migration's own disclosed
--- precedent, a concurrent cross-channel integration may also claim 1.13.0 —
--- if so this insert is a no-op (ON CONFLICT DO NOTHING) and the version
--- should be renumbered at integration time, the same way S009 renumbered
--- itself around S003.
+-- R1 Controlled Integration renumbering: this migration originally declared
+-- catalog_version 1.13.0, but S011's auth migration
+-- (20260728070000_extend_authz_catalog_analysis_codes) and S032's corrective
+-- pass (20260729010000_revoke_je_template_manage_from_accountant, 1.15.0)
+-- were both integrated first, and 1.13.0 is already claimed. Renumbered to
+-- 1.16.0 — the next free slot after this branch's highest integrated
+-- version (1.15.0) — to avoid a silent ON CONFLICT DO NOTHING collision on
+-- the catalog_version row, the same way S009 renumbered itself around S003.
 
 INSERT INTO "catalog_version" ("version", "description") VALUES
-  ('1.13.0', 'S019/S020 Posting Engine: rule_pack.view/edit/validate/activate and execution.view/exception.view permission keys.')
+  ('1.16.0', 'S019/S020 Posting Engine: rule_pack.view/edit/validate/activate and execution.view/exception.view permission keys.')
 ON CONFLICT ("version") DO NOTHING;
 
 INSERT INTO "permission" ("key", "description", "since_version") VALUES
-  ('posting_engine.rule_pack.view',     'View posting-engine rule packs, versions, and version history',                 '1.13.0'),
-  ('posting_engine.rule_pack.edit',     'Create or edit a DRAFT posting-engine rule pack version',                       '1.13.0'),
-  ('posting_engine.rule_pack.validate', 'Run structural/semantic/balance validation against a posting-engine rule pack version', '1.13.0'),
-  ('posting_engine.rule_pack.activate', 'Activate an eligible VALIDATED posting-engine rule pack version (immutable thereafter)', '1.13.0'),
-  ('posting_engine.execution.view',     'View posting-engine executions (posted, duplicate, no-rule-match, identity-conflict, rejected)', '1.13.0'),
-  ('posting_engine.exception.view',     'View durable posting-engine exceptions (no-rule-match / identity-conflict records)', '1.13.0')
+  ('posting_engine.rule_pack.view',     'View posting-engine rule packs, versions, and version history',                 '1.16.0'),
+  ('posting_engine.rule_pack.edit',     'Create or edit a DRAFT posting-engine rule pack version',                       '1.16.0'),
+  ('posting_engine.rule_pack.validate', 'Run structural/semantic/balance validation against a posting-engine rule pack version', '1.16.0'),
+  ('posting_engine.rule_pack.activate', 'Activate an eligible VALIDATED posting-engine rule pack version (immutable thereafter)', '1.16.0'),
+  ('posting_engine.execution.view',     'View posting-engine executions (posted, duplicate, no-rule-match, identity-conflict, rejected)', '1.16.0'),
+  ('posting_engine.exception.view',     'View durable posting-engine exceptions (no-rule-match / identity-conflict records)', '1.16.0')
 ON CONFLICT ("key") DO NOTHING;
 
 -- ADMIN + CONTROLLER + ACCOUNTANT: read-only / non-destructive actions.
