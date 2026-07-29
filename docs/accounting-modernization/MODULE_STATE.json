@@ -1265,6 +1265,18 @@
         "BR008-6 (sequential close — hard-close blocked by an earlier still-open period) remains unimplemented and undecided. This is a disclosed, carried-forward gap, not resolved by this integration, and must not be described as implemented."
       ],
       "integrationEvidence": "docs/accounting-modernization/build-packs/R1-INTEGRATION/evidence/S008/",
+      "integratedRuntimeVerification": {
+        "date": "2026-07-29",
+        "step": "R1 Controlled Integration Step 1C — S008 isolated integrated-runtime certification",
+        "stackBuiltFrom": "r1-integration@dac08589892e67c4be2908fd9bd18e0be8316f33, fully isolated Docker Compose stack (project amacc-r1int-s008-cert), never the long-lived Final-R0 stack",
+        "migrationReplay": "86/86 migrations applied with zero errors across auth/tenant/coa/gl/audit-service on a genuinely fresh, empty, isolated Postgres; all S008 DB objects (role, RLS policies, SECURITY DEFINER functions, triggers, columns, permissions/grants) independently re-verified present and correct on this fresh instance",
+        "s008PlaywrightResult": "2/2 passing (clean-state run) against the isolated stack -- full lifecycle plus the restricted-role negative",
+        "goldenR0PlaywrightResult": "13/14 passing. The one failure (main 16-step journey, at the Trial Balance step) is the same disclosed gl-service historical-certification-evidence gap already carried in PHASE4_FRESH_STACK_PLAYWRIGHT_EXCEPTION.md -- not a defect in the integrated code, confirmed live in the browser as a correct empty state (not an error).",
+        "fullE2eResult": "57 discovered/executed, 16 passed, 30 failed, 11 skipped. Every failure is root-caused: 1 is the same gl-service gap, 1 is S008's own dedicated-year spec correctly refusing to re-run against an already-LOCKED terminal period from an earlier run in this session (proof the terminal-state guarantee holds, not a defect), and 28 are missing fixtures for OTHER, pre-existing R0 stories (S200/S201/S203, ad-hoc qa-review.spec.ts) that were out of scope for this pass and were never seeded.",
+        "visualRegression": "Passed -- Golden R0 NavRail/Breadcrumb/ContextBar all intact and confirmed responsive at 200% zoom; Period Control (real live board, real open-drafts count, real LOCKED transition from the Playwright run) usable in a real browser; CLERK correctly denied twice with specific permission-named messages; GL Inquiry confirmed still routed to the goldenpath implementation; Trial Balance/Balance Sheet/Income Statement confirmed still the Golden R0 implementations, no pre-convergence page restored.",
+        "verdict": "S008_INTEGRATED_RUNTIME_CERTIFIED_WITH_LIMITATIONS -- not fully certified because Golden R0 Playwright is 13/14, not the required 14/14 (per the disclosed, pre-existing gl-service historical-data reproduction gap). No Phase-10 final certification commit was created; recommendation is STOP on S003 pending an explicit decision on whether that specific, well-understood gap is acceptable to waive.",
+        "evidence": "docs/accounting-modernization/build-packs/R1-INTEGRATION/evidence/S008/integrated-runtime/"
+      },
       "stabilizationReconciliation": {
         "phase": "R1 Vertical Slice -- S008 Period Close Control",
         "priorStatus": "IMPLEMENTED_PENDING_CERTIFICATION (schema/services/HTTP/permissions implemented and verified against a fresh disposable Postgres; automated live-db concurrency/idempotency/RLS-negative suite, end-to-end PostingService proof, gateway authorization proof, frontend, and Playwright still outstanding)",
