@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { container } from 'tsyringe';
 import { APARService } from '../application/apar-service';
 import { FinanceChargeJob } from '../application/finance-charge-job';
-import { asTenantId, AREntryType, authMiddleware, createAuthzGuard, AuthzClient } from '@amacc/shared-kernel';
+import { asTenantId, AREntryType, authMiddleware, createAuthzGuard, AuthzClient, createServiceToken } from '@amacc/shared-kernel';
 import {
   VendorService,
   VendorNotFoundError,
@@ -471,6 +471,7 @@ export async function aparRoutes(app: FastifyInstance) {
     const tenantId = getTenantId(request);
     const { id } = request.params as { id: string };
     const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
     try {
       const body = VendorUpdateSchema.parse(request.body);
       const vendor = await vendorSvc.update(
@@ -482,6 +483,7 @@ export async function aparRoutes(app: FastifyInstance) {
           w9ReceivedDate: body.w9ReceivedDate ? new Date(body.w9ReceivedDate) : undefined,
         },
         actor,
+        correlationId,
       );
       return reply.send(vendor);
     } catch (err) {
@@ -494,9 +496,10 @@ export async function aparRoutes(app: FastifyInstance) {
     const tenantId = getTenantId(request);
     const { id } = request.params as { id: string };
     const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
     try {
       const body = DeleteSchema.parse(request.body ?? {});
-      const vendor = await vendorSvc.delete(tenantId, id, body, actor);
+      const vendor = await vendorSvc.delete(tenantId, id, body, actor, correlationId);
       return reply.send(vendor);
     } catch (err) {
       return handleVendorError(err, reply);
@@ -508,9 +511,10 @@ export async function aparRoutes(app: FastifyInstance) {
     const tenantId = getTenantId(request);
     const { id } = request.params as { id: string };
     const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
     try {
       const body = InactivateSchema.parse(request.body);
-      const vendor = await vendorSvc.inactivate(tenantId, id, body, actor);
+      const vendor = await vendorSvc.inactivate(tenantId, id, body, actor, correlationId);
       return reply.send(vendor);
     } catch (err) {
       return handleVendorError(err, reply);
@@ -522,9 +526,10 @@ export async function aparRoutes(app: FastifyInstance) {
     const tenantId = getTenantId(request);
     const { id } = request.params as { id: string };
     const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
     try {
       const body = ReactivateSchema.parse(request.body);
-      const vendor = await vendorSvc.reactivate(tenantId, id, body, actor);
+      const vendor = await vendorSvc.reactivate(tenantId, id, body, actor, correlationId);
       return reply.send(vendor);
     } catch (err) {
       return handleVendorError(err, reply);
@@ -536,8 +541,9 @@ export async function aparRoutes(app: FastifyInstance) {
     const tenantId = getTenantId(request);
     const { id } = request.params as { id: string };
     const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
     try {
-      const result = await vendorSvc.eligibility(tenantId, id, actor);
+      const result = await vendorSvc.eligibility(tenantId, id, actor, correlationId);
       return reply.send(result);
     } catch (err) {
       return handleVendorError(err, reply);
@@ -551,7 +557,16 @@ export async function aparRoutes(app: FastifyInstance) {
       (process.env['AUDIT_SERVICE_URL'] ?? 'http://audit-service:3031') +
       `/api/v1/audit/entity/Vendor/${id}`;
     try {
-      const res = await fetch(auditUrl, { headers: { 'x-tenant-id': getTenantId(request) } });
+      // audit-service's authMiddleware is applied globally (all routes,
+      // including this read), so this server-to-server call needs its own
+      // bearer token — same createServiceToken() pattern HttpAuditClient
+      // already uses for outbox delivery. Without this the call always got
+      // 401'd and silently fell back to `[]`, regardless of what audit-service
+      // actually had recorded — found and fixed while certifying S036A.
+      const jwtSecret = process.env['AMACC_JWT_SECRET'] ?? process.env['JWT_SECRET'];
+      const headers: Record<string, string> = { 'x-tenant-id': getTenantId(request) };
+      if (jwtSecret) headers['authorization'] = `Bearer ${createServiceToken('apar-service', jwtSecret)}`;
+      const res = await fetch(auditUrl, { headers });
       if (!res.ok) return reply.send([]);
       const data = await res.json();
       return reply.send(data);

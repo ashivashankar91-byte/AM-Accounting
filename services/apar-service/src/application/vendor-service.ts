@@ -170,6 +170,17 @@ export function toSafeVendor(v: any) {
   return { ...rest, taxIdMasked: maskTaxId(taxId) };
 }
 
+/** Redacts a raw Vendor row before it is written into an audit_outbox
+ * before/after snapshot. Distinct from toSafeVendor (API responses) because
+ * audit records are retained long-term and forwarded to a separate service —
+ * "do not log the complete tax identifier in audit payloads" applies here
+ * even though masking already happens at the API layer. */
+export function redactForAudit(v: any) {
+  if (!v) return v;
+  const { bankAccountNumber, bankRoutingNumber, taxId, ...rest } = v;
+  return { ...rest, taxIdMasked: maskTaxId(taxId) };
+}
+
 // ── Service ───────────────────────────────────────────────────────────────────
 
 @injectable()
@@ -337,7 +348,7 @@ export class VendorService {
         },
       });
 
-      await this._audit(dto.tenantId, 'Vendor', v.id, 'CREATED', null, v, actor, tx);
+      await this._audit(dto.tenantId, 'Vendor', v.id, 'CREATED', null, redactForAudit(v), actor, tx, correlationId);
 
       if (candidates.length > 0 && dto.override) {
         await tx.apVendorDuplicateAcknowledgement.create({
@@ -353,7 +364,7 @@ export class VendorService {
         await this._audit(dto.tenantId, 'Vendor', v.id, 'DUPLICATE_WARNING_ACKNOWLEDGED', null, {
           candidateIds: candidates.map(c => c.vendorId),
           reason: dto.override.reason,
-        }, actor, tx);
+        }, actor, tx, correlationId);
       }
 
       return v;
@@ -364,7 +375,7 @@ export class VendorService {
     return toSafeVendor(vendor);
   }
 
-  async update(tenantId: string, id: string, dto: UpdateVendorDTO, actor = 'system') {
+  async update(tenantId: string, id: string, dto: UpdateVendorDTO, actor = 'system', correlationId?: string) {
     const current = await this.prisma.vendor.findFirst({ where: { id, tenantId, status: { not: 'DELETED' } } });
     if (!current) throw new VendorNotFoundError(id);
 
@@ -411,7 +422,7 @@ export class VendorService {
 
     const vendor = await this.prisma.$transaction(async (tx: any) => {
       const v = await tx.vendor.update({ where: { id }, data });
-      await this._audit(tenantId, 'Vendor', id, 'UPDATED', current, v, actor, tx);
+      await this._audit(tenantId, 'Vendor', id, 'UPDATED', redactForAudit(current), redactForAudit(v), actor, tx, correlationId);
       return v;
     });
 
@@ -420,7 +431,7 @@ export class VendorService {
     return toSafeVendor(vendor);
   }
 
-  async inactivate(tenantId: string, id: string, dto: InactivateVendorDTO, actor = 'system') {
+  async inactivate(tenantId: string, id: string, dto: InactivateVendorDTO, actor = 'system', correlationId?: string) {
     const current = await this.prisma.vendor.findFirst({ where: { id, tenantId, status: { not: 'DELETED' } } });
     if (!current) throw new VendorNotFoundError(id);
     if (!dto.reason?.trim()) throw new VendorValidationError('REASON_REQUIRED', 'A reason is required to inactivate a vendor');
@@ -441,7 +452,7 @@ export class VendorService {
           inactivatedBy: actor,
         },
       });
-      await this._audit(tenantId, 'Vendor', id, 'INACTIVATED', current, v, actor, tx);
+      await this._audit(tenantId, 'Vendor', id, 'INACTIVATED', redactForAudit(current), redactForAudit(v), actor, tx, correlationId);
       return v;
     });
 
@@ -449,7 +460,7 @@ export class VendorService {
     return toSafeVendor(vendor);
   }
 
-  async reactivate(tenantId: string, id: string, dto: ReactivateVendorDTO, actor = 'system') {
+  async reactivate(tenantId: string, id: string, dto: ReactivateVendorDTO, actor = 'system', correlationId?: string) {
     const current = await this.prisma.vendor.findFirst({ where: { id, tenantId, status: { not: 'DELETED' } } });
     if (!current) throw new VendorNotFoundError(id);
     if (current.status === 'ACTIVE') throw new VendorValidationError('ALREADY_ACTIVE', 'Vendor is already active');
@@ -468,7 +479,7 @@ export class VendorService {
           reactivatedBy: actor,
         },
       });
-      await this._audit(tenantId, 'Vendor', id, 'REACTIVATED', current, v, actor, tx);
+      await this._audit(tenantId, 'Vendor', id, 'REACTIVATED', redactForAudit(current), redactForAudit(v), actor, tx, correlationId);
       return v;
     });
 
@@ -487,7 +498,7 @@ export class VendorService {
    * a truly referenced vendor be deleted). Documented as a known limitation,
    * not claimed as a fully FK-reliable guard.
    */
-  async delete(tenantId: string, id: string, dto: DeleteVendorDTO, actor = 'system') {
+  async delete(tenantId: string, id: string, dto: DeleteVendorDTO, actor = 'system', correlationId?: string) {
     const current = await this.prisma.vendor.findFirst({ where: { id, tenantId, status: { not: 'DELETED' } } });
     if (!current) throw new VendorNotFoundError(id);
     if (current.version !== dto.version) {
@@ -500,7 +511,7 @@ export class VendorService {
     ]);
 
     if (poCount > 0 || apCount > 0) {
-      await this._audit(tenantId, 'Vendor', id, 'DELETE_REJECTED', null, { purchaseOrders: poCount, apEntries: apCount }, actor);
+      await this._audit(tenantId, 'Vendor', id, 'DELETE_REJECTED', null, { purchaseOrders: poCount, apEntries: apCount }, actor, this.prisma, correlationId);
       await this._writeOutbox(tenantId, 'VENDOR_DELETE_REJECTED', id, { purchaseOrders: poCount, apEntries: apCount });
       throw new VendorHasReferencesError({ purchaseOrders: poCount, apEntries: apCount });
     }
@@ -517,7 +528,7 @@ export class VendorService {
           deleteReason: dto.reason ?? null,
         },
       });
-      await this._audit(tenantId, 'Vendor', id, 'DELETED', current, v, actor, tx);
+      await this._audit(tenantId, 'Vendor', id, 'DELETED', redactForAudit(current), redactForAudit(v), actor, tx, correlationId);
       return v;
     });
 
@@ -527,7 +538,7 @@ export class VendorService {
 
   /** Invoice-creation eligibility: ACTIVE only. Denials are audited (S036A
    * required audit event AP_VENDOR_ELIGIBILITY_DENIED). */
-  async eligibility(tenantId: string, id: string, actor = 'system') {
+  async eligibility(tenantId: string, id: string, actor = 'system', correlationId?: string) {
     const vendor = await this.prisma.vendor.findFirst({ where: { id, tenantId } });
     if (!vendor || vendor.status === 'DELETED') throw new VendorNotFoundError(id);
 
@@ -538,7 +549,7 @@ export class VendorService {
     const reason = vendor.status === 'INACTIVE'
       ? 'Vendor is inactive — new invoices are not permitted'
       : 'Vendor is deleted — new invoices are not permitted';
-    await this._audit(tenantId, 'Vendor', id, 'ELIGIBILITY_DENIED', null, { status: vendor.status, reason }, actor);
+    await this._audit(tenantId, 'Vendor', id, 'ELIGIBILITY_DENIED', null, { status: vendor.status, reason }, actor, this.prisma, correlationId);
     return { eligible: false, status: vendor.status, reason };
   }
 
@@ -546,8 +557,8 @@ export class VendorService {
    * reveals the unmasked value (see maskTaxId) — this exists so a future
    * encrypted-field-backed reveal endpoint has an audit trail ready, and so
    * the permission's existence is exercised/testable now. */
-  async recordSensitiveFieldViewed(tenantId: string, id: string, field: string, actor = 'system') {
-    await this._audit(tenantId, 'Vendor', id, 'SENSITIVE_FIELD_VIEWED', null, { field }, actor);
+  async recordSensitiveFieldViewed(tenantId: string, id: string, field: string, actor = 'system', correlationId?: string) {
+    await this._audit(tenantId, 'Vendor', id, 'SENSITIVE_FIELD_VIEWED', null, { field }, actor, this.prisma, correlationId);
   }
 
   // ── Private helpers ─────────────────────────────────────────────────────────
@@ -570,12 +581,14 @@ export class VendorService {
     tenantId: string, docType: string, docId: string, action: string,
     before: unknown, after: unknown, actor: string,
     tx: any = this.prisma,
+    correlationId?: string,
   ): Promise<void> {
     await tx.auditOutboxEvent.create({
       data: {
         tenantId, docType, docId, action,
         before: (before ?? undefined) as any, after: (after ?? undefined) as any,
         actor: actor ?? 'system',
+        correlationId: correlationId ?? null,
       },
     });
   }

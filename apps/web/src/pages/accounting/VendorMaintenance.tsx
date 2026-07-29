@@ -132,7 +132,7 @@ export default function VendorMaintenance() {
 
   useEffect(() => { if (id) setSelectedId(id); }, [id]);
 
-  const { data: vendorsResult, isLoading: listLoading, isError: listError, refetch: refetchList } = useQuery({
+  const { data: vendorsResult, isLoading: listLoading, isError: listError, error: listErrorObj, refetch: refetchList } = useQuery({
     queryKey: ['vendors', statusFilter],
     queryFn: () => aparApi.getVendors(statusFilter ? `status=${statusFilter}` : undefined),
     retry: false,
@@ -331,14 +331,24 @@ export default function VendorMaintenance() {
   if (listLoading) return <PageLoader page="Vendor Maintenance" service="apar-service" port={3013} />;
 
   if (listError) {
+    const isUnauthorized = (listErrorObj as any)?.status === 403;
     return (
       <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
         <div className="text-center">
-          <AlertCircle className="w-10 h-10 mx-auto mb-3 text-red-400" />
-          <p className="text-sm text-gray-600 mb-3">Could not load vendors.</p>
-          <button onClick={() => refetchList()} className="text-sm text-brand hover:underline inline-flex items-center gap-1">
-            <RefreshCw className="w-3.5 h-3.5" /> Retry
-          </button>
+          {isUnauthorized ? (
+            <>
+              <ShieldOff className="w-10 h-10 mx-auto mb-3 text-amber-400" />
+              <p className="text-sm text-gray-600">You don't have permission to view vendors.</p>
+            </>
+          ) : (
+            <>
+              <AlertCircle className="w-10 h-10 mx-auto mb-3 text-red-400" />
+              <p className="text-sm text-gray-600 mb-3">Could not load vendors.</p>
+              <button onClick={() => refetchList()} className="text-sm text-brand hover:underline inline-flex items-center gap-1">
+                <RefreshCw className="w-3.5 h-3.5" /> Retry
+              </button>
+            </>
+          )}
         </div>
       </div>
     );
@@ -588,7 +598,7 @@ export default function VendorMaintenance() {
                     <div className="bg-white rounded-lg shadow p-5 grid grid-cols-2 gap-4">
                       <div className="col-span-2">
                         <label className="block text-xs font-medium text-gray-600 mb-1">DBA (Doing Business As)</label>
-                        <input type="text" value={form.dba} onChange={e => setField('dba', e.target.value)} className="w-full border rounded px-3 py-2 text-sm" />
+                        <input data-testid="vendor-dba-input" type="text" value={form.dba} onChange={e => setField('dba', e.target.value)} className="w-full border rounded px-3 py-2 text-sm" />
                       </div>
                       <div className="col-span-2">
                         <label className="block text-xs font-medium text-gray-600 mb-1">Address Line 1</label>
@@ -609,7 +619,7 @@ export default function VendorMaintenance() {
                         </div>
                         <div>
                           <label className="block text-xs font-medium text-gray-600 mb-1">ZIP</label>
-                          <input type="text" value={form.zip} onChange={e => setField('zip', e.target.value.slice(0, 10))} maxLength={10} className="w-full border rounded px-3 py-2 text-sm font-mono" />
+                          <input data-testid="vendor-zip-input" type="text" value={form.zip} onChange={e => setField('zip', e.target.value.slice(0, 10))} maxLength={10} className="w-full border rounded px-3 py-2 text-sm font-mono" />
                         </div>
                       </div>
                       <div>

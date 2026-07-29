@@ -15,6 +15,7 @@ import {
   DuplicateVendorAcknowledgementRequiredError,
   maskTaxId,
   toSafeVendor,
+  redactForAudit,
 } from '../src/application/vendor-service';
 
 const TENANT_ID = 'tenant-test-vendor';
@@ -214,6 +215,27 @@ describe('maskTaxId / toSafeVendor', () => {
     expect(safe.bankAccountNumber).toBeUndefined();
     expect(safe.bankRoutingNumber).toBeUndefined();
     expect(safe.normalizedVendorNumber).toBeUndefined();
+  });
+});
+
+// Regression test: audit_outbox before/after snapshots must never carry the
+// full tax ID or banking values (found and fixed during S036A certification —
+// _audit() calls originally passed the raw Prisma row straight through).
+describe('redactForAudit', () => {
+  it('masks taxId and strips banking account/routing numbers from audit snapshots', () => {
+    const redacted = redactForAudit(BASE_VENDOR) as any;
+    expect(redacted.taxId).toBeUndefined();
+    expect(redacted.taxIdMasked).toBe('*****6789');
+    expect(redacted.bankAccountNumber).toBeUndefined();
+    expect(redacted.bankRoutingNumber).toBeUndefined();
+    // Unlike toSafeVendor, non-sensitive banking metadata and normalized
+    // comparison columns ARE retained — audit needs the full business diff.
+    expect(redacted.bankName).toBe(BASE_VENDOR.bankName);
+    expect(redacted.normalizedVendorNumber).toBe(BASE_VENDOR.normalizedVendorNumber);
+  });
+
+  it('returns null/undefined unchanged', () => {
+    expect(redactForAudit(null)).toBeNull();
   });
 });
 

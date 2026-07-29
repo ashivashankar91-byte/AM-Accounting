@@ -316,6 +316,10 @@ model AuditOutboxEvent {
   before      Json?
   after       Json?
   actor       String
+  /// S036A certification: correlation ID for the request/action that
+  /// produced this event. Nullable — other services writing to this shared
+  /// table don't populate it.
+  correlationId String? @map("correlation_id")
   publishedAt DateTime? @map("published_at")
   retryCount  Int       @default(0) @map("retry_count")
   lastError   String?   @map("last_error")
