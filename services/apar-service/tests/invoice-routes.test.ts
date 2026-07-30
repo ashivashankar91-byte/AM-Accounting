@@ -130,6 +130,7 @@ describe('Vendor invoice route authorization and error contract (AMACC-CH04 S039
     container.registerInstance('GoodsReceiptService', fakeGoodsReceiptService());
     container.registerInstance('ApprovalRuleService', {});
     container.registerInstance('InvoiceApprovalService', {});
+    container.registerInstance('ManualPaymentService', {});
     registerFullAuthz();
 
     app = Fastify();

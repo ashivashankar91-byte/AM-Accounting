@@ -67,6 +67,15 @@ import {
   WrongApproverRoleError,
   ApprovalValidationError,
 } from '../application/invoice-approval-service';
+import {
+  InvoiceNotFoundForPaymentError,
+  InvoiceNotApprovedError,
+  InvoiceAlreadyPaidError,
+  BankAccountNotFoundError,
+  PaymentNotFoundError,
+  PaymentConflictError,
+  PaymentValidationError,
+} from '../application/manual-payment-service';
 
 function getTenantId(request: any) {
   const id = request.headers['x-tenant-id'] as string;
@@ -128,6 +137,7 @@ export async function aparRoutes(app: FastifyInstance) {
   const goodsReceiptSvc = container.resolve<GoodsReceiptService>('GoodsReceiptService');
   const approvalRuleSvc = container.resolve<ApprovalRuleService>('ApprovalRuleService');
   const invoiceApprovalSvc = container.resolve<import('../application/invoice-approval-service').InvoiceApprovalService>('InvoiceApprovalService');
+  const manualPaymentSvc = container.resolve<import('../application/manual-payment-service').ManualPaymentService>('ManualPaymentService');
   const authzClient = container.resolve<AuthzClient>('AuthzClient');
   const requirePermission = createAuthzGuard(authzClient, { getTenantId });
 
@@ -2632,6 +2642,148 @@ export async function aparRoutes(app: FastifyInstance) {
       return reply.send({ journalEntryId });
     } catch (err) {
       return handleApprovalError(err, reply);
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // AMACC-CH04 S043A: Manual Single Payment
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const AP_MANUAL_PAYMENT_PERMISSIONS = {
+    VIEW:                'ap.manual_payment.view',
+    CREATE:              'ap.manual_payment.create',
+    VOID:                'ap.manual_payment.void',
+    RETRY_SCHEDULE_RELIEF: 'ap.manual_payment.retry_schedule_relief',
+  } as const;
+
+  const AP_BANK_ACCOUNT_PERMISSIONS = {
+    VIEW:   'ap.bank_account.view',
+    MANAGE: 'ap.bank_account.manage',
+  } as const;
+
+  const BankAccountCreateSchema = z.object({
+    bankName: z.string().min(1),
+    accountNumber: z.string().min(1),
+    routingNumber: z.string().min(1),
+    glAccountId: z.string().uuid().optional(),
+    nextCheckNumber: z.number().int().min(1).optional(),
+  });
+
+  // S043A: no bank-account list/create surface existed anywhere in the
+  // repository before this — required so the manual-payment picker has real
+  // data rather than an empty/fake dropdown. Kept intentionally minimal
+  // (no edit/deactivate UI) — out of S043A's own scope beyond what's needed
+  // to exercise the payment flow end-to-end.
+  app.get('/bank-accounts', { preHandler: requirePermission(AP_BANK_ACCOUNT_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const prisma = (app as any).prisma;
+    const accounts = await prisma.aPBankAccount.findMany({ where: { tenantId, isActive: true }, orderBy: { bankName: 'asc' } });
+    return reply.send(accounts);
+  });
+
+  app.post('/bank-accounts', { preHandler: requirePermission(AP_BANK_ACCOUNT_PERMISSIONS.MANAGE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const prisma = (app as any).prisma;
+    try {
+      const body = BankAccountCreateSchema.parse(request.body);
+      const account = await prisma.aPBankAccount.create({
+        data: {
+          tenantId, bankName: body.bankName, accountNumber: body.accountNumber, routingNumber: body.routingNumber,
+          glAccountId: body.glAccountId ?? null, nextCheckNumber: body.nextCheckNumber ?? 1001, isActive: true,
+        },
+      });
+      return reply.status(201).send(account);
+    } catch (err) {
+      if (err instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: err.issues });
+      throw err;
+    }
+  });
+
+  const ManualPaymentCreateSchema = z.object({
+    invoiceId: z.string().uuid(),
+    bankAccountId: z.string().uuid(),
+    paymentDate: z.string().transform((s) => new Date(s)).optional(),
+  });
+
+  const ManualPaymentVoidSchema = z.object({
+    version: z.number().int().min(1),
+    reason: z.string().min(1),
+  });
+
+  function handlePaymentError(error: unknown, reply: any) {
+    if (
+      error instanceof InvoiceNotFoundForPaymentError ||
+      error instanceof BankAccountNotFoundError ||
+      error instanceof PaymentNotFoundError
+    ) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof InvoiceAlreadyPaidError) {
+      return reply.status(409).send({ error: 'ALREADY_PAID', message: error.message });
+    }
+    if (error instanceof PaymentConflictError) {
+      return reply.status(409).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof InvoiceNotApprovedError || error instanceof PaymentValidationError) {
+      return reply.status(422).send({ error: (error as any).code ?? 'NOT_APPROVED', message: error.message });
+    }
+    if (error instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    throw error;
+  }
+
+  app.get('/manual-payments', { preHandler: requirePermission(AP_MANUAL_PAYMENT_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { vendorId } = request.query as { vendorId?: string };
+    const payments = await manualPaymentSvc.list(tenantId, vendorId);
+    return reply.send(payments);
+  });
+
+  app.get('/manual-payments/:id', { preHandler: requirePermission(AP_MANUAL_PAYMENT_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const payment = await manualPaymentSvc.getById(tenantId, id);
+      return reply.send(payment);
+    } catch (err) {
+      return handlePaymentError(err, reply);
+    }
+  });
+
+  app.post('/manual-payments', { preHandler: requirePermission(AP_MANUAL_PAYMENT_PERMISSIONS.CREATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = ManualPaymentCreateSchema.parse(request.body);
+      const payment = await manualPaymentSvc.create(tenantId, body, actor, getServiceToken(), correlationId);
+      return reply.status(201).send(payment);
+    } catch (err) {
+      return handlePaymentError(err, reply);
+    }
+  });
+
+  app.post('/manual-payments/:id/void', { preHandler: requirePermission(AP_MANUAL_PAYMENT_PERMISSIONS.VOID) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = ManualPaymentVoidSchema.parse(request.body);
+      const payment = await manualPaymentSvc.void(tenantId, id, body, actor, correlationId);
+      return reply.send(payment);
+    } catch (err) {
+      return handlePaymentError(err, reply);
+    }
+  });
+
+  app.post('/manual-payments/:id/retry-schedule-relief', { preHandler: requirePermission(AP_MANUAL_PAYMENT_PERMISSIONS.RETRY_SCHEDULE_RELIEF) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const payment = await manualPaymentSvc.retryScheduleRelief(tenantId, id);
+      return reply.send(payment);
+    } catch (err) {
+      return handlePaymentError(err, reply);
     }
   });
 }

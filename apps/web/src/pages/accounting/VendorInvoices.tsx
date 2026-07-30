@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Check, AlertCircle, RefreshCw, ChevronRight, Ban, ShieldCheck, XCircle } from 'lucide-react';
-import { aparApi, apInvoiceApi, purchaseOrderApi, invoiceApprovalApi } from '../../api/client';
+import { Plus, Check, AlertCircle, RefreshCw, ChevronRight, Ban, ShieldCheck, XCircle, DollarSign } from 'lucide-react';
+import { aparApi, apInvoiceApi, purchaseOrderApi, invoiceApprovalApi, bankAccountApi, manualPaymentApi } from '../../api/client';
 import PageLoader from '../../components/PageLoader';
 import PageError from '../../components/PageError';
 import { Btn, PageHeader, Badge } from '../../components/ui';
@@ -507,6 +507,10 @@ function InvoiceDetail({ id }: { id: string }) {
         <ApprovalPanel invoice={invoice} onChange={refetch} />
       )}
 
+      {['APPROVED', 'PAID'].includes(invoice.status) && (
+        <PaymentPanel invoice={invoice} onChange={refetch} />
+      )}
+
       {showVoid && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-xl shadow-2xl w-[420px] p-6 space-y-4">
@@ -638,6 +642,93 @@ function ApprovalPanel({ invoice, onChange }: { invoice: any; onChange: () => vo
               {rejectMut.isPending ? 'Rejecting...' : 'Confirm Reject'}
             </button>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// AMACC-CH04 S043A — Manual Single Payment panel, shown once an invoice is
+// APPROVED. Pays the invoice in full by check against a real AP bank
+// account (no partial/split payment — matches the L1/"manual single"
+// story scope). Surfaces the GL entry and schedule-relief outcome
+// truthfully rather than assuming success.
+function PaymentPanel({ invoice, onChange }: { invoice: any; onChange: () => void }) {
+  const [error, setError] = useState<string | null>(null);
+  const [bankAccountId, setBankAccountId] = useState('');
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  const { data: bankAccounts } = useQuery({
+    queryKey: ['ap-bank-accounts'],
+    queryFn: () => bankAccountApi.list(),
+    enabled: invoice.status === 'APPROVED',
+  });
+
+  const { data: payments, refetch: refetchPayments } = useQuery({
+    queryKey: ['ap-manual-payments-for-invoice', invoice.id],
+    queryFn: () => manualPaymentApi.list(invoice.vendorId),
+    enabled: invoice.status === 'PAID',
+  });
+  const payment = (payments ?? []).find((p: any) => p.invoiceId === invoice.id && p.status === 'POSTED');
+
+  const payMut = useMutation({
+    mutationFn: () => manualPaymentApi.create({ invoiceId: invoice.id, bankAccountId }),
+    onSuccess: () => { setError(null); setShowConfirm(false); onChange(); refetchPayments(); },
+    onError: (err: any) => setError(err?.body?.message ?? err.message),
+  });
+
+  const retryReliefMut = useMutation({
+    mutationFn: () => manualPaymentApi.retryScheduleRelief(payment!.id),
+    onSuccess: () => { setError(null); refetchPayments(); },
+    onError: (err: any) => setError(err?.body?.message ?? err.message),
+  });
+
+  return (
+    <div className="bg-white rounded-lg shadow p-4 space-y-3">
+      <h4 className="font-semibold text-sm flex items-center gap-2"><DollarSign className="w-4 h-4 text-brand" /> Manual Payment (S043A)</h4>
+
+      {error && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">{error}</div>}
+
+      {invoice.status === 'APPROVED' && !showConfirm && (
+        <Btn variant="primary" size="md" icon={<DollarSign className="w-4 h-4" />} onClick={() => setShowConfirm(true)}>
+          Pay ${fmt(invoice.totalAmount)}
+        </Btn>
+      )}
+
+      {invoice.status === 'APPROVED' && showConfirm && (
+        <div className="space-y-2">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Bank Account</label>
+            <select value={bankAccountId} onChange={(e) => setBankAccountId(e.target.value)} className="w-full border rounded px-3 py-2 text-sm">
+              <option value="">Select bank account...</option>
+              {(bankAccounts ?? []).map((b: any) => (<option key={b.id} value={b.id}>{b.bankName} — {b.accountNumber} (next check #{b.nextCheckNumber})</option>))}
+            </select>
+            {(bankAccounts ?? []).length === 0 && <p className="text-xs text-amber-700 mt-1">No bank accounts configured yet.</p>}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => setShowConfirm(false)} className="px-4 py-2 border border-gray-300 rounded-lg text-sm">Cancel</button>
+            <button disabled={!bankAccountId || payMut.isPending} onClick={() => payMut.mutate()} className="px-4 py-2 bg-brand text-white rounded-lg text-sm font-medium disabled:opacity-40">
+              {payMut.isPending ? 'Processing...' : 'Confirm Payment'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {invoice.status === 'PAID' && payment && (
+        <div className="text-sm space-y-1">
+          <p>Check #<span className="font-mono font-semibold">{payment.checkNumber}</span> — ${fmt(payment.amount)} on {new Date(payment.paymentDate).toLocaleDateString()}</p>
+          <p>
+            GL entry: {payment.glEntryId ? <span className="font-mono text-green-700">{payment.glEntryId}</span> : <span className="text-amber-700">{payment.glPostingError ?? 'Not posted yet'}</span>}
+          </p>
+          <p className="flex items-center gap-2">
+            Schedule relief: <Badge variant={payment.scheduleReliefStatus === 'RELIEVED' ? 'success' : payment.scheduleReliefStatus === 'FAILED' ? 'danger' : 'warning'}>{payment.scheduleReliefStatus}</Badge>
+            {payment.scheduleReliefStatus !== 'RELIEVED' && (
+              <button onClick={() => retryReliefMut.mutate()} className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded hover:bg-amber-200">
+                {retryReliefMut.isPending ? 'Retrying...' : 'Retry'}
+              </button>
+            )}
+          </p>
+          {payment.scheduleReliefError && <p className="text-xs text-gray-500">{payment.scheduleReliefError}</p>}
         </div>
       )}
     </div>

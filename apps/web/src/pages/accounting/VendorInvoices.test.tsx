@@ -8,7 +8,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import VendorInvoices from './VendorInvoices';
-import { aparApi, apInvoiceApi, purchaseOrderApi, invoiceApprovalApi } from '../../api/client';
+import { aparApi, apInvoiceApi, purchaseOrderApi, invoiceApprovalApi, bankAccountApi, manualPaymentApi } from '../../api/client';
 
 vi.mock('../../api/client', () => ({
   aparApi: { getVendors: vi.fn() },
@@ -28,6 +28,14 @@ vi.mock('../../api/client', () => ({
     approve: vi.fn(),
     reject: vi.fn(),
     retryGlPosting: vi.fn(),
+  },
+  bankAccountApi: { list: vi.fn(), create: vi.fn() },
+  manualPaymentApi: {
+    list: vi.fn(),
+    getById: vi.fn(),
+    create: vi.fn(),
+    void: vi.fn(),
+    retryScheduleRelief: vi.fn(),
   },
 }));
 
@@ -168,9 +176,45 @@ describe('VendorInvoices approval panel (S041)', () => {
       id: 'instance-1', status: 'APPROVED',
       steps: [{ id: 'step-1', sequence: 1, requiredRole: 'ANY_APPROVER', status: 'APPROVED', decidedBy: 'user-1' }],
     });
+    (bankAccountApi.list as any).mockResolvedValue([]);
     renderPage('/accounting/ap/invoices/inv-1');
 
     await waitFor(() => expect(screen.getByText(/GL liability posting has not completed yet/i)).toBeInTheDocument());
     expect(screen.getByRole('button', { name: /Retry GL Posting/i })).toBeInTheDocument();
+  });
+});
+
+describe('VendorInvoices payment panel (S043A)', () => {
+  it('pays an APPROVED invoice against a selected bank account', async () => {
+    const user = userEvent.setup();
+    const approvedInvoice = { ...INVOICE, status: 'APPROVED', matchStatus: 'MATCHED' };
+    (apInvoiceApi.getById as any).mockResolvedValue(approvedInvoice);
+    (invoiceApprovalApi.getInstance as any).mockResolvedValue({ id: 'instance-1', status: 'APPROVED', steps: [] });
+    (bankAccountApi.list as any).mockResolvedValue([{ id: 'bank-1', bankName: 'First Bank', accountNumber: '1234', nextCheckNumber: 1001 }]);
+    (manualPaymentApi.create as any).mockResolvedValue({ id: 'payment-1', invoiceId: 'inv-1', status: 'POSTED', checkNumber: 1001 });
+    (manualPaymentApi.list as any).mockResolvedValue([]);
+    renderPage('/accounting/ap/invoices/inv-1');
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Pay \$250\.00/i })).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: /Pay \$250\.00/i }));
+    await user.selectOptions(screen.getByRole('combobox'), 'bank-1');
+    await user.click(screen.getByRole('button', { name: /Confirm Payment/i }));
+
+    await waitFor(() => expect(manualPaymentApi.create).toHaveBeenCalledWith({ invoiceId: 'inv-1', bankAccountId: 'bank-1' }));
+  });
+
+  it('shows check number, GL entry and schedule relief status for a PAID invoice', async () => {
+    const paidInvoice = { ...INVOICE, status: 'PAID', matchStatus: 'MATCHED' };
+    (apInvoiceApi.getById as any).mockResolvedValue(paidInvoice);
+    (invoiceApprovalApi.getInstance as any).mockResolvedValue({ id: 'instance-1', status: 'APPROVED', steps: [] });
+    (manualPaymentApi.list as any).mockResolvedValue([{
+      id: 'payment-1', invoiceId: 'inv-1', vendorId: 'v-1', status: 'POSTED', checkNumber: 1001,
+      amount: '250.00', paymentDate: '2026-07-15', glEntryId: 'je-1', scheduleReliefStatus: 'RELIEVED',
+    }]);
+    renderPage('/accounting/ap/invoices/inv-1');
+
+    await waitFor(() => expect(screen.getByText('1001')).toBeInTheDocument());
+    expect(screen.getByText('je-1')).toBeInTheDocument();
+    expect(screen.getByText('RELIEVED')).toBeInTheDocument();
   });
 });

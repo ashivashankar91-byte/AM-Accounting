@@ -18,6 +18,7 @@ import { InvoiceService } from './application/invoice-service';
 import { GoodsReceiptService } from './application/goods-receipt-service';
 import { ApprovalRuleService } from './application/approval-rule-service';
 import { InvoiceApprovalService } from './application/invoice-approval-service';
+import { ManualPaymentService } from './application/manual-payment-service';
 import {
   IEventPublisher, IAREntryRepository, IAPEntryRepository, OutboxProcessor,
   HttpAuthzClient, AuthzClient, HttpAuditClient, AuditOutboxDrainer, makePrismaAuditOutboxStore,
@@ -74,6 +75,7 @@ async function bootstrap() {
   container.register(ApprovalRuleService, { useClass: ApprovalRuleService });
   container.register('ApprovalRuleService', { useClass: ApprovalRuleService });
   container.register('InvoiceApprovalService', { useClass: InvoiceApprovalService });
+  container.register('ManualPaymentService', { useClass: ManualPaymentService });
   container.registerInstance<AuthzClient>('AuthzClient', new HttpAuthzClient({
     onError: (err: unknown, req: any) => logger.error({ err, permission: req.permissionKey }, 'authz/check failed'),
   }));

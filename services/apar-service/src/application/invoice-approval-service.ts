@@ -229,7 +229,12 @@ export class InvoiceApprovalService {
         return null;
       }
 
-      const debitLines: Array<{ glAccountId: string; debit: number; credit: number; memo: string }> = [];
+      // controlNumber = invoiceNumber on every line, so schedule-service (if
+      // the AP control account is configured with a scheduleCode) creates an
+      // open item keyed to this specific invoice — S043A's manual payment
+      // relieves it by the same controlNumber. See gl-service GLAccount
+      // scheduleCode / JOURNAL_ENTRY_POSTED outbox event.
+      const debitLines: Array<{ glAccountId: string; debit: number; credit: number; memo: string; controlNumber: string }> = [];
       for (const line of fullInvoice.lines) {
         let glAccountId = line.glAccountId;
         if (!glAccountId && line.poLineId) {
@@ -240,9 +245,9 @@ export class InvoiceApprovalService {
           await this._auditGlFailure(tenantId, fullInvoice.id, actor, `Invoice line ${line.id} has no resolvable GL account`, correlationId);
           return null;
         }
-        debitLines.push({ glAccountId, debit: Number(line.lineTotal), credit: 0, memo: line.description });
+        debitLines.push({ glAccountId, debit: Number(line.lineTotal), credit: 0, memo: line.description, controlNumber: fullInvoice.invoiceNumber });
       }
-      debitLines.push({ glAccountId: vendor.defaultGlAccount, debit: 0, credit: Number(fullInvoice.totalAmount), memo: `AP liability — invoice ${fullInvoice.invoiceNumber}` });
+      debitLines.push({ glAccountId: vendor.defaultGlAccount, debit: 0, credit: Number(fullInvoice.totalAmount), memo: `AP liability — invoice ${fullInvoice.invoiceNumber}`, controlNumber: fullInvoice.invoiceNumber });
 
       const headers: Record<string, string> = { 'Content-Type': 'application/json', 'x-tenant-id': tenantId };
       if (serviceToken) headers['authorization'] = `Bearer ${serviceToken}`;

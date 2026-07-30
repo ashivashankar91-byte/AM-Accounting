@@ -535,6 +535,23 @@ export const invoiceApprovalApi = {
   retryGlPosting: (invoiceId: string) => apiFetch<{ journalEntryId: string | null }>(`/api/v1/apar/invoices/${invoiceId}/approval/retry-gl-posting`, { method: 'POST' }),
 };
 
+// AMACC-CH04 S043A: Manual Single Payment
+export const bankAccountApi = {
+  list: () => apiFetch<any[]>('/api/v1/apar/bank-accounts'),
+  create: (data: { bankName: string; accountNumber: string; routingNumber: string; glAccountId?: string; nextCheckNumber?: number }) =>
+    apiFetch<any>('/api/v1/apar/bank-accounts', { method: 'POST', body: JSON.stringify(data) }),
+};
+
+export const manualPaymentApi = {
+  list: (vendorId?: string) => apiFetch<any[]>(`/api/v1/apar/manual-payments${vendorId ? `?vendorId=${vendorId}` : ''}`),
+  getById: (id: string) => apiFetch<any>(`/api/v1/apar/manual-payments/${id}`),
+  create: (data: { invoiceId: string; bankAccountId: string; paymentDate?: string }) =>
+    apiFetch<any>('/api/v1/apar/manual-payments', { method: 'POST', body: JSON.stringify(data) }),
+  void: (id: string, data: { version: number; reason: string }) =>
+    apiFetch<any>(`/api/v1/apar/manual-payments/${id}/void`, { method: 'POST', body: JSON.stringify(data) }),
+  retryScheduleRelief: (id: string) => apiFetch<any>(`/api/v1/apar/manual-payments/${id}/retry-schedule-relief`, { method: 'POST' }),
+};
+
 // Agents API
 export const agentApi = {
   getLog: () => apiFetch<any[]>('/api/v1/agents/log'),

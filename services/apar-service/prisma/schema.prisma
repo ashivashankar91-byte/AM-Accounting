@@ -518,6 +518,13 @@ model APBankAccount {
   routingNumber   String   @map("routing_number")
   nextCheckNumber Int      @default(1001) @map("next_check_number")
   isActive        Boolean  @default(true) @map("is_active")
+  /// S043A: the gl-service GL account id this bank account posts to (the
+  /// credit side of a manual payment's GL entry). Nullable/additive — did
+  /// not exist before S043A; a bank account with no linked GL account
+  /// simply can't have GL entries posted for its payments yet (truthful
+  /// gap, recorded on ApManualPayment.glPostingError, never silently
+  /// invented).
+  glAccountId     String?  @map("gl_account_id")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
@@ -686,9 +693,10 @@ model VendorInvoice {
   freightAmount         Decimal   @default(0) @db.Decimal(15, 2) @map("freight_amount")
   totalAmount           Decimal   @default(0) @db.Decimal(15, 2) @map("total_amount")
 
-  /// DRAFT | SUBMITTED | PENDING_APPROVAL | APPROVED | REJECTED | VOID.
+  /// DRAFT | SUBMITTED | PENDING_APPROVAL | APPROVED | REJECTED | PAID | VOID.
   /// PENDING_APPROVAL/APPROVED/REJECTED are driven by S041's
-  /// ApInvoiceApprovalInstance/Step — see invoice-approval-service.ts.
+  /// ApInvoiceApprovalInstance/Step — see invoice-approval-service.ts. PAID
+  /// is driven by S043A's ApManualPayment — see manual-payment-service.ts.
   status                String    @default("DRAFT")
   /// NONE (no PO) | TWO_WAY (PO+Invoice) | THREE_WAY (PO+Receipt+Invoice).
   /// Determined automatically by InvoiceMatchService from the PO's receipt
@@ -898,4 +906,51 @@ model ApInvoiceApprovalStep {
   @@map("ap_invoice_approval_steps")
   @@index([instanceId])
   @@unique([instanceId, sequence])
+}
+
+/// AMACC-CH04 S043A: Manual Single Payment. Fable canonical registry record
+/// is a summary row only (id S043A, epic CE-09, R2, L1 — the lowest
+/// complexity of the five-story wave; original intake S043 was SPLIT into
+/// S043A + S043B, with S043B "Payment Runs & Rails" out of this slice's
+/// scope). Pays exactly one APPROVED VendorInvoice in full by check — no
+/// partial/split payment is invented for this L1 slice. Draws its check
+/// number from the existing S3-09 APBankAccount sequence; creates a
+/// reversing GL entry (Dr AP control, Cr Bank) via the same cross-service
+/// posting pattern as S041; attempts to relieve the schedule-service open
+/// item created at approval (best-effort — schedule linkage depends on the
+/// AP control GL account having a configured scheduleCode, which is
+/// existing schedule-service configuration this slice does not invent).
+model ApManualPayment {
+  id                    String    @id @default(uuid())
+  tenantId              String    @map("tenant_id")
+  invoiceId             String    @unique @map("invoice_id")
+  vendorId              String    @map("vendor_id")
+  bankAccountId         String    @map("bank_account_id")
+  checkNumber           Int       @map("check_number")
+  paymentDate           DateTime  @default(now()) @map("payment_date") @db.Date
+  amount                Decimal   @db.Decimal(15, 2)
+  /// POSTED | VOID
+  status                String    @default("POSTED")
+  /// gl-service JournalEntry id for the Dr AP control / Cr Bank entry.
+  /// Null if GL posting failed — see glPostingError.
+  glEntryId             String?   @map("gl_entry_id")
+  glPostingError        String?   @map("gl_posting_error")
+  /// NOT_ATTEMPTED | RELIEVED | NOT_FOUND | FAILED — truthful outcome of the
+  /// best-effort schedule-service open-item relief attempt. Never fabricated
+  /// as RELIEVED unless the schedule-service call actually succeeded.
+  scheduleReliefStatus  String    @default("NOT_ATTEMPTED") @map("schedule_relief_status")
+  scheduleId            String?   @map("schedule_id")
+  scheduleApplicationId String?   @map("schedule_application_id")
+  scheduleReliefError   String?   @map("schedule_relief_error")
+  version               Int       @default(1)
+  voidedAt              DateTime? @map("voided_at")
+  voidedBy              String?   @map("voided_by")
+  voidReason            String?   @map("void_reason")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  createdBy             String?   @map("created_by")
+
+  @@map("ap_manual_payments")
+  @@index([tenantId])
+  @@index([tenantId, vendorId])
+  @@index([tenantId, status])
 }

@@ -99,6 +99,7 @@ describe('Invoice approval route authorization and error contract (AMACC-CH04 S0
     container.registerInstance('GoodsReceiptService', {});
     container.registerInstance('ApprovalRuleService', fakeApprovalRuleService());
     container.registerInstance('InvoiceApprovalService', fakeInvoiceApprovalService());
+    container.registerInstance('ManualPaymentService', {});
     registerFullAuthz();
 
     app = Fastify();
