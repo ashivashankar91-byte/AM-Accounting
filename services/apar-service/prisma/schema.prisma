@@ -686,9 +686,9 @@ model VendorInvoice {
   freightAmount         Decimal   @default(0) @db.Decimal(15, 2) @map("freight_amount")
   totalAmount           Decimal   @default(0) @db.Decimal(15, 2) @map("total_amount")
 
-  /// DRAFT | SUBMITTED | VOID. Approval/posting statuses (PENDING_APPROVAL,
-  /// APPROVED, POSTED, REJECTED) belong to S041 and are intentionally not
-  /// modeled here — S039 hands off a SUBMITTED invoice, nothing more.
+  /// DRAFT | SUBMITTED | PENDING_APPROVAL | APPROVED | REJECTED | VOID.
+  /// PENDING_APPROVAL/APPROVED/REJECTED are driven by S041's
+  /// ApInvoiceApprovalInstance/Step — see invoice-approval-service.ts.
   status                String    @default("DRAFT")
   /// NONE (no PO) | TWO_WAY (PO+Invoice) | THREE_WAY (PO+Receipt+Invoice).
   /// Determined automatically by InvoiceMatchService from the PO's receipt
@@ -708,6 +708,16 @@ model VendorInvoice {
   voidedAt               DateTime? @map("voided_at")
   voidedBy                String?  @map("voided_by")
   voidReason              String?  @map("void_reason")
+  /// AMACC-CH04 S041: gl-service JournalEntry id for the AP liability entry
+  /// created when the approval matrix's final tier approves this invoice
+  /// (Dr expense/asset lines, Cr vendor AP control account). Null until
+  /// approved. The entry is created + submitted for review (PENDING_REVIEW)
+  /// — S041 never force-calls approveJournalEntry itself; posting completion
+  /// is the GL agent-review/human step, same gate as every other journal
+  /// entry (PO-DEC-001). schedule-service picks up the resulting
+  /// JOURNAL_ENTRY_POSTED event automatically once it actually posts — no
+  /// new schedule logic is introduced here.
+  approvalGlEntryId      String?   @map("approval_gl_entry_id")
 
   createdAt              DateTime  @default(now()) @map("created_at")
   createdBy              String?   @map("created_by")
@@ -817,4 +827,75 @@ model ApInvoiceMatchOverride {
 
   @@index([tenantId, invoiceId])
   @@map("ap_invoice_match_overrides")
+}
+
+/// AMACC-CH04 S041: Invoice Approval Matrix. Fable canonical registry
+/// record for S041 is a summary row only (id S041, epic CE-09, release R2)
+/// — EXPANSION_PENDING, no accepted thresholds/roles/workflow exist.
+/// Built as a configurable framework: a tenant defines its own tiers
+/// (dollar threshold -> required role), never a hard-coded invented
+/// approval policy. If a tenant has configured no rules at all, the
+/// conservative default (see InvoiceApprovalRuleService) requires exactly
+/// one approval from any user holding ap.invoice_approval.approve — never
+/// zero required approvals / never a silent auto-approve.
+model ApInvoiceApprovalRule {
+  id               String   @id @default(uuid())
+  tenantId         String   @map("tenant_id")
+  /// This tier applies when the invoice's totalAmount >= thresholdAmount.
+  thresholdAmount  Decimal  @db.Decimal(15, 2) @map("threshold_amount")
+  /// Role label required to act on this tier — one of the roles already
+  /// known to the authz catalog (ADMIN | CONTROLLER | ACCOUNTANT), never an
+  /// invented new role.
+  requiredRole     String   @map("required_role")
+  /// Evaluation order — lower sequence must approve before a higher
+  /// sequence tier becomes actionable.
+  sequence         Int
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, sequence])
+  @@map("ap_invoice_approval_rules")
+  @@index([tenantId, isActive])
+}
+
+/// S041: one approval workflow instance per submitted VendorInvoice.
+model ApInvoiceApprovalInstance {
+  id                  String    @id @default(uuid())
+  tenantId            String    @map("tenant_id")
+  invoiceId           String    @unique @map("invoice_id")
+  /// PENDING | APPROVED | REJECTED
+  status              String    @default("PENDING")
+  totalAmountSnapshot Decimal   @db.Decimal(15, 2) @map("total_amount_snapshot")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  createdBy           String?   @map("created_by")
+  completedAt         DateTime? @map("completed_at")
+
+  steps               ApInvoiceApprovalStep[]
+
+  @@map("ap_invoice_approval_instances")
+  @@index([tenantId])
+  @@index([tenantId, status])
+}
+
+/// S041: one required tier of an approval instance.
+model ApInvoiceApprovalStep {
+  id             String    @id @default(uuid())
+  instanceId     String    @map("instance_id")
+  sequence       Int
+  /// Role label required to decide this step, or 'ANY_APPROVER' for the
+  /// no-rules-configured conservative default.
+  requiredRole   String    @map("required_role")
+  /// PENDING | APPROVED | REJECTED | SKIPPED (skipped once a prior step in
+  /// the same instance is rejected — the instance is already decided).
+  status         String    @default("PENDING")
+  decidedBy      String?   @map("decided_by")
+  decidedAt      DateTime? @map("decided_at")
+  note           String?
+
+  instance       ApInvoiceApprovalInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@map("ap_invoice_approval_steps")
+  @@index([instanceId])
+  @@unique([instanceId, sequence])
 }

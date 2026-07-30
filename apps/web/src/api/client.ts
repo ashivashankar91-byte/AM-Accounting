@@ -516,6 +516,25 @@ export const goodsReceiptApi = {
   void: (id: string, data: { reason: string }) => apiFetch<any>(`/api/v1/apar/goods-receipts/${id}/void`, { method: 'POST', body: JSON.stringify(data) }),
 };
 
+// AMACC-CH04 S041: Invoice Approval Matrix
+export const approvalRuleApi = {
+  list: () => apiFetch<any[]>('/api/v1/apar/invoice-approval-rules'),
+  create: (data: { thresholdAmount: number; requiredRole: string; sequence: number }) =>
+    apiFetch<any>('/api/v1/apar/invoice-approval-rules', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: { thresholdAmount?: number; requiredRole?: string; isActive?: boolean }) =>
+    apiFetch<any>(`/api/v1/apar/invoice-approval-rules/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+};
+
+export const invoiceApprovalApi = {
+  getInstance: (invoiceId: string) => apiFetch<any>(`/api/v1/apar/invoices/${invoiceId}/approval`),
+  start: (invoiceId: string) => apiFetch<any>(`/api/v1/apar/invoices/${invoiceId}/approval/start`, { method: 'POST' }),
+  approve: (invoiceId: string, data: { version: number; note?: string }) =>
+    apiFetch<any>(`/api/v1/apar/invoices/${invoiceId}/approval/approve`, { method: 'POST', body: JSON.stringify(data) }),
+  reject: (invoiceId: string, data: { version: number; reason: string }) =>
+    apiFetch<any>(`/api/v1/apar/invoices/${invoiceId}/approval/reject`, { method: 'POST', body: JSON.stringify(data) }),
+  retryGlPosting: (invoiceId: string) => apiFetch<{ journalEntryId: string | null }>(`/api/v1/apar/invoices/${invoiceId}/approval/retry-gl-posting`, { method: 'POST' }),
+};
+
 // Agents API
 export const agentApi = {
   getLog: () => apiFetch<any[]>('/api/v1/agents/log'),

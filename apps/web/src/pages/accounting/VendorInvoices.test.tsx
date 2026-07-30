@@ -8,7 +8,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import VendorInvoices from './VendorInvoices';
-import { aparApi, apInvoiceApi, purchaseOrderApi } from '../../api/client';
+import { aparApi, apInvoiceApi, purchaseOrderApi, invoiceApprovalApi } from '../../api/client';
 
 vi.mock('../../api/client', () => ({
   aparApi: { getVendors: vi.fn() },
@@ -22,6 +22,13 @@ vi.mock('../../api/client', () => ({
     checkDuplicates: vi.fn(),
   },
   purchaseOrderApi: { list: vi.fn() },
+  invoiceApprovalApi: {
+    getInstance: vi.fn(),
+    start: vi.fn(),
+    approve: vi.fn(),
+    reject: vi.fn(),
+    retryGlPosting: vi.fn(),
+  },
 }));
 
 function renderPage(initialPath = '/accounting/ap/invoices') {
@@ -121,5 +128,49 @@ describe('VendorInvoices detail', () => {
     await waitFor(() => expect(screen.getByText(/Invoice INV-100/i)).toBeInTheDocument());
     await user.click(screen.getByRole('button', { name: /Run Match/i }));
     await waitFor(() => expect(apInvoiceApi.runMatch).toHaveBeenCalledWith('inv-1'));
+  });
+});
+
+describe('VendorInvoices approval panel (S041)', () => {
+  it('shows Start Approval for a SUBMITTED invoice and starts the workflow', async () => {
+    const user = userEvent.setup();
+    const submittedInvoice = { ...INVOICE, status: 'SUBMITTED', matchStatus: 'MATCHED' };
+    (apInvoiceApi.getById as any).mockResolvedValue(submittedInvoice);
+    (invoiceApprovalApi.start as any).mockResolvedValue({ id: 'instance-1', status: 'PENDING', steps: [{ id: 'step-1', sequence: 1, requiredRole: 'ANY_APPROVER', status: 'PENDING' }] });
+    (invoiceApprovalApi.getInstance as any).mockResolvedValue({ id: 'instance-1', status: 'PENDING', steps: [{ id: 'step-1', sequence: 1, requiredRole: 'ANY_APPROVER', status: 'PENDING' }] });
+    renderPage('/accounting/ap/invoices/inv-1');
+
+    await waitFor(() => expect(screen.getByText(/Invoice INV-100/i)).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: /Start Approval/i }));
+    await waitFor(() => expect(invoiceApprovalApi.start).toHaveBeenCalledWith('inv-1'));
+  });
+
+  it('shows the approve action for a PENDING_APPROVAL invoice and approves the current tier', async () => {
+    const user = userEvent.setup();
+    const pendingInvoice = { ...INVOICE, status: 'PENDING_APPROVAL', matchStatus: 'MATCHED' };
+    (apInvoiceApi.getById as any).mockResolvedValue(pendingInvoice);
+    (invoiceApprovalApi.getInstance as any).mockResolvedValue({
+      id: 'instance-1', status: 'PENDING',
+      steps: [{ id: 'step-1', sequence: 1, requiredRole: 'ANY_APPROVER', status: 'PENDING' }],
+    });
+    (invoiceApprovalApi.approve as any).mockResolvedValue({ id: 'instance-1', status: 'APPROVED', steps: [] });
+    renderPage('/accounting/ap/invoices/inv-1');
+
+    await waitFor(() => expect(screen.getByText(/Approve \(tier 1\)/i)).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: /Approve \(tier 1\)/i }));
+    await waitFor(() => expect(invoiceApprovalApi.approve).toHaveBeenCalledWith('inv-1', { version: pendingInvoice.version }));
+  });
+
+  it('shows a retry action when an APPROVED invoice has no posted GL entry yet', async () => {
+    const approvedInvoice = { ...INVOICE, status: 'APPROVED', matchStatus: 'MATCHED', approvalGlEntryId: null };
+    (apInvoiceApi.getById as any).mockResolvedValue(approvedInvoice);
+    (invoiceApprovalApi.getInstance as any).mockResolvedValue({
+      id: 'instance-1', status: 'APPROVED',
+      steps: [{ id: 'step-1', sequence: 1, requiredRole: 'ANY_APPROVER', status: 'APPROVED', decidedBy: 'user-1' }],
+    });
+    renderPage('/accounting/ap/invoices/inv-1');
+
+    await waitFor(() => expect(screen.getByText(/GL liability posting has not completed yet/i)).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /Retry GL Posting/i })).toBeInTheDocument();
   });
 });

@@ -51,6 +51,22 @@ import {
   GoodsReceiptValidationError,
   GoodsReceiptConflictError,
 } from '../application/goods-receipt-service';
+import {
+  ApprovalRuleService,
+  ApprovalRuleNotFoundError,
+  ApprovalRuleValidationError,
+  ApprovalRuleConflictError,
+  APPROVAL_ROLE_VALUES,
+} from '../application/approval-rule-service';
+import {
+  InvoiceNotFoundForApprovalError,
+  InvoiceNotSubmittedError,
+  ApprovalInstanceNotFoundError,
+  ApprovalAlreadyDecidedError,
+  ApprovalConflictError,
+  WrongApproverRoleError,
+  ApprovalValidationError,
+} from '../application/invoice-approval-service';
 
 function getTenantId(request: any) {
   const id = request.headers['x-tenant-id'] as string;
@@ -110,6 +126,8 @@ export async function aparRoutes(app: FastifyInstance) {
   const customerSvc = container.resolve<CustomerService>('CustomerService');
   const invoiceSvc = container.resolve<InvoiceService>('InvoiceService');
   const goodsReceiptSvc = container.resolve<GoodsReceiptService>('GoodsReceiptService');
+  const approvalRuleSvc = container.resolve<ApprovalRuleService>('ApprovalRuleService');
+  const invoiceApprovalSvc = container.resolve<import('../application/invoice-approval-service').InvoiceApprovalService>('InvoiceApprovalService');
   const authzClient = container.resolve<AuthzClient>('AuthzClient');
   const requirePermission = createAuthzGuard(authzClient, { getTenantId });
 
@@ -2441,6 +2459,179 @@ export async function aparRoutes(app: FastifyInstance) {
       return reply.send(receipt);
     } catch (err) {
       return handleGoodsReceiptError(err, reply);
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // AMACC-CH04 S041: Invoice Approval Matrix
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const AP_INVOICE_APPROVAL_PERMISSIONS = {
+    VIEW:               'ap.invoice_approval.view',
+    CONFIGURE:          'ap.invoice_approval.configure',
+    START:              'ap.invoice_approval.start',
+    APPROVE:            'ap.invoice_approval.approve',
+    REJECT:             'ap.invoice_approval.reject',
+    RETRY_GL_POSTING:   'ap.invoice_approval.retry_gl_posting',
+  } as const;
+
+  const ApprovalRuleCreateSchema = z.object({
+    thresholdAmount: z.number().min(0),
+    requiredRole: z.enum(APPROVAL_ROLE_VALUES),
+    sequence: z.number().int().min(1),
+  });
+
+  const ApprovalRuleUpdateSchema = z.object({
+    thresholdAmount: z.number().min(0).optional(),
+    requiredRole: z.enum(APPROVAL_ROLE_VALUES).optional(),
+    isActive: z.boolean().optional(),
+  });
+
+  const ApprovalDecisionSchema = z.object({
+    version: z.number().int().min(1),
+    note: z.string().optional(),
+  });
+
+  const ApprovalRejectSchema = z.object({
+    version: z.number().int().min(1),
+    reason: z.string().min(1),
+  });
+
+  function getServiceToken(): string | undefined {
+    try {
+      const jwtSecret = process.env['AMACC_JWT_SECRET'] ?? 'amacc-dev-secret-change-in-production';
+      return createServiceToken('apar-service', jwtSecret);
+    } catch {
+      return undefined;
+    }
+  }
+
+  function handleApprovalRuleError(error: unknown, reply: any) {
+    if (error instanceof ApprovalRuleNotFoundError) return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    if (error instanceof ApprovalRuleConflictError) return reply.status(409).send({ error: error.code, message: error.message });
+    if (error instanceof ApprovalRuleValidationError) return reply.status(422).send({ error: error.code, message: error.message });
+    if (error instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    throw error;
+  }
+
+  function handleApprovalError(error: unknown, reply: any) {
+    if (error instanceof InvoiceNotFoundForApprovalError || error instanceof ApprovalInstanceNotFoundError) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof WrongApproverRoleError) {
+      return reply.status(403).send({ error: 'WRONG_APPROVER_ROLE', message: error.message, requiredRole: error.requiredRole });
+    }
+    if (error instanceof ApprovalAlreadyDecidedError) {
+      return reply.status(409).send({ error: 'ALREADY_DECIDED', message: error.message });
+    }
+    if (error instanceof ApprovalConflictError) {
+      return reply.status(409).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof InvoiceNotSubmittedError || error instanceof ApprovalValidationError) {
+      return reply.status(422).send({ error: (error as any).code ?? 'NOT_SUBMITTED', message: error.message });
+    }
+    if (error instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    throw error;
+  }
+
+  // ── Approval Matrix Configuration ────────────────────────────────────────
+
+  app.get('/invoice-approval-rules', { preHandler: requirePermission(AP_INVOICE_APPROVAL_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const rules = await approvalRuleSvc.list(tenantId);
+    return reply.send(rules);
+  });
+
+  app.post('/invoice-approval-rules', { preHandler: requirePermission(AP_INVOICE_APPROVAL_PERMISSIONS.CONFIGURE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    try {
+      const body = ApprovalRuleCreateSchema.parse(request.body);
+      const rule = await approvalRuleSvc.create({ ...body, tenantId }, actor);
+      return reply.status(201).send(rule);
+    } catch (err) {
+      return handleApprovalRuleError(err, reply);
+    }
+  });
+
+  app.patch('/invoice-approval-rules/:id', { preHandler: requirePermission(AP_INVOICE_APPROVAL_PERMISSIONS.CONFIGURE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const body = ApprovalRuleUpdateSchema.parse(request.body);
+      const rule = await approvalRuleSvc.update(tenantId, id, body);
+      return reply.send(rule);
+    } catch (err) {
+      return handleApprovalRuleError(err, reply);
+    }
+  });
+
+  // ── Approval Workflow ─────────────────────────────────────────────────────
+
+  app.get('/invoices/:id/approval', { preHandler: requirePermission(AP_INVOICE_APPROVAL_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const instance = await invoiceApprovalSvc.getInstance(tenantId, id);
+      return reply.send(instance);
+    } catch (err) {
+      return handleApprovalError(err, reply);
+    }
+  });
+
+  app.post('/invoices/:id/approval/start', { preHandler: requirePermission(AP_INVOICE_APPROVAL_PERMISSIONS.START) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const instance = await invoiceApprovalSvc.start(tenantId, id, actor, correlationId);
+      return reply.status(201).send(instance);
+    } catch (err) {
+      return handleApprovalError(err, reply);
+    }
+  });
+
+  app.post('/invoices/:id/approval/approve', { preHandler: requirePermission(AP_INVOICE_APPROVAL_PERMISSIONS.APPROVE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const actorRole = (request as any).user?.role ?? 'UNKNOWN';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = ApprovalDecisionSchema.parse(request.body);
+      const instance = await invoiceApprovalSvc.approveStep(tenantId, id, body, actor, actorRole, getServiceToken(), correlationId);
+      return reply.send(instance);
+    } catch (err) {
+      return handleApprovalError(err, reply);
+    }
+  });
+
+  app.post('/invoices/:id/approval/reject', { preHandler: requirePermission(AP_INVOICE_APPROVAL_PERMISSIONS.REJECT) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const actorRole = (request as any).user?.role ?? 'UNKNOWN';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = ApprovalRejectSchema.parse(request.body);
+      const instance = await invoiceApprovalSvc.rejectStep(tenantId, id, body, actor, actorRole, correlationId);
+      return reply.send(instance);
+    } catch (err) {
+      return handleApprovalError(err, reply);
+    }
+  });
+
+  app.post('/invoices/:id/approval/retry-gl-posting', { preHandler: requirePermission(AP_INVOICE_APPROVAL_PERMISSIONS.RETRY_GL_POSTING) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const journalEntryId = await invoiceApprovalSvc.retryGlPosting(tenantId, id, actor, getServiceToken(), correlationId);
+      return reply.send({ journalEntryId });
+    } catch (err) {
+      return handleApprovalError(err, reply);
     }
   });
 }

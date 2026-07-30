@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Check, AlertCircle, RefreshCw, ChevronRight, Ban } from 'lucide-react';
-import { aparApi, apInvoiceApi, purchaseOrderApi } from '../../api/client';
+import { Plus, Check, AlertCircle, RefreshCw, ChevronRight, Ban, ShieldCheck, XCircle } from 'lucide-react';
+import { aparApi, apInvoiceApi, purchaseOrderApi, invoiceApprovalApi } from '../../api/client';
 import PageLoader from '../../components/PageLoader';
 import PageError from '../../components/PageError';
 import { Btn, PageHeader, Badge } from '../../components/ui';
@@ -31,9 +31,12 @@ function StatusBadge({ status }: { status?: string }) {
   const styles: Record<string, string> = {
     DRAFT: 'bg-gray-100 text-gray-600',
     SUBMITTED: 'bg-blue-100 text-blue-700',
+    PENDING_APPROVAL: 'bg-amber-100 text-amber-800',
+    APPROVED: 'bg-green-100 text-green-700',
+    REJECTED: 'bg-red-100 text-red-700',
     VOID: 'bg-red-100 text-red-700',
   };
-  return <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${styles[status ?? ''] ?? 'bg-gray-100 text-gray-600'}`}>{status ?? '—'}</span>;
+  return <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${styles[status ?? ''] ?? 'bg-gray-100 text-gray-600'}`}>{(status ?? '—').replace('_', ' ')}</span>;
 }
 
 function MatchStatusBadge({ status }: { status?: string }) {
@@ -500,6 +503,10 @@ function InvoiceDetail({ id }: { id: string }) {
         </div>
       )}
 
+      {['SUBMITTED', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED'].includes(invoice.status) && (
+        <ApprovalPanel invoice={invoice} onChange={refetch} />
+      )}
+
       {showVoid && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-xl shadow-2xl w-[420px] p-6 space-y-4">
@@ -515,6 +522,121 @@ function InvoiceDetail({ id }: { id: string }) {
                 {voidMut.isPending ? 'Voiding...' : 'Confirm Void'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// AMACC-CH04 S041 — Invoice Approval Matrix panel, shown once an invoice
+// reaches SUBMITTED. Reads the approval instance (only exists once
+// /approval/start has been called) and drives the sequential tier
+// approve/reject workflow against the tenant-configured matrix.
+function ApprovalPanel({ invoice, onChange }: { invoice: any; onChange: () => void }) {
+  const [error, setError] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [showReject, setShowReject] = useState(false);
+
+  const { data: instance, refetch: refetchInstance, isLoading } = useQuery({
+    queryKey: ['ap-invoice-approval', invoice.id],
+    queryFn: () => invoiceApprovalApi.getInstance(invoice.id),
+    retry: false,
+    enabled: invoice.status !== 'SUBMITTED',
+  });
+
+  const startMut = useMutation({
+    mutationFn: () => invoiceApprovalApi.start(invoice.id),
+    onSuccess: () => { setError(null); onChange(); refetchInstance(); },
+    onError: (err: any) => setError(err?.body?.message ?? err.message),
+  });
+
+  const approveMut = useMutation({
+    mutationFn: () => invoiceApprovalApi.approve(invoice.id, { version: invoice.version }),
+    onSuccess: () => { setError(null); onChange(); refetchInstance(); },
+    onError: (err: any) => setError(err?.body?.message ?? err.message),
+  });
+
+  const rejectMut = useMutation({
+    mutationFn: () => invoiceApprovalApi.reject(invoice.id, { version: invoice.version, reason: rejectReason }),
+    onSuccess: () => { setShowReject(false); setRejectReason(''); onChange(); refetchInstance(); },
+    onError: (err: any) => setError(err?.body?.message ?? err.message),
+  });
+
+  const retryGlMut = useMutation({
+    mutationFn: () => invoiceApprovalApi.retryGlPosting(invoice.id),
+    onSuccess: () => { setError(null); onChange(); },
+    onError: (err: any) => setError(err?.body?.message ?? err.message),
+  });
+
+  const pendingStep = (instance?.steps ?? []).filter((s: any) => s.status === 'PENDING').sort((a: any, b: any) => a.sequence - b.sequence)[0];
+
+  return (
+    <div className="bg-white rounded-lg shadow p-4 space-y-3">
+      <h4 className="font-semibold text-sm flex items-center gap-2"><ShieldCheck className="w-4 h-4 text-brand" /> Approval Matrix (S041)</h4>
+
+      {error && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">{error}</div>}
+
+      {invoice.status === 'SUBMITTED' && (
+        <Btn variant="primary" size="md" onClick={() => startMut.mutate()}>
+          {startMut.isPending ? 'Starting...' : 'Start Approval'}
+        </Btn>
+      )}
+
+      {invoice.status !== 'SUBMITTED' && isLoading && <p className="text-sm text-gray-400">Loading approval instance...</p>}
+
+      {instance && (
+        <div className="space-y-2">
+          <table className="w-full text-sm">
+            <thead><tr className="text-left text-gray-600 border-b"><th className="pb-2">Tier</th><th className="pb-2">Required Role</th><th className="pb-2">Status</th><th className="pb-2">Decided By</th></tr></thead>
+            <tbody>
+              {(instance.steps ?? []).map((s: any) => (
+                <tr key={s.id} className="border-b border-gray-50">
+                  <td className="py-2">{s.sequence}</td>
+                  <td className="py-2 font-mono text-xs">{s.requiredRole}</td>
+                  <td className="py-2"><Badge variant={s.status === 'APPROVED' ? 'success' : s.status === 'REJECTED' ? 'danger' : s.status === 'SKIPPED' ? 'neutral' : 'warning'}>{s.status}</Badge></td>
+                  <td className="py-2 text-xs text-gray-500">{s.decidedBy ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {pendingStep && invoice.status === 'PENDING_APPROVAL' && (
+            <div className="flex gap-2">
+              <Btn variant="primary" size="md" icon={<Check className="w-4 h-4" />} onClick={() => approveMut.mutate()}>
+                {approveMut.isPending ? 'Approving...' : `Approve (tier ${pendingStep.sequence})`}
+              </Btn>
+              <button onClick={() => setShowReject(true)} className="flex items-center gap-2 px-4 py-2 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50">
+                <XCircle className="w-4 h-4" /> Reject
+              </button>
+            </div>
+          )}
+
+          {invoice.status === 'APPROVED' && (
+            <div className="text-sm">
+              {invoice.approvalGlEntryId ? (
+                <p className="text-green-700">AP liability GL entry posted: <span className="font-mono">{invoice.approvalGlEntryId}</span></p>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <p className="text-amber-700">GL liability posting has not completed yet.</p>
+                  <button onClick={() => retryGlMut.mutate()} className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded hover:bg-amber-200">
+                    {retryGlMut.isPending ? 'Retrying...' : 'Retry GL Posting'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {showReject && (
+        <div className="bg-red-50 border border-red-300 rounded p-3 text-sm space-y-2">
+          <input value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder="Reason for rejecting..." className="w-full border rounded px-2 py-1.5 text-sm" autoFocus />
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => setShowReject(false)} className="px-3 py-1.5 border rounded text-sm">Cancel</button>
+            <button disabled={!rejectReason.trim() || rejectMut.isPending} onClick={() => rejectMut.mutate()} className="px-3 py-1.5 bg-red-600 text-white rounded text-sm disabled:opacity-40">
+              {rejectMut.isPending ? 'Rejecting...' : 'Confirm Reject'}
+            </button>
           </div>
         </div>
       )}

@@ -120,6 +120,8 @@ describe('Vendor route authorization and error contract (AMACC-CH04 S036A)', () 
     container.registerInstance('CustomerService', {});
     container.registerInstance('InvoiceService', {});
     container.registerInstance('GoodsReceiptService', {});
+    container.registerInstance('ApprovalRuleService', {});
+    container.registerInstance('InvoiceApprovalService', {});
     registerFullAuthz();
 
     app = Fastify();

@@ -122,6 +122,8 @@ describe('Customer route authorization and error contract (S046)', () => {
     container.registerInstance('CustomerService', fakeCustomerService());
     container.registerInstance('InvoiceService', {});
     container.registerInstance('GoodsReceiptService', {});
+    container.registerInstance('ApprovalRuleService', {});
+    container.registerInstance('InvoiceApprovalService', {});
     registerFullAuthz();
 
     app = Fastify();

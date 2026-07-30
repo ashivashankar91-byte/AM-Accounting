@@ -16,6 +16,8 @@ import { CustomerService } from './application/customer-service';
 import { InvoiceMatchService } from './application/invoice-match-service';
 import { InvoiceService } from './application/invoice-service';
 import { GoodsReceiptService } from './application/goods-receipt-service';
+import { ApprovalRuleService } from './application/approval-rule-service';
+import { InvoiceApprovalService } from './application/invoice-approval-service';
 import {
   IEventPublisher, IAREntryRepository, IAPEntryRepository, OutboxProcessor,
   HttpAuthzClient, AuthzClient, HttpAuditClient, AuditOutboxDrainer, makePrismaAuditOutboxStore,
@@ -66,6 +68,12 @@ async function bootstrap() {
   container.register(InvoiceMatchService, { useClass: InvoiceMatchService });
   container.register('InvoiceService', { useClass: InvoiceService });
   container.register('GoodsReceiptService', { useClass: GoodsReceiptService });
+  // Registered under both the class token (for @inject(ApprovalRuleService)
+  // in InvoiceApprovalService's constructor) and a string token (for the
+  // routes.ts string-resolve convention used throughout this file).
+  container.register(ApprovalRuleService, { useClass: ApprovalRuleService });
+  container.register('ApprovalRuleService', { useClass: ApprovalRuleService });
+  container.register('InvoiceApprovalService', { useClass: InvoiceApprovalService });
   container.registerInstance<AuthzClient>('AuthzClient', new HttpAuthzClient({
     onError: (err: unknown, req: any) => logger.error({ err, permission: req.permissionKey }, 'authz/check failed'),
   }));
