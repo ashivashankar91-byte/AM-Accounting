@@ -84,11 +84,17 @@ model ScheduleDetail {
 
   // Source journal entry (populated from JOURNAL_ENTRY_POSTED event)
   journalEntryId String?   @map("journal_entry_id")
+  // @wave S026 — per-line idempotency key (outbox event correlationId). Replaces the
+  // old journalEntryId-only dedup, which silently dropped a second schedule-relevant
+  // line on the same journal entry. Nullable: manually-created details (POST
+  // /details) have no source event.
+  sourceCorrelationId String? @map("source_correlation_id")
 
   createdAt      DateTime  @default(now()) @map("created_at")
 
   schedule Schedule @relation(fields: [tenantId, scheduleNumber], references: [tenantId, scheduleNumber])
 
+  @@unique([tenantId, sourceCorrelationId])
   @@map("schedule_details")
   @@index([tenantId, scheduleNumber])
   @@index([tenantId, scheduleNumber, controlNumber])
@@ -114,6 +120,169 @@ model SchedulePermission {
   @@map("schedule_permissions")
   @@index([tenantId, userId])
   @@index([tenantId, scheduleNumber])
+}
+
+// @trace-cobol komdetail.cbl DE-APPLYNO/DE-APPLY-CD generalized into a real
+// open-item balance ledger. @wave S026 — Schedule Open-Item Core.
+// schedule_key = (tenantId, scheduleNumber, controlNumber) — UQ-18 interim resolution
+// (docs/accounting-modernization/S026_S027_IMPLEMENTATION_CONTRACT.md).
+// Open-item identity = schedule_key + itemNumber (referenceNumber, falling back to
+// journalEntryId). A posted line with no applyNumber opens a new item; a line whose
+// applyNumber matches an existing item's itemNumber applies against it.
+model ScheduleOpenItem {
+  id             String  @id @default(cuid())
+  tenantId       String  @map("tenant_id")
+  scheduleNumber String  @db.Char(2) @map("schedule_number")
+  controlNumber  String  @db.VarChar(10) @map("control_number")
+  // Targetable business reference a later application's applyNumber must match.
+  itemNumber     String  @db.VarChar(20) @map("item_number")
+  glAccountNumber String? @db.VarChar(20) @map("gl_account_number")
+  journalSource  String? @db.Char(2) @map("journal_source")
+
+  originalAmount   Decimal @db.Decimal(15, 2) @map("original_amount")
+  appliedAmount    Decimal @default(0) @db.Decimal(15, 2) @map("applied_amount")
+  // Denormalized (= originalAmount - appliedAmount) for query speed; DB CHECK
+  // constraint (migration 20260730010000) enforces it stays sign/magnitude-consistent
+  // with originalAmount — over-application protection at the storage layer, not just
+  // in application code.
+  remainingBalance Decimal @db.Decimal(15, 2) @map("remaining_balance")
+  // OPEN | PARTIALLY_APPLIED | CLOSED
+  status           String  @default("OPEN")
+
+  transactionDate DateTime? @map("transaction_date")
+  // Drives S027 aging; falls back to transactionDate when null.
+  dueDate         DateTime? @map("due_date")
+  description     String?   @db.VarChar(200)
+
+  // Traceability back to the originating posted transaction.
+  journalEntryId      String @map("journal_entry_id")
+  scheduleDetailId    String? @map("schedule_detail_id")
+  // Idempotency key: the outbox event's correlationId for the specific posted line
+  // that created this item (gl-service.ts: `${entryCorrelationId}-line-${lineNumber}`).
+  sourceCorrelationId String @map("source_correlation_id")
+
+  closedAt  DateTime? @map("closed_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  applications ScheduleApplication[]
+
+  @@unique([tenantId, sourceCorrelationId])
+  @@map("schedule_open_items")
+  @@index([tenantId, scheduleNumber, controlNumber, itemNumber])
+  @@index([tenantId, scheduleNumber, status])
+  @@index([tenantId, glAccountNumber])
+  @@index([tenantId, dueDate])
+}
+
+// One row per application of a settling transaction (or manual operator action)
+// against a ScheduleOpenItem. Append-only — a reversal is a new negating row, never
+// a mutation of the original (matches komdetail's "amount immutable once posted"
+// convention and this repo's APPayment void-by-new-row pattern).
+model ScheduleApplication {
+  id             String  @id @default(cuid())
+  tenantId       String  @map("tenant_id")
+  openItemId     String  @map("open_item_id")
+  scheduleNumber String  @db.Char(2) @map("schedule_number")
+  controlNumber  String  @db.VarChar(10) @map("control_number")
+  // Positive = reduces the open item's remaining balance toward zero (same sign
+  // convention as originalAmount); a reversal posts the negated amount.
+  amount         Decimal @db.Decimal(15, 2)
+
+  journalEntryId      String  @map("journal_entry_id")
+  // Idempotency key — see ScheduleOpenItem.sourceCorrelationId. For manual
+  // (operator-initiated) applications, this is the caller-supplied idempotency key.
+  sourceCorrelationId String  @map("source_correlation_id")
+  isManual            Boolean @default(false) @map("is_manual")
+  appliedBy           String? @map("applied_by")
+  note                String? @db.VarChar(500)
+
+  appliedAt    DateTime  @default(now()) @map("applied_at")
+  reversedAt   DateTime? @map("reversed_at")
+  reversalOfId String?   @map("reversal_of_id")
+
+  openItem ScheduleOpenItem @relation(fields: [openItemId], references: [id])
+
+  @@unique([tenantId, sourceCorrelationId])
+  @@map("schedule_applications")
+  @@index([tenantId, openItemId])
+  @@index([tenantId, scheduleNumber, controlNumber])
+}
+
+// Nightly (or on-demand) reconciliation of schedule-service's own open-item
+// balances against gl-service's GL control-account ending balance. Discrepancies
+// are persisted and exposed — never silently corrected on either side.
+model ScheduleGlTieOut {
+  id              String   @id @default(cuid())
+  tenantId        String   @map("tenant_id")
+  scheduleNumber  String   @db.Char(2) @map("schedule_number")
+  glAccountNumber String   @db.VarChar(20) @map("gl_account_number")
+  asOfDate        DateTime @map("as_of_date")
+
+  scheduleBalance Decimal @db.Decimal(15, 2) @map("schedule_balance")
+  glBalance       Decimal? @db.Decimal(15, 2) @map("gl_balance")
+  variance        Decimal? @db.Decimal(15, 2)
+
+  // MATCHED | DISCREPANCY | GL_UNAVAILABLE
+  status       String  @default("MATCHED")
+  glQueryError String? @map("gl_query_error")
+  // Groups every row produced by one tie-out run.
+  runId        String  @map("run_id")
+  triggeredBy  String? @map("triggered_by")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("schedule_gl_tie_outs")
+  @@unique([tenantId, scheduleNumber, glAccountNumber, asOfDate, runId])
+  @@index([tenantId, asOfDate])
+  @@index([tenantId, status])
+  @@index([tenantId, runId])
+}
+
+// @wave S027 — Schedule Aging Engine.
+// Per-tenant configurable aging bucket definitions — not hard-coded.
+// `buckets` is an ordered JSON array of {label, upperBoundDays} where
+// upperBoundDays is the inclusive day-count boundary for that bucket (an
+// item ages into the first bucket whose upperBoundDays >= its age in days);
+// the last bucket's upperBoundDays MUST be null (catch-all, e.g. "90+").
+// Default (applied when a tenant has no row here — see domain/aging.ts
+// DEFAULT_AGING_BUCKETS): Current(<=0) / 1-30 / 31-60 / 61-90 / 90+,
+// extending the legacy CUR/OVR30/OVR60/OVR90 convention
+// (komdetail.extraction.md) with the standard AR 1-30 split since the
+// legacy extraction did not document exact day boundaries.
+model ScheduleAgingBucketConfig {
+  id        String   @id @default(cuid())
+  tenantId  String   @unique @map("tenant_id")
+  buckets   Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedBy String?  @map("updated_by")
+
+  @@map("schedule_aging_bucket_configs")
+}
+
+/// S026: schedule-service had no audit mechanism at all before this (matches
+/// the R0 Stabilization Phase 4 AuditPort pattern already shipped in
+/// tenant-service/auth-service/coa-service/apar-service). Every open-item
+/// create/apply/reverse and tie-out run writes a before/after record here;
+/// AuditOutboxDrainer (wired in src/index.ts) drains unpublished rows to the
+/// real S007 audit-service.
+model AuditOutboxEvent {
+  id            String    @id @default(uuid())
+  tenantId      String    @map("tenant_id")
+  docType       String    @map("doc_type")
+  docId         String    @map("doc_id")
+  action        String
+  before        Json?
+  after         Json?
+  actor         String
+  correlationId String?   @map("correlation_id")
+  publishedAt   DateTime? @map("published_at")
+  retryCount    Int       @default(0) @map("retry_count")
+  lastError     String?   @map("last_error")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@index([publishedAt, retryCount])
+  @@map("audit_outbox")
 }
 
 /// Outbox pattern for reliable event publishing from schedule-service.

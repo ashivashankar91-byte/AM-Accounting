@@ -1,15 +1,16 @@
+import 'reflect-metadata';
 /**
  * @test G-03 / G-08a — schedule-service updateDetail and updateDetailApplyNumber
  * @cobol-origin komdetail.cbl REPLACE-DETAIL paragraph; schedup.cbl EDT-DETAIL validations
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ScheduleApplicationService } from '../application/schedule-service';
+import { ScheduleApplicationService } from '../src/application/schedule-service';
 import {
   ScheduleDetailNotFoundError,
   ScheduleNotFoundError,
   ScheduleValidationError,
-} from '../domain/errors';
+} from '../src/domain/errors';
 
 // ── Minimal mock factories ───────────────────────────────────────────────────
 

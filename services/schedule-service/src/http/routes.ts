@@ -1,8 +1,12 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { container } from 'tsyringe';
-import { asTenantId, authMiddleware } from '@amacc/shared-kernel';
+import { asTenantId, authMiddleware, createAuthzGuard, AuthzClient } from '@amacc/shared-kernel';
 import { ScheduleApplicationService } from '../application/schedule-service';
+import { OpenItemService } from '../application/open-item-service';
+import { TieOutService } from '../application/tie-out-service';
+import { AgingService } from '../application/aging-service';
+import { InvalidAgingBucketConfigError } from '../domain/aging';
 import {
   ScheduleNotFoundError,
   ScheduleDetailNotFoundError,
@@ -14,12 +18,23 @@ import {
   NoAccountsError,
   ScheduleAccessDeniedError,
   PendingEventsError,
+  OpenItemNotFoundError,
+  OpenItemClosedError,
+  OverApplicationError,
+  ApplicationNotFoundError,
+  ApplicationAlreadyReversedError,
+  InvalidApplicationAmountError,
+  DuplicateApplicationError,
 } from '../domain/errors';
 
+// @wave S026: corrected from 401 to 400 to comply with CLAUDE.md rule #3
+// ("Every API endpoint MUST require x-tenant-id header — return 400 if
+// missing") — non-negotiable and repo-wide, not S026/S027-specific, so this
+// fixes every route in this file, not just the new open-item/tie-out ones.
 function requireTenantId(request: any, reply: any): string | null {
   const id = request.headers['x-tenant-id'] as string | undefined;
   if (!id || !id.trim()) {
-    reply.status(401).send({ error: 'Missing required header: x-tenant-id' });
+    reply.status(400).send({ error: 'Missing required header: x-tenant-id' });
     return null;
   }
   return id.trim();
@@ -41,6 +56,19 @@ function handleError(err: unknown, reply: any): void {
     reply.status(403).send({ error: (err as Error).message });
   } else if (err instanceof PendingEventsError) {
     reply.status(409).send({ error: (err as Error).message, code: (err as any).code });
+  } else if (err instanceof OpenItemNotFoundError || err instanceof ApplicationNotFoundError) {
+    reply.status(404).send({ error: (err as Error).message });
+  } else if (
+    err instanceof OpenItemClosedError ||
+    err instanceof OverApplicationError ||
+    err instanceof ApplicationAlreadyReversedError ||
+    err instanceof InvalidApplicationAmountError
+  ) {
+    reply.status(422).send({ error: (err as Error).message, code: (err as any).name });
+  } else if (err instanceof DuplicateApplicationError) {
+    reply.status(409).send({ error: (err as Error).message, code: (err as any).name });
+  } else if (err instanceof InvalidAgingBucketConfigError) {
+    reply.status(422).send({ error: (err as Error).message, code: (err as any).name });
   } else {
     reply.status(500).send({ error: 'Internal server error' });
     console.error('[schedule-service] Unhandled error:', err);
@@ -95,6 +123,11 @@ export async function scheduleRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authMiddleware(JWT_SECRET));
 
   const svc = container.resolve(ScheduleApplicationService);
+  const openItemSvc = container.resolve(OpenItemService);
+  const tieOutSvc = container.resolve(TieOutService);
+  const agingSvc = container.resolve(AgingService);
+  const authzClient = container.resolve<AuthzClient>('AuthzClient');
+  const requirePermission = createAuthzGuard(authzClient, { getTenantId: (req) => req.headers['x-tenant-id'] as string });
 
   // ---------------------------------------------------------------------------
   // Schedule master CRUD
@@ -478,4 +511,250 @@ export async function scheduleRoutes(app: FastifyInstance) {
       handleError(err, reply);
     }
   });
+
+  // ---------------------------------------------------------------------------
+  // S026 — Schedule Open-Item Core
+  // ---------------------------------------------------------------------------
+
+  const ManualApplySchema = z.object({
+    amount: z.string().regex(/^-?\d+(\.\d{1,2})?$/),
+    idempotencyKey: z.string().min(1),
+    note: z.string().max(500).optional(),
+  });
+
+  const ReverseApplicationSchema = z.object({
+    note: z.string().max(500).optional(),
+  });
+
+  app.get(
+    '/api/v1/schedules/:id/open-items',
+    { preHandler: requirePermission('schedule.open_item.view') },
+    async (req: any, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const q = req.query as any;
+      try {
+        const items = await openItemSvc.listOpenItems(tenantId, req.params.id, {
+          controlNumber: q.controlNumber,
+          status: q.status,
+          glAccountNumber: q.glAccountNumber,
+          asOfDate: q.asOfDate ? new Date(q.asOfDate) : undefined,
+        });
+        reply.send(items);
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  app.get(
+    '/api/v1/schedules/:id/open-items/:itemId',
+    { preHandler: requirePermission('schedule.open_item.view') },
+    async (req: any, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      try {
+        const item = await openItemSvc.getOpenItem(tenantId, req.params.itemId);
+        reply.send(item);
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  app.post(
+    '/api/v1/schedules/:id/open-items/:itemId/apply',
+    { preHandler: requirePermission('schedule.open_item.apply') },
+    async (req: any, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const body = ManualApplySchema.safeParse(req.body);
+      if (!body.success) {
+        return reply.status(400).send({ error: 'Invalid request body', issues: body.error.issues });
+      }
+      try {
+        const userId = (req as any).user?.sub ?? 'unknown';
+        const application = await openItemSvc.applyManual(tenantId, req.params.itemId, {
+          amount: body.data.amount,
+          idempotencyKey: body.data.idempotencyKey,
+          note: body.data.note,
+          appliedBy: userId,
+        });
+        reply.status(201).send(application);
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  app.post(
+    '/api/v1/schedules/:id/open-items/applications/:applicationId/reverse',
+    { preHandler: requirePermission('schedule.open_item.reverse') },
+    async (req: any, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const body = ReverseApplicationSchema.safeParse(req.body ?? {});
+      if (!body.success) {
+        return reply.status(400).send({ error: 'Invalid request body', issues: body.error.issues });
+      }
+      try {
+        const userId = (req as any).user?.sub ?? 'unknown';
+        const reversal = await openItemSvc.reverseApplication(
+          tenantId,
+          req.params.applicationId,
+          userId,
+          body.data.note,
+        );
+        reply.status(201).send(reversal);
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // S026 — nightly GL-to-schedule tie-out
+  // ---------------------------------------------------------------------------
+
+  app.get(
+    '/api/v1/schedules/tie-outs',
+    { preHandler: requirePermission('schedule.tie_out.view') },
+    async (req, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const q = req.query as any;
+      try {
+        const rows = q.latest === 'true'
+          ? await tieOutSvc.getLatestRun(tenantId)
+          : await tieOutSvc.listTieOuts(tenantId, {
+              scheduleNumber: q.scheduleNumber,
+              status: q.status,
+              asOfDate: q.asOfDate ? new Date(q.asOfDate) : undefined,
+            });
+        reply.send(rows);
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  app.post(
+    '/api/v1/schedules/tie-outs/run',
+    { preHandler: requirePermission('schedule.tie_out.run') },
+    async (req, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const body = (req.body ?? {}) as { asOfDate?: string };
+      try {
+        const userId = (req as any).user?.sub ?? 'unknown';
+        const asOfDate = body.asOfDate ? new Date(body.asOfDate) : new Date();
+        const result = await tieOutSvc.runTieOut(tenantId, asOfDate, userId);
+        reply.status(201).send(result);
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // S027 — Schedule Aging Engine
+  // ---------------------------------------------------------------------------
+
+  const AgingQuerySchema = z.object({
+    asOfDate: z.string().optional(),
+    controlNumber: z.string().optional(),
+    glAccountNumber: z.string().optional(),
+  });
+
+  app.get(
+    '/api/v1/schedules/:id/aging-report',
+    { preHandler: requirePermission('schedule.aging.view') },
+    async (req: any, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const q = AgingQuerySchema.safeParse(req.query);
+      if (!q.success) {
+        return reply.status(400).send({ error: 'Invalid query parameters', issues: q.error.issues });
+      }
+      try {
+        const report = await agingSvc.getAgingReport(tenantId, {
+          scheduleNumber: req.params.id,
+          controlNumber: q.data.controlNumber,
+          glAccountNumber: q.data.glAccountNumber,
+          asOfDate: q.data.asOfDate ? new Date(q.data.asOfDate) : undefined,
+        });
+        reply.send(report);
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  // Cross-schedule aging — same report shape, no scheduleNumber filter.
+  app.get(
+    '/api/v1/schedules/aging-report',
+    { preHandler: requirePermission('schedule.aging.view') },
+    async (req, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const ExtQuerySchema = AgingQuerySchema.extend({ scheduleNumber: z.string().optional() });
+      const q = ExtQuerySchema.safeParse(req.query);
+      if (!q.success) {
+        return reply.status(400).send({ error: 'Invalid query parameters', issues: q.error.issues });
+      }
+      try {
+        const report = await agingSvc.getAgingReport(tenantId, {
+          scheduleNumber: q.data.scheduleNumber,
+          controlNumber: q.data.controlNumber,
+          glAccountNumber: q.data.glAccountNumber,
+          asOfDate: q.data.asOfDate ? new Date(q.data.asOfDate) : undefined,
+        });
+        reply.send(report);
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  app.get(
+    '/api/v1/schedules/aging-bucket-config',
+    { preHandler: requirePermission('schedule.aging.view') },
+    async (req, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      try {
+        const buckets = await agingSvc.getBucketConfig(tenantId);
+        reply.send({ buckets });
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  const SetBucketConfigSchema = z.object({
+    buckets: z.array(z.object({
+      label: z.string().min(1),
+      upperBoundDays: z.number().nullable(),
+    })).min(1),
+  });
+
+  app.put(
+    '/api/v1/schedules/aging-bucket-config',
+    { preHandler: requirePermission('schedule.aging.config') },
+    async (req: any, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const body = SetBucketConfigSchema.safeParse(req.body);
+      if (!body.success) {
+        return reply.status(400).send({ error: 'Invalid request body', issues: body.error.issues });
+      }
+      try {
+        const userId = (req as any).user?.sub ?? 'unknown';
+        const buckets = await agingSvc.setBucketConfig(tenantId, body.data.buckets, userId);
+        reply.send({ buckets });
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
 }

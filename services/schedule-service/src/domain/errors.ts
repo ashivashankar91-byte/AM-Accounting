@@ -97,3 +97,67 @@ export class PendingEventsError extends Error {
     this.name = 'PendingEventsError';
   }
 }
+
+// -----------------------------------------------------------------------
+// S026 — Schedule Open-Item Core
+// -----------------------------------------------------------------------
+
+export class OpenItemNotFoundError extends Error {
+  constructor(id: string) {
+    super(`Schedule open item not found: ${id}`);
+    this.name = 'OpenItemNotFoundError';
+  }
+}
+
+export class OpenItemClosedError extends Error {
+  constructor(id: string) {
+    super(`Cannot apply to schedule open item ${id}: item is already CLOSED.`);
+    this.name = 'OpenItemClosedError';
+  }
+}
+
+// @trace-cobol wave-3 enhancement — no legacy over-application guard existed;
+// this is a canonical AMACC 2.0 accounting-correctness enhancement.
+export class OverApplicationError extends Error {
+  constructor(id: string, requested: string, available: string) {
+    super(
+      `Cannot apply ${requested} to schedule open item ${id}: only ${available} remains outstanding.`,
+    );
+    this.name = 'OverApplicationError';
+  }
+}
+
+export class ApplicationNotFoundError extends Error {
+  constructor(id: string) {
+    super(`Schedule application not found: ${id}`);
+    this.name = 'ApplicationNotFoundError';
+  }
+}
+
+export class ApplicationAlreadyReversedError extends Error {
+  constructor(id: string) {
+    super(`Schedule application ${id} has already been reversed.`);
+    this.name = 'ApplicationAlreadyReversedError';
+  }
+}
+
+export class InvalidApplicationAmountError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidApplicationAmountError';
+  }
+}
+
+export class DuplicateApplicationError extends Error {
+  constructor(idempotencyKey: string) {
+    super(`An application with idempotency key "${idempotencyKey}" has already been recorded.`);
+    this.name = 'DuplicateApplicationError';
+  }
+}
+
+export class CrossTenantAccessError extends Error {
+  constructor() {
+    super('The requested resource does not belong to the authenticated tenant.');
+    this.name = 'CrossTenantAccessError';
+  }
+}

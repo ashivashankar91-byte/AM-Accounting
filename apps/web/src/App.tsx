@@ -100,6 +100,7 @@ import DashboardWorkflow from './pages/accounting/FinancialDashboard';
 import DayEndClose from './pages/service/DayEndClose';
 import InquiryMenu from './pages/accounting/InquiryMenu';
 import ScheduleInquiry from './pages/accounting/ScheduleInquiry';
+import ScheduleOpenItems from './pages/accounting/ScheduleOpenItems';
 import TransactionInquiry from './pages/accounting/TransactionInquiry';
 // FINAL-R0 / UXMAP-02 (Golden R0 UI convergence): the /accounting/inquiry/gl
 // route previously rendered the legacy prototype at
@@ -649,6 +650,9 @@ export default function App() {
               <Route path="/accounting/inquiry/gl" element={<GLInquiry />} />
               <Route path="/accounting/inquiry/schedules" element={<ScheduleInquiry />} />
               <Route path="/accounting/inquiry/transactions" element={<TransactionInquiry />} />
+
+              {/* S026 — Schedule Open-Item Core (open items + GL tie-out) */}
+              <Route path="/accounting/schedules/open-items" element={<ScheduleOpenItems />} />
 
               {/* Sprint C — Admin Config */}
               <Route path="/accounting/admin/mfg-dcs" element={<MFGDCSCommunications />} />

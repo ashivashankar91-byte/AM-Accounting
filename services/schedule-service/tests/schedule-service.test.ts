@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 /**
  * @test-suite ScheduleApplicationService — Schedule Sub-System (Wave 3)
  *
@@ -40,7 +41,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Prisma } from '.prisma/schedule-client';
 import {
   ScheduleApplicationService,
-} from '../application/schedule-service';
+} from '../src/application/schedule-service';
 import {
   ScheduleNotFoundError,
   ScheduleDetailNotFoundError,
@@ -49,8 +50,8 @@ import {
   InvalidPurgeCodeError,
   DuplicateGlAccountError,
   MultipleAccountsNotAllowedError,
-} from '../domain/errors';
-import { ScheduleEventHandlers } from '../application/event-handlers';
+} from '../src/domain/errors';
+import { ScheduleEventHandlers } from '../src/application/event-handlers';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -236,21 +237,25 @@ describe('ScheduleApplicationService — Schedule CRUD', () => {
   });
 
   it('throws IncompatibleTypeChangeError for type 1 → 2 change', async () => {
-    const repo = makeScheduleRepo({ findById: vi.fn().mockResolvedValue(makeSchedule({ scheduleType: 1 })) });
+    const repo = makeScheduleRepo({ findById: vi.fn().mockResolvedValue(makeSchedule({ scheduleType: 1, eomPurgeType: 1 })) });
     const svc = makeSvc(repo);
+    // eomPurgeType: 2 supplied so this exercises the type-compatibility check
+    // itself (1→2 is not in schedmgr.cbl's allowed-conversion matrix), not
+    // the separate purge-code-per-type validation that would otherwise fire
+    // first for an unchanged (type-1-only-valid) purge code against type 2.
     await expect(
-      svc.updateSchedule(TENANT, '01', { scheduleType: 2 } as any),
+      svc.updateSchedule(TENANT, '01', { scheduleType: 2, eomPurgeType: 2 } as any),
     ).rejects.toBeInstanceOf(IncompatibleTypeChangeError);
   });
 
   it('allows compatible type change 2 → 4', async () => {
     const repo = makeScheduleRepo({
-      findById: vi.fn().mockResolvedValue(makeSchedule({ scheduleType: 2, glAccountNumbers: ['2100'] })),
-      update: vi.fn().mockResolvedValue(makeSchedule({ scheduleType: 4 })),
+      findById: vi.fn().mockResolvedValue(makeSchedule({ scheduleType: 2, eomPurgeType: 2, glAccountNumbers: ['2100'] })),
+      update: vi.fn().mockResolvedValue(makeSchedule({ scheduleType: 4, eomPurgeType: 4 })),
     });
     const svc = makeSvc(repo);
     await expect(
-      svc.updateSchedule(TENANT, '01', { scheduleType: 4 } as any),
+      svc.updateSchedule(TENANT, '01', { scheduleType: 4, eomPurgeType: 4 } as any),
     ).resolves.toBeDefined();
   });
 
@@ -270,7 +275,16 @@ describe('ScheduleApplicationService — Schedule CRUD', () => {
     const svc = makeSvc(schedRepo, detRepo, undefined, eventPub);
     await svc.deleteSchedule(TENANT, '01');
     expect(detRepo.deleteBySchedule).toHaveBeenCalledWith(TENANT, '01');
-    expect(eventPub.publish).toHaveBeenCalledWith('SCHEDULE_DELETED', expect.objectContaining({ scheduleNumber: '01' }));
+    // createEvent() wraps the payload in a full DomainEvent envelope
+    // ({type, tenantId, payload, occurredAt, correlationId}) — publish() is
+    // called with that single envelope object, not (type, payload) args.
+    expect(eventPub.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'SCHEDULE_DELETED',
+        tenantId: TENANT,
+        payload: expect.objectContaining({ scheduleNumber: '01' }),
+      }),
+    );
   });
 });
 
@@ -496,7 +510,12 @@ describe('ScheduleApplicationService — Security', () => {
   });
 });
 
-describe('ScheduleEventHandlers — JOURNAL_ENTRY_POSTED', () => {
+// @wave S026: JOURNAL_ENTRY_POSTED handling (idempotency, schedule-not-found,
+// new-item vs application) moved to OpenItemService.processPostingEvent —
+// see test-open-item-service.ts. ScheduleEventHandlers now only decides
+// whether to delegate (scheduleNumber non-null) and passes the event's
+// correlationId through unchanged.
+describe('ScheduleEventHandlers — JOURNAL_ENTRY_POSTED delegation', () => {
   const baseEvent = {
     tenantId: TENANT,
     journalEntryId: 'je-001',
@@ -508,40 +527,22 @@ describe('ScheduleEventHandlers — JOURNAL_ENTRY_POSTED', () => {
     transactionDate: '2025-03-15T00:00:00.000Z',
   };
 
-  it('creates detail when scheduleNumber is non-null', async () => {
-    const schedRepo = makeScheduleRepo({ findById: vi.fn().mockResolvedValue(makeSchedule()) });
-    const detRepo = makeDetailRepo({ findByJournalEntryId: vi.fn().mockResolvedValue([]) });
-    const handler = new ScheduleEventHandlers(schedRepo, detRepo);
-    await handler.handleJournalEntryPosted(baseEvent);
-    expect(detRepo.create).toHaveBeenCalledWith(
-      TENANT,
-      expect.objectContaining({ journalEntryId: 'je-001', scheduleNumber: '01' }),
-    );
+  function makeOpenItemService(processPostingEvent = vi.fn().mockResolvedValue('NEW_ITEM')) {
+    return { processPostingEvent };
+  }
+
+  it('delegates to OpenItemService.processPostingEvent when scheduleNumber is non-null', async () => {
+    const openItemSvc = makeOpenItemService();
+    const handler = new ScheduleEventHandlers(makeScheduleRepo(), makeDetailRepo(), openItemSvc as any);
+    await handler.handleJournalEntryPosted(baseEvent as any, 'corr-1');
+    expect(openItemSvc.processPostingEvent).toHaveBeenCalledWith(TENANT, baseEvent, 'corr-1');
   });
 
   it('no-ops when scheduleNumber is null', async () => {
-    const detRepo = makeDetailRepo();
-    const handler = new ScheduleEventHandlers(makeScheduleRepo(), detRepo);
-    await handler.handleJournalEntryPosted({ ...baseEvent, scheduleNumber: null });
-    expect(detRepo.create).not.toHaveBeenCalled();
-  });
-
-  it('is idempotent — skips duplicate journalEntryId', async () => {
-    const schedRepo = makeScheduleRepo({ findById: vi.fn().mockResolvedValue(makeSchedule()) });
-    const detRepo = makeDetailRepo({
-      findByJournalEntryId: vi.fn().mockResolvedValue([makeDetail()]),
-    });
-    const handler = new ScheduleEventHandlers(schedRepo, detRepo);
-    await handler.handleJournalEntryPosted(baseEvent);
-    expect(detRepo.create).not.toHaveBeenCalled();
-  });
-
-  it('no-ops when schedule no longer exists', async () => {
-    const schedRepo = makeScheduleRepo({ findById: vi.fn().mockResolvedValue(null) });
-    const detRepo = makeDetailRepo();
-    const handler = new ScheduleEventHandlers(schedRepo, detRepo);
-    await handler.handleJournalEntryPosted(baseEvent);
-    expect(detRepo.create).not.toHaveBeenCalled();
+    const openItemSvc = makeOpenItemService();
+    const handler = new ScheduleEventHandlers(makeScheduleRepo(), makeDetailRepo(), openItemSvc as any);
+    await handler.handleJournalEntryPosted({ ...baseEvent, scheduleNumber: null } as any, 'corr-2');
+    expect(openItemSvc.processPostingEvent).not.toHaveBeenCalled();
   });
 });
 

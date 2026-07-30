@@ -518,6 +518,28 @@ export const scheduleApi = {
   getById: (id: string) => apiFetch<any>(`/api/v1/schedules/${id}`),
   getAging: (params?: string) => apiFetch<any>(`/api/v1/schedules/aging${params ? `?${params}` : ''}`),
   getStatements: (params?: string) => apiFetch<any[]>(`/api/v1/schedules/statements${params ? `?${params}` : ''}`),
+
+  // S026 — Schedule Open-Item Core
+  getOpenItems: (scheduleId: string, params?: string) =>
+    apiFetch<any[]>(`/api/v1/schedules/${scheduleId}/open-items${params ? `?${params}` : ''}`),
+  getOpenItem: (scheduleId: string, itemId: string) =>
+    apiFetch<any>(`/api/v1/schedules/${scheduleId}/open-items/${itemId}`),
+  applyOpenItem: (scheduleId: string, itemId: string, data: { amount: string; idempotencyKey: string; note?: string }) =>
+    apiFetch<any>(`/api/v1/schedules/${scheduleId}/open-items/${itemId}/apply`, { method: 'POST', body: JSON.stringify(data) }),
+  reverseApplication: (scheduleId: string, applicationId: string, data?: { note?: string }) =>
+    apiFetch<any>(`/api/v1/schedules/${scheduleId}/open-items/applications/${applicationId}/reverse`, { method: 'POST', body: JSON.stringify(data ?? {}) }),
+
+  // S026 — nightly GL-to-schedule tie-out
+  getTieOuts: (params?: string) => apiFetch<any[]>(`/api/v1/schedules/tie-outs${params ? `?${params}` : ''}`),
+  runTieOut: (asOfDate?: string) =>
+    apiFetch<any>('/api/v1/schedules/tie-outs/run', { method: 'POST', body: JSON.stringify(asOfDate ? { asOfDate } : {}) }),
+
+  // S027 — Schedule Aging Engine
+  getAgingReport: (scheduleId: string | null, params?: string) =>
+    apiFetch<any>(`/api/v1/schedules${scheduleId ? `/${scheduleId}` : ''}/aging-report${params ? `?${params}` : ''}`),
+  getAgingBucketConfig: () => apiFetch<{ buckets: any[] }>('/api/v1/schedules/aging-bucket-config'),
+  setAgingBucketConfig: (buckets: { label: string; upperBoundDays: number | null }[]) =>
+    apiFetch<{ buckets: any[] }>('/api/v1/schedules/aging-bucket-config', { method: 'PUT', body: JSON.stringify({ buckets }) }),
 };
 
 // Cashflow API

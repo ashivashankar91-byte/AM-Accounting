@@ -1,10 +1,11 @@
+import 'reflect-metadata';
 /**
  * @test G-08b — GL_ACCOUNT_SCHEDULE_CHANGED event handler
  * @cobol-origin schedmgr.cbl — migration of schedule detail records when GL account is reassigned
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { ScheduleEventHandlers } from '../application/event-handlers';
+import { ScheduleEventHandlers } from '../src/application/event-handlers';
 
 function makeScheduleRepo(schedule: any = { scheduleNumber: '01' }) {
   return { findById: vi.fn().mockResolvedValue(schedule) };
@@ -26,7 +27,7 @@ describe('ScheduleEventHandlers.handleGLAccountScheduleChanged (G-08b)', () => {
         .mockResolvedValueOnce({ scheduleNumber: '02' }),  // new schedule exists
     };
     const detailRepo = makeDetailRepo();
-    const handler = new ScheduleEventHandlers(scheduleRepo as any, detailRepo as any);
+    const handler = new ScheduleEventHandlers(scheduleRepo as any, detailRepo as any, {} as any);
 
     await handler.handleGLAccountScheduleChanged({
       tenantId: 'tenant-test',
@@ -44,7 +45,7 @@ describe('ScheduleEventHandlers.handleGLAccountScheduleChanged (G-08b)', () => {
   it('does nothing when oldScheduleNumber is null (GL had no prior schedule)', async () => {
     const scheduleRepo = makeScheduleRepo();
     const detailRepo = makeDetailRepo();
-    const handler = new ScheduleEventHandlers(scheduleRepo as any, detailRepo as any);
+    const handler = new ScheduleEventHandlers(scheduleRepo as any, detailRepo as any, {} as any);
 
     await handler.handleGLAccountScheduleChanged({
       tenantId: 'tenant-test',
@@ -60,7 +61,7 @@ describe('ScheduleEventHandlers.handleGLAccountScheduleChanged (G-08b)', () => {
   it('skips migration when old schedule no longer exists (already deleted)', async () => {
     const scheduleRepo = { findById: vi.fn().mockResolvedValue(null) };
     const detailRepo = makeDetailRepo();
-    const handler = new ScheduleEventHandlers(scheduleRepo as any, detailRepo as any);
+    const handler = new ScheduleEventHandlers(scheduleRepo as any, detailRepo as any, {} as any);
 
     await handler.handleGLAccountScheduleChanged({
       tenantId: 'tenant-test',
@@ -80,7 +81,7 @@ describe('ScheduleEventHandlers.handleGLAccountScheduleChanged (G-08b)', () => {
         .mockResolvedValueOnce(null),                    // new does not exist
     };
     const detailRepo = makeDetailRepo();
-    const handler = new ScheduleEventHandlers(scheduleRepo as any, detailRepo as any);
+    const handler = new ScheduleEventHandlers(scheduleRepo as any, detailRepo as any, {} as any);
 
     await handler.handleGLAccountScheduleChanged({
       tenantId: 'tenant-test',
@@ -96,7 +97,7 @@ describe('ScheduleEventHandlers.handleGLAccountScheduleChanged (G-08b)', () => {
   it('passes null newScheduleNumber through to repo (GL no longer has a schedule)', async () => {
     const scheduleRepo = { findById: vi.fn().mockResolvedValue({ scheduleNumber: '01' }) };
     const detailRepo = makeDetailRepo();
-    const handler = new ScheduleEventHandlers(scheduleRepo as any, detailRepo as any);
+    const handler = new ScheduleEventHandlers(scheduleRepo as any, detailRepo as any, {} as any);
 
     await handler.handleGLAccountScheduleChanged({
       tenantId: 'tenant-test',
