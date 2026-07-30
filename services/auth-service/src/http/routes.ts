@@ -29,25 +29,33 @@ const JWT_ISSUER = process.env['JWT_ISSUER'] ?? 'amacc';
 const ADMIN_API_KEY = process.env['ADMIN_API_KEY'];
 if (!ADMIN_API_KEY) throw new Error('FATAL: ADMIN_API_KEY environment variable is required. auth-service cannot start without it.');
 
+// Runtime stabilization: tenantId is a plain non-empty identifier, not a
+// UUID. Every real tenant_id value seeded/used across every service
+// (tenant-kunes, tenant-kunes-ford in dealer_group_tenants, gl_accounts,
+// role, user, authz_role_assignment, etc.) is a human-readable slug, and
+// none of the auth flows below actually join against tenant-service's
+// Tenant.id (UUID) column. The previous `.uuid()` constraint made login,
+// logout, token-exchange and API-key creation unusable for every seeded
+// tenant (VALIDATION_ERROR before the request ever reached user lookup).
 const LoginSchema = z.object({
-  tenantId: z.string().uuid(),
+  tenantId: z.string().min(1),
   apiKey: z.string().min(1),
 });
 
 // FINAL-R0 S205: real user login/session issuance (email + password).
 const UserLoginSchema = z.object({
-  tenantId: z.string().uuid(),
+  tenantId: z.string().min(1),
   email:    z.string().min(1).max(254),
   password: z.string().min(1).max(200),
 });
 
 const LogoutSchema = z.object({
-  tenantId:     z.string().uuid(),
+  tenantId:     z.string().min(1),
   sessionToken: z.string().min(1),
 });
 
 const CreateApiKeySchema = z.object({
-  tenantId: z.string().uuid(),
+  tenantId: z.string().min(1),
   name: z.string().min(1),
   scopes: z.array(z.string()).default(['read', 'write']),
 });

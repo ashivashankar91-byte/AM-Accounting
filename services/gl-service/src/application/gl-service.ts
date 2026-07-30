@@ -37,6 +37,7 @@ import {
   JournalStatus,
   asTenantId,
   setTenantContextOnConnection,
+  createServiceToken,
 } from '@amacc/shared-kernel';
 import { createEvent } from '@amacc/shared-kernel';
 import { GLValidationEngine } from '../domain/validation-engine';
@@ -140,6 +141,7 @@ export class CutoffDateViolationError extends Error {
 export class GLService {
   /** Base URL of eom-service — never query its DB directly (COPILOT.md constraint #5) */
   private readonly eomServiceUrl: string;
+  private readonly jwtSecret: string;
 
   constructor(
     @inject('IJournalRepository') private readonly journalRepo: IJournalRepository,
@@ -149,6 +151,16 @@ export class GLService {
     @inject('PrismaClient') private readonly prisma: PrismaClient,
   ) {
     this.eomServiceUrl = process.env['EOM_SERVICE_URL'] ?? 'http://eom-service:3011';
+    this.jwtSecret = process.env['AMACC_JWT_SECRET'] ?? '';
+  }
+
+  /** Build headers for authenticated service-to-service calls (eom-service requires a valid JWT). */
+  private eomRequestHeaders(tenantId: TenantId): Record<string, string> {
+    const headers: Record<string, string> = { 'x-tenant-id': tenantId };
+    if (this.jwtSecret) {
+      headers['authorization'] = `Bearer ${createServiceToken('gl-service', this.jwtSecret)}`;
+    }
+    return headers;
   }
 
   // ── Account CRUD ──────────────────────────────────────────────────────────
@@ -348,7 +360,7 @@ export class GLService {
   async getPeriodStatus(tenantId: TenantId, year: number, month: number): Promise<string> {
     try {
       const res = await fetch(`${this.eomServiceUrl}/api/v1/eom/`, {
-        headers: { 'x-tenant-id': tenantId },
+        headers: this.eomRequestHeaders(tenantId),
         signal: AbortSignal.timeout(5000),
       });
       if (!res.ok) return 'NOT_STARTED';
@@ -370,7 +382,7 @@ export class GLService {
   async getPeriods(tenantId: TenantId): Promise<Array<{ year: number; month: number; status: string }>> {
     try {
       const res = await fetch(`${this.eomServiceUrl}/api/v1/eom/`, {
-        headers: { 'x-tenant-id': tenantId },
+        headers: this.eomRequestHeaders(tenantId),
         signal: AbortSignal.timeout(5000),
       });
       if (!res.ok) return [];

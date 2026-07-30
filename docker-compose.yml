@@ -187,6 +187,10 @@ services:
     environment:
       <<: *service-env
       PORT: 3014
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
 
   schedule-service:
     build:
