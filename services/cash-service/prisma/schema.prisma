@@ -1,0 +1,298 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/cash-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// AuditPort stub outbox (S007 dependency). Shared table — every service
+/// that writes audit events models this identically and creates it with
+/// CREATE TABLE IF NOT EXISTS (see tenant-service/coa-service/gl-service).
+/// All AMACC services share one physical Postgres database.
+model AuditOutboxEvent {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  docType     String    @map("doc_type")
+  docId       String    @map("doc_id")
+  action      String
+  before      Json?
+  after       Json?
+  actor       String
+  publishedAt DateTime? @map("published_at")
+  retryCount  Int       @default(0) @map("retry_count")
+  lastError   String?   @map("last_error")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([publishedAt, retryCount])
+  @@map("audit_outbox")
+}
+
+/// Domain-event outbox for reliable delivery of cash-service events.
+/// Mirrors coa_outbox_events / tenant_outbox_events.
+model CashOutboxEvent {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  eventType   String    @map("event_type")
+  aggregateId String    @map("aggregate_id")
+  payload     Json
+  publishedAt DateTime? @map("published_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([publishedAt])
+  @@map("cash_outbox_events")
+}
+
+/// S052 — atomic receipt-number counter, scoped per (tenant, store,
+/// businessDate). Allocated via a single INSERT..ON CONFLICT DO UPDATE..
+/// RETURNING statement (see application/receipt-sequence-service.ts) —
+/// mirrors coa-service's JournalSequence exactly, including why: a separate
+/// find+create+update sequence aborts the whole Postgres transaction for
+/// every losing concurrent caller (see that file's header comment).
+model CashReceiptSequence {
+  id           String   @id @default(uuid())
+  tenantId     String   @map("tenant_id")
+  storeId      String   @map("store_id")
+  businessDate DateTime @map("business_date") @db.Date
+  nextSeq      Int      @default(1) @map("next_seq")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, storeId, businessDate])
+  @@map("cash_receipt_sequence")
+}
+
+/// S052 — a cashier's drawer session at one terminal for one business date.
+/// One cashier owns one drawer; drawer handoff is out of scope for this
+/// slice. "Active" = status <> RECONCILED. Two partial unique indexes
+/// (added in the RLS/constraints migration — not expressible in the Prisma
+/// DSL) enforce, at the DB level: one active drawer per (tenant, cashier,
+/// store) and one active drawer per (tenant, terminal).
+///
+/// Status lifecycle: OPEN -> BLIND_COUNT_SUBMITTED -> [VARIANCE_REVIEW_REQUIRED ->]
+/// BLIND_COUNT_SUBMITTED -> RECONCILED. VARIANCE_REVIEW_REQUIRED is only
+/// entered when the computed variance requires supervisor approval; approving
+/// it returns the drawer to BLIND_COUNT_SUBMITTED (now reconcile-eligible).
+/// RECONCILED is terminal — permanently read-only.
+model CashDrawer {
+  id             String    @id @default(uuid())
+  tenantId       String    @map("tenant_id")
+  entityId       String    @map("entity_id")
+  storeId        String    @map("store_id")
+  storeCode      String    @map("store_code") @db.VarChar(20)
+  terminalCode   String    @map("terminal_code") @db.VarChar(20)
+  cashierId      String    @map("cashier_id")
+  cashierName    String?   @map("cashier_name")
+  businessDate   DateTime  @map("business_date") @db.Date
+  currency       String    @default("USD") @db.VarChar(3)
+  openingFloat   Decimal   @map("opening_float") @db.Decimal(15, 2)
+  floatLocked    Boolean   @default(false) @map("float_locked")
+  retainedFloat  Decimal?  @map("retained_float") @db.Decimal(15, 2)
+  status         String    @default("OPEN") // OPEN | BLIND_COUNT_SUBMITTED | VARIANCE_REVIEW_REQUIRED | RECONCILED
+  openedBy       String    @map("opened_by")
+  openedAt       DateTime  @default(now()) @map("opened_at")
+  reconciledBy   String?   @map("reconciled_by")
+  reconciledAt   DateTime? @map("reconciled_at")
+  version        Int       @default(1)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  receipts    CashReceipt[]
+  movements   CashDrawerMovement[]
+  blindCount  CashBlindCount?
+  variance    CashDrawerVariance?
+  approval    CashVarianceApproval?
+
+  @@index([tenantId, cashierId, status])
+  @@index([tenantId, terminalCode, status])
+  @@index([tenantId, storeId, businessDate])
+  @@map("cash_drawer")
+}
+
+/// S052 — an immutable point-of-sale receipt. Financial fields (totalAmount,
+/// tenders, sourceDocType/sourceDocId, amountDue) never change after issue;
+/// the only correction path is voidReceipt(), which preserves this row and
+/// writes compensating CashDrawerMovement rows.
+model CashReceipt {
+  id                  String    @id @default(uuid())
+  tenantId            String    @map("tenant_id")
+  entityId            String    @map("entity_id")
+  storeId             String    @map("store_id")
+  drawerId            String    @map("drawer_id")
+  receiptNumber       String    @map("receipt_number")
+  status              String    @default("ISSUED") // ISSUED | VOIDED
+  sourceDocType       String    @map("source_doc_type")
+  sourceDocId         String    @map("source_doc_id")
+  sourceDisplayNumber String?   @map("source_display_number")
+  payerReference      String?   @map("payer_reference")
+  amountDue           Decimal?  @map("amount_due") @db.Decimal(15, 2)
+  totalAmount         Decimal   @map("total_amount") @db.Decimal(15, 2)
+  currency            String    @default("USD") @db.VarChar(3)
+  cashierId           String    @map("cashier_id")
+  idempotencyKey      String    @map("idempotency_key")
+  issuedAt            DateTime  @default(now()) @map("issued_at")
+  voidedAt            DateTime? @map("voided_at")
+  voidReason          String?   @map("void_reason")
+  voidedBy            String?   @map("voided_by")
+  version             Int       @default(1)
+  createdAt           DateTime  @default(now()) @map("created_at")
+
+  drawer  CashDrawer            @relation(fields: [drawerId], references: [id])
+  tenders CashReceiptTender[]
+
+  @@unique([tenantId, idempotencyKey])
+  @@unique([tenantId, entityId, receiptNumber])
+  @@index([tenantId, drawerId])
+  @@index([tenantId, sourceDocType, sourceDocId])
+  @@index([tenantId, status])
+  @@index([tenantId, storeId, issuedAt])
+  @@map("cash_receipt")
+}
+
+model CashReceiptTender {
+  id           String   @id @default(uuid())
+  tenantId     String   @map("tenant_id")
+  receiptId    String   @map("receipt_id")
+  tenderType   String   @map("tender_type") // CASH | CHECK
+  amount       Decimal  @db.Decimal(15, 2)
+  cashTendered Decimal? @map("cash_tendered") @db.Decimal(15, 2)
+  changeGiven  Decimal? @map("change_given") @db.Decimal(15, 2)
+  checkNumber  String?  @map("check_number")
+  checkPayer   String?  @map("check_payer")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  receipt CashReceipt @relation(fields: [receiptId], references: [id])
+
+  @@index([tenantId, receiptId])
+  @@map("cash_receipt_tender")
+}
+
+/// S052 — append-only drawer ledger. Every cash/check movement in or out of
+/// the drawer (opening float, receipt tenders, void compensations) is one
+/// row here; expected cash/checks at blind-close time are ALWAYS derived by
+/// summing this table, never from a running balance column. INSERT-only —
+/// enforced by the trg_cash_drawer_movement_append_only trigger (added in
+/// the constraints migration).
+model CashDrawerMovement {
+  id           String   @id @default(uuid())
+  tenantId     String   @map("tenant_id")
+  drawerId     String   @map("drawer_id")
+  movementType String   @map("movement_type") // OPEN_FLOAT | CASH_RECEIPT | CASH_VOID_REVERSAL | CHECK_RECEIPT | CHECK_VOID_REVERSAL
+  amount       Decimal  @db.Decimal(15, 2) // signed: void reversals are negative
+  tenderType   String?  @map("tender_type") // CASH | CHECK | null for OPEN_FLOAT
+  receiptId    String?  @map("receipt_id")
+  checkNumber  String?  @map("check_number")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  drawer CashDrawer @relation(fields: [drawerId], references: [id])
+
+  @@index([tenantId, drawerId, movementType])
+  @@index([tenantId, receiptId])
+  @@map("cash_drawer_movement")
+}
+
+/// S052 — the cashier's blind count submission. Cashier-entered fields only
+/// (countedCash/checkCount/checkTotal/retainedFloat/cashierNote) — expected
+/// totals are computed server-side from CashDrawerMovement and never echoed
+/// back in the response to this submission (BR: cashier must not see
+/// expected totals before submitting).
+model CashBlindCount {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  drawerId      String   @unique @map("drawer_id")
+  countedCash   Decimal  @map("counted_cash") @db.Decimal(15, 2)
+  checkCount    Int      @map("check_count")
+  checkTotal    Decimal  @map("check_total") @db.Decimal(15, 2)
+  retainedFloat Decimal  @map("retained_float") @db.Decimal(15, 2)
+  cashierNote   String?  @map("cashier_note")
+  submittedBy   String   @map("submitted_by")
+  submittedAt   DateTime @default(now()) @map("submitted_at")
+  version       Int      @default(1)
+
+  drawer CashDrawer            @relation(fields: [drawerId], references: [id])
+  lines  CashBlindCountLine[]
+
+  @@map("cash_blind_count")
+}
+
+/// Itemized counted checks (BR: check reconciliation needs expected vs
+/// counted check COUNT and TOTAL, not just a lump sum).
+model CashBlindCountLine {
+  id           String   @id @default(uuid())
+  tenantId     String   @map("tenant_id")
+  blindCountId String   @map("blind_count_id")
+  checkNumber  String?  @map("check_number")
+  amount       Decimal  @db.Decimal(15, 2)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  blindCount CashBlindCount @relation(fields: [blindCountId], references: [id])
+
+  @@index([tenantId, blindCountId])
+  @@map("cash_blind_count_line")
+}
+
+/// S052 — computed once at blind-close submission time (never recomputed),
+/// from CashDrawerMovement (cash) and CashBlindCountLine (checks). A check
+/// discrepancy is classified NON_CASH_EXCEPTION and never folded into a cash
+/// over/short — see domain/reconciliation.ts classifyVariance().
+model CashDrawerVariance {
+  id                  String   @id @default(uuid())
+  tenantId            String   @map("tenant_id")
+  drawerId            String   @unique @map("drawer_id")
+  expectedCash        Decimal  @map("expected_cash") @db.Decimal(15, 2)
+  countedCash         Decimal  @map("counted_cash") @db.Decimal(15, 2)
+  cashVariance        Decimal  @map("cash_variance") @db.Decimal(15, 2)
+  toleranceApplied    Decimal  @map("tolerance_applied") @db.Decimal(15, 2)
+  classification      String   // EXACT | WITHIN_TOLERANCE | OUTSIDE_TOLERANCE | NON_CASH_EXCEPTION
+  expectedCheckCount  Int      @map("expected_check_count")
+  expectedCheckTotal  Decimal  @map("expected_check_total") @db.Decimal(15, 2)
+  countedCheckCount   Int      @map("counted_check_count")
+  countedCheckTotal   Decimal  @map("counted_check_total") @db.Decimal(15, 2)
+  checkDiscrepancy    Boolean  @map("check_discrepancy")
+  requiresApproval    Boolean  @map("requires_approval")
+  depositEligibleCash Decimal  @map("deposit_eligible_cash") @db.Decimal(15, 2)
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  drawer CashDrawer @relation(fields: [drawerId], references: [id])
+
+  @@map("cash_drawer_variance")
+}
+
+model CashVarianceApproval {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  drawerId        String   @unique @map("drawer_id")
+  varianceId      String   @map("variance_id")
+  approvedBy      String   @map("approved_by")
+  approvalReason  String   @map("approval_reason")
+  approvedAt      DateTime @default(now()) @map("approved_at")
+
+  drawer CashDrawer @relation(fields: [drawerId], references: [id])
+
+  @@map("cash_variance_approval")
+}
+
+/// Scoped, resolvable cash-drawer variance tolerance. Resolution order
+/// STORE -> ENTITY -> TENANT -> 0.00 (no configured tolerance = only an
+/// exact count avoids OUTSIDE_TOLERANCE). Mirrors coa-service's
+/// ConfigKeyCatalog/ConfigSetting shape, simplified to a single table since
+/// this is a standalone service (see S052 research report Q9). The
+/// (tenant_id, scope, COALESCE(scope_id,'')) uniqueness is enforced by a
+/// raw unique index in the constraints migration, following the same
+/// COALESCE-in-unique-index technique as authz_role_assignment.
+model CashVarianceToleranceConfig {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  scope           String   // TENANT | ENTITY | STORE
+  scopeId         String?  @map("scope_id") // null for TENANT scope
+  toleranceAmount Decimal  @map("tolerance_amount") @db.Decimal(15, 2)
+  updatedBy       String   @map("updated_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId, scope, scopeId])
+  @@map("cash_variance_tolerance_config")
+}

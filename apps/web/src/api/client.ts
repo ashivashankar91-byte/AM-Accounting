@@ -547,6 +547,51 @@ export const cashReceiptApi = {
   allocateDeposit: (depositId: string, glAccountId: string) => apiFetch<any>(`/api/v1/cash-receipts/deposits/${depositId}/allocate`, { method: 'POST', body: JSON.stringify({ glAccountId }) }),
 };
 
+// S052 — POS Cash Receipts, Cashier Drawers, Blind Close and Over/Short.
+// Consumes the real cash-service (proxied by the gateway at /api/v1/cash),
+// a separate service/route prefix from the legacy cashReceiptApi above.
+export const cashDrawerApi = {
+  openDrawer: (data: {
+    storeId: string; storeCode: string; terminalCode: string; entityId: string; businessDate: string;
+    currency?: string; openingFloat: number | string; cashierName?: string | null;
+  }) => apiFetch<any>('/api/v1/cash/drawers', { method: 'POST', body: JSON.stringify(data) }),
+  getActiveDrawer: (params?: { cashierId?: string; storeId?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.cashierId) qs.set('cashierId', params.cashierId);
+    if (params?.storeId) qs.set('storeId', params.storeId);
+    const s = qs.toString();
+    return apiFetch<{ drawer: any | null }>(`/api/v1/cash/drawers/active${s ? `?${s}` : ''}`);
+  },
+  getDrawer: (drawerId: string) => apiFetch<any>(`/api/v1/cash/drawers/${drawerId}`),
+  submitBlindClose: (drawerId: string, data: {
+    countedCash: number | string; checkCount: number; checkTotal: number | string; retainedFloat: number | string;
+    cashierNote?: string | null; checks?: { checkNumber?: string | null; amount: number | string }[];
+  }) => apiFetch<any>(`/api/v1/cash/drawers/${drawerId}/blind-close`, { method: 'POST', body: JSON.stringify(data) }),
+  getReconciliation: (drawerId: string) => apiFetch<any>(`/api/v1/cash/drawers/${drawerId}/reconciliation`),
+  approveVariance: (drawerId: string, reason: string) =>
+    apiFetch<any>(`/api/v1/cash/drawers/${drawerId}/variance:approve`, { method: 'POST', body: JSON.stringify({ reason }) }),
+  reconcileDrawer: (drawerId: string) => apiFetch<any>(`/api/v1/cash/drawers/${drawerId}/reconcile`, { method: 'POST' }),
+};
+
+export const posReceiptApi = {
+  createReceipt: (drawerId: string, data: {
+    entityId: string; sourceDocType: string; sourceDocId: string; sourceDisplayNumber?: string | null;
+    payerReference?: string | null; amountDue?: number | string | null; totalAmount: number | string;
+    currency?: string; tenders: Array<{ tenderType: 'CASH' | 'CHECK'; amount: number | string; cashTendered?: number | string | null; checkNumber?: string | null; checkPayer?: string | null }>;
+    idempotencyKey: string;
+  }) => apiFetch<any>(`/api/v1/cash/drawers/${drawerId}/receipts`, { method: 'POST', body: JSON.stringify(data) }),
+  searchReceipts: (params?: { receiptNumber?: string; sourceDocId?: string; cashierId?: string; drawerId?: string; status?: string; storeId?: string; limit?: number; offset?: number }) => {
+    const qs = new URLSearchParams();
+    Object.entries(params ?? {}).forEach(([k, v]) => { if (v !== undefined && v !== '') qs.set(k, String(v)); });
+    const s = qs.toString();
+    return apiFetch<{ items: any[]; total: number; limit: number; offset: number }>(`/api/v1/cash/receipts${s ? `?${s}` : ''}`);
+  },
+  getReceipt: (receiptId: string) => apiFetch<any>(`/api/v1/cash/receipts/${receiptId}`),
+  getPrintableReceipt: (receiptId: string) => apiFetch<any>(`/api/v1/cash/receipts/${receiptId}/print`),
+  voidReceipt: (receiptId: string, reason: string) =>
+    apiFetch<any>(`/api/v1/cash/receipts/${receiptId}/void`, { method: 'POST', body: JSON.stringify({ reason }) }),
+};
+
 // Reports API
 export const reportApi = {
   generate: (type: string, params: any) => apiFetch<any>('/api/v1/reports/generate', { method: 'POST', body: JSON.stringify({ type, ...params }) }),

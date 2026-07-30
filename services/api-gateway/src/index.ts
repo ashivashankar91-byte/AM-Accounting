@@ -32,7 +32,7 @@ const PORT = parseInt(process.env['PORT'] ?? '3000', 10);
 //   onboarding-service:3035, webhook-service:3036, cashflow-service:3037
 //   document-service:3038, group-service:3039, user-service:3040
 //   compliance-service:3043, query-service:3045, analytics-service:3046
-//   orchestrator-service:3048
+//   orchestrator-service:3048, cash-service:3050
 
 const SERVICES: Array<{ prefix: string; upstream: string; rateLimit?: number; rewritePrefix?: string }> = [
   { prefix: '/api/v1/auth',           upstream: process.env['AUTH_SERVICE_URL']           ?? 'http://auth-service:3001' },
@@ -82,8 +82,13 @@ const SERVICES: Array<{ prefix: string; upstream: string; rateLimit?: number; re
   // Intelligence layer — agent-t1 handles copilot and agents HTTP
   { prefix: '/api/v1/copilot',        upstream: process.env['AGENT_T1_URL']               ?? 'http://agent-t1:3024' },
   { prefix: '/api/v1/agents',         upstream: process.env['AGENT_T1_URL']               ?? 'http://agent-t1:3024' },
-  // Cash receipts — proxied to apar-service (AR domain); /deposits sub-routes handled there
+  // Legacy cash receipts (gl-service/apar-service prototype track) — proxied
+  // to apar-service (AR domain); /deposits sub-routes handled there. See
+  // S052 for the current-generation cashier-window/drawer-reconciliation
+  // slice, a separate service/route prefix (/api/v1/cash below).
   { prefix: '/api/v1/cash-receipts',  upstream: process.env['APAR_SERVICE_URL']           ?? 'http://apar-service:3013', rewritePrefix: '/api/v1/apar' },
+  // S052 — POS cash receipts, cashier drawers, blind close and over/short.
+  { prefix: '/api/v1/cash',           upstream: process.env['CASH_SERVICE_URL']           ?? 'http://cash-service:3050' },
   // ESG sustainability reporting — GL service provides stubs from live GL data
   { prefix: '/api/v1/esg',            upstream: process.env['GL_SERVICE_URL']             ?? 'http://gl-service:3010' },
   // Vendor shorthand (same as /apar/vendors)

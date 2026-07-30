@@ -347,6 +347,19 @@ services:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
 
+  cash-service:
+    build:
+      context: .
+      dockerfile: services/cash-service/Dockerfile
+    ports:
+      - "3050:3050"
+    environment:
+      <<: *service-env
+      PORT: 3050
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
   onboarding-service:
     build:
       context: .
@@ -519,6 +532,7 @@ services:
       - onboarding-service
       - webhook-service
       - cashflow-service
+      - cash-service
       - document-service
       - group-service
       - compliance-service

@@ -60,6 +60,15 @@ import GoldenPathTrialBalance from './pages/goldenpath/TrialBalance';
 import GoldenPathGLSearch from './pages/goldenpath/GLSearch';
 import GoldenPathBalanceSheet from './pages/goldenpath/BalanceSheet';
 import GoldenPathIncomeStatement from './pages/goldenpath/IncomeStatement';
+// S052 — POS Cash Receipts, Cashier Drawers, Blind Close and Over/Short.
+import CashDrawerHome from './pages/goldenpath/cash/DrawerHome';
+import CashOpenDrawer from './pages/goldenpath/cash/OpenDrawer';
+import CashReceivePayment from './pages/goldenpath/cash/ReceivePayment';
+import CashReceiptSearch from './pages/goldenpath/cash/ReceiptSearch';
+import CashReceiptDetails from './pages/goldenpath/cash/ReceiptDetails';
+import CashReceiptPrint from './pages/goldenpath/cash/ReceiptPrint';
+import CashBlindClose from './pages/goldenpath/cash/BlindClose';
+import CashSupervisorReconciliation from './pages/goldenpath/cash/SupervisorReconciliation';
 import AnalysisCodeRegistry from './pages/accounting/admin/AnalysisCodeRegistry';
 import GoldenPathPostingRules from './pages/goldenpath/PostingRules';
 import GoldenPathPostingExecutions from './pages/goldenpath/PostingExecutions';
@@ -186,12 +195,16 @@ const MODULES: AppModule[] = [
     matchPrefixes: [
       '/accounting/ap', '/accounting/ar', '/accounting/bank-recon',
       '/accounting/purchase-orders', '/ap', '/cash-receipts', '/bank-deposits',
-      '/vendors', '/po',
+      '/vendors', '/po', '/golden-path/cash',
     ],
     sections: [
       { title: 'Accounts Receivable', items: [
         { path: '/accounting/ar',           label: 'Cash Receipts' },
         { path: '/accounting/ar/customers', label: 'Customer Master' },
+      ]},
+      { title: 'Cashiering (S052)', items: [
+        { path: '/golden-path/cash',          label: 'Cashier Drawer' },
+        { path: '/golden-path/cash/receipts', label: 'Receipt Search' },
       ]},
       { title: 'Accounts Payable', items: [
         { path: '/accounting/ap',          label: 'AP Invoices' },
@@ -569,6 +582,16 @@ export default function App() {
                   (registered below); this path never had a real route at all,
                   so it fell through to the app shell's default/dashboard view. */}
               <Route path="/golden-path/gl-inquiry" element={<Navigate to="/accounting/inquiry/gl" replace />} />
+
+              {/* S052 — POS Cash Receipts, Cashier Drawers, Blind Close and Over/Short. */}
+              <Route path="/golden-path/cash" element={<GoldenPathProtectedRoute><CashDrawerHome /></GoldenPathProtectedRoute>} />
+              <Route path="/golden-path/cash/open" element={<GoldenPathProtectedRoute><CashOpenDrawer /></GoldenPathProtectedRoute>} />
+              <Route path="/golden-path/cash/receive" element={<GoldenPathProtectedRoute><CashReceivePayment /></GoldenPathProtectedRoute>} />
+              <Route path="/golden-path/cash/receipts" element={<GoldenPathProtectedRoute><CashReceiptSearch /></GoldenPathProtectedRoute>} />
+              <Route path="/golden-path/cash/receipts/:receiptId" element={<GoldenPathProtectedRoute><CashReceiptDetails /></GoldenPathProtectedRoute>} />
+              <Route path="/golden-path/cash/receipts/:receiptId/print" element={<GoldenPathProtectedRoute><CashReceiptPrint /></GoldenPathProtectedRoute>} />
+              <Route path="/golden-path/cash/drawers/:drawerId/blind-close" element={<GoldenPathProtectedRoute><CashBlindClose /></GoldenPathProtectedRoute>} />
+              <Route path="/golden-path/cash/drawers/:drawerId/reconciliation" element={<GoldenPathProtectedRoute><CashSupervisorReconciliation /></GoldenPathProtectedRoute>} />
 
               {/* WF-A001 through WF-A010 */}
               <Route path="/accounting/dashboard" element={<DashboardWorkflow />} />
