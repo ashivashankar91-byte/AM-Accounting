@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Search, Check, AlertCircle, UserX, RefreshCw, ChevronRight, AlertTriangle, Lock, History, ShieldOff } from 'lucide-react';
 import { aparApi } from '../../api/client';
 import PageLoader from '../../components/PageLoader';
+import VendorInsuranceCertificates from './VendorInsuranceCertificates';
 
 const VENDOR_TYPES = ['SUPPLIER', 'SERVICE_PROVIDER', 'GOVERNMENT', 'OTHER'] as const;
 
@@ -77,16 +78,45 @@ const vendorToForm = (v: any): VendorForm => ({
   notes: v.notes ?? '',
 });
 
-type Section = 'address' | 'contact' | 'tax' | 'payment' | 'banking' | 'audit';
+type Section = 'address' | 'contact' | 'tax' | 'payment' | 'banking' | 'compliance' | 'insurance' | 'audit';
 
 const SECTIONS: { key: Section; label: string }[] = [
-  { key: 'address',  label: 'Address' },
-  { key: 'contact',  label: 'Contact' },
-  { key: 'tax',      label: 'Tax / 1099' },
-  { key: 'payment',  label: 'Payment Terms' },
-  { key: 'banking',  label: 'Banking' },
-  { key: 'audit',    label: 'Audit History' },
+  { key: 'address',    label: 'Address' },
+  { key: 'contact',    label: 'Contact' },
+  { key: 'tax',        label: 'Tax / 1099' },
+  { key: 'payment',    label: 'Payment Terms' },
+  { key: 'banking',    label: 'Banking' },
+  { key: 'compliance', label: 'Compliance' },
+  { key: 'insurance',  label: 'Insurance' },
+  { key: 'audit',      label: 'Audit History' },
 ];
+
+// AMACC-CH04 S036B
+const COMPLIANCE_CHECK_TYPES = ['TAX_ID_VERIFICATION', 'INSURANCE_CERTIFICATE', 'W9_VERIFICATION', 'GENERAL_COMPLIANCE_DOCUMENT', 'OTHER'] as const;
+
+const COMPLIANCE_CHECK_TYPE_LABELS: Record<string, string> = {
+  TAX_ID_VERIFICATION: 'Tax ID Verification',
+  INSURANCE_CERTIFICATE: 'Insurance Certificate',
+  W9_VERIFICATION: 'W-9 Verification',
+  GENERAL_COMPLIANCE_DOCUMENT: 'General Compliance Document',
+  OTHER: 'Other',
+};
+
+/** Truthful, non-fabricated copy for each status — never implies a passed
+ * external check that didn't actually happen. */
+const COMPLIANCE_STATUS_COPY: Record<string, { label: string; className: string }> = {
+  NOT_CONFIGURED:           { label: 'Not Configured',          className: 'bg-gray-100 text-gray-600' },
+  PENDING_REVIEW:           { label: 'Pending Review',          className: 'bg-amber-100 text-amber-700' },
+  VERIFICATION_UNAVAILABLE: { label: 'Verification Unavailable', className: 'bg-amber-100 text-amber-700' },
+  VERIFIED:                 { label: 'Verified',                className: 'bg-green-100 text-green-700' },
+  REJECTED:                 { label: 'Rejected',                className: 'bg-red-100 text-red-700' },
+  EXPIRED:                  { label: 'Expired',                 className: 'bg-red-100 text-red-700' },
+};
+
+function ComplianceStatusBadge({ status }: { status?: string }) {
+  const copy = COMPLIANCE_STATUS_COPY[status ?? ''] ?? { label: status ?? 'Unknown', className: 'bg-gray-100 text-gray-600' };
+  return <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${copy.className}`}>{copy.label}</span>;
+}
 
 function StatusBadge({ status }: { status?: string }) {
   if (!status) return null;
@@ -130,6 +160,14 @@ export default function VendorMaintenance() {
   const [overrideForbidden, setOverrideForbidden] = useState(false);
   const [pendingCreate, setPendingCreate] = useState<any | null>(null);
 
+  // S036B vendor compliance adapters state
+  const [showAddCompliance, setShowAddCompliance] = useState(false);
+  const [complianceForm, setComplianceForm] = useState({ checkType: 'GENERAL_COMPLIANCE_DOCUMENT', jurisdiction: '', country: '', externalReference: '', expirationDate: '', notes: '' });
+  const [reviewTarget, setReviewTarget] = useState<any | null>(null);
+  const [reviewDecision, setReviewDecision] = useState<'VERIFIED' | 'REJECTED' | 'EXPIRED'>('VERIFIED');
+  const [reviewReason, setReviewReason] = useState('');
+  const [complianceUnauthorized, setComplianceUnauthorized] = useState<string | null>(null);
+
   useEffect(() => { if (id) setSelectedId(id); }, [id]);
 
   const { data: vendorsResult, isLoading: listLoading, isError: listError, error: listErrorObj, refetch: refetchList } = useQuery({
@@ -158,6 +196,69 @@ export default function VendorMaintenance() {
     queryFn: () => aparApi.getVendorAuditEvents(selectedId!),
     enabled: !!selectedId && !isNew && section === 'audit',
     retry: false,
+  });
+
+  // S036B: vendor compliance checks
+  const { data: complianceChecks, isLoading: complianceLoading, isError: complianceError, error: complianceErrorObj } = useQuery({
+    queryKey: ['vendor-compliance', selectedId],
+    queryFn: () => aparApi.getVendorComplianceChecks(selectedId!),
+    enabled: !!selectedId && !isNew && section === 'compliance',
+    retry: false,
+  });
+
+  function handleComplianceError(err: any) {
+    if (err?.status === 403 || err?.body?.error === 'FORBIDDEN') {
+      setComplianceUnauthorized(err?.body?.message || 'You do not have permission to perform this action.');
+      return;
+    }
+    setNotification({ type: 'error', msg: err?.body?.message || err.message || 'Request failed' });
+    setTimeout(() => setNotification(null), 4000);
+  }
+
+  const createComplianceMut = useMutation({
+    mutationFn: () => aparApi.createVendorComplianceCheck(selectedId!, {
+      ...complianceForm,
+      jurisdiction: complianceForm.jurisdiction || undefined,
+      country: complianceForm.country || undefined,
+      externalReference: complianceForm.externalReference || undefined,
+      expirationDate: complianceForm.expirationDate || undefined,
+      notes: complianceForm.notes || undefined,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vendor-compliance', selectedId] });
+      setShowAddCompliance(false);
+      setComplianceForm({ checkType: 'GENERAL_COMPLIANCE_DOCUMENT', jurisdiction: '', country: '', externalReference: '', expirationDate: '', notes: '' });
+      setNotification({ type: 'success', msg: 'Compliance check added.' });
+      setTimeout(() => setNotification(null), 3000);
+    },
+    onError: handleComplianceError,
+  });
+
+  const runVerificationMut = useMutation({
+    mutationFn: (checkId: string) => aparApi.runVendorComplianceVerification(selectedId!, checkId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vendor-compliance', selectedId] });
+      setNotification({ type: 'success', msg: 'Verification adapter ran.' });
+      setTimeout(() => setNotification(null), 3000);
+    },
+    onError: handleComplianceError,
+  });
+
+  const reviewComplianceMut = useMutation({
+    mutationFn: () => aparApi.reviewVendorComplianceCheck(selectedId!, reviewTarget!.id, {
+      version: reviewTarget!.version, decision: reviewDecision, reason: reviewReason || undefined,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vendor-compliance', selectedId] });
+      setReviewTarget(null);
+      setReviewReason('');
+      setNotification({ type: 'success', msg: 'Compliance check reviewed.' });
+      setTimeout(() => setNotification(null), 3000);
+    },
+    onError: (err: any) => {
+      setReviewTarget(null);
+      handleComplianceError(err);
+    },
   });
 
   function handleMutationError(err: any) {
@@ -391,6 +492,7 @@ export default function VendorMaintenance() {
           {filteredVendors.map((v: any) => (
             <button
               key={v.id}
+              data-testid="vendor-list-row"
               onClick={() => {
                 setSelectedId(v.id);
                 setIsNew(false);
@@ -762,6 +864,87 @@ export default function VendorMaintenance() {
                     </div>
                   )}
 
+                  {/* Section: Compliance (AMACC-CH04 S036B) */}
+                  {section === 'compliance' && (
+                    <div className="bg-white rounded-lg shadow p-5 space-y-4">
+                      {complianceUnauthorized ? (
+                        <p className="text-sm text-red-600 flex items-center gap-1"><ShieldOff className="w-3.5 h-3.5" /> {complianceUnauthorized}</p>
+                      ) : (
+                        <>
+                          <div className="flex items-center justify-between">
+                            <h3 className="text-sm font-semibold text-gray-700">Compliance Checks</h3>
+                            <button
+                              onClick={() => setShowAddCompliance(true)}
+                              className="flex items-center gap-1 px-3 py-1.5 bg-blue-700 text-white rounded text-xs font-medium hover:bg-blue-800"
+                            >
+                              <Plus className="w-3.5 h-3.5" /> Add Compliance Check
+                            </button>
+                          </div>
+
+                          {complianceLoading ? (
+                            <p className="text-sm text-gray-400">Loading compliance checks...</p>
+                          ) : complianceError ? (
+                            (complianceErrorObj as any)?.status === 403 ? (
+                              <p className="text-sm text-red-600 flex items-center gap-1"><ShieldOff className="w-3.5 h-3.5" /> You don't have permission to view compliance checks.</p>
+                            ) : (
+                              <p className="text-sm text-red-600">Could not load compliance checks.</p>
+                            )
+                          ) : !complianceChecks || (complianceChecks as any[]).length === 0 ? (
+                            <p className="text-sm text-gray-400">No compliance checks recorded yet.</p>
+                          ) : (
+                            <ul className="space-y-3">
+                              {(complianceChecks as any[]).map((c: any) => (
+                                <li key={c.id} className="border rounded-lg p-3 space-y-1.5">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-sm font-medium">{COMPLIANCE_CHECK_TYPE_LABELS[c.checkType] ?? c.checkType}</span>
+                                    <ComplianceStatusBadge status={c.status} />
+                                  </div>
+                                  <div className="text-xs text-gray-500 flex flex-wrap gap-x-4 gap-y-0.5">
+                                    {c.jurisdiction && <span>Jurisdiction: {c.jurisdiction}</span>}
+                                    {c.country && <span>Country: {c.country}</span>}
+                                    {c.expirationDate && <span>Expires: {new Date(c.expirationDate).toISOString().slice(0, 10)}</span>}
+                                    {c.lastCheckedAt && <span>Last checked: {new Date(c.lastCheckedAt).toLocaleString()}</span>}
+                                  </div>
+                                  {c.resultMessage && (
+                                    <p className="text-xs text-gray-500 flex items-start gap-1"><AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> {c.resultMessage}</p>
+                                  )}
+                                  {!['VERIFIED', 'REJECTED'].includes(c.status) && (
+                                    <div className="flex gap-2 pt-1">
+                                      <button
+                                        onClick={() => runVerificationMut.mutate(c.id)}
+                                        disabled={runVerificationMut.isPending}
+                                        className="px-2.5 py-1 border border-gray-300 rounded text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+                                      >
+                                        Run Verification
+                                      </button>
+                                      <button
+                                        onClick={() => { setReviewTarget(c); setReviewDecision('VERIFIED'); setReviewReason(''); }}
+                                        className="px-2.5 py-1 border border-gray-300 rounded text-xs font-medium text-gray-700 hover:bg-gray-50"
+                                      >
+                                        Review
+                                      </button>
+                                    </div>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Section: Insurance Certificates (AMACC-CH04 S038) */}
+                  {section === 'insurance' && (
+                    isNew || !selectedId ? (
+                      <div className="bg-white rounded-lg shadow p-5">
+                        <p className="text-sm text-gray-500">Save the vendor first to manage insurance certificates.</p>
+                      </div>
+                    ) : (
+                      <VendorInsuranceCertificates vendorId={selectedId} />
+                    )
+                  )}
+
                   {/* Section: Audit History */}
                   {section === 'audit' && (
                     <div className="bg-white rounded-lg shadow p-5">
@@ -841,6 +1024,96 @@ export default function VendorMaintenance() {
                 className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-40"
               >
                 {reactivateMut.isPending ? 'Reactivating...' : 'Reactivate'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* S036B: Add Compliance Check */}
+      {showAddCompliance && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-2xl w-[28rem] p-6 space-y-4">
+            <h3 className="font-bold text-lg">Add Compliance Check</h3>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Check Type</label>
+              <select
+                data-testid="compliance-check-type-select"
+                value={complianceForm.checkType}
+                onChange={e => setComplianceForm(prev => ({ ...prev, checkType: e.target.value }))}
+                className="w-full border rounded px-3 py-2 text-sm"
+              >
+                {COMPLIANCE_CHECK_TYPES.map(t => <option key={t} value={t}>{COMPLIANCE_CHECK_TYPE_LABELS[t]}</option>)}
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Jurisdiction</label>
+                <input value={complianceForm.jurisdiction} onChange={e => setComplianceForm(prev => ({ ...prev, jurisdiction: e.target.value }))} className="w-full border rounded px-3 py-2 text-sm" placeholder="e.g. IL" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Country</label>
+                <input value={complianceForm.country} onChange={e => setComplianceForm(prev => ({ ...prev, country: e.target.value }))} className="w-full border rounded px-3 py-2 text-sm" placeholder="e.g. US" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">External Reference</label>
+              <input value={complianceForm.externalReference} onChange={e => setComplianceForm(prev => ({ ...prev, externalReference: e.target.value }))} className="w-full border rounded px-3 py-2 text-sm" placeholder="Policy #, document ID, etc." />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Expiration Date</label>
+              <input type="date" value={complianceForm.expirationDate} onChange={e => setComplianceForm(prev => ({ ...prev, expirationDate: e.target.value }))} className="w-full border rounded px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+              <textarea value={complianceForm.notes} onChange={e => setComplianceForm(prev => ({ ...prev, notes: e.target.value }))} rows={2} className="w-full border rounded px-3 py-2 text-sm" />
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setShowAddCompliance(false)} className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
+                Cancel
+              </button>
+              <button
+                onClick={() => createComplianceMut.mutate()}
+                disabled={createComplianceMut.isPending}
+                className="px-4 py-2 bg-blue-700 text-white rounded-lg text-sm font-medium hover:bg-blue-800 disabled:opacity-40"
+              >
+                {createComplianceMut.isPending ? 'Adding...' : 'Add Check'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* S036B: Review Compliance Check — the only path that sets VERIFIED/REJECTED/EXPIRED */}
+      {reviewTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-2xl w-96 p-6 space-y-4">
+            <h3 className="font-bold text-lg">Review Compliance Check</h3>
+            <p className="text-sm text-gray-600">{COMPLIANCE_CHECK_TYPE_LABELS[reviewTarget.checkType] ?? reviewTarget.checkType}</p>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Decision</label>
+              <select value={reviewDecision} onChange={e => setReviewDecision(e.target.value as any)} className="w-full border rounded px-3 py-2 text-sm">
+                <option value="VERIFIED">Verified</option>
+                <option value="REJECTED">Rejected</option>
+                <option value="EXPIRED">Expired</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                {reviewDecision === 'REJECTED' ? 'Reason *' : 'Note'}
+              </label>
+              <textarea value={reviewReason} onChange={e => setReviewReason(e.target.value)} rows={2} className="w-full border rounded px-3 py-2 text-sm" placeholder={reviewDecision === 'REJECTED' ? 'Required to reject' : 'Optional'} />
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => { setReviewTarget(null); setReviewReason(''); }} className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
+                Cancel
+              </button>
+              <button
+                onClick={() => reviewComplianceMut.mutate()}
+                disabled={reviewComplianceMut.isPending || (reviewDecision === 'REJECTED' && !reviewReason.trim())}
+                className="px-4 py-2 bg-blue-700 text-white rounded-lg text-sm font-medium hover:bg-blue-800 disabled:opacity-40"
+              >
+                {reviewComplianceMut.isPending ? 'Saving...' : 'Submit Review'}
               </button>
             </div>
           </div>

@@ -113,12 +113,26 @@ model OutboxEvent {
   @@index([createdAt])
 }
 
-/// S5-01: Customer master — NAME_DATABASE CUSTOMER records
+/// S5-01: Customer master — NAME_DATABASE CUSTOMER records.
+/// S046 (AMACC-CH04): hardened in place (additive-only) — tenant isolation/RLS,
+/// lifecycle (ACTIVE/INACTIVE/DELETED), optimistic concurrency, duplicate
+/// detection and a credit profile (limit/hold/terms). See MODULE_STATE.md /
+/// S046 commit for the convergence decision: this stays the single customer
+/// system of record — no parallel customer table was created. Statements,
+/// invoicing, receipts, cash application, write-offs and NSF processing
+/// (also named in the S046 story title/epic) are explicitly OUT of this
+/// slice's scope — see later stories S047-S051.
 model Customer {
   id                    String    @id @default(uuid())
   tenantId              String    @map("tenant_id")
   customerNumber        String    @db.VarChar(20) @map("customer_number")
+  /// S046: uppercased/trimmed comparison form of customerNumber. Backfilled
+  /// for existing rows; maintained by CustomerService on every write.
+  normalizedCustomerNumber String @map("normalized_customer_number")
   customerName          String    @map("customer_name")
+  /// S046: lower/trimmed comparison form of customerName — duplicate
+  /// candidate signal (paired with zip).
+  normalizedCustomerName String   @map("normalized_customer_name")
   customerType          String    @default("Individual") @map("customer_type") // Individual | Business | Government | Fleet
   salespersonCode       String?   @db.VarChar(10) @map("salesperson_code")
   arAccountOverride     String?   @map("ar_account_override") // GL account UUID
@@ -129,6 +143,18 @@ model Customer {
   taxExemptExpiration   DateTime? @map("tax_exempt_expiration")
   creditLimit           Decimal   @default(0) @db.Decimal(15, 2) @map("credit_limit")
   creditTerms           String    @default("Net30") @map("credit_terms")
+  /// S046: credit hold — blocks new-charge eligibility (mirrors Vendor's
+  /// ACTIVE-only invoice eligibility). Distinct from lifecycle status: a
+  /// customer can be ACTIVE but on credit hold.
+  creditHold            Boolean   @default(false) @map("credit_hold")
+  creditHoldReason      String?   @map("credit_hold_reason")
+  creditHoldSetAt       DateTime? @map("credit_hold_set_at")
+  creditHoldSetBy       String?   @map("credit_hold_set_by")
+  creditHoldClearedAt   DateTime? @map("credit_hold_cleared_at")
+  creditHoldClearedBy   String?   @map("credit_hold_cleared_by")
+  /// S046: effective date of the current credit profile (limit/terms/hold) —
+  /// updated whenever any credit-profile field changes.
+  creditProfileEffectiveDate DateTime? @map("credit_profile_effective_date")
   customerSince         DateTime  @default(now()) @map("customer_since")
   preferredContactMethod String   @default("Phone") @map("preferred_contact_method")
   doNotSolicit          Boolean   @default(false) @map("do_not_solicit")
@@ -141,9 +167,13 @@ model Customer {
   zip                   String?   @db.VarChar(10)
   country               String?   @default("US")
   phone                 String?
-  phone2                String?
-  fax                   String?
-  email                 String?
+  /// S046: digits-only comparison form of phone — duplicate candidate signal.
+  normalizedPhone        String?  @map("normalized_phone")
+  phone2                 String?
+  fax                    String?
+  email                  String?
+  /// S046: lowercased/trimmed comparison form of email — duplicate candidate signal.
+  normalizedEmail        String?  @map("normalized_email")
   // Secondary / alternate address
   secondaryStreet       String?   @map("secondary_street")
   secondaryCity         String?   @map("secondary_city")
@@ -160,7 +190,23 @@ model Customer {
   employeeFlag          Boolean   @default(false) @map("employee_flag") // E = Employee
   // Notes (append-only JSON array of { timestamp, user, text })
   notes                 Json?
+  /// S046: ACTIVE | INACTIVE | DELETED. isActive below is kept in sync by
+  /// CustomerService on every write for read-path backward compatibility
+  /// with pre-S046 consumers that filter on it directly.
+  status                 String   @default("ACTIVE")
   isActive              Boolean   @default(true) @map("is_active")
+  /// S046: optimistic-concurrency version. Incremented on every update/lifecycle change.
+  version                Int      @default(1)
+  inactiveReason         String?  @map("inactive_reason")
+  inactivatedAt          DateTime? @map("inactivated_at")
+  inactivatedBy          String?  @map("inactivated_by")
+  reactivatedAt          DateTime? @map("reactivated_at")
+  reactivatedBy          String?  @map("reactivated_by")
+  /// Logical delete only — a row is never physically removed (BR-AP-001,
+  /// same convention applied to the customer master by S046).
+  deletedAt              DateTime? @map("deleted_at")
+  deletedBy              String?  @map("deleted_by")
+  deleteReason           String?  @map("delete_reason")
   createdAt             DateTime  @default(now()) @map("created_at")
   updatedAt             DateTime  @updatedAt @map("updated_at")
 
@@ -169,6 +215,39 @@ model Customer {
   @@index([tenantId])
   @@index([tenantId, isActive])
   @@index([tenantId, customerName])
+  @@index([tenantId, status])
+  @@index([tenantId, normalizedCustomerNumber])
+  @@index([tenantId, normalizedCustomerName])
+  @@index([tenantId, normalizedEmail])
+  @@index([tenantId, normalizedPhone])
+}
+
+/// S046: per-tenant atomic customer-number counter — replaces the pre-S046
+/// `SELECT count(*)+1` generation in routes.ts, which raced under concurrent
+/// creates. Mirrors ApVendorNumberCounter (S036A).
+model ArCustomerNumberCounter {
+  tenantId   String @id @map("tenant_id")
+  nextNumber Int    @default(1) @map("next_number")
+
+  @@map("ar_customer_number_counters")
+}
+
+/// S046: persisted record of a user acknowledging a duplicate-customer
+/// warning and choosing to create the customer anyway. Requires
+/// AR_CUSTOMER_DUPLICATE_OVERRIDE (server-enforced) and an explicit reason.
+model ArCustomerDuplicateAcknowledgement {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  customerId     String   @map("customer_id")
+  /// Array of { customerId, customerNumber, customerName, status, matchedSignals }.
+  matchedSignals Json     @map("matched_signals")
+  reason         String
+  actor          String
+  correlationId  String?  @map("correlation_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, customerId])
+  @@map("ar_customer_duplicate_acknowledgements")
 }
 
 /// S3-07: Vendor master — AP_VENDOR legacy equivalent
@@ -300,6 +379,44 @@ model ApVendorDuplicateAcknowledgement {
   @@map("ap_vendor_duplicate_acknowledgements")
 }
 
+/// AMACC-CH04 S036B: Vendor Compliance Adapters. Additive to the S036A
+/// vendor master — no changes to the `vendors` table. checkType is a label
+/// only (no regulatory logic keyed off it); jurisdiction/country are captured
+/// as data, never evaluated against any rule. status starts PENDING_REVIEW on
+/// create; runVerification() calls the configured ComplianceVerificationAdapter
+/// (ManualComplianceAdapter by default — always truthfully NOT_CONFIGURED,
+/// never a fabricated VERIFIED); VERIFIED/REJECTED/EXPIRED are only reachable
+/// via an explicit human review action (see VendorComplianceService.review).
+model VendorComplianceCheck {
+  id                String    @id @default(uuid())
+  tenantId          String    @map("tenant_id")
+  vendorId          String    @map("vendor_id")
+  /// TAX_ID_VERIFICATION | INSURANCE_CERTIFICATE | W9_VERIFICATION | GENERAL_COMPLIANCE_DOCUMENT | OTHER
+  checkType         String    @map("check_type")
+  /// NOT_CONFIGURED | PENDING_REVIEW | VERIFICATION_UNAVAILABLE | VERIFIED | REJECTED | EXPIRED
+  status            String    @default("PENDING_REVIEW")
+  jurisdiction      String?
+  country           String?
+  externalReference String?   @map("external_reference")
+  notes             String?
+  /// Name of the adapter that last ran (e.g. 'MANUAL'). Null until runVerification() is called once.
+  providerName      String?   @map("provider_name")
+  resultMessage     String?   @map("result_message")
+  expirationDate    DateTime? @map("expiration_date")
+  lastCheckedAt     DateTime? @map("last_checked_at")
+  reviewedAt        DateTime? @map("reviewed_at")
+  reviewedBy        String?   @map("reviewed_by")
+  reviewNote        String?   @map("review_note")
+  version           Int       @default(1)
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@index([tenantId, vendorId])
+  @@index([tenantId, status])
+  @@map("vendor_compliance_checks")
+}
+
 /// S036A: apar-service had no audit mechanism at all before this (matches the
 /// R0 Stabilization Phase 4 AuditPort pattern already shipped in
 /// tenant-service/auth-service/coa-service). Every vendor create/update/
@@ -407,4 +524,83 @@ model APBankAccount {
   @@unique([tenantId, accountNumber])
   @@map("ap_bank_accounts")
   @@index([tenantId])
+}
+
+/// S038: Vendor insurance-certificate record. Owns the certificate's
+/// lifecycle (create → renew/supersede → revoke), expiration status and the
+/// user-facing workflow. Reuses S036A's Vendor as the sole vendor identity —
+/// no second vendor table is introduced here.
+///
+/// S036B boundary: this model has NO "verified"/"compliance status" field.
+/// S036B owns external compliance-verification adapters and any resulting
+/// summary status; S038 only exposes the raw certificate facts (dates,
+/// provider, coverage, lifecycle, computed expiration) that a future S036B
+/// adapter can read via the service-layer summary method / VENDOR_INSURANCE_
+/// CERTIFICATE_* outbox events. Do not add verification fields here.
+model VendorInsuranceCertificate {
+  id                   String    @id @default(uuid())
+  tenantId             String    @map("tenant_id")
+  vendorId             String    @map("vendor_id")
+
+  /// SUPPLIER-provided policy/certificate number (not internally generated).
+  certificateNumber    String    @map("certificate_number")
+  insuranceProvider    String    @map("insurance_provider")
+  /// GENERAL_LIABILITY | AUTO_LIABILITY | WORKERS_COMP | UMBRELLA | PROPERTY | OTHER.
+  /// A plain categorization value only — S038 does not encode which coverage
+  /// types are legally required for any jurisdiction (out of scope; no
+  /// regulation/jurisdiction rule is invented here).
+  insuranceType        String    @map("insurance_type")
+
+  effectiveDate        DateTime  @map("effective_date")
+  expirationDate       DateTime  @map("expiration_date")
+
+  /// Optional — free-form coverage limit and description. Not validated
+  /// against any regulatory minimum (none is accepted/known for S038).
+  coverageAmount       Decimal?  @db.Decimal(15, 2) @map("coverage_amount")
+  coverageDescription  String?   @map("coverage_description")
+
+  /// Document metadata/reference only (per repository convention — large
+  /// binaries are not stored in this table). documentId references a
+  /// document-service Document id by value; no cross-service DB join/FK.
+  documentId           String?   @map("document_id")
+  documentFileName     String?   @map("document_file_name")
+  documentMimeType     String?   @map("document_mime_type")
+
+  /// Lifecycle status — ACTIVE | SUPERSEDED | REVOKED. Distinct from
+  /// time-based expiration (computed at read-time, never stored) — an
+  /// ACTIVE record can still be past its expirationDate if nobody has
+  /// renewed it yet; that historical fact must remain visible.
+  status               String    @default("ACTIVE")
+  /// True only for the single current certificate per (vendorId,
+  /// insuranceType). Enforced by a partial unique index below — this is the
+  /// duplicate-active-certificate protection.
+  isCurrent            Boolean   @default(true) @map("is_current")
+
+  /// Renewal/replacement chain — set on the OLD record when a new
+  /// certificate supersedes it. Historical certificates are never deleted.
+  supersededByCertificateId String? @map("superseded_by_certificate_id")
+  /// Set on the NEW record, pointing back at what it replaced (nullable —
+  /// absent for a certificate's first-ever record for that vendor/type).
+  previousCertificateId     String? @map("previous_certificate_id")
+
+  revokedAt            DateTime? @map("revoked_at")
+  revokedReason         String?  @map("revoked_reason")
+  revokedBy             String?  @map("revoked_by")
+
+  notes                String?
+
+  /// Optimistic-concurrency version. Incremented on every update/lifecycle change.
+  version              Int       @default(1)
+
+  createdAt            DateTime  @default(now()) @map("created_at")
+  createdBy            String?   @map("created_by")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+  updatedBy            String?   @map("updated_by")
+
+  @@map("vendor_insurance_certificates")
+  @@index([tenantId])
+  @@index([tenantId, vendorId])
+  @@index([tenantId, status])
+  @@index([tenantId, expirationDate])
+  @@index([vendorId, insuranceType, isCurrent])
 }

@@ -104,6 +104,20 @@ describe('Vendor route authorization and error contract (AMACC-CH04 S036A)', () 
 
     container.registerInstance('APARService', {});
     container.registerInstance('VendorService', fakeVendorService());
+    // AMACC-CH04 S036B: aparRoutes() now also resolves VendorComplianceService
+    // at registration time — a stub keeps this S036A-only test file focused on
+    // vendor routes without depending on S036B's implementation.
+    container.registerInstance('VendorComplianceService', {});
+    // S038: routes.ts now also resolves InsuranceCertificateService at
+    // registration time — a fake stub is enough here since this suite only
+    // exercises vendor routes, not insurance-certificate routes (covered
+    // separately in tests/insurance-certificate-routes.test.ts).
+    container.registerInstance('InsuranceCertificateService', {
+      list: vi.fn().mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 50 }),
+    });
+    // Route plugin registration also resolves CustomerService (S046); this
+    // suite only exercises vendor routes, so an inert stub is sufficient.
+    container.registerInstance('CustomerService', {});
     registerFullAuthz();
 
     app = Fastify();

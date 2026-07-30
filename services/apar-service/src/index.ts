@@ -9,6 +9,10 @@ import { PrismaAREntryRepository } from './infrastructure/ar-repository';
 import { PrismaAPEntryRepository } from './infrastructure/ap-repository';
 import { APARService } from './application/apar-service';
 import { VendorService } from './application/vendor-service';
+import { VendorComplianceService } from './application/vendor-compliance-service';
+import { ComplianceVerificationAdapter, ManualComplianceAdapter } from './application/compliance-adapter';
+import { InsuranceCertificateService } from './application/insurance-certificate-service';
+import { CustomerService } from './application/customer-service';
 import {
   IEventPublisher, IAREntryRepository, IAPEntryRepository, OutboxProcessor,
   HttpAuthzClient, AuthzClient, HttpAuditClient, AuditOutboxDrainer, makePrismaAuditOutboxStore,
@@ -29,6 +33,11 @@ async function bootstrap() {
   // ap_vendor_duplicate_acknowledgements (migration
   // 20260729010001_add_rls_policies_apar_svc). Harmless no-op for this
   // service's other, non-RLS tables.
+  // S038 extends RLS coverage to vendor_insurance_certificates — see
+  // migration 20260730000002_s038_vendor_insurance_certificates. S046
+  // extends it further to customers/ar_customer_number_counters/
+  // ar_customer_duplicate_acknowledgements — see migration
+  // 20260730000004_add_rls_policies_customers_apar_svc.
   (prisma as any).$use(createTenantRlsMiddleware(prisma));
   app.addHook('preHandler', tenantContextHook);
 
@@ -43,6 +52,14 @@ async function bootstrap() {
   container.register<IAPEntryRepository>('IAPEntryRepository', { useClass: PrismaAPEntryRepository });
   container.register('APARService', { useClass: APARService });
   container.register('VendorService', { useClass: VendorService });
+  // AMACC-CH04 S036B: no external compliance-verification provider exists
+  // repository-wide — ManualComplianceAdapter is registered as the only
+  // adapter. Swapping in a real provider later means registering a different
+  // ComplianceVerificationAdapter implementation here; nothing else changes.
+  container.registerInstance<ComplianceVerificationAdapter>('ComplianceVerificationAdapter', new ManualComplianceAdapter());
+  container.register('VendorComplianceService', { useClass: VendorComplianceService });
+  container.register('InsuranceCertificateService', { useClass: InsuranceCertificateService });
+  container.register('CustomerService', { useClass: CustomerService });
   container.registerInstance<AuthzClient>('AuthzClient', new HttpAuthzClient({
     onError: (err: unknown, req: any) => logger.error({ err, permission: req.permissionKey }, 'authz/check failed'),
   }));

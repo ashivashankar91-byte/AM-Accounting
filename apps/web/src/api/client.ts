@@ -436,15 +436,55 @@ export const aparApi = {
     apiFetch<any>(`/api/v1/apar/vendors/${id}`, { method: 'DELETE', body: JSON.stringify(data) }),
   getVendorEligibility: (id: string) => apiFetch<{ eligible: boolean; status: string; reason: string | null }>(`/api/v1/apar/vendors/${id}/eligibility`),
   getVendorAuditEvents: (id: string) => apiFetch<any[]>(`/api/v1/apar/vendors/${id}/audit-events`),
+  // Vendor compliance adapters (AMACC-CH04 S036B)
+  getVendorComplianceChecks: (vendorId: string) => apiFetch<any[]>(`/api/v1/apar/vendors/${vendorId}/compliance-checks`),
+  createVendorComplianceCheck: (vendorId: string, data: any) =>
+    apiFetch<any>(`/api/v1/apar/vendors/${vendorId}/compliance-checks`, { method: 'POST', body: JSON.stringify(data) }),
+  updateVendorComplianceCheck: (vendorId: string, id: string, data: any) =>
+    apiFetch<any>(`/api/v1/apar/vendors/${vendorId}/compliance-checks/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  runVendorComplianceVerification: (vendorId: string, id: string) =>
+    apiFetch<any>(`/api/v1/apar/vendors/${vendorId}/compliance-checks/${id}/run-verification`, { method: 'POST' }),
+  reviewVendorComplianceCheck: (vendorId: string, id: string, data: { version: number; decision: 'VERIFIED' | 'REJECTED' | 'EXPIRED'; reason?: string }) =>
+    apiFetch<any>(`/api/v1/apar/vendors/${vendorId}/compliance-checks/${id}/review`, { method: 'POST', body: JSON.stringify(data) }),
+  // Vendor Insurance Certificates (AMACC-CH04 S038)
+  getVendorInsuranceCertificates: (vendorId: string, params?: string) =>
+    apiFetch<any>(`/api/v1/apar/vendors/${vendorId}/insurance-certificates${params ? `?${params}` : ''}`),
+  getInsuranceCertificate: (id: string) => apiFetch<any>(`/api/v1/apar/insurance-certificates/${id}`),
+  createInsuranceCertificate: (vendorId: string, data: any) =>
+    apiFetch<any>(`/api/v1/apar/vendors/${vendorId}/insurance-certificates`, { method: 'POST', body: JSON.stringify(data) }),
+  updateInsuranceCertificate: (id: string, data: any) =>
+    apiFetch<any>(`/api/v1/apar/insurance-certificates/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  renewInsuranceCertificate: (id: string, data: any) =>
+    apiFetch<any>(`/api/v1/apar/insurance-certificates/${id}/renew`, { method: 'POST', body: JSON.stringify(data) }),
+  revokeInsuranceCertificate: (id: string, data: any) =>
+    apiFetch<any>(`/api/v1/apar/insurance-certificates/${id}/revoke`, { method: 'POST', body: JSON.stringify(data) }),
+  getInsuranceCertificateAuditEvents: (id: string) => apiFetch<any[]>(`/api/v1/apar/insurance-certificates/${id}/audit-events`),
+  getVendorInsuranceSummary: (vendorId: string) => apiFetch<any>(`/api/v1/apar/vendors/${vendorId}/insurance-summary`),
   // AP Payments (S3-08/09)
   getPayments: (params?: string) => apiFetch<any[]>(`/api/v1/apar/ap-payments${params ? `?${params}` : ''}`),
   voidPayment: (id: string, data: any) => apiFetch<any>(`/api/v1/apar/ap-payments/${id}/void`, { method: 'POST', body: JSON.stringify(data) }),
-  // Customer Master (S5-01)
+  // Customer Master and Credit Profile (S5-01, hardened S046)
   getCustomers: (params?: string) => apiFetch<any[]>(`/api/v1/apar/customers${params ? `?${params}` : ''}`),
   getCustomer: (id: string) => apiFetch<any>(`/api/v1/apar/customers/${id}`),
   createCustomer: (data: any) => apiFetch<any>('/api/v1/apar/customers', { method: 'POST', body: JSON.stringify(data) }),
-  updateCustomer: (id: string, data: any) => apiFetch<any>(`/api/v1/apar/customers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  deactivateCustomer: (id: string) => apiFetch<any>(`/api/v1/apar/customers/${id}/deactivate`, { method: 'PATCH' }),
+  updateCustomer: (id: string, data: any) => apiFetch<any>(`/api/v1/apar/customers/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  checkCustomerDuplicates: (data: { customerName?: string; email?: string; phone?: string; zip?: string; excludeCustomerId?: string }) =>
+    apiFetch<{ candidates: any[] }>('/api/v1/apar/customers/duplicate-check', { method: 'POST', body: JSON.stringify(data) }),
+  inactivateCustomer: (id: string, data: { version: number; reason: string }) =>
+    apiFetch<any>(`/api/v1/apar/customers/${id}/inactivate`, { method: 'POST', body: JSON.stringify(data) }),
+  reactivateCustomer: (id: string, data: { version: number }) =>
+    apiFetch<any>(`/api/v1/apar/customers/${id}/reactivate`, { method: 'POST', body: JSON.stringify(data) }),
+  deleteCustomer: (id: string, data: { version: number; reason?: string }) =>
+    apiFetch<any>(`/api/v1/apar/customers/${id}`, { method: 'DELETE', body: JSON.stringify(data) }),
+  getCustomerEligibility: (id: string) => apiFetch<{ eligible: boolean; status: string; creditHold: boolean; reason: string | null }>(`/api/v1/apar/customers/${id}/eligibility`),
+  getCustomerAuditEvents: (id: string) => apiFetch<any[]>(`/api/v1/apar/customers/${id}/audit-events`),
+  setCustomerCreditHold: (id: string, data: { version: number; reason: string }) =>
+    apiFetch<any>(`/api/v1/apar/customers/${id}/credit-hold`, { method: 'POST', body: JSON.stringify(data) }),
+  releaseCustomerCreditHold: (id: string, data: { version: number }) =>
+    apiFetch<any>(`/api/v1/apar/customers/${id}/credit-release`, { method: 'POST', body: JSON.stringify(data) }),
+  // Deprecated back-compat alias — retained only for callers not yet
+  // migrated to inactivateCustomer(); the backend keeps a matching route.
+  deactivateCustomer: (id: string) => apiFetch<any>(`/api/v1/apar/customers/${id}/deactivate`, { method: 'PATCH', body: JSON.stringify({}) }),
   // S6-12: AP invoice queries for reports
   getInvoices: (params?: string) => apiFetch<any[]>(`/api/v1/apar/ap${params ? `?${params}` : ''}`),
   // S7-03: ACH / NACHA generation

@@ -12,6 +12,28 @@ import {
   VendorHasReferencesError,
   DuplicateVendorAcknowledgementRequiredError,
 } from '../application/vendor-service';
+import {
+  VendorComplianceService,
+  ComplianceCheckNotFoundError,
+  ComplianceCheckValidationError,
+  ComplianceCheckConflictError,
+  VendorNotFoundForComplianceError,
+} from '../application/vendor-compliance-service';
+import {
+  InsuranceCertificateService,
+  InsuranceCertificateNotFoundError,
+  VendorNotFoundForCertificateError,
+  InsuranceCertificateConflictError,
+  InsuranceCertificateValidationError,
+  INSURANCE_TYPE_VALUES,
+} from '../application/insurance-certificate-service';
+import {
+  CustomerService,
+  CustomerNotFoundError,
+  CustomerConflictError,
+  CustomerValidationError,
+  DuplicateCustomerAcknowledgementRequiredError,
+} from '../application/customer-service';
 
 function getTenantId(request: any) {
   const id = request.headers['x-tenant-id'] as string;
@@ -66,6 +88,9 @@ export async function aparRoutes(app: FastifyInstance) {
 
   const svc = container.resolve<APARService>('APARService');
   const vendorSvc = container.resolve<VendorService>('VendorService');
+  const complianceSvc = container.resolve<VendorComplianceService>('VendorComplianceService');
+  const insuranceSvc = container.resolve<InsuranceCertificateService>('InsuranceCertificateService');
+  const customerSvc = container.resolve<CustomerService>('CustomerService');
   const authzClient = container.resolve<AuthzClient>('AuthzClient');
   const requirePermission = createAuthzGuard(authzClient, { getTenantId });
 
@@ -576,6 +601,406 @@ export async function aparRoutes(app: FastifyInstance) {
     }
   });
 
+  // ===== AMACC-CH04 S036B: Vendor Compliance Adapters =====
+  //
+  // Additive to S036A's vendor master — no vendor CRUD behavior changes.
+  // Permission keys registered in auth-service's catalog via
+  // 20260730040000_extend_authz_catalog_s036b_vendor_compliance/migration.sql.
+  const AP_VENDOR_COMPLIANCE_PERMISSIONS = {
+    VIEW:             'ap.vendor_compliance.view',
+    CREATE:           'ap.vendor_compliance.create',
+    EDIT:             'ap.vendor_compliance.edit',
+    RUN_VERIFICATION: 'ap.vendor_compliance.run_verification',
+    REVIEW:           'ap.vendor_compliance.review',
+  } as const;
+
+  const COMPLIANCE_CHECK_TYPE_ENUM = z.enum([
+    'TAX_ID_VERIFICATION', 'INSURANCE_CERTIFICATE', 'W9_VERIFICATION', 'GENERAL_COMPLIANCE_DOCUMENT', 'OTHER',
+  ]);
+
+  const ComplianceCheckCreateSchema = z.object({
+    checkType:          COMPLIANCE_CHECK_TYPE_ENUM,
+    jurisdiction:       z.string().max(100).optional(),
+    country:            z.string().max(100).optional(),
+    externalReference:  z.string().max(200).optional(),
+    notes:              z.string().optional(),
+    expirationDate:     z.string().optional(),
+  });
+
+  const ComplianceCheckUpdateSchema = z.object({
+    version:            z.number().int().min(1),
+    jurisdiction:       z.string().max(100).optional(),
+    country:            z.string().max(100).optional(),
+    externalReference:  z.string().max(200).optional(),
+    notes:              z.string().optional(),
+    expirationDate:     z.string().nullable().optional(),
+  });
+
+  const ComplianceCheckReviewSchema = z.object({
+    version:  z.number().int().min(1),
+    decision: z.enum(['VERIFIED', 'REJECTED', 'EXPIRED']),
+    reason:   z.string().max(500).optional(),
+  });
+
+  function handleComplianceError(error: unknown, reply: any) {
+    if (error instanceof VendorNotFoundForComplianceError) {
+      return reply.status(404).send({ error: 'VENDOR_NOT_FOUND', message: error.message });
+    }
+    if (error instanceof ComplianceCheckNotFoundError) {
+      return reply.status(404).send({ error: 'COMPLIANCE_CHECK_NOT_FOUND', message: error.message });
+    }
+    if (error instanceof ComplianceCheckConflictError) {
+      return reply.status(409).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof ComplianceCheckValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) {
+      return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    }
+    throw error;
+  }
+
+  // ── GET /vendors/:vendorId/compliance-checks — list ────────────────────────
+  app.get('/vendors/:vendorId/compliance-checks', { preHandler: requirePermission(AP_VENDOR_COMPLIANCE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { vendorId } = request.params as { vendorId: string };
+    try {
+      const checks = await complianceSvc.list({ tenantId, vendorId });
+      return reply.send(checks);
+    } catch (err) {
+      return handleComplianceError(err, reply);
+    }
+  });
+
+  // ── GET /vendors/:vendorId/compliance-checks/:id — detail ──────────────────
+  app.get('/vendors/:vendorId/compliance-checks/:id', { preHandler: requirePermission(AP_VENDOR_COMPLIANCE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { vendorId, id } = request.params as { vendorId: string; id: string };
+    try {
+      const check = await complianceSvc.getById(tenantId, vendorId, id);
+      return reply.send(check);
+    } catch (err) {
+      return handleComplianceError(err, reply);
+    }
+  });
+
+  // ── POST /vendors/:vendorId/compliance-checks — create ─────────────────────
+  app.post('/vendors/:vendorId/compliance-checks', { preHandler: requirePermission(AP_VENDOR_COMPLIANCE_PERMISSIONS.CREATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { vendorId } = request.params as { vendorId: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = ComplianceCheckCreateSchema.parse(request.body);
+      const check = await complianceSvc.create(
+        tenantId,
+        { ...body, vendorId, expirationDate: body.expirationDate ? new Date(body.expirationDate) : undefined },
+        actor,
+        correlationId,
+      );
+      return reply.status(201).send(check);
+    } catch (err) {
+      return handleComplianceError(err, reply);
+    }
+  });
+
+  // ── PATCH /vendors/:vendorId/compliance-checks/:id — edit (pre-review only) ─
+  app.patch('/vendors/:vendorId/compliance-checks/:id', { preHandler: requirePermission(AP_VENDOR_COMPLIANCE_PERMISSIONS.EDIT) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { vendorId, id } = request.params as { vendorId: string; id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = ComplianceCheckUpdateSchema.parse(request.body);
+      const check = await complianceSvc.update(
+        tenantId, vendorId, id,
+        { ...body, expirationDate: body.expirationDate === undefined ? undefined : (body.expirationDate ? new Date(body.expirationDate) : null) },
+        actor,
+        correlationId,
+      );
+      return reply.send(check);
+    } catch (err) {
+      return handleComplianceError(err, reply);
+    }
+  });
+
+  // ── POST /vendors/:vendorId/compliance-checks/:id/run-verification ─────────
+  // Invokes the configured adapter (ManualComplianceAdapter — truthfully
+  // reports NOT_CONFIGURED; never fabricates a passing verification).
+  app.post('/vendors/:vendorId/compliance-checks/:id/run-verification', { preHandler: requirePermission(AP_VENDOR_COMPLIANCE_PERMISSIONS.RUN_VERIFICATION) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { vendorId, id } = request.params as { vendorId: string; id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const check = await complianceSvc.runVerification(tenantId, vendorId, id, actor, correlationId);
+      return reply.send(check);
+    } catch (err) {
+      return handleComplianceError(err, reply);
+    }
+  });
+
+  // ── POST /vendors/:vendorId/compliance-checks/:id/review — manual review ───
+  // The only path that can set VERIFIED/REJECTED/EXPIRED.
+  app.post('/vendors/:vendorId/compliance-checks/:id/review', { preHandler: requirePermission(AP_VENDOR_COMPLIANCE_PERMISSIONS.REVIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { vendorId, id } = request.params as { vendorId: string; id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = ComplianceCheckReviewSchema.parse(request.body);
+      const check = await complianceSvc.review(tenantId, vendorId, id, body, actor, correlationId);
+      return reply.send(check);
+    } catch (err) {
+      return handleComplianceError(err, reply);
+    }
+  });
+
+  // ===== AMACC-CH04 S038: Vendor Insurance Certificate Management =====
+  //
+  // Permission keys — registered in auth-service's catalog via
+  // 20260730070000_extend_authz_catalog_s038_vendor_insurance/migration.sql
+  // (renumbered during INTEGRATE BATCH R1-02; originally 20260730000000).
+  // S036B BOUNDARY: no "verification"/"compliance" permission or endpoint is
+  // defined here — S036B owns external compliance-verification adapters and
+  // any resulting summary status. GET .../insurance-summary is the read-only
+  // integration point a future S036B adapter may call.
+  const AP_VENDOR_INSURANCE_PERMISSIONS = {
+    VIEW:       'ap.vendor_insurance.view',
+    CREATE:     'ap.vendor_insurance.create',
+    EDIT:       'ap.vendor_insurance.edit',
+    RENEW:      'ap.vendor_insurance.renew',
+    REVOKE:     'ap.vendor_insurance.revoke',
+    AUDIT_VIEW: 'ap.vendor_insurance.audit_view',
+  } as const;
+
+  const INSURANCE_TYPE_ENUM = z.enum(INSURANCE_TYPE_VALUES);
+
+  const CertificateCreateSchema = z.object({
+    certificateNumber:   z.string().min(1).max(50),
+    insuranceProvider:   z.string().min(1).max(200),
+    insuranceType:       INSURANCE_TYPE_ENUM,
+    effectiveDate:       z.string(),
+    expirationDate:      z.string(),
+    coverageAmount:      z.number().nonnegative().optional(),
+    coverageDescription: z.string().max(500).optional(),
+    documentId:          z.string().optional(),
+    documentFileName:    z.string().max(255).optional(),
+    documentMimeType:    z.string().max(100).optional(),
+    notes:               z.string().max(1000).optional(),
+  });
+
+  const CertificateUpdateSchema = z.object({
+    version:             z.number().int().min(1),
+    coverageAmount:      z.number().nonnegative().optional(),
+    coverageDescription: z.string().max(500).optional(),
+    documentId:          z.string().optional(),
+    documentFileName:    z.string().max(255).optional(),
+    documentMimeType:    z.string().max(100).optional(),
+    notes:               z.string().max(1000).optional(),
+  });
+
+  const CertificateRenewSchema = z.object({
+    version:             z.number().int().min(1),
+    certificateNumber:   z.string().min(1).max(50),
+    insuranceProvider:   z.string().min(1).max(200),
+    effectiveDate:       z.string(),
+    expirationDate:      z.string(),
+    coverageAmount:      z.number().nonnegative().optional(),
+    coverageDescription: z.string().max(500).optional(),
+    documentId:          z.string().optional(),
+    documentFileName:    z.string().max(255).optional(),
+    documentMimeType:    z.string().max(100).optional(),
+    notes:               z.string().max(1000).optional(),
+  });
+
+  const CertificateRevokeSchema = z.object({
+    version: z.number().int().min(1),
+    reason:  z.string().min(1).max(500),
+  });
+
+  function handleICError(error: unknown, reply: any) {
+    if (error instanceof InsuranceCertificateNotFoundError) {
+      return reply.status(404).send({ error: 'INSURANCE_CERTIFICATE_NOT_FOUND', message: error.message });
+    }
+    if (error instanceof VendorNotFoundForCertificateError) {
+      return reply.status(404).send({ error: 'VENDOR_NOT_FOUND', message: error.message });
+    }
+    if (error instanceof InsuranceCertificateConflictError) {
+      return reply.status(409).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof InsuranceCertificateValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) {
+      return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    }
+    throw error;
+  }
+
+  // ── GET /vendors/:vendorId/insurance-certificates — list ───────────────────
+  app.get('/vendors/:vendorId/insurance-certificates', { preHandler: requirePermission(AP_VENDOR_INSURANCE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { vendorId } = request.params as { vendorId: string };
+    const { status, insuranceType, scope, expirationFilter, withinDays, page, pageSize } = request.query as Record<string, string | undefined>;
+    try {
+      const result = await insuranceSvc.list({
+        tenantId,
+        vendorId,
+        status: status || undefined,
+        insuranceType: insuranceType || undefined,
+        scope: (scope as 'current' | 'all') || 'current',
+        expirationFilter: expirationFilter as 'expired' | 'expiring' | undefined,
+        withinDays: withinDays ? parseInt(withinDays, 10) : undefined,
+        page: page ? parseInt(page, 10) : 1,
+        pageSize: pageSize ? parseInt(pageSize, 10) : 50,
+      });
+      return reply.send(result);
+    } catch (err) {
+      return handleICError(err, reply);
+    }
+  });
+
+  // ── GET /insurance-certificates/expiring — cross-vendor operator list ──────
+  app.get('/insurance-certificates/expiring', { preHandler: requirePermission(AP_VENDOR_INSURANCE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { withinDays, page, pageSize } = request.query as Record<string, string | undefined>;
+    try {
+      const result = await insuranceSvc.list({
+        tenantId,
+        scope: 'current',
+        expirationFilter: 'expiring',
+        withinDays: withinDays ? parseInt(withinDays, 10) : undefined,
+        page: page ? parseInt(page, 10) : 1,
+        pageSize: pageSize ? parseInt(pageSize, 10) : 100,
+      });
+      return reply.send(result);
+    } catch (err) {
+      return handleICError(err, reply);
+    }
+  });
+
+  // ── GET /vendors/:vendorId/insurance-summary — S036B integration point ─────
+  app.get('/vendors/:vendorId/insurance-summary', { preHandler: requirePermission(AP_VENDOR_INSURANCE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { vendorId } = request.params as { vendorId: string };
+    try {
+      const result = await insuranceSvc.getVendorInsuranceSummary(tenantId, vendorId);
+      return reply.send(result);
+    } catch (err) {
+      return handleICError(err, reply);
+    }
+  });
+
+  // ── GET /insurance-certificates/:id — detail ────────────────────────────────
+  app.get('/insurance-certificates/:id', { preHandler: requirePermission(AP_VENDOR_INSURANCE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const cert = await insuranceSvc.getById(tenantId, id);
+      return reply.send(cert);
+    } catch (err) {
+      return handleICError(err, reply);
+    }
+  });
+
+  // ── POST /vendors/:vendorId/insurance-certificates — create ────────────────
+  app.post('/vendors/:vendorId/insurance-certificates', { preHandler: requirePermission(AP_VENDOR_INSURANCE_PERMISSIONS.CREATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { vendorId } = request.params as { vendorId: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = CertificateCreateSchema.parse(request.body);
+      const cert = await insuranceSvc.create(
+        {
+          ...body,
+          tenantId,
+          vendorId,
+          effectiveDate: new Date(body.effectiveDate),
+          expirationDate: new Date(body.expirationDate),
+        },
+        actor,
+        correlationId,
+      );
+      return reply.status(201).send(cert);
+    } catch (err) {
+      return handleICError(err, reply);
+    }
+  });
+
+  // ── PATCH /insurance-certificates/:id — limited in-place edit ──────────────
+  app.patch('/insurance-certificates/:id', { preHandler: requirePermission(AP_VENDOR_INSURANCE_PERMISSIONS.EDIT) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = CertificateUpdateSchema.parse(request.body);
+      const cert = await insuranceSvc.update(tenantId, id, body, actor, correlationId);
+      return reply.send(cert);
+    } catch (err) {
+      return handleICError(err, reply);
+    }
+  });
+
+  // ── POST /insurance-certificates/:id/renew — supersede with a new period ───
+  app.post('/insurance-certificates/:id/renew', { preHandler: requirePermission(AP_VENDOR_INSURANCE_PERMISSIONS.RENEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = CertificateRenewSchema.parse(request.body);
+      const cert = await insuranceSvc.renew(
+        tenantId,
+        id,
+        { ...body, effectiveDate: new Date(body.effectiveDate), expirationDate: new Date(body.expirationDate) },
+        actor,
+        correlationId,
+      );
+      return reply.status(201).send(cert);
+    } catch (err) {
+      return handleICError(err, reply);
+    }
+  });
+
+  // ── POST /insurance-certificates/:id/revoke ─────────────────────────────────
+  app.post('/insurance-certificates/:id/revoke', { preHandler: requirePermission(AP_VENDOR_INSURANCE_PERMISSIONS.REVOKE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = CertificateRevokeSchema.parse(request.body);
+      const cert = await insuranceSvc.revoke(tenantId, id, body, actor, correlationId);
+      return reply.send(cert);
+    } catch (err) {
+      return handleICError(err, reply);
+    }
+  });
+
+  // ── GET /insurance-certificates/:id/audit-events — history from audit-service ─
+  app.get('/insurance-certificates/:id/audit-events', { preHandler: requirePermission(AP_VENDOR_INSURANCE_PERMISSIONS.AUDIT_VIEW) }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const auditUrl =
+      (process.env['AUDIT_SERVICE_URL'] ?? 'http://audit-service:3031') +
+      `/api/v1/audit/entity/VendorInsuranceCertificate/${id}`;
+    try {
+      const jwtSecret = process.env['AMACC_JWT_SECRET'] ?? process.env['JWT_SECRET'];
+      const headers: Record<string, string> = { 'x-tenant-id': getTenantId(request) };
+      if (jwtSecret) headers['authorization'] = `Bearer ${createServiceToken('apar-service', jwtSecret)}`;
+      const res = await fetch(auditUrl, { headers });
+      if (!res.ok) return reply.send([]);
+      const data = await res.json();
+      return reply.send(data);
+    } catch {
+      return reply.send([]);
+    }
+  });
+
+
   // ===== S3-08: AP Payment Void =====
 
   // GET /ap-payments
@@ -705,23 +1130,47 @@ export async function aparRoutes(app: FastifyInstance) {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // S5-01: Customer Master CRUD
+  // S046: Customer AR Master and Credit Profile — hardened S5-01
+  // (AMACC-CH04, mirrors the S036A vendor-master pattern). This slice
+  // implements only the master-record + credit-profile portion of the S046
+  // story title ("Customer AR Master, Credit & Statements") — statements,
+  // invoicing, receipts, cash application, write-offs and NSF processing are
+  // explicitly OUT of scope (see S047-S051).
   // ─────────────────────────────────────────────────────────────────────────
 
-  const CreateCustomerSchema = z.object({
+  // Permission keys — registered in auth-service's S207 catalog via
+  // 20260730080000_extend_authz_catalog_s046_customer_master/migration.sql.
+  const AR_CUSTOMER_PERMISSIONS = {
+    VIEW:               'ar.customer.view',
+    CREATE:             'ar.customer.create',
+    EDIT:               'ar.customer.edit',
+    INACTIVATE:         'ar.customer.inactivate',
+    REACTIVATE:         'ar.customer.reactivate',
+    DELETE:             'ar.customer.delete',
+    DUPLICATE_OVERRIDE: 'ar.customer.duplicate_override',
+    AUDIT_VIEW:         'ar.customer.audit_view',
+    CREDIT_HOLD:        'ar.customer.credit_hold',
+    CREDIT_RELEASE:     'ar.customer.credit_release',
+  } as const;
+
+  const CUSTOMER_TYPE_ENUM = z.enum(['Individual', 'Business', 'Government', 'Fleet']);
+  const CREDIT_TERMS_ENUM = z.enum(['COD', 'Net10', 'Net15', 'Net30', 'Net45', 'Net60']);
+  const CONTACT_METHOD_ENUM = z.enum(['Phone', 'Email', 'Mail', 'Text']);
+
+  const CustomerCreateSchema = z.object({
+    customerNumber:         z.string().max(20).optional(), // auto-generated if omitted
     customerName:           z.string().min(1),
-    customerNumber:         z.string().optional(), // auto-generated if omitted
-    customerType:           z.enum(['Individual', 'Business', 'Government', 'Fleet']).default('Individual'),
+    customerType:           CUSTOMER_TYPE_ENUM.optional(),
     salespersonCode:        z.string().max(10).optional(),
     arAccountOverride:      z.string().uuid().optional(),
     companyNumber:          z.string().max(4).optional(),
     taxId:                  z.string().optional(),
     taxExemptStatus:        z.boolean().default(false),
     taxExemptCertNumber:    z.string().optional(),
-    taxExemptExpiration:    z.string().optional().transform(s => s ? new Date(s) : undefined),
+    taxExemptExpiration:    z.string().optional(),
     creditLimit:            z.number().min(0).default(0),
-    creditTerms:            z.enum(['COD','Net10','Net15','Net30','Net45','Net60']).default('Net30'),
-    preferredContactMethod: z.enum(['Phone','Email','Mail','Text']).default('Phone'),
+    creditTerms:            CREDIT_TERMS_ENUM.optional(),
+    preferredContactMethod: CONTACT_METHOD_ENUM.optional(),
     doNotSolicit:           z.boolean().default(false),
     doNotMail:              z.boolean().default(false),
     address1:               z.string().optional(),
@@ -733,7 +1182,7 @@ export async function aparRoutes(app: FastifyInstance) {
     phone:                  z.string().optional(),
     phone2:                 z.string().optional(),
     fax:                    z.string().optional(),
-    email:                  z.string().email().optional(),
+    email:                  z.string().email().optional().or(z.literal('')),
     secondaryStreet:        z.string().optional(),
     secondaryCity:          z.string().optional(),
     secondaryState:         z.string().max(2).optional(),
@@ -746,89 +1195,293 @@ export async function aparRoutes(app: FastifyInstance) {
     flagService:            z.boolean().default(false),
     flagFI:                 z.boolean().default(false),
     employeeFlag:           z.boolean().default(false),
+    notes:                  z.any().optional(),
+    // S046 duplicate-customer override — permission checked explicitly
+    // below, independent of the CREATE permission gating this whole route.
+    override:               z.object({ reason: z.string().min(1).max(500) }).optional(),
   });
 
-  const UpdateCustomerSchema = CreateCustomerSchema.partial();
+  const CustomerUpdateSchema = CustomerCreateSchema.omit({ customerNumber: true, override: true }).partial().extend({
+    version: z.number().int().min(1),
+  });
 
-  const prisma = (app as any).prisma;
+  const CustomerDuplicateCheckSchema = z.object({
+    customerName: z.string().optional(),
+    email: z.string().optional(),
+    phone: z.string().optional(),
+    zip: z.string().optional(),
+    excludeCustomerId: z.string().optional(),
+  });
 
-  // GET /customers — list / search
-  app.get('/customers', async (request, reply) => {
+  const CustomerInactivateSchema = z.object({ version: z.number().int().min(1), reason: z.string().min(1).max(500) });
+  const CustomerReactivateSchema = z.object({ version: z.number().int().min(1) });
+  const CustomerDeleteSchema = z.object({ version: z.number().int().min(1), reason: z.string().max(500).optional() });
+  const CustomerCreditHoldSchema = z.object({ version: z.number().int().min(1), reason: z.string().min(1).max(500) });
+  const CustomerCreditReleaseSchema = z.object({ version: z.number().int().min(1) });
+
+  function handleCustomerError(error: unknown, reply: any) {
+    if (error instanceof CustomerNotFoundError) {
+      return reply.status(404).send({ error: 'CUSTOMER_NOT_FOUND', message: error.message });
+    }
+    if (error instanceof DuplicateCustomerAcknowledgementRequiredError) {
+      return reply.status(409).send({
+        error: 'DUPLICATE_CUSTOMER_ACKNOWLEDGEMENT_REQUIRED',
+        message: error.message,
+        candidates: error.candidates,
+      });
+    }
+    if (error instanceof CustomerConflictError) {
+      return reply.status(409).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof CustomerValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) {
+      return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    }
+    throw error;
+  }
+
+  // ── GET /customers — list (search/status filter) ───────────────────────────
+  app.get('/customers', { preHandler: requirePermission(AR_CUSTOMER_PERMISSIONS.VIEW) }, async (request, reply) => {
     const tenantId = getTenantId(request);
-    const q = (request.query as any).q as string | undefined;
-    const mode = (request.query as any).mode as string | undefined; // 'name'|'number'|'phone'
-    const where: any = { tenantId, isActive: true };
-    if (q) {
-      if (mode === 'number') {
-        where.customerNumber = { contains: q, mode: 'insensitive' };
-      } else if (mode === 'phone') {
-        where.OR = [{ phone: { contains: q } }, { phone2: { contains: q } }];
-      } else {
-        where.customerName = { contains: q, mode: 'insensitive' };
+    const { q, mode, status, page, pageSize } = request.query as {
+      q?: string; mode?: string; status?: string; page?: string; pageSize?: string;
+    };
+    try {
+      const result = await customerSvc.list({
+        tenantId,
+        search: q?.trim() || undefined,
+        searchMode: (mode as any) || undefined,
+        status: status || undefined,
+        page: page ? parseInt(page, 10) : 1,
+        pageSize: pageSize ? parseInt(pageSize, 10) : 200,
+      });
+      // Preserves the pre-S046 response shape (a bare array) for existing
+      // frontend consumers — S046 adds total/page/pageSize alongside it.
+      return reply.send(result.items);
+    } catch (err) {
+      return handleCustomerError(err, reply);
+    }
+  });
+
+  // ── POST /customers/duplicate-check — candidate duplicate signals ──────────
+  app.post('/customers/duplicate-check', { preHandler: requirePermission(AR_CUSTOMER_PERMISSIONS.CREATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    try {
+      const body = CustomerDuplicateCheckSchema.parse(request.body);
+      const candidates = await customerSvc.checkDuplicates({ tenantId, ...body });
+      return reply.send({ candidates });
+    } catch (err) {
+      return handleCustomerError(err, reply);
+    }
+  });
+
+  // ── GET /customers/:id — detail ─────────────────────────────────────────────
+  app.get('/customers/:id', { preHandler: requirePermission(AR_CUSTOMER_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const customer = await customerSvc.getById(tenantId, id);
+      return reply.send(customer);
+    } catch (err) {
+      return handleCustomerError(err, reply);
+    }
+  });
+
+  // ── POST /customers — create ────────────────────────────────────────────────
+  app.post('/customers', { preHandler: requirePermission(AR_CUSTOMER_PERMISSIONS.CREATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = CustomerCreateSchema.parse(request.body);
+
+      // Duplicate-override permission is independent of CREATE — checked
+      // explicitly (not a static preHandler) because it only applies when
+      // the caller is actually attempting to bypass a duplicate warning.
+      if (body.override) {
+        const result = await authzClient.check({
+          userId: (request as any).user?.sub,
+          permissionKey: AR_CUSTOMER_PERMISSIONS.DUPLICATE_OVERRIDE,
+          scope: { tenantId },
+          route: (request as any).routeOptions?.url ?? request.url,
+        });
+        if (!result.allow) {
+          return reply.status(403).send({
+            error: 'DUPLICATE_CUSTOMER_OVERRIDE_FORBIDDEN',
+            message: `Missing required permission: ${AR_CUSTOMER_PERMISSIONS.DUPLICATE_OVERRIDE}`,
+          });
+        }
       }
+
+      const customer = await customerSvc.create(
+        {
+          ...body,
+          tenantId,
+          email: body.email || undefined,
+          taxExemptExpiration: body.taxExemptExpiration ? new Date(body.taxExemptExpiration) : undefined,
+        },
+        actor,
+        correlationId,
+      );
+      return reply.status(201).send(customer);
+    } catch (err) {
+      return handleCustomerError(err, reply);
     }
-    const customers = await (app as any).prisma.customer.findMany({
-      where,
-      orderBy: { customerName: 'asc' },
-      take: 200,
-    });
-    return reply.send(customers);
   });
 
-  // GET /customers/:id — fetch single customer
-  app.get('/customers/:id', async (request, reply) => {
+  // ── PATCH /customers/:id — update ───────────────────────────────────────────
+  app.patch('/customers/:id', { preHandler: requirePermission(AR_CUSTOMER_PERMISSIONS.EDIT) }, async (request, reply) => {
     const tenantId = getTenantId(request);
     const { id } = request.params as { id: string };
-    const customer = await (app as any).prisma.customer.findFirst({ where: { id, tenantId } });
-    if (!customer) return reply.status(404).send({ error: 'NOT_FOUND' });
-    return reply.send(customer);
-  });
-
-  // POST /customers — create
-  app.post('/customers', async (request, reply) => {
-    const tenantId = getTenantId(request);
-    const body = CreateCustomerSchema.parse(request.body);
-    // Auto-generate customer number if not provided
-    let customerNumber = body.customerNumber;
-    if (!customerNumber) {
-      const count = await (app as any).prisma.customer.count({ where: { tenantId } });
-      customerNumber = String(count + 1).padStart(6, '0');
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = CustomerUpdateSchema.parse(request.body);
+      const customer = await customerSvc.update(
+        tenantId,
+        id,
+        {
+          ...body,
+          email: body.email || undefined,
+          taxExemptExpiration: body.taxExemptExpiration ? new Date(body.taxExemptExpiration) : undefined,
+        },
+        actor,
+        correlationId,
+      );
+      return reply.send(customer);
+    } catch (err) {
+      return handleCustomerError(err, reply);
     }
-    // Duplicate detection — check existing same name
-    const existing = await (app as any).prisma.customer.findMany({
-      where: { tenantId, customerName: { contains: body.customerName, mode: 'insensitive' }, isActive: true },
-      select: { id: true, customerNumber: true, customerName: true },
-      take: 5,
-    });
-    const customer = await (app as any).prisma.customer.create({
-      data: { tenantId, customerNumber, ...body },
-    });
-    return reply.status(201).send({ ...customer, duplicateCandidates: existing });
   });
 
-  // PUT /customers/:id — full update
-  app.put('/customers/:id', async (request, reply) => {
+  // ── DELETE /customers/:id — guarded logical delete ──────────────────────────
+  app.delete('/customers/:id', { preHandler: requirePermission(AR_CUSTOMER_PERMISSIONS.DELETE) }, async (request, reply) => {
     const tenantId = getTenantId(request);
     const { id } = request.params as { id: string };
-    const body = UpdateCustomerSchema.parse(request.body);
-    const customer = await (app as any).prisma.customer.updateMany({
-      where: { id, tenantId },
-      data: { ...body },
-    });
-    if (customer.count === 0) return reply.status(404).send({ error: 'NOT_FOUND' });
-    const updated = await (app as any).prisma.customer.findFirst({ where: { id, tenantId } });
-    return reply.send(updated);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = CustomerDeleteSchema.parse(request.body ?? {});
+      const customer = await customerSvc.delete(tenantId, id, body, actor, correlationId);
+      return reply.send(customer);
+    } catch (err) {
+      return handleCustomerError(err, reply);
+    }
   });
 
-  // PATCH /customers/:id/deactivate — soft delete
-  app.patch('/customers/:id/deactivate', async (request, reply) => {
+  // ── POST /customers/:id/inactivate ──────────────────────────────────────────
+  app.post('/customers/:id/inactivate', { preHandler: requirePermission(AR_CUSTOMER_PERMISSIONS.INACTIVATE) }, async (request, reply) => {
     const tenantId = getTenantId(request);
     const { id } = request.params as { id: string };
-    await (app as any).prisma.customer.updateMany({
-      where: { id, tenantId },
-      data: { isActive: false },
-    });
-    return reply.send({ ok: true });
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = CustomerInactivateSchema.parse(request.body);
+      const customer = await customerSvc.inactivate(tenantId, id, body, actor, correlationId);
+      return reply.send(customer);
+    } catch (err) {
+      return handleCustomerError(err, reply);
+    }
+  });
+
+  // Back-compat alias for the pre-S046 frontend contract
+  // (PATCH /customers/:id/deactivate, no version/reason). Deprecated —
+  // callers should migrate to POST /customers/:id/inactivate.
+  app.patch('/customers/:id/deactivate', { preHandler: requirePermission(AR_CUSTOMER_PERMISSIONS.INACTIVATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const current = await customerSvc.getById(tenantId, id);
+      const customer = await customerSvc.inactivate(tenantId, id, { version: current.version, reason: 'Deactivated (legacy endpoint)' }, actor, correlationId);
+      return reply.send(customer);
+    } catch (err) {
+      return handleCustomerError(err, reply);
+    }
+  });
+
+  // ── POST /customers/:id/reactivate ──────────────────────────────────────────
+  app.post('/customers/:id/reactivate', { preHandler: requirePermission(AR_CUSTOMER_PERMISSIONS.REACTIVATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = CustomerReactivateSchema.parse(request.body);
+      const customer = await customerSvc.reactivate(tenantId, id, body, actor, correlationId);
+      return reply.send(customer);
+    } catch (err) {
+      return handleCustomerError(err, reply);
+    }
+  });
+
+  // ── GET /customers/:id/eligibility — new-charge eligibility ────────────────
+  app.get('/customers/:id/eligibility', { preHandler: requirePermission(AR_CUSTOMER_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const result = await customerSvc.eligibility(tenantId, id, actor, correlationId);
+      return reply.send(result);
+    } catch (err) {
+      return handleCustomerError(err, reply);
+    }
+  });
+
+  // ── POST /customers/:id/credit-hold — place a credit hold ──────────────────
+  app.post('/customers/:id/credit-hold', { preHandler: requirePermission(AR_CUSTOMER_PERMISSIONS.CREDIT_HOLD) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = CustomerCreditHoldSchema.parse(request.body);
+      const customer = await customerSvc.setCreditHold(tenantId, id, body, actor, correlationId);
+      return reply.send(customer);
+    } catch (err) {
+      return handleCustomerError(err, reply);
+    }
+  });
+
+  // ── POST /customers/:id/credit-release — release a credit hold ─────────────
+  app.post('/customers/:id/credit-release', { preHandler: requirePermission(AR_CUSTOMER_PERMISSIONS.CREDIT_RELEASE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = CustomerCreditReleaseSchema.parse(request.body);
+      const customer = await customerSvc.releaseCreditHold(tenantId, id, body, actor, correlationId);
+      return reply.send(customer);
+    } catch (err) {
+      return handleCustomerError(err, reply);
+    }
+  });
+
+  // ── GET /customers/:id/audit-events — history from audit-service ───────────
+  app.get('/customers/:id/audit-events', { preHandler: requirePermission(AR_CUSTOMER_PERMISSIONS.AUDIT_VIEW) }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const auditUrl =
+      (process.env['AUDIT_SERVICE_URL'] ?? 'http://audit-service:3031') +
+      `/api/v1/audit/entity/Customer/${id}`;
+    try {
+      // Same server-to-server bearer-token requirement discovered/fixed for
+      // the vendor audit-events route (S036A) — audit-service's
+      // authMiddleware is applied globally, including to this read.
+      const jwtSecret = process.env['AMACC_JWT_SECRET'] ?? process.env['JWT_SECRET'];
+      const headers: Record<string, string> = { 'x-tenant-id': getTenantId(request) };
+      if (jwtSecret) headers['authorization'] = `Bearer ${createServiceToken('apar-service', jwtSecret)}`;
+      const res = await fetch(auditUrl, { headers });
+      if (!res.ok) return reply.send([]);
+      const data = await res.json();
+      return reply.send(data);
+    } catch {
+      return reply.send([]);
+    }
   });
 
   // ══════════════════════════════════════════════════════════════════════════
