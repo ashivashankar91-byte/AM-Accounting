@@ -70,6 +70,24 @@ services:
       test: ["CMD", "rabbitmq-diagnostics", "check_running"]
       <<: *healthcheck
 
+  # Migration-orchestration fix (STABILIZE THE CONSOLIDATED ACCOUNTING
+  # APPLICATION): one-shot job that runs `prisma migrate deploy` for every
+  # service against the shared `amacc` database as the privileged `amacc`
+  # superuser (see scripts/migrate-all.sh). Every service below that owns
+  # Prisma migrations depends on this completing successfully first, so a
+  # brand-new developer can go from an empty `pgdata` volume to a running
+  # application with a single `docker compose up --build` — no manual
+  # migration step required.
+  migrator:
+    build:
+      context: .
+      dockerfile: infra/migrator/Dockerfile
+    environment:
+      MIGRATE_DATABASE_URL: postgresql://amacc:amacc_dev@postgres:5432/amacc
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
   # --- Core Services ---
   auth-service:
     build:
@@ -83,6 +101,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
 
   tenant-service:
     build:
@@ -96,6 +115,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
 
   # --- Domain Services ---
   gl-service:
@@ -112,6 +132,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
 
   eom-service:
     build:
@@ -127,6 +148,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
 
   payroll-service:
     build:
@@ -140,6 +162,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
 
   apar-service:
     build:
@@ -153,6 +176,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
 
   recon-service:
     build:
@@ -178,6 +202,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
 
   # --- Agent Services ---
   agent-gl:
@@ -295,6 +320,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
 
   connector-service:
     build:
@@ -333,6 +359,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
 
   fs-service:
     build:
@@ -346,6 +373,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
 
   cash-service:
     build:
@@ -359,6 +387,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
 
   onboarding-service:
     build:

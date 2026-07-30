@@ -62,7 +62,20 @@ CREATE TABLE "schedule_permissions" (
 );
 
 -- CreateTable
-CREATE TABLE "outbox_events" (
+-- Migration-orchestration fix (STABILIZE THE CONSOLIDATED ACCOUNTING
+-- APPLICATION): "outbox_events" (no service prefix) is intentionally
+-- shared across six services' own OutboxEvent Prisma models mapping to the
+-- same physical table (apar-service, eom-service, group-service,
+-- gl-service, payroll-service, schedule-service). Deploying every
+-- service's migrations to a genuinely empty database (this migration's own
+-- header comment above notes it was previously only ever baselined via
+-- `prisma migrate resolve --applied`, never actually executed) exposed
+-- that whichever of these services' migrations runs after another already
+-- created this table fails with 42P07 ("relation already exists") — its
+-- creation must be idempotent across all of them, same as
+-- gl-service's 20260506000000_init_gl_service and eom-service's
+-- 20260508000000_eom_service_baseline already are.
+CREATE TABLE IF NOT EXISTS "outbox_events" (
     "id" TEXT NOT NULL,
     "event_type" TEXT NOT NULL,
     "tenant_id" TEXT NOT NULL,
@@ -104,10 +117,10 @@ CREATE INDEX "schedule_permissions_tenant_id_schedule_number_idx" ON "schedule_p
 CREATE UNIQUE INDEX "schedule_permissions_tenant_id_user_id_schedule_number_key" ON "schedule_permissions"("tenant_id", "user_id", "schedule_number");
 
 -- CreateIndex
-CREATE INDEX "outbox_events_published_at_retry_count_idx" ON "outbox_events"("published_at", "retry_count");
+CREATE INDEX IF NOT EXISTS "outbox_events_published_at_retry_count_idx" ON "outbox_events"("published_at", "retry_count");
 
 -- CreateIndex
-CREATE INDEX "outbox_events_created_at_idx" ON "outbox_events"("created_at");
+CREATE INDEX IF NOT EXISTS "outbox_events_created_at_idx" ON "outbox_events"("created_at");
 
 -- AddForeignKey
 ALTER TABLE "schedule_details" ADD CONSTRAINT "schedule_details_tenant_id_schedule_number_fkey" FOREIGN KEY ("tenant_id", "schedule_number") REFERENCES "schedules"("tenant_id", "schedule_number") ON DELETE RESTRICT ON UPDATE CASCADE;
