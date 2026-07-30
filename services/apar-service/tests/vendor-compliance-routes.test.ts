@@ -101,6 +101,8 @@ async function buildApp(complianceOverrides: Partial<Record<string, any>> = {}) 
   container.registerInstance('InsuranceCertificateService', {});
   container.registerInstance('CustomerService', {});
   container.registerInstance('VendorComplianceService', fakeComplianceService(complianceOverrides));
+    container.registerInstance('InvoiceService', {});
+    container.registerInstance('GoodsReceiptService', {});
   registerFullAuthz();
   const app = Fastify();
   await app.register(aparRoutes, { prefix: '/api/v1/apar' });

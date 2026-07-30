@@ -129,6 +129,8 @@ describe('Vendor Insurance Certificate route authorization and error contract (A
     container.registerInstance('VendorComplianceService', {});
     container.registerInstance('CustomerService', {});
     container.registerInstance('InsuranceCertificateService', fakeInsuranceService());
+    container.registerInstance('InvoiceService', {});
+    container.registerInstance('GoodsReceiptService', {});
     registerFullAuthz();
 
     app = Fastify();

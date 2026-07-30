@@ -493,6 +493,29 @@ export const aparApi = {
   getVendorYtdPayments: (vendorId: string) => apiFetch<any>(`/api/v1/apar/vendors/${vendorId}/ytd-payments`),
 };
 
+// AMACC-CH04 S039: Vendor Invoice Entry & 2/3-Way Match
+export const apInvoiceApi = {
+  list: (params?: string) => apiFetch<{ items: any[]; total: number; page: number; pageSize: number }>(`/api/v1/apar/invoices${params ? `?${params}` : ''}`),
+  getById: (id: string) => apiFetch<any>(`/api/v1/apar/invoices/${id}`),
+  create: (data: any) => apiFetch<any>('/api/v1/apar/invoices', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: any) => apiFetch<any>(`/api/v1/apar/invoices/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  checkDuplicates: (data: { vendorId: string; invoiceNumber: string; excludeInvoiceId?: string }) =>
+    apiFetch<{ candidates: any[] }>('/api/v1/apar/invoices/duplicate-check', { method: 'POST', body: JSON.stringify(data) }),
+  runMatch: (id: string) => apiFetch<{ invoice: any; result: any }>(`/api/v1/apar/invoices/${id}/match`, { method: 'POST' }),
+  submit: (id: string, data: { version: number; override?: { reason: string } }) =>
+    apiFetch<any>(`/api/v1/apar/invoices/${id}/submit`, { method: 'POST', body: JSON.stringify(data) }),
+  void: (id: string, data: { version: number; reason: string }) =>
+    apiFetch<any>(`/api/v1/apar/invoices/${id}/void`, { method: 'POST', body: JSON.stringify(data) }),
+};
+
+// AMACC-CH04 S039: Goods Receipts (3-way match input)
+export const goodsReceiptApi = {
+  listForPO: (poId: string) => apiFetch<any[]>(`/api/v1/apar/purchase-orders/${poId}/receipts`),
+  getById: (id: string) => apiFetch<any>(`/api/v1/apar/goods-receipts/${id}`),
+  create: (data: any) => apiFetch<any>('/api/v1/apar/goods-receipts', { method: 'POST', body: JSON.stringify(data) }),
+  void: (id: string, data: { reason: string }) => apiFetch<any>(`/api/v1/apar/goods-receipts/${id}/void`, { method: 'POST', body: JSON.stringify(data) }),
+};
+
 // Agents API
 export const agentApi = {
   getLog: () => apiFetch<any[]>('/api/v1/agents/log'),

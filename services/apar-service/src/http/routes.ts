@@ -34,6 +34,23 @@ import {
   CustomerValidationError,
   DuplicateCustomerAcknowledgementRequiredError,
 } from '../application/customer-service';
+import {
+  InvoiceService,
+  InvoiceNotFoundError,
+  VendorNotFoundForInvoiceError,
+  VendorNotEligibleForInvoiceError,
+  InvoiceValidationError,
+  InvoiceConflictError,
+  DuplicateInvoiceAcknowledgementRequiredError,
+  MatchExceptionOverrideRequiredError,
+} from '../application/invoice-service';
+import {
+  GoodsReceiptService,
+  GoodsReceiptNotFoundError,
+  PurchaseOrderNotFoundForReceiptError,
+  GoodsReceiptValidationError,
+  GoodsReceiptConflictError,
+} from '../application/goods-receipt-service';
 
 function getTenantId(request: any) {
   const id = request.headers['x-tenant-id'] as string;
@@ -91,6 +108,8 @@ export async function aparRoutes(app: FastifyInstance) {
   const complianceSvc = container.resolve<VendorComplianceService>('VendorComplianceService');
   const insuranceSvc = container.resolve<InsuranceCertificateService>('InsuranceCertificateService');
   const customerSvc = container.resolve<CustomerService>('CustomerService');
+  const invoiceSvc = container.resolve<InvoiceService>('InvoiceService');
+  const goodsReceiptSvc = container.resolve<GoodsReceiptService>('GoodsReceiptService');
   const authzClient = container.resolve<AuthzClient>('AuthzClient');
   const requirePermission = createAuthzGuard(authzClient, { getTenantId });
 
@@ -2103,5 +2122,325 @@ export async function aparRoutes(app: FastifyInstance) {
       orderBy: { vendorName: 'asc' },
     });
     return reply.send(vendors);
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // AMACC-CH04 S039: AP Invoice Entry & 2/3-Way Match
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const AP_INVOICE_PERMISSIONS = {
+    VIEW:               'ap.invoice.view',
+    CREATE:             'ap.invoice.create',
+    EDIT:               'ap.invoice.edit',
+    MATCH:              'ap.invoice.match',
+    MATCH_OVERRIDE:     'ap.invoice.match_override',
+    SUBMIT:             'ap.invoice.submit',
+    VOID:               'ap.invoice.void',
+    DUPLICATE_OVERRIDE: 'ap.invoice.duplicate_override',
+    AUDIT_VIEW:         'ap.invoice.audit_view',
+  } as const;
+
+  const AP_GOODS_RECEIPT_PERMISSIONS = {
+    VIEW:   'ap.goods_receipt.view',
+    CREATE: 'ap.goods_receipt.create',
+    VOID:   'ap.goods_receipt.void',
+  } as const;
+
+  const InvoiceLineSchema = z.object({
+    poLineId: z.string().uuid().optional(),
+    glAccountId: z.string().uuid().optional(),
+    description: z.string().min(1),
+    quantity: z.number().positive().optional(),
+    unitPrice: z.number(),
+    taxAmount: z.number().optional(),
+  });
+
+  const InvoiceCreateSchema = z.object({
+    vendorId: z.string().uuid(),
+    invoiceNumber: z.string().min(1),
+    invoiceDate: z.string().transform((s) => new Date(s)),
+    dueDate: z.string().transform((s) => new Date(s)),
+    poId: z.string().uuid().optional(),
+    freightAmount: z.number().optional(),
+    notes: z.string().optional(),
+    lines: z.array(InvoiceLineSchema).min(1),
+    override: z.object({ reason: z.string().min(1) }).optional(),
+  });
+
+  const InvoiceUpdateSchema = z.object({
+    version: z.number().int().min(1),
+    dueDate: z.string().transform((s) => new Date(s)).optional(),
+    notes: z.string().optional(),
+    freightAmount: z.number().optional(),
+    lines: z.array(InvoiceLineSchema).min(1).optional(),
+  });
+
+  const InvoiceDuplicateCheckSchema = z.object({
+    vendorId: z.string().uuid(),
+    invoiceNumber: z.string().min(1),
+    excludeInvoiceId: z.string().uuid().optional(),
+  });
+
+  const InvoiceSubmitSchema = z.object({
+    version: z.number().int().min(1),
+    override: z.object({ reason: z.string().min(1) }).optional(),
+  });
+
+  const InvoiceVoidSchema = z.object({
+    version: z.number().int().min(1),
+    reason: z.string().min(1),
+  });
+
+  const GoodsReceiptCreateSchema = z.object({
+    poId: z.string().uuid(),
+    receiptDate: z.string().transform((s) => new Date(s)).optional(),
+    receivedBy: z.string().optional(),
+    notes: z.string().optional(),
+    lines: z.array(z.object({
+      poLineId: z.string().uuid(),
+      description: z.string().min(1),
+      qtyReceived: z.number().positive(),
+    })).min(1),
+  });
+
+  const GoodsReceiptVoidSchema = z.object({
+    reason: z.string().min(1),
+  });
+
+  function handleInvoiceError(error: unknown, reply: any) {
+    if (error instanceof InvoiceNotFoundError || error instanceof VendorNotFoundForInvoiceError) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof VendorNotEligibleForInvoiceError) {
+      return reply.status(422).send({ error: 'VENDOR_NOT_ELIGIBLE', message: error.message, vendorStatus: error.vendorStatus });
+    }
+    if (error instanceof DuplicateInvoiceAcknowledgementRequiredError) {
+      return reply.status(409).send({ error: 'DUPLICATE_INVOICE_ACKNOWLEDGEMENT_REQUIRED', message: error.message, candidates: error.candidates });
+    }
+    if (error instanceof MatchExceptionOverrideRequiredError) {
+      return reply.status(409).send({ error: 'MATCH_EXCEPTION_OVERRIDE_REQUIRED', message: error.message, variances: error.variances });
+    }
+    if (error instanceof InvoiceConflictError) {
+      return reply.status(409).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof InvoiceValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) {
+      return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    }
+    throw error;
+  }
+
+  function handleGoodsReceiptError(error: unknown, reply: any) {
+    if (error instanceof GoodsReceiptNotFoundError || error instanceof PurchaseOrderNotFoundForReceiptError) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof GoodsReceiptConflictError) {
+      return reply.status(409).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof GoodsReceiptValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) {
+      return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    }
+    throw error;
+  }
+
+  // ── GET /invoices — list ────────────────────────────────────────────────
+  app.get('/invoices', { preHandler: requirePermission(AP_INVOICE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { vendorId, status, poId, page, pageSize } = request.query as {
+      vendorId?: string; status?: string; poId?: string; page?: string; pageSize?: string;
+    };
+    try {
+      const result = await invoiceSvc.list({
+        tenantId, vendorId, status, poId,
+        page: page ? parseInt(page, 10) : 1,
+        pageSize: pageSize ? parseInt(pageSize, 10) : 50,
+      });
+      return reply.send(result);
+    } catch (err) {
+      return handleInvoiceError(err, reply);
+    }
+  });
+
+  // ── POST /invoices/duplicate-check ──────────────────────────────────────
+  app.post('/invoices/duplicate-check', { preHandler: requirePermission(AP_INVOICE_PERMISSIONS.CREATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    try {
+      const body = InvoiceDuplicateCheckSchema.parse(request.body);
+      const candidates = await invoiceSvc.checkDuplicates({ tenantId, ...body });
+      return reply.send({ candidates });
+    } catch (err) {
+      return handleInvoiceError(err, reply);
+    }
+  });
+
+  // ── GET /invoices/:id — detail (header + lines + match history) ─────────
+  app.get('/invoices/:id', { preHandler: requirePermission(AP_INVOICE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const invoice = await invoiceSvc.getById(tenantId, id);
+      return reply.send(invoice);
+    } catch (err) {
+      return handleInvoiceError(err, reply);
+    }
+  });
+
+  // ── POST /invoices — create (DRAFT) ─────────────────────────────────────
+  app.post('/invoices', { preHandler: requirePermission(AP_INVOICE_PERMISSIONS.CREATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = InvoiceCreateSchema.parse(request.body);
+
+      if (body.override) {
+        const result = await authzClient.check({
+          userId: (request as any).user?.sub,
+          permissionKey: AP_INVOICE_PERMISSIONS.DUPLICATE_OVERRIDE,
+          scope: { tenantId },
+          route: (request as any).routeOptions?.url ?? request.url,
+        });
+        if (!result.allow) {
+          return reply.status(403).send({ error: 'DUPLICATE_INVOICE_OVERRIDE_FORBIDDEN', message: `Missing required permission: ${AP_INVOICE_PERMISSIONS.DUPLICATE_OVERRIDE}` });
+        }
+      }
+
+      const invoice = await invoiceSvc.create({ ...body, tenantId }, actor, correlationId);
+      return reply.status(201).send(invoice);
+    } catch (err) {
+      return handleInvoiceError(err, reply);
+    }
+  });
+
+  // ── PATCH /invoices/:id — update (DRAFT only) ───────────────────────────
+  app.patch('/invoices/:id', { preHandler: requirePermission(AP_INVOICE_PERMISSIONS.EDIT) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = InvoiceUpdateSchema.parse(request.body);
+      const invoice = await invoiceSvc.update(tenantId, id, body, actor, correlationId);
+      return reply.send(invoice);
+    } catch (err) {
+      return handleInvoiceError(err, reply);
+    }
+  });
+
+  // ── POST /invoices/:id/match — run 2/3-way match ────────────────────────
+  app.post('/invoices/:id/match', { preHandler: requirePermission(AP_INVOICE_PERMISSIONS.MATCH) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const { invoice, result } = await invoiceSvc.runMatch(tenantId, id, actor, correlationId);
+      return reply.send({ invoice, result });
+    } catch (err) {
+      return handleInvoiceError(err, reply);
+    }
+  });
+
+  // ── POST /invoices/:id/submit — DRAFT -> SUBMITTED ──────────────────────
+  app.post('/invoices/:id/submit', { preHandler: requirePermission(AP_INVOICE_PERMISSIONS.SUBMIT) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = InvoiceSubmitSchema.parse(request.body);
+
+      if (body.override) {
+        const result = await authzClient.check({
+          userId: (request as any).user?.sub,
+          permissionKey: AP_INVOICE_PERMISSIONS.MATCH_OVERRIDE,
+          scope: { tenantId },
+          route: (request as any).routeOptions?.url ?? request.url,
+        });
+        if (!result.allow) {
+          return reply.status(403).send({ error: 'MATCH_OVERRIDE_FORBIDDEN', message: `Missing required permission: ${AP_INVOICE_PERMISSIONS.MATCH_OVERRIDE}` });
+        }
+      }
+
+      const invoice = await invoiceSvc.submit(tenantId, id, body, actor, correlationId);
+      return reply.send(invoice);
+    } catch (err) {
+      return handleInvoiceError(err, reply);
+    }
+  });
+
+  // ── POST /invoices/:id/void ──────────────────────────────────────────────
+  app.post('/invoices/:id/void', { preHandler: requirePermission(AP_INVOICE_PERMISSIONS.VOID) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = InvoiceVoidSchema.parse(request.body);
+      const invoice = await invoiceSvc.void(tenantId, id, body, actor, correlationId);
+      return reply.send(invoice);
+    } catch (err) {
+      return handleInvoiceError(err, reply);
+    }
+  });
+
+  // ── Goods Receipts (3-way match input) ──────────────────────────────────
+
+  // ── GET /purchase-orders/:poId/receipts ─────────────────────────────────
+  app.get('/purchase-orders/:poId/receipts', { preHandler: requirePermission(AP_GOODS_RECEIPT_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { poId } = request.params as { poId: string };
+    try {
+      const receipts = await goodsReceiptSvc.listForPO(tenantId, poId);
+      return reply.send(receipts);
+    } catch (err) {
+      return handleGoodsReceiptError(err, reply);
+    }
+  });
+
+  // ── GET /goods-receipts/:id ──────────────────────────────────────────────
+  app.get('/goods-receipts/:id', { preHandler: requirePermission(AP_GOODS_RECEIPT_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const receipt = await goodsReceiptSvc.getById(tenantId, id);
+      return reply.send(receipt);
+    } catch (err) {
+      return handleGoodsReceiptError(err, reply);
+    }
+  });
+
+  // ── POST /goods-receipts — receive against a PO ─────────────────────────
+  app.post('/goods-receipts', { preHandler: requirePermission(AP_GOODS_RECEIPT_PERMISSIONS.CREATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = GoodsReceiptCreateSchema.parse(request.body);
+      const receipt = await goodsReceiptSvc.create({ ...body, tenantId }, actor, correlationId);
+      return reply.status(201).send(receipt);
+    } catch (err) {
+      return handleGoodsReceiptError(err, reply);
+    }
+  });
+
+  // ── POST /goods-receipts/:id/void ───────────────────────────────────────
+  app.post('/goods-receipts/:id/void', { preHandler: requirePermission(AP_GOODS_RECEIPT_PERMISSIONS.VOID) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = GoodsReceiptVoidSchema.parse(request.body);
+      const receipt = await goodsReceiptSvc.void(tenantId, id, body, actor, correlationId);
+      return reply.send(receipt);
+    } catch (err) {
+      return handleGoodsReceiptError(err, reply);
+    }
   });
 }

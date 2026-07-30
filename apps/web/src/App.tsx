@@ -86,6 +86,7 @@ import JournalTemplateEdit from './pages/accounting/JournalTemplateEdit';
 import RecurringJournalTemplates from './pages/accounting/RecurringJournalTemplates';
 import RecurringJournalTemplateEditor from './pages/accounting/RecurringJournalTemplateEditor';
 import VendorMaintenance from './pages/accounting/VendorMaintenance';
+import VendorInvoices from './pages/accounting/VendorInvoices';
 import CustomerMaintenance from './pages/accounting/CustomerMaintenance';
 import VehicleTransfers from './pages/accounting/VehicleTransfers';
 import APWorkflow from './pages/accounting/AccountsPayable';
@@ -209,6 +210,7 @@ const MODULES: AppModule[] = [
       ]},
       { title: 'Accounts Payable', items: [
         { path: '/accounting/ap',          label: 'AP Invoices' },
+        { path: '/accounting/ap/invoices', label: 'Vendor Invoice Match (S039)' },
         { path: '/accounting/ap/vendors',  label: 'Vendor Master' },
       ]},
       { title: 'Banking', items: [
@@ -607,6 +609,8 @@ export default function App() {
               <Route path="/accounting/journals/templates/new" element={<RecurringJournalTemplateEditor />} />
               <Route path="/accounting/journals/templates/:id" element={<RecurringJournalTemplateEditor />} />
               <Route path="/accounting/ap" element={<APWorkflow />} />
+              <Route path="/accounting/ap/invoices" element={<VendorInvoices />} />
+              <Route path="/accounting/ap/invoices/:id" element={<VendorInvoices />} />
               <Route path="/accounting/ap/vendors" element={<VendorMaintenance />} />
               <Route path="/accounting/ap/vendors/:id" element={<VendorMaintenance />} />
               <Route path="/accounting/ar/customers" element={<CustomerMaintenance />} />

@@ -604,3 +604,217 @@ model VendorInsuranceCertificate {
   @@index([tenantId, expirationDate])
   @@index([vendorId, insuranceType, isCurrent])
 }
+
+/// AMACC-CH04 S039: Goods Receipt — records quantities actually received
+/// against a PurchaseOrder line. No such model existed before S039 (see
+/// S039 discovery notes) — required as the "receipt" leg of 3-way match
+/// (PO vs Receipt vs Invoice). Reuses the existing PurchaseOrder/POLine
+/// master — no parallel PO system is introduced.
+model GoodsReceipt {
+  id            String    @id @default(uuid())
+  tenantId      String    @map("tenant_id")
+  poId          String    @map("po_id")
+  receiptNumber String    @map("receipt_number")
+  receiptDate   DateTime  @default(now()) @map("receipt_date") @db.Date
+  receivedBy    String?   @map("received_by")
+  /// OPEN | VOID. A GoodsReceipt is never edited in place once created — a
+  /// mis-keyed receipt is voided (with reason) and a corrected one entered,
+  /// same BR-AP-001-style convention as Vendor/Customer soft-delete.
+  status        String    @default("OPEN")
+  notes         String?
+  voidedAt      DateTime? @map("voided_at")
+  voidedBy      String?   @map("voided_by")
+  voidReason    String?   @map("void_reason")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  createdBy     String?   @map("created_by")
+
+  lines         GoodsReceiptLine[]
+
+  @@map("goods_receipts")
+  @@index([tenantId])
+  @@index([tenantId, poId])
+  @@index([tenantId, status])
+}
+
+/// S039: Goods Receipt line — quantity received against one PO line.
+model GoodsReceiptLine {
+  id             String   @id @default(uuid())
+  receiptId      String   @map("receipt_id")
+  poLineId       String   @map("po_line_id")
+  lineNumber     Int      @map("line_number")
+  description    String
+  qtyReceived    Decimal  @db.Decimal(10, 2) @map("qty_received")
+
+  receipt        GoodsReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+
+  @@map("goods_receipt_lines")
+  @@index([receiptId])
+  @@index([poLineId])
+}
+
+/// AMACC-CH04 S039: Vendor Invoice header — AP Invoice Entry & 2/3-Way
+/// Match. Registered in the Fable canonical registry (id S039, epic CE-09,
+/// release R2) only as a summary row — EXPANSION_PENDING, no accepted
+/// acceptance criteria/field list exists (see S039 discovery notes in the
+/// integration session). Built as a configurable framework rather than
+/// invented policy: matching tolerance is tenant/vendor-configurable
+/// (ApInvoiceMatchToleranceConfig, conservative 0.00 default — see
+/// InvoiceMatchService), GL coding is via the existing gl_accounts
+/// reference (no fabricated account numbers), and posting/approval
+/// authority is explicitly OUT of S039's scope (see S041 Invoice Approval
+/// Matrix — this model's lifecycle stops at SUBMITTED).
+model VendorInvoice {
+  id                    String    @id @default(uuid())
+  tenantId              String    @map("tenant_id")
+  vendorId              String    @map("vendor_id")
+  invoiceNumber         String    @map("invoice_number")
+  /// Uppercased/trimmed comparison form — duplicate-invoice detection
+  /// signal, same convention as Vendor.normalizedVendorNumber.
+  normalizedInvoiceNumber String  @map("normalized_invoice_number")
+  invoiceDate           DateTime  @map("invoice_date") @db.Date
+  dueDate               DateTime  @map("due_date") @db.Date
+  /// Copied from Vendor.paymentTerms at create time (a snapshot, not a
+  /// live reference — an invoice's terms shouldn't silently change if the
+  /// vendor master record is edited later).
+  paymentTerms          String    @map("payment_terms")
+  /// Optional PO linkage. NULL = non-PO invoice (no match is run; GL lines
+  /// must be coded directly — see VendorInvoiceLine.glAccountId).
+  poId                  String?   @map("po_id")
+
+  subtotal              Decimal   @default(0) @db.Decimal(15, 2)
+  taxAmount             Decimal   @default(0) @db.Decimal(15, 2) @map("tax_amount")
+  freightAmount         Decimal   @default(0) @db.Decimal(15, 2) @map("freight_amount")
+  totalAmount           Decimal   @default(0) @db.Decimal(15, 2) @map("total_amount")
+
+  /// DRAFT | SUBMITTED | VOID. Approval/posting statuses (PENDING_APPROVAL,
+  /// APPROVED, POSTED, REJECTED) belong to S041 and are intentionally not
+  /// modeled here — S039 hands off a SUBMITTED invoice, nothing more.
+  status                String    @default("DRAFT")
+  /// NONE (no PO) | TWO_WAY (PO+Invoice) | THREE_WAY (PO+Receipt+Invoice).
+  /// Determined automatically by InvoiceMatchService from the PO's receipt
+  /// history at match-run time — never caller-supplied.
+  matchType             String    @default("NONE") @map("match_type")
+  /// NOT_RUN | MATCHED | EXCEPTION | OVERRIDDEN. OVERRIDDEN means an
+  /// EXCEPTION result was explicitly bypassed by a permitted user with a
+  /// reason (see ApInvoiceMatchOverride) — never silently cleared.
+  matchStatus           String    @default("NOT_RUN") @map("match_status")
+
+  notes                 String?
+  /// Optimistic-concurrency version — same convention as Vendor/Customer.
+  version                Int      @default(1)
+
+  submittedAt            DateTime? @map("submitted_at")
+  submittedBy             String?  @map("submitted_by")
+  voidedAt               DateTime? @map("voided_at")
+  voidedBy                String?  @map("voided_by")
+  voidReason              String?  @map("void_reason")
+
+  createdAt              DateTime  @default(now()) @map("created_at")
+  createdBy              String?   @map("created_by")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+  updatedBy              String?   @map("updated_by")
+
+  lines                  VendorInvoiceLine[]
+  matchResults           VendorInvoiceMatchResult[]
+
+  @@map("vendor_invoices")
+  @@index([tenantId])
+  @@index([tenantId, vendorId])
+  @@index([tenantId, status])
+  @@index([tenantId, poId])
+  @@index([tenantId, normalizedInvoiceNumber])
+}
+
+/// S039: Vendor Invoice line item. Either linked to a PO line (poLineId set
+/// — matched against that line's unitCost/qty) or coded directly to a GL
+/// account (glAccountId set, non-PO invoice). Exactly one of the two is
+/// populated — enforced in InvoiceService, not by a DB constraint (Prisma
+/// has no native XOR check; a raw CHECK constraint is added in the
+/// migration instead, matching the ScheduleOpenItem precedent).
+model VendorInvoiceLine {
+  id            String   @id @default(uuid())
+  invoiceId     String   @map("invoice_id")
+  lineNumber    Int      @map("line_number")
+  poLineId      String?  @map("po_line_id")
+  glAccountId   String?  @map("gl_account_id")
+  description   String
+  quantity      Decimal  @default(1) @db.Decimal(10, 2)
+  unitPrice     Decimal  @db.Decimal(15, 2) @map("unit_price")
+  taxAmount     Decimal  @default(0) @db.Decimal(15, 2) @map("tax_amount")
+  lineTotal     Decimal  @db.Decimal(15, 2) @map("line_total")
+
+  invoice       VendorInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@map("vendor_invoice_lines")
+  @@index([invoiceId])
+  @@index([poLineId])
+}
+
+/// S039: append-only match-run history. A new row is written every time
+/// InvoiceMatchService.runMatch() executes (re-running after a line edit
+/// creates a new row rather than overwriting) — gives a full audit trail of
+/// what tolerance was in effect and what variances were found at each run.
+model VendorInvoiceMatchResult {
+  id                    String   @id @default(uuid())
+  tenantId              String   @map("tenant_id")
+  invoiceId             String   @map("invoice_id")
+  matchType             String   @map("match_type")
+  /// MATCHED | EXCEPTION
+  status                String
+  toleranceAmountUsed   Decimal  @db.Decimal(15, 2) @map("tolerance_amount_used")
+  tolerancePercentUsed  Decimal  @db.Decimal(5, 2) @map("tolerance_percent_used")
+  /// Array of { poLineId, invoiceLineId, type, expected, actual, varianceAmount, withinTolerance }
+  variances             Json
+  matchedAt             DateTime @default(now()) @map("matched_at")
+  matchedBy             String?  @map("matched_by")
+
+  invoice               VendorInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@map("vendor_invoice_match_results")
+  @@index([tenantId, invoiceId])
+}
+
+/// S039: tenant/vendor-configurable 2-way/3-way match tolerance — mirrors
+/// the CashVarianceToleranceConfig (S052) scope-resolution pattern exactly
+/// (VENDOR -> TENANT -> 0.00, see InvoiceMatchService.resolveTolerance).
+/// No configured tolerance means only an exact match avoids EXCEPTION — the
+/// conservative default, never a silently invented accounting assumption.
+model ApInvoiceMatchToleranceConfig {
+  id                String   @id @default(uuid())
+  tenantId          String   @map("tenant_id")
+  /// VENDOR | TENANT
+  scope             String
+  /// vendorId when scope=VENDOR; null when scope=TENANT.
+  scopeId           String?  @map("scope_id")
+  amountTolerance   Decimal  @default(0) @db.Decimal(15, 2) @map("amount_tolerance")
+  percentTolerance  Decimal  @default(0) @db.Decimal(5, 2) @map("percent_tolerance")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, scope, scopeId])
+  @@map("ap_invoice_match_tolerance_configs")
+  @@index([tenantId])
+}
+
+/// S039: persisted record of a user overriding a MATCH_EXCEPTION result (or
+/// a duplicate-invoice-number warning) to submit anyway. Mirrors
+/// ApVendorDuplicateAcknowledgement — requires an explicit reason and the
+/// route-enforced ap.invoice.match_override / ap.invoice.duplicate_override
+/// permission.
+model ApInvoiceMatchOverride {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  invoiceId      String   @map("invoice_id")
+  /// MATCH_EXCEPTION | DUPLICATE_INVOICE_NUMBER
+  overrideType   String   @map("override_type")
+  /// For MATCH_EXCEPTION: the variances bypassed. For duplicate: the
+  /// matched candidate invoice(s).
+  context        Json
+  reason         String
+  actor          String
+  correlationId  String?  @map("correlation_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, invoiceId])
+  @@map("ap_invoice_match_overrides")
+}

@@ -118,6 +118,8 @@ describe('Vendor route authorization and error contract (AMACC-CH04 S036A)', () 
     // Route plugin registration also resolves CustomerService (S046); this
     // suite only exercises vendor routes, so an inert stub is sufficient.
     container.registerInstance('CustomerService', {});
+    container.registerInstance('InvoiceService', {});
+    container.registerInstance('GoodsReceiptService', {});
     registerFullAuthz();
 
     app = Fastify();

@@ -13,6 +13,9 @@ import { VendorComplianceService } from './application/vendor-compliance-service
 import { ComplianceVerificationAdapter, ManualComplianceAdapter } from './application/compliance-adapter';
 import { InsuranceCertificateService } from './application/insurance-certificate-service';
 import { CustomerService } from './application/customer-service';
+import { InvoiceMatchService } from './application/invoice-match-service';
+import { InvoiceService } from './application/invoice-service';
+import { GoodsReceiptService } from './application/goods-receipt-service';
 import {
   IEventPublisher, IAREntryRepository, IAPEntryRepository, OutboxProcessor,
   HttpAuthzClient, AuthzClient, HttpAuditClient, AuditOutboxDrainer, makePrismaAuditOutboxStore,
@@ -60,6 +63,9 @@ async function bootstrap() {
   container.register('VendorComplianceService', { useClass: VendorComplianceService });
   container.register('InsuranceCertificateService', { useClass: InsuranceCertificateService });
   container.register('CustomerService', { useClass: CustomerService });
+  container.register(InvoiceMatchService, { useClass: InvoiceMatchService });
+  container.register('InvoiceService', { useClass: InvoiceService });
+  container.register('GoodsReceiptService', { useClass: GoodsReceiptService });
   container.registerInstance<AuthzClient>('AuthzClient', new HttpAuthzClient({
     onError: (err: unknown, req: any) => logger.error({ err, permission: req.permissionKey }, 'authz/check failed'),
   }));
