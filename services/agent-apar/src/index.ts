@@ -4,7 +4,7 @@ import cors from '@fastify/cors';
 import { APARReconAgent } from './domain/apar-agent';
 import { AnthropicClaudeClient } from './infrastructure/claude-client';
 import { RabbitMQEventPublisher } from './infrastructure/event-publisher';
-import { InMemoryAuditLogger } from './infrastructure/audit-logger';
+import { PostgresAuditLogger } from './infrastructure/audit-logger';
 import { APARAgentTools } from './infrastructure/agent-tools';
 import { asTenantId } from '@amacc/shared-kernel';
 import pino from 'pino';
@@ -19,8 +19,8 @@ async function bootstrap() {
   await app.register(cors, { origin: true });
 
   const claudeClient = new AnthropicClaudeClient(ANTHROPIC_API_KEY);
-  const auditLogger = new InMemoryAuditLogger();
-  const eventPublisher = new RabbitMQEventPublisher({ url: process.env['RABBITMQ_URL'] ?? 'amqp://localhost:5672' });
+  const auditLogger = new PostgresAuditLogger();
+  const eventPublisher = new RabbitMQEventPublisher({ url: process.env['RABBITMQ_URL'] ?? 'amqp://localhost:5672', serviceName: 'agent-apar' });
   await eventPublisher.connect();
 
   const agent = new APARReconAgent(claudeClient, auditLogger, eventPublisher);

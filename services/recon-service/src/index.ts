@@ -18,7 +18,7 @@ async function bootstrap() {
   await app.register(cors, { origin: true });
   const prisma = new PrismaClient();
   await prisma.$connect();
-  const eventPublisher = new RabbitMQEventPublisher({ url: process.env['RABBITMQ_URL'] ?? 'amqp://localhost:5672' });
+  const eventPublisher = new RabbitMQEventPublisher({ url: process.env['RABBITMQ_URL'] ?? 'amqp://localhost:5672', serviceName: 'recon-service' });
   await eventPublisher.connect();
 
   container.registerInstance('PrismaClient', prisma);

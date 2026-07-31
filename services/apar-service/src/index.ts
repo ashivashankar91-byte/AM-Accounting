@@ -47,7 +47,7 @@ async function bootstrap() {
   (prisma as any).$use(createTenantRlsMiddleware(prisma));
   app.addHook('preHandler', tenantContextHook);
 
-  const eventPublisher = new RabbitMQEventPublisher({ url: process.env['RABBITMQ_URL'] ?? 'amqp://localhost:5672' });
+  const eventPublisher = new RabbitMQEventPublisher({ url: process.env['RABBITMQ_URL'] ?? 'amqp://localhost:5672', serviceName: 'apar-service' });
   await eventPublisher.connect();
 
   app.decorate('prisma', prisma);

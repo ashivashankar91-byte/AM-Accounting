@@ -58,6 +58,7 @@ async function bootstrap() {
 
   const eventPublisher = new RabbitMQEventPublisher({
     url: process.env['RABBITMQ_URL'] ?? 'amqp://localhost:5672',
+    serviceName: 'gl-service',
   });
   await eventPublisher.connect();
 
@@ -174,30 +175,37 @@ async function bootstrap() {
     const totalEquity = Math.abs(balanceByType['EQUITY'] ?? 0);
     const netIncome = totalRevenue - totalExpenses;
 
-    // Build 6-month revenue trend from journal entry dates
+    // Build 6-month revenue/expense trend from real posted journal lines,
+    // joined to their journal entry's entry_date and grouped by account
+    // type. Previously this used Math.random() to fabricate a ±15%
+    // variance around the current month's real total for the other 5
+    // months — this now reflects each month's real posted activity (zero
+    // for months with no posted entries, which is honest).
     const months: string[] = [];
     for (let i = 5; i >= 0; i--) {
       const d = new Date(year, now.getMonth() - i, 1);
       months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
     }
-    const revenueTrend = months.map((m) => {
-      const [y, mo] = m.split('-').map(Number);
-      const start = new Date(y, mo - 1, 1);
-      const end = new Date(y, mo, 1);
-      let rev = 0, exp = 0;
-      for (const acct of allAccounts) {
-        const monthLines = (acct.lines ?? []).filter((l: any) => {
-          // lines don't have date directly, use existence as indicator
-          return true;
-        });
-        // Approximate: spread evenly across 6 months if we can't filter by date
-      }
-      // Use real totals for current month, scale for prior months
-      const scale = m === months[months.length - 1] ? 1.0 : 0.85 + Math.random() * 0.3;
-      rev = Math.round(totalRevenue * scale);
-      exp = Math.round(totalExpenses * scale);
-      return { month: m, revenue: rev, expenses: exp, netIncome: rev - exp };
-    });
+    let revenueTrend: { month: string; revenue: number; expenses: number; netIncome: number }[];
+    try {
+      const trendRows = await prisma.$queryRawUnsafe<{ ym: string; type: string; total: string }[]>(
+        `SELECT to_char(je.entry_date, 'YYYY-MM') AS ym, ga.type AS type, SUM(jl.debit - jl.credit) AS total
+         FROM journal_lines jl
+         JOIN journal_entries je ON je.id = jl.journal_entry_id
+         JOIN gl_accounts ga ON ga.id = jl.gl_account_id
+         WHERE je.tenant_id = $1 AND je.status = 'POSTED' AND je.entry_date >= $2
+         GROUP BY 1, 2`,
+        tenantId,
+        new Date(year, now.getMonth() - 5, 1),
+      );
+      revenueTrend = months.map((m) => {
+        const rev = Math.abs(trendRows.filter((r) => r.ym === m && r.type === 'REVENUE').reduce((s, r) => s + Number(r.total), 0));
+        const exp = Math.abs(trendRows.filter((r) => r.ym === m && (r.type === 'EXPENSE' || r.type === 'COST_OF_SALES')).reduce((s, r) => s + Number(r.total), 0));
+        return { month: m, revenue: rev, expenses: exp, netIncome: rev - exp };
+      });
+    } catch {
+      revenueTrend = months.map((m) => ({ month: m, revenue: 0, expenses: 0, netIncome: 0 }));
+    }
 
     // Department performance (dealership departments)
     const deptAccounts: Record<string, { revenue: number; cost: number }> = {};
@@ -216,82 +224,150 @@ async function bootstrap() {
       }
     }
 
-    // If no department data found, provide realistic dealership defaults
-    const deptPerformance = Object.keys(deptAccounts).length > 0
-      ? Object.entries(deptAccounts).map(([dept, v]) => ({
-          department: dept, revenue: v.revenue, cost: v.cost,
-          grossProfit: v.revenue - v.cost,
-          units: dept.includes('Vehicle') ? Math.floor(Math.random() * 80 + 20) : undefined,
-          roCount: dept === 'Service' ? Math.floor(Math.random() * 300 + 200) : undefined,
-        }))
-      : [
-          { department: 'New Vehicles', revenue: 485000000, cost: 452000000, grossProfit: 33000000, units: 68 },
-          { department: 'Used Vehicles', revenue: 312000000, cost: 278000000, grossProfit: 34000000, units: 54 },
-          { department: 'Service', revenue: 189000000, cost: 98000000, grossProfit: 91000000, roCount: 412 },
-          { department: 'Parts', revenue: 145000000, cost: 102000000, grossProfit: 43000000, orders: 1840 },
-          { department: 'F&I', revenue: 78000000, cost: 12000000, grossProfit: 66000000, deals: 122 },
-          { department: 'Body Shop', revenue: 67000000, cost: 48000000, grossProfit: 19000000, roCount: 89 },
-        ];
+    // Department performance — real per-account revenue/cost only. If no
+    // accounts map to a given department, it's reported as $0 (genuinely no
+    // activity) rather than fabricated. `units`/`roCount` are omitted when
+    // unknown instead of using Math.random() to invent fake vehicle/RO
+    // counts alongside real dollar figures (previous behavior mixed real
+    // and fake numbers in the same row, which is worse than an honest gap).
+    const deptPerformance = Object.entries(deptAccounts).map(([dept, v]) => ({
+      department: dept,
+      revenue: v.revenue,
+      cost: v.cost,
+      grossProfit: v.revenue - v.cost,
+    }));
 
-    // Cash position
+    // Cash position — real cash-type ASSET accounts and their real ledger
+    // balances only. Previously fell back to a fabricated $287.5M balance
+    // across fake account names when no cash accounts were found; now
+    // reports a genuinely empty position instead.
     const cashAccounts = allAccounts.filter((a: any) =>
       a.type === 'ASSET' && (a.name.toLowerCase().includes('cash') || a.name.toLowerCase().includes('checking') || a.name.toLowerCase().includes('savings'))
     );
-    const cashPosition = cashAccounts.length > 0
-      ? {
-          totalCash: cashAccounts.reduce((s: number, a: any) => s + (a.lines ?? []).reduce((ls: number, l: any) => ls + (l.debit - l.credit), 0), 0),
-          accounts: cashAccounts.map((a: any) => {
-            const bal = (a.lines ?? []).reduce((s: number, l: any) => s + (l.debit - l.credit), 0);
-            return { account: a.name, balance: bal, change: 0 };
-          }),
+    const cashPosition = {
+      totalCash: cashAccounts.reduce((s: number, a: any) => s + (a.lines ?? []).reduce((ls: number, l: any) => ls + (l.debit - l.credit), 0), 0),
+      accounts: cashAccounts.map((a: any) => {
+        const bal = (a.lines ?? []).reduce((s: number, l: any) => s + (l.debit - l.credit), 0);
+        return { account: a.name, balance: bal, change: 0 };
+      }),
+    };
+
+    // AR/AP aging — computed from real open ar_entries/ap_entries rows
+    // (apar-service tables, same physical database). Previously this was a
+    // hardcoded fake dealership-scale mock ($234.5M/$198M) that had no
+    // relationship to the tenant's actual data, producing nonsensical
+    // dashboards (e.g. $5K MTD revenue next to $234M AR). Buckets are based
+    // on due_date vs. today; zero real open items yields all-zero buckets.
+    const emptyAging = { total: 0, current: 0, days30: 0, days60: 0, days90: 0, over90: 0 };
+    async function computeAging(table: 'ar_entries' | 'ap_entries') {
+      try {
+        const rows = await prisma.$queryRawUnsafe<{ amount: string; due_date: Date }[]>(
+          `SELECT amount, due_date FROM ${table} WHERE tenant_id = $1 AND status IN ('OPEN', 'PARTIAL', 'PENDING_MANUAL')`,
+          tenantId,
+        );
+        const bucket = { ...emptyAging };
+        for (const row of rows) {
+          const amt = Number(row.amount);
+          const days = Math.floor((todayStart.getTime() - new Date(row.due_date).getTime()) / 86_400_000);
+          bucket.total += amt;
+          if (days <= 0) bucket.current += amt;
+          else if (days <= 30) bucket.days30 += amt;
+          else if (days <= 60) bucket.days60 += amt;
+          else if (days <= 90) bucket.days90 += amt;
+          else bucket.over90 += amt;
         }
-      : {
-          totalCash: 287500000,
-          accounts: [
-            { account: 'Operating Checking', balance: 185200000, change: 12400000 },
-            { account: 'Payroll Account', balance: 42300000, change: -8500000 },
-            { account: 'Savings Reserve', balance: 60000000, change: 0 },
-          ],
+        return bucket;
+      } catch {
+        return { ...emptyAging };
+      }
+    }
+    const [arAging, apAging] = await Promise.all([computeAging('ar_entries'), computeAging('ap_entries')]);
+
+    // EOM close status — computed from the real eom_closes/eom_steps rows
+    // for the current period (previously hardcoded to a fake "3 of 8 steps,
+    // GL_RECONCILIATION" regardless of actual close progress).
+    let eom: any = { current: null };
+    try {
+      const closes = await prisma.$queryRawUnsafe<{ id: string; status: string }[]>(
+        `SELECT id, status FROM eom_closes WHERE tenant_id = $1 AND period_year = $2 AND period_month = $3 LIMIT 1`,
+        tenantId,
+        year,
+        month,
+      );
+      if (closes.length > 0) {
+        const steps = await prisma.$queryRawUnsafe<{ step_name: string; status: string }[]>(
+          `SELECT step_name, status FROM eom_steps WHERE eom_close_id = $1 ORDER BY id ASC`,
+          closes[0].id,
+        );
+        const stepsComplete = steps.filter((s) => s.status === 'COMPLETED').length;
+        const currentStep = steps.find((s) => s.status !== 'COMPLETED')?.step_name ?? steps[steps.length - 1]?.step_name ?? '';
+        eom = {
+          current: {
+            month: `${year}-${String(month).padStart(2, '0')}`,
+            status: closes[0].status,
+            currentStep,
+            stepsComplete,
+            stepsTotal: steps.length,
+          },
         };
+      }
+    } catch {
+      // eom_closes/eom_steps unavailable — keep honest null default above
+    }
 
-    // AR/AP aging (defaults for dealership)
-    const arAging = { total: 234500000, current: 145000000, days30: 52000000, days60: 23000000, days90: 9500000, over90: 5000000 };
-    const apAging = { total: 198000000, current: 132000000, days30: 41000000, days60: 15000000, days90: 7000000, over90: 3000000 };
-
-    // EOM close status
-    const eom = {
-      current: {
-        month: `${year}-${String(month).padStart(2, '0')}`,
-        status: 'IN_PROGRESS',
-        currentStep: 'GL_RECONCILIATION',
-        stepsComplete: 3,
-        stepsTotal: 8,
-      },
-    };
-
-    // Floorplan exposure
+    // Floorplan exposure — no floorplan-tracking service/table exists yet in
+    // this codebase (confirmed: no floorplan_* tables in the DB). Previously
+    // hardcoded to a fake $892M exposure; honestly reporting zero/empty until
+    // a real floorplan module is built, rather than fabricating figures.
     const floorplan = {
-      totalExposure: 892000000,
-      newVehicles: { count: 142, value: 645000000 },
-      usedVehicles: { count: 78, value: 247000000 },
-      aged90Plus: { count: 12, value: 54000000 },
-      nextCurtailmentDate: new Date(year, now.getMonth(), 28).toISOString().split('T')[0],
-      curtailmentsDue: 8,
+      totalExposure: 0,
+      newVehicles: { count: 0, value: 0 },
+      usedVehicles: { count: 0, value: 0 },
+      aged90Plus: { count: 0, value: 0 },
+      nextCurtailmentDate: null as string | null,
+      curtailmentsDue: 0,
     };
 
-    // Payroll
-    const payroll = {
-      headcount: 87,
-      mtdGross: 34200000,
-      mtdNet: 24800000,
-      nextBatch: { status: 'SCHEDULED' },
-    };
+    // Payroll — computed from real payroll_batches rows for the current
+    // month (previously hardcoded to fake headcount/gross/net figures).
+    let payroll = { headcount: 0, mtdGross: 0, mtdNet: 0, nextBatch: { status: 'NONE' } };
+    try {
+      const batches = await prisma.$queryRawUnsafe<{ employee_count: number; total_gross_pay: string; total_net_pay: string; status: string }[]>(
+        `SELECT employee_count, total_gross_pay, total_net_pay, status FROM payroll_batches
+         WHERE tenant_id = $1 AND pay_period_start >= $2 AND pay_period_start < $3`,
+        tenantId,
+        new Date(year, now.getMonth(), 1),
+        new Date(year, now.getMonth() + 1, 1),
+      );
+      if (batches.length > 0) {
+        payroll = {
+          headcount: Math.max(...batches.map((b) => b.employee_count ?? 0)),
+          mtdGross: batches.reduce((s, b) => s + Number(b.total_gross_pay ?? 0), 0),
+          mtdNet: batches.reduce((s, b) => s + Number(b.total_net_pay ?? 0), 0),
+          nextBatch: { status: batches.find((b) => b.status !== 'POSTED')?.status ?? 'POSTED' },
+        };
+      }
+    } catch {
+      // payroll_batches unavailable — keep honest zeroed defaults above
+    }
 
-    // Recon status
-    const reconStatus = {
-      totalVariance: 1250000,
-      inProgress: 2,
-    };
+    // Recon status — computed from real open bank_recons rows (previously
+    // hardcoded to a fake $12,500 variance / 2 in-progress, which is what
+    // produced the "Trial Balance OUT OF BALANCE" banner on the Financial
+    // Dashboard even when the GL was actually balanced).
+    let reconStatus = { totalVariance: 0, inProgress: 0 };
+    try {
+      const recons = await prisma.$queryRawUnsafe<{ variance: string; status: string }[]>(
+        `SELECT variance, status FROM bank_recons WHERE tenant_id = $1 AND status != 'COMPLETED'`,
+        tenantId,
+      );
+      reconStatus = {
+        totalVariance: recons.reduce((s, r) => s + Number(r.variance ?? 0), 0),
+        inProgress: recons.length,
+      };
+    } catch {
+      // bank_recons unavailable — keep honest zeroed default above
+    }
 
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const periodLabel = `${monthNames[month - 1]} ${year}`;
@@ -305,23 +381,20 @@ async function bootstrap() {
       recentEntries,
       currentPeriod: { year, month },
       financials: {
-        totalRevenue: totalRevenue || 127600000,
-        revenueVsPriorMonth: Math.round((totalRevenue || 127600000) * 0.94),
-        totalExpenses: totalExpenses || 99000000,
-        netIncome: netIncome || 28600000,
-        netIncomeVsPriorMonth: Math.round((netIncome || 28600000) * 0.88),
-        totalAssets: totalAssets || 1245000000,
-        totalLiabilities: totalLiabilities || 892000000,
-        totalEquity: totalEquity || 353000000,
+        totalRevenue,
+        revenueVsPriorMonth: revenueTrend.length >= 2 ? revenueTrend[revenueTrend.length - 2].revenue : 0,
+        totalExpenses,
+        netIncome,
+        netIncomeVsPriorMonth: revenueTrend.length >= 2 ? revenueTrend[revenueTrend.length - 2].netIncome : 0,
+        totalAssets,
+        totalLiabilities,
+        totalEquity,
       },
       glSummary: { todayEntries, posted: postedCount, draft: draftCount },
       deptPerformance,
       revenueTrend: revenueTrend.map((r) => ({
         ...r,
         month: monthNames[parseInt(r.month.split('-')[1]) - 1],
-        revenue: r.revenue || Math.round(127600000 * (0.85 + Math.random() * 0.3)),
-        expenses: r.expenses || Math.round(99000000 * (0.85 + Math.random() * 0.3)),
-        netIncome: r.netIncome || Math.round(28600000 * (0.85 + Math.random() * 0.3)),
       })),
       cashPosition,
       arAging,
@@ -400,11 +473,33 @@ async function bootstrap() {
     );
     const totalCash = cashAccts.reduce((s: number, a: any) => s + acctBalance(a), 0);
 
-    // AR = receivable accounts, AP = payable accounts
-    const arAccts = allAccounts.filter((a: any) => a.type === 'ASSET' && a.name.toLowerCase().includes('receiv'));
-    const apAccts = allAccounts.filter((a: any) => a.type === 'LIABILITY' && (a.name.toLowerCase().includes('payab') || a.name.toLowerCase().includes('ap ')));
-    const arTotal = arAccts.reduce((s: number, a: any) => s + Math.abs(acctBalance(a)), 0);
-    const apTotal = apAccts.reduce((s: number, a: any) => s + Math.abs(acctBalance(a)), 0);
+    // AR/AP outstanding — real open subledger totals from apar-service's
+    // ar_entries/ap_entries tables (same source as /api/v1/dashboard/summary
+    // arAging/apAging). Previously this summed GL control-account balances
+    // matched by a name.includes('receiv'/'payab') heuristic, which showed
+    // $0 whenever those GL accounts had no posted activity yet -- even
+    // though real open AR/AP subledger items existed -- producing two
+    // different "AR Outstanding" figures across dashboards (Command Center
+    // vs Financial Dashboard) for the same tenant at the same moment.
+    let arTotal = 0, apTotal = 0, arCount = 0, apCount = 0;
+    try {
+      const [arRows, apRows] = await Promise.all([
+        prisma.$queryRawUnsafe<{ amount: string }[]>(
+          `SELECT amount FROM ar_entries WHERE tenant_id = $1 AND status IN ('OPEN', 'PARTIAL', 'PENDING_MANUAL')`,
+          tenantId,
+        ),
+        prisma.$queryRawUnsafe<{ amount: string }[]>(
+          `SELECT amount FROM ap_entries WHERE tenant_id = $1 AND status IN ('OPEN', 'PARTIAL')`,
+          tenantId,
+        ),
+      ]);
+      arTotal = arRows.reduce((s, r) => s + Number(r.amount), 0);
+      apTotal = apRows.reduce((s, r) => s + Number(r.amount), 0);
+      arCount = arRows.length;
+      apCount = apRows.length;
+    } catch {
+      // ar_entries/ap_entries unavailable — keep honest zeroed defaults above
+    }
 
     // GL balanced = total debits == total credits across all lines
     let totalDebits = 0, totalCredits = 0;
@@ -422,8 +517,8 @@ async function bootstrap() {
         { key: 'mtd-revenue', label: 'MTD Revenue', value: totalRevenue, format: 'currency', sub: `${monthEntries} journal entries this month` },
         { key: 'net-income', label: 'Net Income', value: netIncome, format: 'currency', status: netIncome >= 0 ? 'green' : 'red', sub: `Revenue ${totalRevenue} − Expenses ${totalExpenses}` },
         { key: 'cash-position', label: 'Cash Position', value: totalCash, format: 'currency', sub: `${cashAccts.length} cash account${cashAccts.length !== 1 ? 's' : ''}` },
-        { key: 'ar-outstanding', label: 'AR Outstanding', value: arTotal, format: 'currency', sub: `${arAccts.length} receivable account${arAccts.length !== 1 ? 's' : ''}` },
-        { key: 'ap-outstanding', label: 'AP Outstanding', value: apTotal, format: 'currency', sub: `${apAccts.length} payable account${apAccts.length !== 1 ? 's' : ''}` },
+        { key: 'ar-outstanding', label: 'AR Outstanding', value: arTotal, format: 'currency', sub: `${arCount} open receivable${arCount !== 1 ? 's' : ''}` },
+        { key: 'ap-outstanding', label: 'AP Outstanding', value: apTotal, format: 'currency', sub: `${apCount} open payable${apCount !== 1 ? 's' : ''}` },
         { key: 'total-accounts', label: 'Chart of Accounts', value: allAccounts.length, format: 'number', sub: `${allAccounts.filter((a: any) => a.isActive).length} active` },
         { key: 'draft-entries', label: 'Unposted Entries', value: draftCount, format: 'number', status: draftCount > 0 ? 'amber' : 'green', sub: draftCount > 0 ? 'Requires review' : 'All entries posted' },
       ],

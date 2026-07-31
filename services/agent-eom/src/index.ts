@@ -4,7 +4,7 @@ import cors from '@fastify/cors';
 import { EOMOrchestrationAgent } from './domain/eom-agent';
 import { AnthropicClaudeClient } from './infrastructure/claude-client';
 import { RabbitMQEventPublisher } from './infrastructure/event-publisher';
-import { InMemoryAuditLogger } from './infrastructure/audit-logger';
+import { PostgresAuditLogger } from './infrastructure/audit-logger';
 import { EOMAgentTools } from './infrastructure/agent-tools';
 import { asTenantId } from '@amacc/shared-kernel';
 import pino from 'pino';
@@ -19,8 +19,8 @@ async function bootstrap() {
   await app.register(cors, { origin: true });
 
   const claudeClient = new AnthropicClaudeClient(ANTHROPIC_API_KEY);
-  const auditLogger = new InMemoryAuditLogger();
-  const eventPublisher = new RabbitMQEventPublisher({ url: process.env['RABBITMQ_URL'] ?? 'amqp://localhost:5672' });
+  const auditLogger = new PostgresAuditLogger();
+  const eventPublisher = new RabbitMQEventPublisher({ url: process.env['RABBITMQ_URL'] ?? 'amqp://localhost:5672', serviceName: 'agent-eom' });
   await eventPublisher.connect();
 
   const agent = new EOMOrchestrationAgent(claudeClient, auditLogger, eventPublisher);
