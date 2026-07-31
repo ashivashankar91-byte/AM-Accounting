@@ -5,6 +5,11 @@ import react from '@vitejs/plugin-react';
 // Override with API_TARGET env var for K8s/staging (where port 3000 is free).
 const API_TARGET = process.env.API_TARGET || 'http://localhost:3100';
 
+// S021: posting-recovery-service is not yet routed through api-gateway, so
+// its /posting-recovery/v1/* paths (the story's literal required endpoint
+// paths — not /api/v1/*) are proxied directly to the service's own port.
+const POSTING_RECOVERY_TARGET = process.env.POSTING_RECOVERY_API_TARGET || 'http://localhost:3049';
+
 // Intercept service day-end routes that have no backend yet (NS-004 / CF-001).
 // Removes console 404 noise until service-day-end-service is deployed.
 function serviceDayEndMock(): Plugin {
@@ -48,6 +53,7 @@ export default defineConfig({
     },
     proxy: {
       '/api': { target: API_TARGET, changeOrigin: true },
+      '/posting-recovery': { target: POSTING_RECOVERY_TARGET, changeOrigin: true },
     },
   },
 });
