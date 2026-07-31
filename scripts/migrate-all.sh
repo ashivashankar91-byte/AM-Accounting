@@ -42,6 +42,7 @@ SERVICES=(
   tenant-service
   auth-service
   coa-service
+  posting-recovery-service
   audit-service
   gl-service
   apar-service
@@ -51,6 +52,7 @@ SERVICES=(
   payroll-service
   fs-service
   recon-service
+  cashflow-service
 )
 
 echo "==> Applying migrations to ${DATABASE_URL%%@*}@... (amacc superuser)"
