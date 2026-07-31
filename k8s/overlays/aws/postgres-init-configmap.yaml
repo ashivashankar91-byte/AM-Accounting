@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-scripts
+  namespace: amacc
+data:
+  01-create-app-role.sql: |
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'amacc_app') THEN
+        CREATE ROLE amacc_app WITH LOGIN PASSWORD 'amacc_app_dev' NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+      END IF;
+    END
+    $$;
+
+    GRANT USAGE ON SCHEMA public TO amacc_app;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO amacc_app;
+    GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO amacc_app;
+
+    ALTER DEFAULT PRIVILEGES FOR ROLE amacc IN SCHEMA public
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO amacc_app;
+    ALTER DEFAULT PRIVILEGES FOR ROLE amacc IN SCHEMA public
+      GRANT USAGE, SELECT ON SEQUENCES TO amacc_app;

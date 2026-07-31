@@ -1,0 +1,28 @@
+# One-shot Job that applies every service's Prisma migrations to the
+# in-cluster Postgres via scripts/migrate-all.sh (see infra/migrator/Dockerfile).
+# Must complete before the app services can serve traffic against a fresh
+# database. Not part of the base k8s/ manifests (docker-compose has an
+# equivalent `migrator` service with a `depends_on: service_completed_successfully`
+# gate that has no direct Kubernetes analogue), so it lives only in this
+# AWS overlay and is applied/waited-on explicitly during deploy.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrator
+  namespace: amacc
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      initContainers:
+        - name: wait-postgres
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z postgres 5432; do sleep 2; done']
+      containers:
+        - name: migrator
+          image: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/migrator:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MIGRATE_DATABASE_URL
+              value: "postgresql://amacc:Qmynic5byCFgmhN0jbniNLMnb7cNMqN@postgres:5432/amacc"

@@ -1,0 +1,62 @@
+# The base Ingress in ../../base/07-gateway-frontend.yaml is designed for
+# nginx-ingress and combines both backends (api-gateway, web) under one
+# Ingress object with a single ingress-wide healthcheck-path annotation.
+# AWS Load Balancer Controller applies healthcheck-path per-ALB-TargetGroup,
+# but when derived from one Ingress object it uses one path for all backends.
+# api-gateway (nginx) exposes /health (200), while web (vite dev server) has
+# no /health route -- only "/" (302 redirect to /amacc/, within 200-399).
+# Splitting into two Ingress objects in the same ALB IngressGroup lets each
+# backend use its own healthcheck-path while still sharing one ALB.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: amacc-ingress-api
+  namespace: amacc
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+    alb.ingress.kubernetes.io/load-balancer-name: amacc-prod
+    alb.ingress.kubernetes.io/group.name: amacc
+    alb.ingress.kubernetes.io/group.order: "10"
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+    alb.ingress.kubernetes.io/success-codes: "200-399"
+spec:
+  ingressClassName: alb
+  rules:
+    - http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: amacc-ingress-web
+  namespace: amacc
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+    alb.ingress.kubernetes.io/load-balancer-name: amacc-prod
+    alb.ingress.kubernetes.io/group.name: amacc
+    alb.ingress.kubernetes.io/group.order: "20"
+    alb.ingress.kubernetes.io/healthcheck-path: /
+    alb.ingress.kubernetes.io/success-codes: "200-399"
+spec:
+  ingressClassName: alb
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: 5174
