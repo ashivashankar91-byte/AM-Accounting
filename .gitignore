@@ -52,3 +52,15 @@ test-results/
 
 # Backlog package is a tracked reference document, not a generated archive
 !docs/accounting-modernization/AutoMate2_Accounting_Backlog_Package_v1.1.zip
+
+# Terraform state, plan output, and provider module cache — these contain
+# real resource IDs/secrets (state) or are large regenerable caches (module
+# cache) and must never be committed.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+tfplan
+tfplan-*
+tfplan[0-9]*
+*.tfvars
+!*.tfvars.example
