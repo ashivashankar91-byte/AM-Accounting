@@ -443,6 +443,11 @@ export interface AgentLogEntry {
   humanRequired: boolean;
   humanResolvedAt: Date | null;
   createdAt: Date;
+  /** Structured context for the action (e.g. the caught error for
+   * outcome=AGENT_ERROR) — written on every log() call but previously
+   * silently dropped on read (PostgresAuditLogger.toEntry() never mapped
+   * the underlying `details` JSONB column back onto this shape). */
+  details?: Record<string, unknown> | null;
 }
 
 // ── Pending Agent Action (approval workflow) ───────────
