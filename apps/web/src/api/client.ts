@@ -1388,3 +1388,31 @@ export const postingEngineApi = {
   listExceptions: (reasonCode?: string) =>
     apiFetch<{ items: any[] }>(`/api/v1/coa/posting-engine/exceptions${reasonCode ? `?reasonCode=${encodeURIComponent(reasonCode)}` : ''}`),
 };
+
+// S021 — Posting Recovery (DLQ inspection workbench). Note the literal
+// /posting-recovery/v1/* path (not /api/v1/*) — posting-recovery-service is
+// proxied directly (see apps/web/vite.config.ts), not through api-gateway.
+export const postingRecoveryApi = {
+  listQueue: (params?: string) => apiFetch<{
+    items: Array<{
+      id: string; sourceEventType: string; sourceSystem: string; sourceTransactionId: string | null;
+      status: string; latestFailureCategory: string; latestFailureCode: string;
+      firstFailureAt: string; latestFailureAt: string; attemptCount: number;
+      assignedOwner: string | null; escalationState: string | null;
+    }>;
+    total: number; page: number; pageSize: number;
+  }>(`/posting-recovery/v1/dead-letters${params ? `?${params}` : ''}`),
+  getSummary: () => apiFetch<{ byStatus: Record<string, number>; byFailureCategory: Record<string, number> }>(
+    '/posting-recovery/v1/dead-letters/summary',
+  ),
+  getCase: (id: string) => apiFetch<any>(`/posting-recovery/v1/dead-letters/${id}`),
+  getAttempts: (id: string) => apiFetch<{ items: any[] }>(`/posting-recovery/v1/dead-letters/${id}/attempts`),
+  getCorrections: (id: string) => apiFetch<{ items: any[] }>(`/posting-recovery/v1/dead-letters/${id}/corrections`),
+  getLineage: (id: string) => apiFetch<any>(`/posting-recovery/v1/dead-letters/${id}/lineage`),
+  getAuditTimeline: (id: string) => apiFetch<{ items: any[] }>(`/posting-recovery/v1/dead-letters/${id}/audit-timeline`),
+  // R1 S021-completion — real replay execution.
+  replay: (id: string) => apiFetch<{
+    deadLetterId: string; attemptNumber: number; outcome: 'POSTED' | 'NOOP_ALREADY_POSTED' | 'REJECTED' | 'FAILED';
+    message: string | null; journalReference: string | null; status: string; idempotentPassthrough: boolean;
+  }>(`/posting-recovery/v1/dead-letters/${id}/replay`, { method: 'POST' }),
+};

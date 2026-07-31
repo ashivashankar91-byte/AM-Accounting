@@ -2,7 +2,7 @@ import React from 'react';
 
 type BadgeVariant = 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'purple';
 
-interface BadgeProps {
+interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
   variant?: BadgeVariant;
   dot?: boolean;
   children: React.ReactNode;
@@ -27,13 +27,16 @@ const dotClass: Record<BadgeVariant, string> = {
   purple:  'bg-purple-500',
 };
 
-export function Badge({ variant = 'neutral', dot = false, children, className = '' }: BadgeProps) {
+export function Badge({ variant = 'neutral', dot = false, children, className = '', ...rest }: BadgeProps) {
   return (
-    <span className={[
-      'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold border',
-      variantClass[variant],
-      className,
-    ].join(' ')}>
+    <span
+      {...rest}
+      className={[
+        'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold border',
+        variantClass[variant],
+        className,
+      ].join(' ')}
+    >
       {dot && <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotClass[variant]}`} />}
       {children}
     </span>

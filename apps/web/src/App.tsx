@@ -72,6 +72,8 @@ import CashSupervisorReconciliation from './pages/goldenpath/cash/SupervisorReco
 import AnalysisCodeRegistry from './pages/accounting/admin/AnalysisCodeRegistry';
 import GoldenPathPostingRules from './pages/goldenpath/PostingRules';
 import GoldenPathPostingExecutions from './pages/goldenpath/PostingExecutions';
+import GoldenPathPostingRecoveryQueue from './pages/goldenpath/PostingRecoveryQueue';
+import GoldenPathPostingRecoveryCaseDetail from './pages/goldenpath/PostingRecoveryCaseDetail';
 import TrialBalance from './pages/TrialBalance';
 import ManualJournalEntry from './pages/ManualJournalEntry';
 import AMACCSync from './pages/AMACCSync';
@@ -195,6 +197,7 @@ const MODULES: AppModule[] = [
       { title: 'Posting Engine', items: [
         { path: '/accounting/gl/posting-rules',       label: 'Posting Rules' },
         { path: '/accounting/gl/posting-executions',  label: 'Posting Executions' },
+        { path: '/accounting/gl/posting-recovery',    label: 'Posting Recovery (DLQ)' },
       ]},
       { title: 'GL Reports', items: [
         { path: '/accounting/reports/gl-trial-balance',     label: 'Trial Balance' },
@@ -652,6 +655,18 @@ export default function App() {
               <Route path="/accounting/gl/posting-executions" element={<GoldenPathProtectedRoute><GoldenPathPostingExecutions /></GoldenPathProtectedRoute>} />
               <Route path="/golden-path/posting-rules" element={<Navigate to="/accounting/gl/posting-rules" replace />} />
               <Route path="/golden-path/posting-executions" element={<Navigate to="/accounting/gl/posting-executions" replace />} />
+              {/* S021 — Posting Recovery (DLQ inspection + replay). Integrated
+                  directly under the canonical Accounting sidebar (General
+                  Ledger > Posting Engine), following the same convention
+                  established for Posting Rules/Executions above — this story
+                  never had an integrated golden-path-only route to redirect
+                  from in production, but the redirect is kept for parity with
+                  every other migrated screen and for any bookmarks made
+                  against the unmerged S021 branches' own dev environment. */}
+              <Route path="/accounting/gl/posting-recovery" element={<GoldenPathProtectedRoute><GoldenPathPostingRecoveryQueue /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/gl/posting-recovery/:id" element={<GoldenPathProtectedRoute><GoldenPathPostingRecoveryCaseDetail /></GoldenPathProtectedRoute>} />
+              <Route path="/golden-path/posting-recovery" element={<Navigate to="/accounting/gl/posting-recovery" replace />} />
+              <Route path="/golden-path/posting-recovery/:id" element={<RedirectWithParams to={(p) => `/accounting/gl/posting-recovery/${p.id}`} />} />
               {/* Golden R0 Phase — routing alias only, no second implementation.
                   The canonical GL Inquiry screen/route is /accounting/inquiry/gl
                   (registered below); this path never had a real route at all,

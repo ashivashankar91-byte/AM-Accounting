@@ -365,6 +365,20 @@ services:
       rabbitmq: { condition: service_healthy }
       migrator: { condition: service_completed_successfully }
 
+  posting-recovery-service:
+    build:
+      context: .
+      dockerfile: services/posting-recovery-service/Dockerfile
+    ports:
+      - "3049:3049"
+    environment:
+      <<: *service-env
+      PORT: 3049
+      COA_SERVICE_URL: http://coa-service:3016
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
   fs-service:
     build:
       context: .
