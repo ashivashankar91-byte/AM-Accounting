@@ -28,6 +28,20 @@ export function createAuthzGuard(client: AuthzClient, options: AuthzGuardOptions
       if (!userId) {
         return reply.status(401).send({ error: 'UNAUTHENTICATED', message: 'No authenticated user on request' });
       }
+      // Trusted service-to-service calls (createServiceToken) carry role
+      // 'SERVICE' and are only issuable by a backend process holding
+      // AMACC_JWT_SECRET -- never reachable from a browser/end user. These
+      // represent internal automation (e.g. cashflow-service reading GL
+      // trial balance, eom-service restoring GL accounts), not a human
+      // acting under a role, so they are not looked up in the per-user RBAC
+      // engine (which has no role assignment for a serviceId and would
+      // always deny with NO_MATCHING_ROLE). authMiddleware/verifyJWT above
+      // this guard already enforced signature + expiry, so this is not a
+      // bypass of authentication -- only of the human-role permission
+      // lookup for already-authenticated internal callers.
+      if (request.user?.role === 'SERVICE') {
+        return;
+      }
       const tenantId = options.getTenantId(request);
       const extra = options.scope?.(request) ?? {};
       const result = await client.check({
