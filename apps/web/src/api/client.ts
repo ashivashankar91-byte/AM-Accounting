@@ -1416,3 +1416,24 @@ export const postingRecoveryApi = {
     message: string | null; journalReference: string | null; status: string; idempotentPassthrough: boolean;
   }>(`/posting-recovery/v1/dead-letters/${id}/replay`, { method: 'POST' }),
 };
+
+// S223 — Configuration Framework: scoped, effective-dated, catalog-controlled
+// key/value settings (STORE -> ENTITY -> TENANT -> default resolution).
+// Dashboard-rebuild target/threshold keys (dashboard.*) are registered here —
+// see services/coa-service/prisma/migrations/20260731090000_seed_dashboard_target_config_keys.
+export interface ResolvedConfigValue {
+  key: string;
+  type: 'BOOL' | 'INT' | 'ENUM' | 'STRING';
+  value: string;
+  resolvedScope: 'TENANT' | 'ENTITY' | 'STORE' | 'DEFAULT';
+}
+export const configApi = {
+  resolve: (key: string, params: { entityId?: string | null; storeId?: string | null } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.entityId) qs.set('entity', params.entityId);
+    if (params.storeId) qs.set('store', params.storeId);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return apiFetch<ResolvedConfigValue>(`/api/v1/config/${encodeURIComponent(key)}${suffix}`);
+  },
+  listCatalog: () => apiFetch<{ keys: any[] }>('/api/v1/config/catalog'),
+};

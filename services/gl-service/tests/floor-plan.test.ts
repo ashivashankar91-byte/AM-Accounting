@@ -199,6 +199,36 @@ describe('Floor Plan Financing API', () => {
       const totalBalance = units.reduce((sum: number, u: any) => sum + u.currentBalance.toNumber(), 0);
       expect(totalBalance).toBe(150000.00); // 25k + 50k + 75k
     });
+
+    // Dashboard rebuild — Command Center floorplan-trust exception: a unit
+    // marked vehicle_status=SOLD with no payoff_date is "out of trust" (sold
+    // while still on an open floorplan payable). GET /floor-plan/units now
+    // surfaces vehicle_status/payoff_date/floor_date so the exception can be
+    // computed client-side without a second round-trip.
+    it('surfaces vehicle_status and payoff_date so an out-of-trust unit (sold, unpaid) is detectable', async () => {
+      await (prisma as any).floorPlanUnit.create({
+        data: {
+          tenantId,
+          vin: '1HGCV41JXMN109999',
+          lenderId: 'lender-wells-fargo',
+          advanceAmount: new Decimal('30000'),
+          currentBalance: new Decimal('30000'),
+          interestRate: new Decimal('0.065'),
+          floorDate: new Date('2026-05-01'),
+          status: 'ACTIVE',
+          vehicleStatus: 'SOLD',
+          payoffDate: null,
+        },
+      });
+
+      const outOfTrust = await (prisma as any).floorPlanUnit.findMany({
+        where: { tenantId, status: 'ACTIVE', vehicleStatus: 'SOLD', payoffDate: null },
+      });
+
+      expect(outOfTrust.length).toBe(1);
+      expect(outOfTrust[0].currentBalance.toNumber()).toBe(30000);
+      expect(outOfTrust[0].payoffDate).toBeNull();
+    });
   });
 
   describe('POST /api/v1/gl/floor-plan/accrue-interest', () => {

@@ -504,7 +504,13 @@ function AgingTab({ scheduleId }: { scheduleId: string }) {
 export default function ScheduleOpenItems() {
   const [searchParams] = useSearchParams();
   const [scheduleId, setScheduleId] = useState(searchParams.get('schedule') ?? '');
-  const [tab, setTab] = useState<'items' | 'tieout' | 'aging'>('items');
+  // Honors ?tab=tieout so Command Center's schedule-variance exception tile
+  // lands directly on the GL Tie-Out sub-tab, not the default Open Items
+  // view — per the value-doctrine "action test".
+  const initialTab = (['items', 'tieout', 'aging'] as const).includes(searchParams.get('tab') as any)
+    ? (searchParams.get('tab') as 'items' | 'tieout' | 'aging')
+    : 'items';
+  const [tab, setTab] = useState<'items' | 'tieout' | 'aging'>(initialTab);
 
   return (
     <div className="flex flex-col h-screen bg-gray-50 font-[Inter,sans-serif] text-sm">

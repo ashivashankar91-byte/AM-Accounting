@@ -1,62 +1,40 @@
 import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { glApi, dashboardApi } from '../api/client';
 import HelpButton from '../components/HelpButton';
 import SCREEN_HELP from '../data/screenHelp';
 import { SJEType, type StandardJournalEntry, type SJELine } from '../types/file-maintenance';
 
-// ── Seed Data ─────────────────────────────────────────────────────
-const SEED_ENTRIES: StandardJournalEntry[] = [
-  {
-    id: 'SJE-001', name: 'Monthly Depreciation', sourceCode: 58, referenceNumber: 'DEP-01',
-    lastPostDate: '2026-02-28', entryType: SJEType.MANUAL, notes: 'Fixed asset depreciation — vehicles, equipment, leasehold improvements.',
-    postingType: null, nextPostDate: null, numberOfTimes: null, lockedBy: null, lockedAt: null,
-    lines: [
-      { lineNumber: 1, glAccount: '7500', description: 'Depreciation Expense — Vehicles', debit: 4250.00, credit: 0, controlNumber: null },
-      { lineNumber: 2, glAccount: '7510', description: 'Depreciation Expense — Equipment', debit: 1875.00, credit: 0, controlNumber: null },
-      { lineNumber: 3, glAccount: '7520', description: 'Depreciation Expense — Leasehold', debit: 2083.33, credit: 0, controlNumber: null },
-      { lineNumber: 4, glAccount: '2810', description: 'Accum Depr — Vehicles', debit: 0, credit: 4250.00, controlNumber: null },
-      { lineNumber: 5, glAccount: '2820', description: 'Accum Depr — Equipment', debit: 0, credit: 1875.00, controlNumber: null },
-      { lineNumber: 6, glAccount: '2830', description: 'Accum Depr — Leasehold', debit: 0, credit: 2083.33, controlNumber: null },
-    ],
-  },
-  {
-    id: 'SJE-002', name: 'Rent Expense Accrual', sourceCode: 58, referenceNumber: 'RENT-01',
-    lastPostDate: '2026-02-28', entryType: SJEType.MANUAL, notes: 'Monthly facility rent — Hyundai showroom + service bays.',
-    postingType: null, nextPostDate: null, numberOfTimes: null, lockedBy: null, lockedAt: null,
-    lines: [
-      { lineNumber: 1, glAccount: '7600', description: 'Rent Expense — Facility', debit: 22500.00, credit: 0, controlNumber: null },
-      { lineNumber: 2, glAccount: '3310', description: 'Accrued Other', debit: 0, credit: 22500.00, controlNumber: 'RENT' },
-    ],
-  },
-  {
-    id: 'SJE-003', name: 'Insurance Prepaid Amort', sourceCode: 58, referenceNumber: 'INS-01',
-    lastPostDate: '2026-02-28', entryType: SJEType.MANUAL, notes: 'Monthly amortization of prepaid insurance.',
-    postingType: null, nextPostDate: null, numberOfTimes: null, lockedBy: null, lockedAt: null,
-    lines: [
-      { lineNumber: 1, glAccount: '7800', description: 'Insurance Expense', debit: 3500.00, credit: 0, controlNumber: null },
-      { lineNumber: 2, glAccount: '2740', description: 'Prepaid Expenses', debit: 0, credit: 3500.00, controlNumber: 'INS-2026' },
-    ],
-  },
-  {
-    id: 'SJE-004', name: 'Floorplan Interest Accrual', sourceCode: 88, referenceNumber: 'FP-INT-01',
-    lastPostDate: '2026-02-28', entryType: SJEType.AUTOMATIC, notes: 'Auto-post: Monthly floorplan interest estimate.',
-    postingType: 'Monthly', nextPostDate: '2026-03-31', numberOfTimes: 12, lockedBy: null, lockedAt: null,
-    lines: [
-      { lineNumber: 1, glAccount: '7200', description: 'Floorplan Interest Expense', debit: 8750.00, credit: 0, controlNumber: null },
-      { lineNumber: 2, glAccount: '3310', description: 'Accrued Other', debit: 0, credit: 8750.00, controlNumber: 'FP-INT' },
-    ],
-  },
-  {
-    id: 'SJE-005', name: 'Advertising Allocation', sourceCode: 88, referenceNumber: 'ADV-01',
-    lastPostDate: '2026-02-28', entryType: SJEType.AUTOMATIC, notes: 'Auto-post: Allocate advertising expense across departments.',
-    postingType: 'Monthly', nextPostDate: '2026-03-31', numberOfTimes: 12, lockedBy: null, lockedAt: null,
-    lines: [
-      { lineNumber: 1, glAccount: '7300', description: 'Advertising — New Vehicles', debit: 12000.00, credit: 0, controlNumber: null },
-      { lineNumber: 2, glAccount: '7310', description: 'Advertising — Used Vehicles', debit: 6000.00, credit: 0, controlNumber: null },
-      { lineNumber: 3, glAccount: '7320', description: 'Advertising — Service', debit: 3000.00, credit: 0, controlNumber: null },
-      { lineNumber: 4, glAccount: '3310', description: 'Accrued Other', debit: 0, credit: 21000.00, controlNumber: 'ADV-ALLOC' },
-    ],
-  },
-];
+// Maps the real /api/v1/gl/admin/journal-templates response (JournalTemplate + lines,
+// services/gl-service/prisma/schema.prisma) onto this page's StandardJournalEntry shape.
+// The backend models sourceCode 58/88 as the manual/automatic convention used throughout
+// this screen's own labels ("Manual (Src 58)" / "Automatic (Src 88)"); scheduling fields
+// (lastPostDate, postingType, nextPostDate, numberOfTimes, lockedBy/At) aren't modeled by
+// this entity, so they're left honestly null rather than fabricated.
+function adaptTemplates(raw: any[]): StandardJournalEntry[] {
+  return raw.map((t: any) => ({
+    id: t.id,
+    name: t.name || t.templateNumber,
+    sourceCode: Number(t.sourceCode) || 0,
+    referenceNumber: t.templateNumber,
+    lastPostDate: null,
+    entryType: String(t.sourceCode) === '88' ? SJEType.AUTOMATIC : SJEType.MANUAL,
+    notes: t.description ?? '',
+    postingType: null,
+    nextPostDate: null,
+    numberOfTimes: null,
+    lockedBy: null,
+    lockedAt: null,
+    lines: (t.lines ?? []).map((l: any): SJELine => ({
+      lineNumber: l.lineOrder,
+      glAccount: l.accountCode ?? '',
+      description: l.memo ?? '',
+      debit: l.isCredit ? 0 : Number(l.amount ?? 0),
+      credit: l.isCredit ? Number(l.amount ?? 0) : 0,
+      controlNumber: null,
+    })),
+  }));
+}
 
 type Tab = 'overview' | 'detail';
 
@@ -67,23 +45,13 @@ export default function StandardJournalEntries() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<StandardJournalEntry | null>(null);
 
-  const entries: StandardJournalEntry[] = [];
-
-  if (entries.length === 0) {
-    return (
-      <div className="p-6 space-y-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Standard Journal Entries</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Recurring and template journal entries. Source: GL Service.</p>
-        </div>
-        <div className="text-center py-16">
-          <div className="text-gray-300 text-5xl mb-4">📓</div>
-          <p className="text-gray-500 font-medium text-lg">No standard journal entries yet</p>
-          <p className="text-sm text-gray-400 mt-2 max-w-md mx-auto">Standard Journal Entries (SJEs) like monthly depreciation, rent accruals, and insurance amortization will appear here once configured. Use Manual Journal Entry to create new entries.</p>
-        </div>
-      </div>
-    );
-  }
+  const { data: rawTemplates, isLoading, isError } = useQuery({
+    queryKey: ['sje-templates'], queryFn: () => glApi.getTemplates(), retry: false,
+  });
+  const { data: summary } = useQuery({
+    queryKey: ['sje-company-name'], queryFn: dashboardApi.getSummary, retry: false, staleTime: 60_000,
+  });
+  const entries: StandardJournalEntry[] = useMemo(() => adaptTemplates(rawTemplates ?? []), [rawTemplates]);
 
   const manualEntries = useMemo(() => entries.filter(e => e.entryType === SJEType.MANUAL), [entries]);
   const autoEntries = useMemo(() => entries.filter(e => e.entryType === SJEType.AUTOMATIC), [entries]);
@@ -97,6 +65,30 @@ export default function StandardJournalEntries() {
   const totalDebits = (lines: SJELine[]) => lines.reduce((s, l) => s + l.debit, 0);
   const totalCredits = (lines: SJELine[]) => lines.reduce((s, l) => s + l.credit, 0);
   const isBalanced = (lines: SJELine[]) => Math.abs(totalDebits(lines) - totalCredits(lines)) < 0.01;
+
+  if ((isLoading || isError || entries.length === 0) && tab === 'overview') {
+    return (
+      <div className="p-6 space-y-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Standard Journal Entries</h1>
+          <p className="text-sm text-gray-500 mt-0.5">Recurring and template journal entries. Source: GL Service.</p>
+        </div>
+        <div className="text-center py-16">
+          <div className="text-gray-300 text-5xl mb-4">📓</div>
+          <p className="text-gray-500 font-medium text-lg">
+            {isLoading ? 'Loading standard journal entries…' : isError ? 'Could not load standard journal entries' : 'No standard journal entries yet'}
+          </p>
+          {!isLoading && (
+            <p className="text-sm text-gray-400 mt-2 max-w-md mx-auto">
+              {isError
+                ? 'The GL service did not return template data. Try refreshing, or check GL service health.'
+                : 'Standard Journal Entries (SJEs) like monthly depreciation, rent accruals, and insurance amortization will appear here once configured. Use Manual Journal Entry to create new entries.'}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
@@ -121,7 +113,7 @@ export default function StandardJournalEntries() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold">Standard Journal Entries</h2>
-          <p className="text-sm text-gray-500">Lee Hyundai Inc. — Company 03 • STDJNL</p>
+          <p className="text-sm text-gray-500">{summary?.companyName ?? 'AutoMate Accounting'} • STDJNL</p>
         </div>
         <HelpButton help={SCREEN_HELP['standard-journal-entries']} />
       </div>

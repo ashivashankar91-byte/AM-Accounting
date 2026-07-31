@@ -1,6 +1,7 @@
 import { inject, injectable } from 'tsyringe';
 import { PrismaClient } from '.prisma/auth-client';
 import type { IEventPublisher } from '@amacc/shared-kernel';
+import { setTenantContextOnConnection } from '@amacc/shared-kernel';
 import { randomUUID } from 'crypto';
 
 // ── S207: Permission Catalog & Check API ───────────────────────────────────────
@@ -212,8 +213,23 @@ export class AuthzService {
     //  - tenant-wide grant (entity/store null) applies to any entity/store
     //  - entity-scoped grant applies to that entity and its stores
     //  - store-scoped grant applies only to that store
-    const rows = await this.prisma.authzRoleAssignment.findMany({
-      where: { tenantId: scope.tenantId, userId },
+    //
+    // Wrapped in an interactive $transaction so the `app.current_tenant_id`
+    // RLS session variable (set via setTenantContextOnConnection) lands on
+    // the SAME physical connection as the findMany below — the base
+    // `this.prisma` client's own $use middleware sets that variable on
+    // whichever pooled connection its raw SET happens to run on, which is
+    // not guaranteed to be the same connection the next query runs on under
+    // concurrency (see rls-middleware.ts's disclosed limitation). Without
+    // this, authz_role_assignment's RLS policy intermittently sees no
+    // current_tenant_id set and silently returns zero rows for a user who
+    // genuinely has a role assignment, producing a flaky NO_MATCHING_ROLE
+    // deny (observed here as an intermittent 403 on gl.dashboard.view).
+    const rows = await this.prisma.$transaction(async (tx) => {
+      await setTenantContextOnConnection(tx, scope.tenantId);
+      return tx.authzRoleAssignment.findMany({
+        where: { tenantId: scope.tenantId, userId },
+      });
     });
     const roles = new Set<string>();
     for (const a of rows) {

@@ -16,13 +16,19 @@ const USER = 'user-bench';
 
 function makePrisma() {
   const perms = ['acct.store.view', 'acct.store.manage', 'je.post'];
-  return {
+  const client: any = {
     permission: { findMany: async (a: any = {}) => perms.map((k) => (a.select?.key ? { key: k } : { key: k, description: '', sinceVersion: '1.0.0', status: 'SHIPPED' })) },
     rolePermission: { findMany: async () => perms.map((k) => ({ role: 'ADMIN', permissionKey: k })) },
     authzRoleAssignment: { findMany: async () => [{ tenantId: TENANT, userId: USER, role: 'ADMIN', entityId: null, storeId: null }] },
     catalogVersion: { findUnique: async () => ({ version: '1.0.0', releasedAt: new Date() }), findMany: async () => [{ version: '1.0.0', releasedAt: new Date() }] },
     authzOutboxEvent: { create: async () => ({}) },
-  } as any;
+    // See authz-service.test.ts's makePrisma for why these two exist:
+    // AuthzService.check()'s RLS connection-pinning fix wraps the role
+    // lookup in $transaction + $executeRawUnsafe.
+    $executeRawUnsafe: async () => {},
+    $transaction: async (cb: (tx: any) => Promise<any>) => cb(client),
+  };
+  return client;
 }
 
 function makeSvc() {

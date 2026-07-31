@@ -554,7 +554,6 @@ export default function App() {
               <div className="flex-shrink-0 sticky top-[52px] z-20">
                 <ContextBar
                   tenantId={contextTenantId}
-                  legalEntityLabel={legalEntityLabel}
                   userDisplayName={contextUserLabel}
                 />
               </div>
@@ -565,7 +564,7 @@ export default function App() {
           <main className="flex-1 overflow-y-auto overflow-x-hidden">
             <Routes>
               <Route path="/" element={<GoldenPathProtectedRoute><Dashboard /></GoldenPathProtectedRoute>} />
-              <Route path="/command-center" element={<AccountingCommandCenter />} />
+              <Route path="/command-center" element={<GoldenPathProtectedRoute><AccountingCommandCenter /></GoldenPathProtectedRoute>} />
               <Route path="/gl" element={<GeneralLedger />} />
               <Route path="/gl/entries" element={<JournalEntryManagement />} />
               <Route path="/gl/accounts/:code/inquiry" element={<GLAccountInquiry />} />
@@ -605,7 +604,7 @@ export default function App() {
               <Route path="/onboarding" element={<Onboarding />} />
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/ml" element={<MLDashboard />} />
-              <Route path="/group-dashboard" element={<GroupDashboard />} />
+              <Route path="/group-dashboard" element={<GoldenPathProtectedRoute><GroupDashboard /></GoldenPathProtectedRoute>} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/query" element={<QueryExplorer />} />
               <Route path="/amacc-sync" element={<AMACCSync />} />
@@ -697,7 +696,7 @@ export default function App() {
               <Route path="/golden-path/cash/drawers/:drawerId/reconciliation" element={<RedirectWithParams to={(p) => `/accounting/cash/drawers/${p.drawerId}/reconciliation`} />} />
 
               {/* WF-A001 through WF-A010 */}
-              <Route path="/accounting/dashboard" element={<DashboardWorkflow />} />
+              <Route path="/accounting/dashboard" element={<GoldenPathProtectedRoute><DashboardWorkflow /></GoldenPathProtectedRoute>} />
               <Route path="/accounting/gl" element={<JournalEntryList />} />
               <Route path="/accounting/gl/entry" element={<JournalEntry />} />
               <Route path="/accounting/gl/entry/:id" element={<JournalEntry />} />

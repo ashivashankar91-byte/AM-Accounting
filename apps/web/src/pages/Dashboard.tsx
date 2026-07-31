@@ -308,22 +308,23 @@ export default function Dashboard() {
             Cash Clearing: {fmt(s?.cashPosition?.totalCash ?? 0)}
             {(s?.cashPosition?.totalCash ?? 0) === 0 ? ' — cleared' : ''}
           </div>
-          {cashflow?.weeks?.length ? (
+          {cashflow?.forecasts?.length ? (
             <div className="flex gap-1 items-end h-12">
-              {cashflow.weeks.map((w: any, i: number) => {
-                const val = w.net ?? 0;
-                const max = Math.max(...cashflow.weeks.map((wk: any) => Math.abs(wk.net ?? 0)), 1);
+              {[{ days: 0, predicted: cashflow.today ?? 0 }, ...cashflow.forecasts].map((f: any, i: number, arr: any[]) => {
+                const val = f.predicted ?? 0;
+                const max = Math.max(...arr.map((fc: any) => Math.abs(fc.predicted ?? 0)), 1);
                 const h = Math.max(6, (Math.abs(val) / max) * 44);
+                const baseline = cashflow.today ?? 0;
                 return (
                   <div key={i} className="flex-1 flex flex-col items-center gap-0.5">
                     <div
                       className="w-full rounded-sm opacity-70"
                       style={{
                         height: h,
-                        background: val >= 0 ? '#059669' : '#DC2626',
+                        background: val >= baseline ? '#059669' : '#DC2626',
                       }}
                     />
-                    <span className="text-[9px] text-slate-400">{w.week ?? `W${i + 1}`}</span>
+                    <span className="text-[9px] text-slate-400">{f.days === 0 ? 'Now' : `${f.days}d`}</span>
                   </div>
                 );
               })}

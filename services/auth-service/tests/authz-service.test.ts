@@ -52,7 +52,7 @@ let outbox: any[] = [];
 let published: any[] = [];
 
 function makePrisma(assignments: Assignment[]) {
-  return {
+  const client: any = {
     permission: {
       findMany: async (args: any = {}) => {
         if (args.select?.key) return PERMISSIONS.map((p) => ({ key: p.key }));
@@ -73,7 +73,17 @@ function makePrisma(assignments: Assignment[]) {
     authzOutboxEvent: {
       create: async ({ data }: any) => { outbox.push(data); return { id: 'evt', ...data }; },
     },
-  } as any;
+    // AuthzService.check() wraps its authzRoleAssignment lookup in an
+    // interactive $transaction so setTenantContextOnConnection's SET lands
+    // on the same physical connection as the query (see authz-service.ts's
+    // RLS connection-pinning fix). This in-memory fake has no real
+    // connection to pin anything to, so $executeRawUnsafe is a no-op and
+    // $transaction just invokes the callback with this same client --
+    // sufficient to exercise the real query logic without a live Postgres.
+    $executeRawUnsafe: async () => {},
+    $transaction: async (cb: (tx: any) => Promise<any>) => cb(client),
+  };
+  return client;
 }
 
 const noopPublisher = { publish: async (e: any) => { published.push(e); } } as any;

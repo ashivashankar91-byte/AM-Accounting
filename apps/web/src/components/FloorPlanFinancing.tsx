@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { glApi } from '../api/client';
 import PageError from './PageError';
 import { SkeletonTable } from './Skeleton';
@@ -33,6 +34,11 @@ interface AgingReportEntry {
 
 export default function FloorPlanFinancing() {
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Command Center's floorplan-trust exception tile links here with
+  // ?filter=out-of-trust so the drill-through lands pre-filtered to the
+  // exact units driving the exposure figure, not the full ACTIVE list.
+  const outOfTrustOnly = searchParams.get('filter') === 'out-of-trust';
   const [activeTab, setActiveTab] = useState<'register' | 'track' | 'aging'>('track');
   const [selectedLender, setSelectedLender] = useState('');
   const [vin, setVin] = useState('');
@@ -260,19 +266,44 @@ export default function FloorPlanFinancing() {
         </button>
       </div>
 
+      {outOfTrustOnly && (
+        <div className="flex items-center justify-between bg-red-50 border border-red-200 rounded px-3 py-2 text-sm">
+          <span className="text-red-800 font-medium">
+            Showing only units sold/delivered while still on an open floorplan payable (out of trust).
+          </span>
+          <button
+            className="text-red-700 underline hover:text-red-900"
+            onClick={() => {
+              const next = new URLSearchParams(searchParams);
+              next.delete('filter');
+              setSearchParams(next);
+            }}
+          >
+            Clear filter
+          </button>
+        </div>
+      )}
+
       {unitsLoading && <SkeletonTable />}
       {unitsError && <PageError error={unitsError_} />}
 
-      {units && units.units?.length > 0 && (
+      {units && units.units?.length > 0 && (() => {
+        const visibleUnits = outOfTrustOnly
+          ? units.units.filter((u: any) => (u.vehicle_status ?? u.vehicleStatus) === 'SOLD' && !(u.payoff_date ?? u.payoffDate))
+          : units.units;
+        if (outOfTrustOnly && visibleUnits.length === 0) {
+          return <div className="bg-white rounded-lg shadow p-6 text-center text-gray-500 text-sm">No units are currently out of trust.</div>;
+        }
+        return (
         <>
           <div className="grid grid-cols-2 gap-4">
             <div className="bg-brand-light p-3 rounded border border-brand-border">
               <div className="text-xs text-brand font-semibold">Total Balance</div>
-              <div className="text-lg font-bold text-blue-900">${formatCurrency(units.totalBalance)}</div>
+              <div className="text-lg font-bold text-blue-900">${formatCurrency(outOfTrustOnly ? visibleUnits.reduce((s: number, u: any) => s + Number(u.current_balance ?? u.currentBalance ?? 0), 0) : units.totalBalance)}</div>
             </div>
             <div className="bg-gray-50 p-3 rounded border border-gray-200">
               <div className="text-xs text-gray-600 font-semibold">Units</div>
-              <div className="text-lg font-bold text-gray-900">{units.units.length}</div>
+              <div className="text-lg font-bold text-gray-900">{visibleUnits.length}</div>
             </div>
           </div>
 
@@ -293,14 +324,15 @@ export default function FloorPlanFinancing() {
                 </tr>
               </thead>
               <tbody>
-                {units.units.map((unit: any) => (
+                {visibleUnits.map((unit: any) => (
                   <UnitRow key={unit.id} unit={unit} formatCurrency={formatCurrency} />
                 ))}
               </tbody>
             </table>
           </div>
         </>
-      )}
+        );
+      })()}
 
       {units && units.units?.length === 0 && <p className="text-gray-600 text-sm">No floor plan units</p>}
 

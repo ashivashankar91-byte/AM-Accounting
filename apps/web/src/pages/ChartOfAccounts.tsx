@@ -1,4 +1,6 @@
 import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { glApi, dashboardApi } from '../api/client';
 import HelpButton from '../components/HelpButton';
 import SCREEN_HELP from '../data/screenHelp';
 import {
@@ -8,78 +10,45 @@ import {
   type GLAccount, type DistributionEntry,
 } from '../types/file-maintenance';
 
-// ── Representative GL Account seed data for Company 03 ───────────
-const SEED_ACCOUNTS: GLAccount[] = [
-  { acctNum: '2020', name: 'Truist Cash in Bank', costGL: null, inventoryGL: null, schedule: '17', controlRequired: ControlType.NONE, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '2027', name: 'WellsFargo Cash in Bank', costGL: null, inventoryGL: null, schedule: '21', controlRequired: ControlType.NONE, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '2030', name: 'Southern Cash in Bank', costGL: null, inventoryGL: null, schedule: '43', controlRequired: ControlType.NONE, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '2050', name: 'Customer Deposits', costGL: null, inventoryGL: null, schedule: '11', controlRequired: ControlType.LOOKUP_CONTROL, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '2200', name: 'Accounts Receivable', costGL: null, inventoryGL: null, schedule: '19', controlRequired: ControlType.APPLY_TO, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '2200P', name: 'Prepaid SOR Parts', costGL: null, inventoryGL: null, schedule: '18', controlRequired: ControlType.LOOKUP_CONTROL, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '2220', name: 'Deal Settlement Clearing', costGL: null, inventoryGL: null, schedule: '11', controlRequired: ControlType.LOOKUP_CONTROL, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '2240', name: 'Wholesale D/T A/R', costGL: null, inventoryGL: null, schedule: '33', controlRequired: ControlType.STOCK_NUMBER, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '2250', name: 'Cash Sales', costGL: null, inventoryGL: null, schedule: '42', controlRequired: ControlType.DO_NOT_LOOKUP, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '2259', name: 'Internet Parts Sales', costGL: null, inventoryGL: null, schedule: '38', controlRequired: ControlType.DO_NOT_LOOKUP, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '2260', name: 'Warranty Receivable (HYU)', costGL: null, inventoryGL: null, schedule: '10', controlRequired: ControlType.DO_NOT_LOOKUP, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: OEMPrefix.HYUNDAI, isDistAccount: false },
-  { acctNum: '2262', name: 'Warranty Parts Receivable', costGL: null, inventoryGL: null, schedule: '10', controlRequired: ControlType.DO_NOT_LOOKUP, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: OEMPrefix.HYUNDAI, isDistAccount: false },
-  { acctNum: '2265', name: 'Warranty Labor Receivable', costGL: null, inventoryGL: null, schedule: '10', controlRequired: ControlType.DO_NOT_LOOKUP, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: OEMPrefix.HYUNDAI, isDistAccount: false },
-  { acctNum: '2270', name: 'Hyundai Rebates Receivable', costGL: null, inventoryGL: null, schedule: '9', controlRequired: ControlType.NONE, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: OEMPrefix.HYUNDAI, isDistAccount: false },
-  { acctNum: 'G2270', name: 'Genesis Rebates Receivable', costGL: null, inventoryGL: null, schedule: '9', controlRequired: ControlType.NONE, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: OEMPrefix.GENESIS, isDistAccount: false },
-  { acctNum: '2280', name: 'Hyundai Holdback Receivable', costGL: null, inventoryGL: null, schedule: '25', controlRequired: ControlType.DO_NOT_LOOKUP, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: OEMPrefix.HYUNDAI, isDistAccount: false },
-  { acctNum: 'G2280', name: 'Genesis Holdback Receivable', costGL: null, inventoryGL: null, schedule: '25', controlRequired: ControlType.DO_NOT_LOOKUP, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: OEMPrefix.GENESIS, isDistAccount: false },
-  { acctNum: '2290', name: 'Flooring Assistance', costGL: null, inventoryGL: null, schedule: '27', controlRequired: ControlType.NONE, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '2300', name: 'New Hyundai Invoice', costGL: null, inventoryGL: null, schedule: '3', controlRequired: ControlType.STOCK_NUMBER, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: OEMPrefix.HYUNDAI, isDistAccount: false },
-  { acctNum: '2310', name: 'New Hyundai Inventory', costGL: null, inventoryGL: null, schedule: '3', controlRequired: ControlType.STOCK_NUMBER, addUnits: true, type: AccountType.ASSET, inactive: false, oemPrefix: OEMPrefix.HYUNDAI, isDistAccount: false },
-  { acctNum: '2311', name: 'New Hyundai Additions', costGL: null, inventoryGL: null, schedule: '3', controlRequired: ControlType.STOCK_NUMBER, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: OEMPrefix.HYUNDAI, isDistAccount: false },
-  { acctNum: '2312', name: 'Service Loaner Additions', costGL: null, inventoryGL: null, schedule: '13', controlRequired: ControlType.NONE, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '2320', name: 'Hyundai Dealer Cash', costGL: null, inventoryGL: null, schedule: '37', controlRequired: ControlType.NONE, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: OEMPrefix.HYUNDAI, isDistAccount: false },
-  { acctNum: 'G2310', name: 'New Genesis Inventory', costGL: null, inventoryGL: null, schedule: '40', controlRequired: ControlType.STOCK_NUMBER, addUnits: true, type: AccountType.ASSET, inactive: false, oemPrefix: OEMPrefix.GENESIS, isDistAccount: false },
-  { acctNum: 'G2311', name: 'New Genesis Additions', costGL: null, inventoryGL: null, schedule: '40', controlRequired: ControlType.STOCK_NUMBER, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: OEMPrefix.GENESIS, isDistAccount: false },
-  { acctNum: 'G2320', name: 'Genesis Dealer Cash', costGL: null, inventoryGL: null, schedule: '37', controlRequired: ControlType.NONE, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: OEMPrefix.GENESIS, isDistAccount: false },
-  { acctNum: '2400', name: 'Used Car Inventory', costGL: null, inventoryGL: null, schedule: '4', controlRequired: ControlType.STOCK_NUMBER, addUnits: true, type: AccountType.ASSET, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '2403', name: 'Used Car Additions', costGL: null, inventoryGL: null, schedule: '4', controlRequired: ControlType.STOCK_NUMBER, addUnits: true, type: AccountType.ASSET, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '2403L', name: 'Service Loaner Used', costGL: null, inventoryGL: null, schedule: '13', controlRequired: ControlType.STOCK_NUMBER, addUnits: true, type: AccountType.ASSET, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '2410', name: 'Service Loaners', costGL: null, inventoryGL: null, schedule: '13', controlRequired: ControlType.STOCK_NUMBER, addUnits: true, type: AccountType.ASSET, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '2411', name: 'Loaner Depreciation', costGL: null, inventoryGL: null, schedule: '13', controlRequired: ControlType.NONE, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: 'G2390', name: 'Used Genesis Inventory', costGL: null, inventoryGL: null, schedule: '41', controlRequired: ControlType.STOCK_NUMBER, addUnits: true, type: AccountType.ASSET, inactive: false, oemPrefix: OEMPrefix.GENESIS, isDistAccount: false },
-  { acctNum: 'G2403', name: 'Genesis Used Additions', costGL: null, inventoryGL: null, schedule: '41', controlRequired: ControlType.STOCK_NUMBER, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: OEMPrefix.GENESIS, isDistAccount: false },
-  { acctNum: '2460', name: 'Sublet Repairs WIP', costGL: null, inventoryGL: null, schedule: '12', controlRequired: ControlType.DO_NOT_LOOKUP, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '2470', name: 'Work in Process', costGL: null, inventoryGL: null, schedule: '36', controlRequired: ControlType.DO_NOT_LOOKUP, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '2620', name: 'Finance Reserve', costGL: null, inventoryGL: null, schedule: '24', controlRequired: ControlType.LOOKUP_CONTROL, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '2640', name: 'F&I Cancellation Receivable', costGL: null, inventoryGL: null, schedule: '28', controlRequired: ControlType.DO_NOT_LOOKUP, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '2740', name: 'Prepaid Expenses', costGL: null, inventoryGL: null, schedule: '5', controlRequired: ControlType.NONE, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '2940', name: 'Employee Advances', costGL: null, inventoryGL: null, schedule: '15', controlRequired: ControlType.LOOKUP_CONTROL, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '2950', name: 'Other Notes & A/R', costGL: null, inventoryGL: null, schedule: '30', controlRequired: ControlType.LOOKUP_CONTROL, addUnits: false, type: AccountType.ASSET, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '3000', name: 'HMA Payable', costGL: null, inventoryGL: null, schedule: '8', controlRequired: ControlType.LOOKUP_CONTROL, addUnits: false, type: AccountType.LIABILITY, inactive: false, oemPrefix: OEMPrefix.HYUNDAI, isDistAccount: false },
-  { acctNum: '3001', name: 'Accounts Payable', costGL: null, inventoryGL: null, schedule: '35', controlRequired: ControlType.LOOKUP_CONTROL, addUnits: false, type: AccountType.LIABILITY, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '3005', name: 'A/P Other (Misc)', costGL: null, inventoryGL: null, schedule: '39', controlRequired: ControlType.LOOKUP_CONTROL, addUnits: false, type: AccountType.LIABILITY, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '3006', name: 'JMA Payable', costGL: null, inventoryGL: null, schedule: '22', controlRequired: ControlType.NONE, addUnits: false, type: AccountType.LIABILITY, inactive: false, oemPrefix: OEMPrefix.HYUNDAI, isDistAccount: false },
-  { acctNum: '3007', name: 'A/P HPP (Protection Plans)', costGL: null, inventoryGL: null, schedule: '31', controlRequired: ControlType.NONE, addUnits: false, type: AccountType.LIABILITY, inactive: false, oemPrefix: OEMPrefix.HYUNDAI, isDistAccount: false },
-  { acctNum: '3010', name: 'Tax & Tag Fees', costGL: null, inventoryGL: null, schedule: '14', controlRequired: ControlType.LOOKUP_CONTROL, addUnits: false, type: AccountType.LIABILITY, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '3020', name: 'Deal Settlement (Liability)', costGL: null, inventoryGL: null, schedule: '11', controlRequired: ControlType.LOOKUP_CONTROL, addUnits: false, type: AccountType.LIABILITY, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '3050', name: 'Lease Tax', costGL: null, inventoryGL: null, schedule: '16', controlRequired: ControlType.LOOKUP_CONTROL, addUnits: false, type: AccountType.LIABILITY, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '3090', name: 'We Owe', costGL: null, inventoryGL: null, schedule: '34', controlRequired: ControlType.STOCK_NUMBER, addUnits: false, type: AccountType.LIABILITY, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '3100', name: 'Floorplan — New Hyundai', costGL: null, inventoryGL: null, schedule: '3', controlRequired: ControlType.STOCK_NUMBER, addUnits: false, type: AccountType.LIABILITY, inactive: false, oemPrefix: OEMPrefix.HYUNDAI, isDistAccount: false },
-  { acctNum: 'G3100', name: 'Floorplan — New Genesis', costGL: null, inventoryGL: null, schedule: '40', controlRequired: ControlType.STOCK_NUMBER, addUnits: false, type: AccountType.LIABILITY, inactive: false, oemPrefix: OEMPrefix.GENESIS, isDistAccount: false },
-  { acctNum: 'G3110', name: 'Floorplan — Used Genesis', costGL: null, inventoryGL: null, schedule: '41', controlRequired: ControlType.STOCK_NUMBER, addUnits: false, type: AccountType.LIABILITY, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '3120', name: 'Floorplan — Used', costGL: null, inventoryGL: null, schedule: '4', controlRequired: ControlType.STOCK_NUMBER, addUnits: false, type: AccountType.LIABILITY, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '3130', name: 'Floorplan — Service Loaners', costGL: null, inventoryGL: null, schedule: '13', controlRequired: ControlType.STOCK_NUMBER, addUnits: false, type: AccountType.LIABILITY, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '3210', name: 'Accrued Payroll', costGL: null, inventoryGL: null, schedule: '23', controlRequired: ControlType.LOOKUP_CONTROL, addUnits: false, type: AccountType.LIABILITY, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '3211', name: 'Sales Commission Accrual', costGL: null, inventoryGL: null, schedule: '2', controlRequired: ControlType.LOOKUP_CONTROL, addUnits: false, type: AccountType.LIABILITY, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '3234', name: '401K Employee', costGL: null, inventoryGL: null, schedule: '29', controlRequired: ControlType.LOOKUP_CONTROL, addUnits: false, type: AccountType.LIABILITY, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '3235', name: '401K Employer Match', costGL: null, inventoryGL: null, schedule: '29', controlRequired: ControlType.LOOKUP_CONTROL, addUnits: false, type: AccountType.LIABILITY, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '3238', name: '401K Roth', costGL: null, inventoryGL: null, schedule: '29', controlRequired: ControlType.LOOKUP_CONTROL, addUnits: false, type: AccountType.LIABILITY, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '3239', name: 'FSA (Flexible Spending)', costGL: null, inventoryGL: null, schedule: '32', controlRequired: ControlType.LOOKUP_CONTROL, addUnits: false, type: AccountType.LIABILITY, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '3280', name: "Employee Bonus Accrual", costGL: null, inventoryGL: null, schedule: '6', controlRequired: ControlType.LOOKUP_CONTROL, addUnits: false, type: AccountType.LIABILITY, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '3310', name: 'Accrued Other', costGL: null, inventoryGL: null, schedule: '20', controlRequired: ControlType.NONE, addUnits: false, type: AccountType.LIABILITY, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '4100', name: 'New Vehicle Sales — Hyundai', costGL: '5100', inventoryGL: '2310', schedule: '', controlRequired: ControlType.NONE, addUnits: false, type: AccountType.INCOME, inactive: false, oemPrefix: OEMPrefix.HYUNDAI, isDistAccount: false },
-  { acctNum: '4200', name: 'Used Vehicle Sales', costGL: '5200', inventoryGL: '2400', schedule: '', controlRequired: ControlType.NONE, addUnits: false, type: AccountType.INCOME, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: '5100', name: 'New Vehicle Cost — Hyundai', costGL: null, inventoryGL: null, schedule: '', controlRequired: ControlType.NONE, addUnits: false, type: AccountType.EXPENSE, inactive: false, oemPrefix: OEMPrefix.HYUNDAI, isDistAccount: false },
-  { acctNum: '5200', name: 'Used Vehicle Cost', costGL: null, inventoryGL: null, schedule: '', controlRequired: ControlType.NONE, addUnits: false, type: AccountType.EXPENSE, inactive: false, oemPrefix: null, isDistAccount: false },
-  { acctNum: 'G4100', name: 'New Vehicle Sales — Genesis', costGL: 'G5100', inventoryGL: 'G2310', schedule: '', controlRequired: ControlType.NONE, addUnits: false, type: AccountType.INCOME, inactive: false, oemPrefix: OEMPrefix.GENESIS, isDistAccount: false },
-  { acctNum: 'G5100', name: 'New Vehicle Cost — Genesis', costGL: null, inventoryGL: null, schedule: '', controlRequired: ControlType.NONE, addUnits: false, type: AccountType.EXPENSE, inactive: false, oemPrefix: OEMPrefix.GENESIS, isDistAccount: false },
-  { acctNum: '9000%', name: 'Total Expense Distribution', costGL: null, inventoryGL: null, schedule: '', controlRequired: ControlType.NONE, addUnits: false, type: AccountType.DIST, inactive: false, oemPrefix: null, isDistAccount: true, distributionTargets: [{ targetAcct: '5100', percentage: 40 }, { targetAcct: '5200', percentage: 35 }, { targetAcct: '5300', percentage: 25 }] },
-];
+// Real backend account types (services/gl-service/prisma/schema.prisma: GLAccount.type) —
+// ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE, COST_OF_SALES, DISTRIBUTION — don't line up
+// 1:1 with this page's 5-way display taxonomy, so bucket the extras into their closest match:
+// EQUITY -> LIABILITY (credit-normal), COST_OF_SALES -> EXPENSE, REVENUE -> INCOME,
+// DISTRIBUTION -> DIST.
+function mapAccountType(t: string): AccountType {
+  switch (t) {
+    case 'REVENUE': return AccountType.INCOME;
+    case 'COST_OF_SALES': return AccountType.EXPENSE;
+    case 'DISTRIBUTION': return AccountType.DIST;
+    case 'EQUITY': return AccountType.LIABILITY;
+    case 'ASSET': return AccountType.ASSET;
+    case 'LIABILITY': return AccountType.LIABILITY;
+    case 'EXPENSE': return AccountType.EXPENSE;
+    default: return AccountType.ASSET;
+  }
+}
+
+// Maps the real /api/v1/gl/accounts response (raw prisma GLAccount rows) onto this
+// page's GLAccount UI shape. Fields the backend doesn't model (controlRequired,
+// oemPrefix, distributionTargets) are left at honest empty defaults rather than fabricated.
+function adaptAccounts(raw: any[]): GLAccount[] {
+  const byId = new Map(raw.map(a => [a.id, a]));
+  const codeOf = (id: string | null | undefined) => (id ? byId.get(id)?.code ?? null : null);
+  return raw.map((a: any) => ({
+    acctNum: a.code,
+    name: a.name,
+    costGL: codeOf(a.cosAccountId),
+    inventoryGL: codeOf(a.invAccountId),
+    schedule: a.scheduleCode ?? '',
+    controlRequired: ControlType.NONE,
+    addUnits: !!a.trackUnits,
+    type: mapAccountType(a.type),
+    inactive: !a.isActive,
+    oemPrefix: null,
+    isDistAccount: a.type === 'DISTRIBUTION',
+  }));
+}
+
 
 type Tab = 'list' | 'detail';
 type TypeFilter = 'All' | AccountType | 'Hyundai' | 'Genesis' | 'HasSchedule' | 'Inactive';
@@ -127,26 +96,14 @@ export default function ChartOfAccounts() {
   const [selected, setSelected] = useState<GLAccount | null>(null);
   const [showSidebar, setShowSidebar] = useState(false);
 
-  const accounts: GLAccount[] = [];
+  const { data: rawAccounts, isLoading, isError } = useQuery({
+    queryKey: ['coa-accounts'], queryFn: glApi.getAccounts, retry: false,
+  });
+  const { data: summary } = useQuery({
+    queryKey: ['coa-company-name'], queryFn: dashboardApi.getSummary, retry: false, staleTime: 60_000,
+  });
 
-  if (accounts.length === 0 && tab === 'list') {
-    return (
-      <div className="p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Chart of Accounts</h1>
-            <p className="text-sm text-gray-500 mt-0.5">View and manage GL accounts by type, OEM prefix, and schedule. Source: COA Service / GL Service.</p>
-          </div>
-          <HelpButton help={SCREEN_HELP['chart-of-accounts']} />
-        </div>
-        <div className="text-center py-16">
-          <div className="text-gray-300 text-5xl mb-4">🗂️</div>
-          <p className="text-gray-500 font-medium text-lg">No chart of accounts data yet</p>
-          <p className="text-sm text-gray-400 mt-2 max-w-md mx-auto">Chart of Accounts data will appear here once a COA is configured for this tenant. Use the Onboarding wizard to set up your initial chart of accounts, or create accounts via the General Ledger page.</p>
-        </div>
-      </div>
-    );
-  }
+  const accounts: GLAccount[] = useMemo(() => adaptAccounts(rawAccounts ?? []), [rawAccounts]);
 
   const filtered = useMemo(() =>
     accounts.filter(a =>
@@ -178,12 +135,52 @@ export default function ChartOfAccounts() {
 
   const openDetail = (a: GLAccount) => { setSelected(a); setTab('detail'); };
 
+  if (isLoading && tab === 'list') {
+    return (
+      <div className="p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Chart of Accounts</h1>
+            <p className="text-sm text-gray-500 mt-0.5">View and manage GL accounts by type, OEM prefix, and schedule. Source: COA Service / GL Service.</p>
+          </div>
+          <HelpButton help={SCREEN_HELP['chart-of-accounts']} />
+        </div>
+        <div className="text-center py-16 text-gray-400 text-sm">Loading chart of accounts…</div>
+      </div>
+    );
+  }
+
+  if ((isError || accounts.length === 0) && tab === 'list') {
+    return (
+      <div className="p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Chart of Accounts</h1>
+            <p className="text-sm text-gray-500 mt-0.5">View and manage GL accounts by type, OEM prefix, and schedule. Source: COA Service / GL Service.</p>
+          </div>
+          <HelpButton help={SCREEN_HELP['chart-of-accounts']} />
+        </div>
+        <div className="text-center py-16">
+          <div className="text-gray-300 text-5xl mb-4">🗂️</div>
+          <p className="text-gray-500 font-medium text-lg">
+            {isError ? 'Could not load chart of accounts' : 'No chart of accounts data yet'}
+          </p>
+          <p className="text-sm text-gray-400 mt-2 max-w-md mx-auto">
+            {isError
+              ? 'The GL service did not return account data. Try refreshing, or check GL service health.'
+              : 'Chart of Accounts data will appear here once a COA is configured for this tenant. Use the Onboarding wizard to set up your initial chart of accounts, or create accounts via the General Ledger page.'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold">Chart of Accounts</h2>
-          <p className="text-sm text-gray-500">Lee Hyundai Inc. — Company 03 • GLACC</p>
+          <p className="text-sm text-gray-500">{summary?.companyName ?? 'AutoMate Accounting'} • GLACC</p>
         </div>
         <div className="flex items-center gap-3">
           <button onClick={() => setShowSidebar(!showSidebar)} className="text-sm border rounded px-3 py-1.5 hover:bg-gray-50">
