@@ -1,6 +1,28 @@
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 const API_TIMEOUT_MS = 10_000;
 
+// AMACC-CH04 follow-up: isAuthenticated (AuthContext) only checks that a
+// goldenpath.accessToken is PRESENT in localStorage, not that it's still
+// valid. Every backend service now enforces real JWT auth unconditionally,
+// so once that token expires (or belongs to a stale/killed session), every
+// authenticated page keeps rendering — it just fails every single API call
+// with 401 forever, since nothing ever clears the dead token or sends the
+// user back to the single sign-in page (/login). Centralize that recovery
+// here so any caller of apiFetch/apiFetchRaw self-heals on the first 401 it
+// sees for a token it actually sent, instead of leaving the whole app
+// looking "broken".
+function clearStaleGoldenPathSessionAndRedirect(): void {
+  // window.location.* is basename-unaware (unlike react-router's navigate()),
+  // so the app's Vite base path (/amacc/) must be prepended explicitly —
+  // a bare '/login' here would 404 since the app is served at /amacc/.
+  const loginPath = `${import.meta.env.BASE_URL}login`;
+  const isLoginRoute = window.location.pathname === loginPath;
+  if (isLoginRoute) return; // avoid a redirect loop while already on the login screen
+  ['goldenpath.accessToken', 'goldenpath.sessionToken', 'goldenpath.tenantId', 'goldenpath.user', 'goldenpath.legalEntityId', 'goldenpath.legalEntityLabel']
+    .forEach((k) => localStorage.removeItem(k));
+  window.location.href = loginPath;
+}
+
 async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   // FINAL-R0 Step 4: prefer the real Golden Path session (real JWT + real
   // tenantId from a completed login) over the legacy demo 'tenant-kunes'
@@ -31,6 +53,14 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
     });
     clearTimeout(timeoutId);
     if (!res.ok) {
+      // Only a token we actually sent being rejected means it's stale/expired
+      // — a 401 with no token attached is the normal "never logged in" case,
+      // already handled by GoldenPathProtectedRoute, and shouldn't force a
+      // redirect away from legacy demo pages that intentionally call the API
+      // unauthenticated.
+      if (res.status === 401 && goldenPathToken) {
+        clearStaleGoldenPathSessionAndRedirect();
+      }
       const body = await res.json().catch(() => ({}));
       const err = new Error(body.message ?? body.error ?? `API error ${res.status}`);
       (err as any).status = res.status;
@@ -73,6 +103,9 @@ async function apiFetchRaw(path: string): Promise<string> {
     const res = await fetch(`${API_BASE}${path}`, { headers, signal: controller.signal });
     clearTimeout(timeoutId);
     if (!res.ok) {
+      if (res.status === 401 && goldenPathToken) {
+        clearStaleGoldenPathSessionAndRedirect();
+      }
       const body = await res.json().catch(() => ({}));
       const err = new Error(body.message ?? body.error ?? `API error ${res.status}`);
       (err as any).status = res.status;
@@ -917,6 +950,16 @@ export const esgApi = {
   getReport: (period?: string) => apiFetch<any>(`/api/v1/esg/report${period ? `?period=${period}` : ''}`),
   getHistory: (months?: number) => apiFetch<any[]>(`/api/v1/esg/history${months ? `?months=${months}` : ''}`),
   addMetric: (data: any) => apiFetch<any>('/api/v1/esg/metrics', { method: 'POST', body: JSON.stringify(data) }),
+};
+
+// Dealer Groups API — GroupDashboard.tsx previously called these with a raw
+// unauthenticated fetch() (no Authorization header), which 401s now that
+// every backend service enforces real JWT auth unconditionally. Routed
+// through apiFetch like every other resource so the token/tenant headers are
+// attached consistently.
+export const groupsApi = {
+  list: () => apiFetch<any[]>('/api/v1/groups'),
+  getDashboard: (groupId: string) => apiFetch<any>(`/api/v1/groups/${groupId}/dashboard`),
 };
 
 // Compliance API (Gap 7)

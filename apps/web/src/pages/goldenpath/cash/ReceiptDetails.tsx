@@ -70,7 +70,7 @@ export default function ReceiptDetails() {
       status={{ label: receipt.status, variant: receipt.status === 'ISSUED' ? 'success' : 'neutral' }}
       actions={
         <>
-          <Btn data-testid="receipt-details-print" variant="secondary" onClick={() => navigate(`/golden-path/cash/receipts/${receipt.id}/print`)}>Print</Btn>
+          <Btn data-testid="receipt-details-print" variant="secondary" onClick={() => navigate(`/accounting/cash/receipts/${receipt.id}/print`)}>Print</Btn>
           {canVoid && (
             <Btn data-testid="receipt-details-void-cta" variant="danger" onClick={() => setVoiding(true)}>Void Receipt</Btn>
           )}
@@ -135,7 +135,7 @@ export default function ReceiptDetails() {
       </div>
 
       <div className="mt-3">
-        <Btn variant="ghost" size="sm" onClick={() => navigate('/golden-path/cash/receipts')}>Back to search</Btn>
+        <Btn variant="ghost" size="sm" onClick={() => navigate('/accounting/cash/receipts')}>Back to search</Btn>
       </div>
     </ReportShell>
   );

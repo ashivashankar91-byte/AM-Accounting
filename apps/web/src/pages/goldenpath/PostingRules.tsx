@@ -275,7 +275,7 @@ export default function PostingRules() {
       )}
 
       <p style={{ marginTop: 24 }}>
-        <Link to="/golden-path/posting-executions">Go to Posting Executions</Link>
+        <Link to="/accounting/gl/posting-executions">Go to Posting Executions</Link>
       </p>
     </div>
   );

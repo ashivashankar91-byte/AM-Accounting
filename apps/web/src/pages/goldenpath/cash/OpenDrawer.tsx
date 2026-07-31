@@ -52,7 +52,7 @@ export default function OpenDrawer() {
         businessDate,
         openingFloat,
       });
-      navigate(`/golden-path/cash?opened=${drawer.id}`);
+      navigate(`/accounting/cash?opened=${drawer.id}`);
     } catch (err: any) {
       setError(err.message);
     } finally {

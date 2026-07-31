@@ -122,7 +122,7 @@ export default function OrgHierarchy() {
       <p className="mt-6 text-[13px] flex items-center gap-2">
         <Link to="/golden-path/role-templates" className="text-[#0B5CAB] hover:underline">Role Templates</Link>
         <span className="text-slate-300">&middot;</span>
-        <Link to="/golden-path/entity-elimination" className="text-[#0B5CAB] hover:underline">Elimination Entity Configuration</Link>
+        <Link to="/accounting/eom/entity-elimination" className="text-[#0B5CAB] hover:underline">Elimination Entity Configuration</Link>
         <span className="text-slate-300">&middot;</span>
         <Link to="/golden-path/fiscal" className="text-[#0B5CAB] hover:underline">Continue to Fiscal Period</Link>
       </p>

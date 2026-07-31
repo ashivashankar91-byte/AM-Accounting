@@ -70,7 +70,7 @@ export default function BlindClose() {
           Your count has been recorded. A supervisor will review and reconcile this drawer — you will not see the
           expected totals or any variance from this screen.
         </Banner>
-        <div className="mt-3"><Btn onClick={() => navigate('/golden-path/cash')}>Back to Drawer</Btn></div>
+        <div className="mt-3"><Btn onClick={() => navigate('/accounting/cash')}>Back to Drawer</Btn></div>
       </ReportShell>
     );
   }

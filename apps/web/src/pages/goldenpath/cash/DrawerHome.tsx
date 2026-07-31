@@ -72,7 +72,7 @@ export default function DrawerHome() {
               testId="cash-drawer-home-empty"
               title="No active drawer"
               message="Open a drawer to start receiving cash and check payments."
-              action={<Btn data-testid="cash-open-drawer-cta" onClick={() => navigate('/golden-path/cash/open')}>Open Drawer</Btn>}
+              action={<Btn data-testid="cash-open-drawer-cta" onClick={() => navigate('/accounting/cash/open')}>Open Drawer</Btn>}
             />
           )}
 
@@ -91,10 +91,10 @@ export default function DrawerHome() {
 
               {drawer.status === 'OPEN' && (
                 <div className="flex gap-2">
-                  <Btn data-testid="cash-receive-payment-cta" onClick={() => navigate(`/golden-path/cash/receive?drawerId=${drawer.id}`)}>
+                  <Btn data-testid="cash-receive-payment-cta" onClick={() => navigate(`/accounting/cash/receive?drawerId=${drawer.id}`)}>
                     Receive Payment
                   </Btn>
-                  <Btn data-testid="cash-blind-close-cta" variant="secondary" onClick={() => navigate(`/golden-path/cash/drawers/${drawer.id}/blind-close`)}>
+                  <Btn data-testid="cash-blind-close-cta" variant="secondary" onClick={() => navigate(`/accounting/cash/drawers/${drawer.id}/blind-close`)}>
                     Blind Close
                   </Btn>
                 </div>
@@ -113,7 +113,7 @@ export default function DrawerHome() {
               )}
 
               <div className="mt-3">
-                <Btn variant="ghost" size="sm" onClick={() => navigate(`/golden-path/cash/receipts?drawerId=${drawer.id}`)}>
+                <Btn variant="ghost" size="sm" onClick={() => navigate(`/accounting/cash/receipts?drawerId=${drawer.id}`)}>
                   View receipts for this drawer
                 </Btn>
               </div>

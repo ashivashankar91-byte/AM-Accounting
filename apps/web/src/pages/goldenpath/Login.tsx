@@ -30,7 +30,9 @@ export default function Login() {
     setBusy(true);
     try {
       await login(tenantId.trim(), email.trim(), password);
-      const dest = (location.state as any)?.from ?? '/golden-path/select-entity';
+      // After sign-in, land on the main Accounting dashboard by default (or
+      // wherever the user originally tried to go before being bounced here).
+      const dest = (location.state as any)?.from ?? '/accounting/dashboard';
       navigate(dest, { replace: true });
     } catch (err: any) {
       setError(err.message ?? 'Login failed');

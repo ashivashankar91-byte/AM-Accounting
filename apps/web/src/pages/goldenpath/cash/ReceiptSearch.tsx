@@ -84,7 +84,7 @@ export default function ReceiptSearch() {
               </ReportThead>
               <tbody>
                 {items.map((r) => (
-                  <ReportTr key={r.id} testId={`receipt-row-${r.receiptNumber}`} onClick={() => navigate(`/golden-path/cash/receipts/${r.id}`)}>
+                  <ReportTr key={r.id} testId={`receipt-row-${r.receiptNumber}`} onClick={() => navigate(`/accounting/cash/receipts/${r.id}`)}>
                     <ReportTd className="font-mono">{r.receiptNumber}</ReportTd>
                     <ReportTd>{r.sourceDisplayNumber ?? r.sourceDocId}</ReportTd>
                     <ReportTd>{r.cashierId}</ReportTd>

@@ -17,11 +17,11 @@ export interface GoldenPathRouteInfo {
 }
 
 export const GOLDEN_PATH_ROUTES: GoldenPathRouteInfo[] = [
-  { path: '/golden-path/select-entity', title: 'Select Legal Entity', group: 'Golden Path Setup' },
-  { path: '/golden-path/org-hierarchy', title: 'Organization Hierarchy', group: 'Golden Path Setup' },
-  { path: '/golden-path/role-templates', title: 'Role Templates', group: 'Golden Path Setup' },
-  { path: '/golden-path/fiscal', title: 'Fiscal Calendar & Period', group: 'Golden Path Setup' },
-  { path: '/golden-path/coa', title: 'Chart of Accounts', group: 'Golden Path Setup' },
+  { path: '/golden-path/select-entity', title: 'Select Legal Entity', group: 'Entity & Period Setup' },
+  { path: '/golden-path/org-hierarchy', title: 'Organization Hierarchy', group: 'Entity & Period Setup' },
+  { path: '/golden-path/role-templates', title: 'Role Templates', group: 'Entity & Period Setup' },
+  { path: '/golden-path/fiscal', title: 'Fiscal Calendar & Period', group: 'Entity & Period Setup' },
+  { path: '/golden-path/coa', title: 'Chart of Accounts', group: 'Entity & Period Setup' },
   { path: '/golden-path/journal', title: 'Journal Entry', group: 'General Ledger' },
   { path: '/golden-path/gl-search', title: 'GL Search', group: 'General Ledger' },
   { path: '/golden-path/trial-balance', title: 'Trial Balance', group: 'General Ledger' },

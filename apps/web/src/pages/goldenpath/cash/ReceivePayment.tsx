@@ -110,7 +110,7 @@ export default function ReceivePayment() {
         <Banner kind="warning" title="No drawer selected" testId="receive-payment-no-drawer">
           Open a drawer first, then come back here to receive a payment.
         </Banner>
-        <div className="mt-3"><Btn variant="secondary" onClick={() => navigate('/golden-path/cash')}>Back to drawer</Btn></div>
+        <div className="mt-3"><Btn variant="secondary" onClick={() => navigate('/accounting/cash')}>Back to drawer</Btn></div>
       </ReportShell>
     );
   }
@@ -128,9 +128,9 @@ export default function ReceivePayment() {
           </div>
           <div className="text-[15px] font-semibold mb-4">Total: <span className="font-mono">{formatMoney(Number(receipt.totalAmount))}</span></div>
           <div className="flex gap-2">
-            <Btn data-testid="receipt-confirmation-print" variant="secondary" onClick={() => navigate(`/golden-path/cash/receipts/${receipt.id}/print`)}>Print Receipt</Btn>
-            <Btn data-testid="receipt-confirmation-next" onClick={() => navigate(`/golden-path/cash/receive?drawerId=${drawer.id}`)}>Next Receipt</Btn>
-            <Btn variant="ghost" onClick={() => navigate('/golden-path/cash')}>Back to Drawer</Btn>
+            <Btn data-testid="receipt-confirmation-print" variant="secondary" onClick={() => navigate(`/accounting/cash/receipts/${receipt.id}/print`)}>Print Receipt</Btn>
+            <Btn data-testid="receipt-confirmation-next" onClick={() => navigate(`/accounting/cash/receive?drawerId=${drawer.id}`)}>Next Receipt</Btn>
+            <Btn variant="ghost" onClick={() => navigate('/accounting/cash')}>Back to Drawer</Btn>
           </div>
         </div>
       </ReportShell>

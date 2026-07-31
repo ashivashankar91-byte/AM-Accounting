@@ -47,7 +47,7 @@ export default function SelectEntity() {
     <div className="max-w-2xl mx-auto px-6 py-10">
       <div className="flex items-center justify-between mb-1">
         <h1 className="text-xl font-semibold text-slate-900 tracking-tight">Select Tenant / Legal Entity</h1>
-        <Btn variant="ghost" size="sm" onClick={() => logout().then(() => navigate('/golden-path/login'))}>Sign out</Btn>
+        <Btn variant="ghost" size="sm" onClick={() => logout().then(() => navigate('/login'))}>Sign out</Btn>
       </div>
       <p className="text-sm text-slate-500 mb-6">Signed in as {user?.displayName} — tenant {tenantId}</p>
 

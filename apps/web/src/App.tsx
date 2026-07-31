@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   LayoutDashboard, BookOpen, CreditCard, Users, Calendar,
   Wrench, Settings as SettingsIcon, Terminal, Search, Bell,
@@ -163,9 +163,20 @@ const MODULES: AppModule[] = [
     label: 'General Ledger',
     defaultPath: '/accounting/gl',
     matchPrefixes: [
-      '/accounting/gl', '/accounting/inquiry', '/accounting/reports/gl',
+      // NOTE: was '/accounting/reports/gl' — only matched the one leaf path
+      // that happens to literally start with "gl" (gl-trial-balance), and
+      // even that failed the startsWith(p + '/') check since there's no
+      // slash after "gl" (it's "gl-trial-balance", a hyphen). The other 5
+      // GL Reports items (annual-gl-summary, detailed-gl-pl, etc.) never
+      // matched at all. Because getActiveModuleKey() falls back to
+      // 'dashboard' when nothing matches, clicking any GL Reports link
+      // collapsed the whole GL section in NavRail (it stopped being the
+      // active module) instead of staying expanded — see also the
+      // items-based fallback added to getActiveModuleKey() below as a
+      // second line of defense against this class of drift.
+      '/accounting/gl', '/accounting/inquiry', '/accounting/reports',
       '/gl', '/trial-balance', '/manual-entry', '/coa', '/standard-journal-entries',
-      '/accounting/journals',
+      '/accounting/journals', '/accounting/schedules',
     ],
     sections: [
       { title: 'Journal Entry', items: [
@@ -179,6 +190,11 @@ const MODULES: AppModule[] = [
         { path: '/accounting/inquiry/gl',             label: 'GL Inquiry' },
         { path: '/accounting/inquiry/schedules',      label: 'Schedule Inquiry' },
         { path: '/accounting/inquiry/transactions',   label: 'Transaction Inquiry' },
+        { path: '/accounting/schedules/open-items',   label: 'Schedule Open Items' },
+      ]},
+      { title: 'Posting Engine', items: [
+        { path: '/accounting/gl/posting-rules',       label: 'Posting Rules' },
+        { path: '/accounting/gl/posting-executions',  label: 'Posting Executions' },
       ]},
       { title: 'GL Reports', items: [
         { path: '/accounting/reports/gl-trial-balance',     label: 'Trial Balance' },
@@ -198,7 +214,7 @@ const MODULES: AppModule[] = [
     matchPrefixes: [
       '/accounting/ap', '/accounting/ar', '/accounting/bank-recon',
       '/accounting/purchase-orders', '/ap', '/cash-receipts', '/bank-deposits',
-      '/vendors', '/po', '/golden-path/cash',
+      '/vendors', '/po', '/accounting/cash',
     ],
     sections: [
       { title: 'Accounts Receivable', items: [
@@ -206,8 +222,9 @@ const MODULES: AppModule[] = [
         { path: '/accounting/ar/customers', label: 'Customer Master' },
       ]},
       { title: 'Cashiering (S052)', items: [
-        { path: '/golden-path/cash',          label: 'Cashier Drawer' },
-        { path: '/golden-path/cash/receipts', label: 'Receipt Search' },
+        { path: '/accounting/cash',          label: 'Cashier Drawer' },
+        { path: '/accounting/cash/receive',  label: 'Cash Receipts (POS)' },
+        { path: '/accounting/cash/receipts', label: 'Receipt Search' },
       ]},
       { title: 'Accounts Payable', items: [
         { path: '/accounting/ap',                 label: 'AP Invoices' },
@@ -262,6 +279,7 @@ const MODULES: AppModule[] = [
         { path: '/accounting/admin/periods',          label: 'Fiscal Period Control' },
         { path: '/accounting/financial-statements',   label: 'Financial Statements' },
         { path: '/accounting/recurring',              label: 'Recurring Entries' },
+        { path: '/accounting/eom/entity-elimination', label: 'Entity Elimination' },
         { path: '/year-end',                          label: 'Year-End Close' },
       ]},
     ],
@@ -345,6 +363,22 @@ function getActiveModuleKey(pathname: string): string {
       return mod.key;
     }
   }
+  // Fallback: match directly against each module's own nav item paths. A
+  // module's `matchPrefixes` list is maintained by hand and can silently
+  // drift out of sync with its `sections` items (see the GL Reports fix
+  // above, where 5 of 6 report paths had no matching prefix at all) — when
+  // that happens, falling through to 'dashboard' here made NavRail collapse
+  // whatever module the user was actually in. Checking items directly
+  // catches that regardless of matchPrefixes correctness.
+  for (const mod of MODULES) {
+    for (const section of mod.sections) {
+      for (const item of section.items) {
+        if (pathname === item.path || pathname.startsWith(item.path + '/')) {
+          return mod.key;
+        }
+      }
+    }
+  }
   return 'dashboard';
 }
 
@@ -362,6 +396,15 @@ function resolveTitle(pathname: string): string {
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 const RAIL_COLLAPSED_KEY = 'amacc.railCollapsed';
+
+// Legacy-route redirect helper for old /golden-path/* URLs that had params
+// (e.g. :receiptId, :drawerId). <Navigate to="..."> can't interpolate route
+// params on its own, so this reads them via useParams and builds the target
+// path for the new canonical /accounting/* route.
+function RedirectWithParams({ to }: { to: (params: Record<string, string | undefined>) => string }) {
+  const params = useParams();
+  return <Navigate to={to(params)} replace />;
+}
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -383,7 +426,22 @@ export default function App() {
 
   // Golden R0 UI convergence — Phase 1: no authenticated shell/navigation
   // around the sign-in screen (no rail, no header, no tenant/user context).
-  const isLoginRoute = location.pathname === '/golden-path/login';
+  // /golden-path/login is the legacy URL, preserved as a redirect to /login
+  // (see Route below) — included here too so the bare shell (no rail/header)
+  // still applies for the one render tick before the redirect resolves.
+  const isLoginRoute = location.pathname === '/login' || location.pathname === '/golden-path/login';
+
+  // AMACC-CH04: every backend service enforces real JWT auth unconditionally
+  // (packages/shared-kernel/src/middleware/auth.ts — fail-closed, no
+  // NODE_ENV-based bypass). The legacy (pre-Golden-Path) pages were built
+  // assuming an unauthenticated 'tenant-kunes' demo mode that the backend no
+  // longer honors, so every one of them 401'd exactly like the root
+  // Dashboard did (e.g. /accounting/ar -> GET /api/v1/apar/ar 401). Rather
+  // than wrapping each of the ~100 legacy routes individually in
+  // GoldenPathProtectedRoute (as already done per-route for /golden-path/*),
+  // gate the whole authenticated shell here: any route other than the login
+  // screen requires a real session.
+  const needsLoginRedirect = !isLoginRoute && !isAuthenticated;
 
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     try { return localStorage.getItem(RAIL_COLLAPSED_KEY) === '1'; } catch { return false; }
@@ -422,6 +480,10 @@ export default function App() {
   function handleModuleSelect(key: string) {
     const mod = MODULES.find(m => m.key === key);
     if (mod) navigate(mod.defaultPath);
+  }
+
+  if (needsLoginRedirect) {
+    return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   }
 
   return (
@@ -499,7 +561,7 @@ export default function App() {
           {/* Page Content */}
           <main className="flex-1 overflow-y-auto overflow-x-hidden">
             <Routes>
-              <Route path="/" element={<Dashboard />} />
+              <Route path="/" element={<GoldenPathProtectedRoute><Dashboard /></GoldenPathProtectedRoute>} />
               <Route path="/command-center" element={<AccountingCommandCenter />} />
               <Route path="/gl" element={<GeneralLedger />} />
               <Route path="/gl/entries" element={<JournalEntryManagement />} />
@@ -546,17 +608,20 @@ export default function App() {
               <Route path="/amacc-sync" element={<AMACCSync />} />
               <Route path="/mobile-approvals" element={<MobileApprovals />} />
 
-              {/* FINAL-R0 Golden Path (Step 4): login -> select tenant/entity ->
-                  fiscal calendar -> accounting period -> Chart of Accounts ->
-                  journal draft -> validate -> post -> view -> reverse ->
-                  audit history. Real JWT auth (S205), no mock/demo bypass. */}
-              <Route path="/golden-path/login" element={<GoldenPathLogin />} />
+              {/* Single unified sign-in route for the whole application (was
+                  /golden-path/login). Old URL kept working as a redirect
+                  below so existing bookmarks/links don't break. */}
+              <Route path="/login" element={<GoldenPathLogin />} />
+              <Route path="/golden-path/login" element={<Navigate to="/login" replace />} />
               <Route path="/golden-path/select-entity" element={<GoldenPathProtectedRoute><GoldenPathSelectEntity /></GoldenPathProtectedRoute>} />
               {/* S202/S004A — minimal Golden Path browser-journey screens,
                   added for the Golden R0 final closure browser certification
                   (steps 3/4 of the required 16-step journey). */}
               <Route path="/golden-path/org-hierarchy" element={<GoldenPathProtectedRoute><GoldenPathOrgHierarchy /></GoldenPathProtectedRoute>} />
-              <Route path="/golden-path/entity-elimination" element={<GoldenPathProtectedRoute><GoldenPathEntityElimination /></GoldenPathProtectedRoute>} />
+              {/* Entity Elimination moved into the normal Accounting sidebar
+                  (Period Close > Entity Elimination). Old URL redirects. */}
+              <Route path="/accounting/eom/entity-elimination" element={<GoldenPathProtectedRoute><GoldenPathEntityElimination /></GoldenPathProtectedRoute>} />
+              <Route path="/golden-path/entity-elimination" element={<Navigate to="/accounting/eom/entity-elimination" replace />} />
               <Route path="/golden-path/role-templates" element={<GoldenPathProtectedRoute><GoldenPathRoleTemplates /></GoldenPathProtectedRoute>} />
               <Route path="/golden-path/fiscal" element={<GoldenPathProtectedRoute><GoldenPathFiscalPeriod /></GoldenPathProtectedRoute>} />
               <Route path="/golden-path/coa" element={<GoldenPathProtectedRoute><GoldenPathChartOfAccounts /></GoldenPathProtectedRoute>} />
@@ -580,23 +645,41 @@ export default function App() {
                   analysis-codes), wrapped in the same real-auth Golden Path
                   guard as every other certified P01 screen. */}
               <Route path="/accounting/admin/analysis-codes" element={<GoldenPathProtectedRoute><AnalysisCodeRegistry /></GoldenPathProtectedRoute>} />
-              <Route path="/golden-path/posting-rules" element={<GoldenPathProtectedRoute><GoldenPathPostingRules /></GoldenPathProtectedRoute>} />
-              <Route path="/golden-path/posting-executions" element={<GoldenPathProtectedRoute><GoldenPathPostingExecutions /></GoldenPathProtectedRoute>} />
+              {/* Posting Rules / Posting Executions moved into the normal
+                  Accounting sidebar (General Ledger > Posting Engine). Old
+                  URLs redirect. */}
+              <Route path="/accounting/gl/posting-rules" element={<GoldenPathProtectedRoute><GoldenPathPostingRules /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/gl/posting-executions" element={<GoldenPathProtectedRoute><GoldenPathPostingExecutions /></GoldenPathProtectedRoute>} />
+              <Route path="/golden-path/posting-rules" element={<Navigate to="/accounting/gl/posting-rules" replace />} />
+              <Route path="/golden-path/posting-executions" element={<Navigate to="/accounting/gl/posting-executions" replace />} />
               {/* Golden R0 Phase — routing alias only, no second implementation.
                   The canonical GL Inquiry screen/route is /accounting/inquiry/gl
                   (registered below); this path never had a real route at all,
                   so it fell through to the app shell's default/dashboard view. */}
               <Route path="/golden-path/gl-inquiry" element={<Navigate to="/accounting/inquiry/gl" replace />} />
 
-              {/* S052 — POS Cash Receipts, Cashier Drawers, Blind Close and Over/Short. */}
-              <Route path="/golden-path/cash" element={<GoldenPathProtectedRoute><CashDrawerHome /></GoldenPathProtectedRoute>} />
-              <Route path="/golden-path/cash/open" element={<GoldenPathProtectedRoute><CashOpenDrawer /></GoldenPathProtectedRoute>} />
-              <Route path="/golden-path/cash/receive" element={<GoldenPathProtectedRoute><CashReceivePayment /></GoldenPathProtectedRoute>} />
-              <Route path="/golden-path/cash/receipts" element={<GoldenPathProtectedRoute><CashReceiptSearch /></GoldenPathProtectedRoute>} />
-              <Route path="/golden-path/cash/receipts/:receiptId" element={<GoldenPathProtectedRoute><CashReceiptDetails /></GoldenPathProtectedRoute>} />
-              <Route path="/golden-path/cash/receipts/:receiptId/print" element={<GoldenPathProtectedRoute><CashReceiptPrint /></GoldenPathProtectedRoute>} />
-              <Route path="/golden-path/cash/drawers/:drawerId/blind-close" element={<GoldenPathProtectedRoute><CashBlindClose /></GoldenPathProtectedRoute>} />
-              <Route path="/golden-path/cash/drawers/:drawerId/reconciliation" element={<GoldenPathProtectedRoute><CashSupervisorReconciliation /></GoldenPathProtectedRoute>} />
+              {/* S052 — POS Cash Receipts, Cashier Drawers, Blind Close and
+                  Over/Short. Moved into the normal Accounting sidebar
+                  (AP / AR > Cashiering). Old /golden-path/cash/* URLs below
+                  redirect to these canonical paths so old bookmarks/links
+                  keep working. */}
+              <Route path="/accounting/cash" element={<GoldenPathProtectedRoute><CashDrawerHome /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/cash/open" element={<GoldenPathProtectedRoute><CashOpenDrawer /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/cash/receive" element={<GoldenPathProtectedRoute><CashReceivePayment /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/cash/receipts" element={<GoldenPathProtectedRoute><CashReceiptSearch /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/cash/receipts/:receiptId" element={<GoldenPathProtectedRoute><CashReceiptDetails /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/cash/receipts/:receiptId/print" element={<GoldenPathProtectedRoute><CashReceiptPrint /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/cash/drawers/:drawerId/blind-close" element={<GoldenPathProtectedRoute><CashBlindClose /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/cash/drawers/:drawerId/reconciliation" element={<GoldenPathProtectedRoute><CashSupervisorReconciliation /></GoldenPathProtectedRoute>} />
+
+              <Route path="/golden-path/cash" element={<Navigate to="/accounting/cash" replace />} />
+              <Route path="/golden-path/cash/open" element={<Navigate to="/accounting/cash/open" replace />} />
+              <Route path="/golden-path/cash/receive" element={<Navigate to="/accounting/cash/receive" replace />} />
+              <Route path="/golden-path/cash/receipts" element={<Navigate to="/accounting/cash/receipts" replace />} />
+              <Route path="/golden-path/cash/receipts/:receiptId" element={<RedirectWithParams to={(p) => `/accounting/cash/receipts/${p.receiptId}`} />} />
+              <Route path="/golden-path/cash/receipts/:receiptId/print" element={<RedirectWithParams to={(p) => `/accounting/cash/receipts/${p.receiptId}/print`} />} />
+              <Route path="/golden-path/cash/drawers/:drawerId/blind-close" element={<RedirectWithParams to={(p) => `/accounting/cash/drawers/${p.drawerId}/blind-close`} />} />
+              <Route path="/golden-path/cash/drawers/:drawerId/reconciliation" element={<RedirectWithParams to={(p) => `/accounting/cash/drawers/${p.drawerId}/reconciliation`} />} />
 
               {/* WF-A001 through WF-A010 */}
               <Route path="/accounting/dashboard" element={<DashboardWorkflow />} />
