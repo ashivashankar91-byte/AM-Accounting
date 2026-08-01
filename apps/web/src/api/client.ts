@@ -2113,3 +2113,99 @@ export const autoMatchApi = {
   rejectSuggestion: (sessionId: string, suggestionId: string, data?: { reason?: string }) =>
     apiFetch<any>(`/api/v1/recon/sessions/${sessionId}/suggestions/${suggestionId}/reject`, { method: 'POST', body: JSON.stringify(data ?? {}) }),
 };
+
+export const oemApi = {
+  // S098 — Profiles / adapter status / dealer codes.
+  listProfiles: () => apiFetch<any[]>('/api/v1/oem/profiles'),
+  getProfile: (make: string) => apiFetch<any>(`/api/v1/oem/profiles/${encodeURIComponent(make)}`),
+  createProfile: (data: { make: string; programName?: string; statementSpecVersion?: string; notes?: string }) =>
+    apiFetch<any>('/api/v1/oem/profiles', { method: 'POST', body: JSON.stringify(data) }),
+  setProfileStatus: (make: string, data: { status: string; certificationEvidenceRef?: string | null }) =>
+    apiFetch<any>(`/api/v1/oem/profiles/${encodeURIComponent(make)}/status`, { method: 'PATCH', body: JSON.stringify(data) }),
+  setDealerCode: (make: string, storeId: string, dealerCode: string) =>
+    apiFetch<any>(`/api/v1/oem/profiles/${encodeURIComponent(make)}/dealer-codes/${encodeURIComponent(storeId)}`, {
+      method: 'PUT', body: JSON.stringify({ dealerCode }),
+    }),
+
+  // S098/S099/S100 — Staging / diff alerts.
+  importFeed: (data: { make: string; storeId?: string; rawContent: string }) =>
+    apiFetch<any>('/api/v1/oem/staging/import/feed', { method: 'POST', body: JSON.stringify(data) }),
+  importManual: (data: { make: string; kind: string; storeId?: string; naturalKey: string; specVersion?: string; rows: Array<{ canonicalType?: string; fields: Record<string, unknown> }> }) =>
+    apiFetch<any>('/api/v1/oem/staging/import/manual', { method: 'POST', body: JSON.stringify(data) }),
+  listStagedDocuments: (make?: string) => apiFetch<any[]>(`/api/v1/oem/staging/documents${make ? `?make=${encodeURIComponent(make)}` : ''}`),
+  getStagedDocument: (id: string) => apiFetch<any>(`/api/v1/oem/staging/documents/${id}`),
+  listDiffAlerts: (resolved?: boolean) => apiFetch<any[]>(`/api/v1/oem/staging/diff-alerts${resolved === undefined ? '' : `?resolved=${resolved}`}`),
+  resolveDiffAlert: (id: string) => apiFetch<any>(`/api/v1/oem/staging/diff-alerts/${id}/resolve`, { method: 'POST' }),
+
+  // S101A — Match workbench.
+  createMatchSession: (storeId: string, statementDocumentId: string) =>
+    apiFetch<any>('/api/v1/oem/match/sessions', { method: 'POST', body: JSON.stringify({ storeId, statementDocumentId }) }),
+  listMatchSessions: (storeId?: string) => apiFetch<any[]>(`/api/v1/oem/match/sessions${storeId ? `?storeId=${encodeURIComponent(storeId)}` : ''}`),
+  getMatchSession: (id: string) => apiFetch<any>(`/api/v1/oem/match/sessions/${id}`),
+  disposeMatchRow: (sessionId: string, rowId: string, disposition: string, note?: string) =>
+    apiFetch<any>(`/api/v1/oem/match/sessions/${sessionId}/rows/${rowId}/dispose`, { method: 'POST', body: JSON.stringify({ disposition, note }) }),
+  completeMatchSession: (id: string) => apiFetch<any>(`/api/v1/oem/match/sessions/${id}/complete`, { method: 'POST' }),
+
+  // S103A — Incentive registry / RDR accruals.
+  listIncentivePrograms: () => apiFetch<any[]>('/api/v1/oem/incentives/programs'),
+  registerIncentiveProgram: (data: Record<string, unknown>) =>
+    apiFetch<any>('/api/v1/oem/incentives/programs', { method: 'POST', body: JSON.stringify(data) }),
+  accrueIncentives: (storeId: string, since?: string) =>
+    apiFetch<any>('/api/v1/oem/incentives/accrue', { method: 'POST', body: JSON.stringify({ storeId, since }) }),
+  listIncentiveAccruals: (storeId?: string) => apiFetch<any[]>(`/api/v1/oem/incentives/accruals${storeId ? `?storeId=${encodeURIComponent(storeId)}` : ''}`),
+  trueUpIncentiveAccrual: (id: string, data: { adjustmentAmount: string; reason: string; statementRowRef?: string }) =>
+    apiFetch<any>(`/api/v1/oem/incentives/accruals/${id}/true-up`, { method: 'POST', body: JSON.stringify(data) }),
+  getIncentiveReceivableTie: (storeId: string) => apiFetch<any>(`/api/v1/oem/incentives/receivable-tie?storeId=${encodeURIComponent(storeId)}`),
+
+  // S104 — Statement renderer.
+  listStatementProfiles: () => apiFetch<any[]>('/api/v1/oem/statement/profiles'),
+  createStatementProfile: (data: { make: string; version: string; pageLineDefinitions: unknown; effectiveFrom: string }) =>
+    apiFetch<any>('/api/v1/oem/statement/profiles', { method: 'POST', body: JSON.stringify(data) }),
+  listStatementMappings: (profileId: string) => apiFetch<any[]>(`/api/v1/oem/statement/profiles/${profileId}/mappings`),
+  authorStatementMapping: (profileId: string, data: { glAccountId: string; statementLineRef: string }) =>
+    apiFetch<any>(`/api/v1/oem/statement/profiles/${profileId}/mappings`, { method: 'POST', body: JSON.stringify(data) }),
+  activateStatementMapping: (id: string) => apiFetch<any>(`/api/v1/oem/statement/mappings/${id}/activate`, { method: 'POST' }),
+  renderStatement: (data: { storeId: string; statementProfileId: string; period: string; injectVarianceForCertification?: string }) =>
+    apiFetch<any>('/api/v1/oem/statement/renders', { method: 'POST', body: JSON.stringify(data) }),
+  getStatementRender: (id: string) => apiFetch<any>(`/api/v1/oem/statement/renders/${id}`),
+  drillStatementCell: (id: string, lineRef: string) => apiFetch<any>(`/api/v1/oem/statement/renders/${id}/drill?lineRef=${encodeURIComponent(lineRef)}`),
+  exportStatementRender: (id: string, format = 'JSON') =>
+    apiFetch<any>(`/api/v1/oem/statement/renders/${id}/export`, { method: 'POST', body: JSON.stringify({ format }) }),
+  listStatementExports: (renderId?: string) => apiFetch<any[]>(`/api/v1/oem/statement/exports${renderId ? `?renderId=${renderId}` : ''}`),
+
+  // S105 — Warranty chargeback / reserve.
+  createChargebackNotice: (data: { storeId: string; make: string; sourceDocumentId?: string; noticeDate: string; lines: Array<{ originalClaimItemRef: string; amount: string }> }) =>
+    apiFetch<any>('/api/v1/oem/warranty/notices', { method: 'POST', body: JSON.stringify(data) }),
+  listChargebackNotices: (storeId?: string) => apiFetch<any[]>(`/api/v1/oem/warranty/notices${storeId ? `?storeId=${encodeURIComponent(storeId)}` : ''}`),
+  getChargebackNotice: (id: string) => apiFetch<any>(`/api/v1/oem/warranty/notices/${id}`),
+  disposeChargebackLine: (id: string, disposition: 'ACCEPTED' | 'DISPUTED') =>
+    apiFetch<any>(`/api/v1/oem/warranty/lines/${id}/dispose`, { method: 'POST', body: JSON.stringify({ disposition }) }),
+  addChargebackEvidence: (id: string, evidenceRef: string, note?: string) =>
+    apiFetch<any>(`/api/v1/oem/warranty/lines/${id}/evidence`, { method: 'POST', body: JSON.stringify({ evidenceRef, note }) }),
+  setReserveConfig: (storeId: string, ratePercent: string, effectiveFrom: string) =>
+    apiFetch<any>('/api/v1/oem/warranty/reserve/config', { method: 'POST', body: JSON.stringify({ storeId, ratePercent, effectiveFrom }) }),
+  previewReserve: (storeId: string, period: string, paidWarrantyVolume: string) =>
+    apiFetch<any>('/api/v1/oem/warranty/reserve/preview', { method: 'POST', body: JSON.stringify({ storeId, period, paidWarrantyVolume }) }),
+  approveReservePreview: (id: string) => apiFetch<any>(`/api/v1/oem/warranty/reserve/previews/${id}/approve`, { method: 'POST' }),
+  drawReserve: (storeId: string, chargebackLineId: string) =>
+    apiFetch<any>('/api/v1/oem/warranty/reserve/draws', { method: 'POST', body: JSON.stringify({ storeId, chargebackLineId }) }),
+  getReserveRollforward: (storeId: string) => apiFetch<any>(`/api/v1/oem/warranty/reserve/rollforward?storeId=${encodeURIComponent(storeId)}`),
+
+  // S106 — Co-op advertising claims.
+  listCoopPrograms: () => apiFetch<any[]>('/api/v1/oem/coop/programs'),
+  registerCoopProgram: (data: Record<string, unknown>) =>
+    apiFetch<any>('/api/v1/oem/coop/programs', { method: 'POST', body: JSON.stringify(data) }),
+  createCoopClaim: (storeId: string, programId: string) =>
+    apiFetch<any>('/api/v1/oem/coop/claims', { method: 'POST', body: JSON.stringify({ storeId, programId }) }),
+  listCoopClaims: (storeId?: string) => apiFetch<any[]>(`/api/v1/oem/coop/claims${storeId ? `?storeId=${encodeURIComponent(storeId)}` : ''}`),
+  getCoopClaim: (id: string) => apiFetch<any>(`/api/v1/oem/coop/claims/${id}`),
+  addCoopClaimLine: (claimId: string, data: { spendItemRef: string; description: string; amount: string; evidenceRef: string }) =>
+    apiFetch<any>(`/api/v1/oem/coop/claims/${claimId}/lines`, { method: 'POST', body: JSON.stringify(data) }),
+  exportCoopClaim: (claimId: string) => apiFetch<any>(`/api/v1/oem/coop/claims/${claimId}/export`, { method: 'POST' }),
+  recordCoopResponse: (lineId: string, responseStatus: string, approvedAmount?: string) =>
+    apiFetch<any>(`/api/v1/oem/coop/lines/${lineId}/response`, { method: 'POST', body: JSON.stringify({ responseStatus, approvedAmount }) }),
+  writeOffCoopLine: (lineId: string) => apiFetch<any>(`/api/v1/oem/coop/lines/${lineId}/write-off`, { method: 'POST' }),
+  previewCoopAccrual: (storeId: string, programId: string, period: string, periodQualifyingSalesAmount: string) =>
+    apiFetch<any>('/api/v1/oem/coop/accrual/preview', { method: 'POST', body: JSON.stringify({ storeId, programId, period, periodQualifyingSalesAmount }) }),
+  approveCoopAccrual: (id: string) => apiFetch<any>(`/api/v1/oem/coop/accrual/previews/${id}/approve`, { method: 'POST' }),
+};

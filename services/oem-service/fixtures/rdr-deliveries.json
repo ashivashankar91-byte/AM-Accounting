@@ -1,0 +1,32 @@
+[
+  {
+    "tenantId": "FIXTURE_TENANT",
+    "storeId": "STORE-1",
+    "dealNumber": "D-9001",
+    "make": "FORD",
+    "programId": "FORD-RDR-2026Q3",
+    "qualifyingUnitCount": 1,
+    "eventRef": "deal.finalized:D-9001",
+    "deliveredAt": "2026-07-10T00:00:00.000Z"
+  },
+  {
+    "tenantId": "FIXTURE_TENANT",
+    "storeId": "STORE-1",
+    "dealNumber": "D-9002",
+    "make": "FORD",
+    "programId": "FORD-RDR-2026Q3",
+    "qualifyingUnitCount": 1,
+    "eventRef": "deal.finalized:D-9002",
+    "deliveredAt": "2026-07-12T00:00:00.000Z"
+  },
+  {
+    "tenantId": "FIXTURE_TENANT",
+    "storeId": "STORE-1",
+    "dealNumber": "D-9003",
+    "make": "FORD",
+    "programId": null,
+    "qualifyingUnitCount": 1,
+    "eventRef": "deal.finalized:D-9003",
+    "deliveredAt": "2026-07-14T00:00:00.000Z"
+  }
+]

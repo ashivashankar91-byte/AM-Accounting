@@ -3,7 +3,7 @@ import { Routes, Route, Navigate, useLocation, useNavigate, useParams } from 're
 import {
   LayoutDashboard, BookOpen, CreditCard, Users, Calendar,
   Wrench, Settings as SettingsIcon, Terminal, Search, Bell, Landmark,
-  ClipboardList, PackageSearch, Car,
+  ClipboardList, PackageSearch, Car, Factory,
 } from 'lucide-react';
 import ErrorBoundary from './components/ErrorBoundary';
 import { useAuth } from './auth/AuthContext';
@@ -93,6 +93,13 @@ import PartsReconciliation from './pages/accounting/parts/PartsReconciliation';
 import PartsPhysicalInventory from './pages/accounting/parts/PartsPhysicalInventory';
 import PartsDeposits from './pages/accounting/parts/PartsDeposits';
 import PartsValuation from './pages/accounting/parts/PartsValuation';
+// CE-14 — OEM Integrations (S098-S106).
+import OemProfiles from './pages/accounting/oem/OemProfiles';
+import OemMatchWorkbench from './pages/accounting/oem/OemMatchWorkbench';
+import OemIncentives from './pages/accounting/oem/OemIncentives';
+import OemStatement from './pages/accounting/oem/OemStatement';
+import OemWarrantyAudit from './pages/accounting/oem/OemWarrantyAudit';
+import OemCoop from './pages/accounting/oem/OemCoop';
 import GoldenPathPostingRules from './pages/goldenpath/PostingRules';
 import GoldenPathPostingExecutions from './pages/goldenpath/PostingExecutions';
 import GoldenPathPostingRecoveryQueue from './pages/goldenpath/PostingRecoveryQueue';
@@ -467,7 +474,34 @@ const MODULES: AppModule[] = [
       ]},
       { title: 'Reserve & F&I Products', items: [
         { path: '/accounting/deals/reserve',       label: 'Reserve & Chargeback' },
-        { path: '/accounting/deals/products',      label: 'F&I Products' },
+        { path: '/accounting/deals/products',      label: 'F&I Products' },      ]},
+    ],
+  },
+  {
+    // CE-14 — OEM Integrations (S098 Adapter Framework & Diff Alerts, S099/
+    // S100 Ford/GM Feed Adapters, S101A Statement Match Workbench, S103A
+    // Incentive Registry, S104 OEM Financial Statement, S105 Warranty Audit
+    // Chargeback & Reserve, S106 Co-op Advertising Claims). New top-level
+    // nav module, same pattern as 'tax' — standalone Controller/Admin/
+    // Accounting screens spanning adapter status through OEM statement
+    // rendering and reconciliation-adjacent receivable ceremonies.
+    key: 'oem',
+    Icon: Factory,
+    label: 'OEM',
+    defaultPath: '/accounting/oem/profiles',
+    matchPrefixes: ['/accounting/oem'],
+    sections: [
+      { title: 'Adapters & Staging', items: [
+        { path: '/accounting/oem/profiles',       label: 'OEM Profiles & Adapter Status' },
+        { path: '/accounting/oem/match',          label: 'Statement Match Workbench' },
+      ]},
+      { title: 'Receivables', items: [
+        { path: '/accounting/oem/incentives',     label: 'Incentive Registry' },
+        { path: '/accounting/oem/warranty-audit', label: 'Warranty Audit & Reserve' },
+        { path: '/accounting/oem/coop',           label: 'Co-op Center' },
+      ]},
+      { title: 'Statement', items: [
+        { path: '/accounting/oem/statement',      label: 'OEM Financial Statement' },
       ]},
     ],
   },
@@ -856,6 +890,16 @@ export default function App() {
               <Route path="/accounting/parts/physical" element={<GoldenPathProtectedRoute><PartsPhysicalInventory /></GoldenPathProtectedRoute>} />
               <Route path="/accounting/parts/deposits" element={<GoldenPathProtectedRoute><PartsDeposits /></GoldenPathProtectedRoute>} />
               <Route path="/accounting/parts/valuation" element={<GoldenPathProtectedRoute><PartsValuation /></GoldenPathProtectedRoute>} />
+              {/* CE-14 — OEM Integrations (S098-S106). All six screens render
+                  inside the unified Accounting app shell, same
+                  GoldenPathProtectedRoute guard as every other real-auth
+                  screen. */}
+              <Route path="/accounting/oem/profiles" element={<GoldenPathProtectedRoute><OemProfiles /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/oem/match" element={<GoldenPathProtectedRoute><OemMatchWorkbench /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/oem/incentives" element={<GoldenPathProtectedRoute><OemIncentives /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/oem/statement" element={<GoldenPathProtectedRoute><OemStatement /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/oem/warranty-audit" element={<GoldenPathProtectedRoute><OemWarrantyAudit /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/oem/coop" element={<GoldenPathProtectedRoute><OemCoop /></GoldenPathProtectedRoute>} />
               {/* Posting Rules / Posting Executions moved into the normal
                   Accounting sidebar (General Ledger > Posting Engine). Old
                   URLs redirect. */}

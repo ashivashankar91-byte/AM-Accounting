@@ -393,6 +393,23 @@ services:
       rabbitmq: { condition: service_healthy }
       migrator: { condition: service_completed_successfully }
 
+  # CE-14 S098-S106 — OEM integrations (adapter framework, statement match
+  # workbench, incentive/co-op/warranty-chargeback receivables, OEM
+  # financial statement renderer). Zero direct GL writes.
+  oem-service:
+    build:
+      context: .
+      dockerfile: services/oem-service/Dockerfile
+    ports:
+      - "3052:3052"
+    environment:
+      <<: *service-env
+      PORT: 3052
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
+
   # CE-11 S059-S065 — Fixed Ops (Service) accounting.
   fixedops-service:
     build:
@@ -494,6 +511,7 @@ services:
       migrator: { condition: service_completed_successfully }
       coa-service: { condition: service_started }
       posting-recovery-service: { condition: service_started }
+
 
   fs-service:
     build:

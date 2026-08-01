@@ -1,0 +1,18 @@
+[
+  {
+    "apDocumentId": "AP-DOC-4001",
+    "tenantId": "FIXTURE_TENANT",
+    "storeId": "STORE-1",
+    "vendorName": "Local Radio Co-op Media",
+    "amount": "800.00",
+    "documentDate": "2026-07-05"
+  },
+  {
+    "apDocumentId": "AP-DOC-4002",
+    "tenantId": "FIXTURE_TENANT",
+    "storeId": "STORE-1",
+    "vendorName": "Regional Print Advertising LLC",
+    "amount": "425.00",
+    "documentDate": "2026-07-08"
+  }
+]

@@ -114,6 +114,12 @@ const SERVICES: Array<{ prefix: string; upstream: string; rateLimit?: number; re
   { prefix: '/api/v1/floorplan',          upstream: process.env['FLOORPLAN_SERVICE_URL']          ?? 'http://floorplan-service:3091' },
   { prefix: '/api/v1/deal-accounting',    upstream: process.env['DEAL_ACCOUNTING_SERVICE_URL']    ?? 'http://deal-accounting-service:3092' },
   { prefix: '/api/v1/fni-reserve',        upstream: process.env['FNI_RESERVE_SERVICE_URL']        ?? 'http://fni-reserve-service:3093' },
+  // CE-14 S098-S106 — OEM integrations (adapter framework, statement match
+  // workbench, incentive/co-op/warranty-chargeback receivables, OEM
+  // financial statement renderer). oem-service has zero direct GL writes;
+  // postings travel through the standard matrix-row/envelope path (CE-07/
+  // CE-09) same as every other epic.
+  { prefix: '/api/v1/oem',            upstream: process.env['OEM_SERVICE_URL']            ?? 'http://oem-service:3052' },
 ];
 
 // ── Request logging hook ──────────────────────────────────────────────────────
