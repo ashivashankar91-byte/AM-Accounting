@@ -66,6 +66,10 @@ function makeAuditService() {
       }
       return 1;
     },
+    // AuditService.log() calls setTenantContextOnConnection(tx, ...) first
+    // inside its interactive $transaction callback — needs only to exist
+    // and resolve here.
+    $executeRawUnsafe: async (..._args: any[]) => 1,
     $transaction: async (fn: (tx: any) => Promise<any>) => fn(prisma),
   };
   return new AuditService(prisma);

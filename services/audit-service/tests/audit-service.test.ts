@@ -90,6 +90,12 @@ function fakePrisma(initial: any[] = []) {
       }
       throw new Error(`fakePrisma.$executeRaw: unrecognized query: ${sql}`);
     }),
+    // AuditService.log() calls setTenantContextOnConnection(tx, ...) as the
+    // first statement inside every interactive $transaction callback (see
+    // rls-middleware.ts's "Batch C defect fix" comment) — it needs only
+    // $executeRawUnsafe to exist and resolve; this fake has no real
+    // app.current_tenant_id GUC to set.
+    $executeRawUnsafe: vi.fn(async (_query: string, ..._values: any[]) => 1),
     $transaction: vi.fn(async (fn: (tx: any) => Promise<any>) => fn(client)),
   };
   return client;

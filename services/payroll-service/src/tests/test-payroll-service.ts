@@ -500,11 +500,27 @@ describe('GL Posting', () => {
     const accumulateDelta = vi.fn().mockResolvedValue({});
     const setJournalEntryId = vi.fn().mockResolvedValue({});
 
-    // Mock global fetch
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: vi.fn().mockResolvedValue({ id: 'je-abc123' }),
-      text: vi.fn().mockResolvedValue(''),
+    // postBatch calls fetch twice per journal line: first resolveAccountCode()
+    // (GET .../gl/accounts, expects a bare array) to map each glAccountCode to
+    // a glAccountId, then postGLJournal() (POST .../gl/journal-entries,
+    // expects { id }) once for the whole batch. Both calls share the same
+    // global fetch, so the mock must branch on method to return the right
+    // shape for each — a single fixed response previously caused
+    // resolveAccountCode's `accounts.find` to run against the journal-entry
+    // object instead of an account array.
+    const mockFetch = vi.fn().mockImplementation(async (_url: string, init?: { method?: string }) => {
+      if ((init?.method ?? 'GET') === 'GET') {
+        return {
+          ok: true,
+          json: vi.fn().mockResolvedValue([{ id: 'gl-acct-1', code: '9999-UNMAPPED' }]),
+          text: vi.fn().mockResolvedValue(''),
+        };
+      }
+      return {
+        ok: true,
+        json: vi.fn().mockResolvedValue({ id: 'je-abc123' }),
+        text: vi.fn().mockResolvedValue(''),
+      };
     });
     vi.stubGlobal('fetch', mockFetch);
 

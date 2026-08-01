@@ -17,7 +17,7 @@
     "build:all": "npm run build:shared && npm run build:services && npm -w apps/web run build",
     "build:services": "npm run build:shared && node scripts/build-services.js",
     "lint": "eslint . --ext .ts,.tsx",
-    "test": "vitest run",
+    "test": "npm run test --workspaces --if-present",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "seed": "npx tsx scripts/seed.ts",

@@ -86,7 +86,7 @@ async function bootstrap() {
     if (!tenantId) return reply.status(400).send({ error: 'x-tenant-id header is required' });
     const closes = await prisma.eOMClose.findMany({
       where: { tenantId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { startedAt: 'desc' },
       take: 1,
     }).catch(() => []);
     const latest = closes[0] ?? null;
