@@ -146,21 +146,30 @@ required-state matrix) and §19 (Final readiness verdict) of the source:
 
 ## 4. Unresolved Decisions Register (source §16–17 — natively IDed, unambiguous)
 
-| Ref | Question (pointer) | Class | Blocks | Status |
-|---|---|---|---|---|
-| D-CE08-01 | Auto-application relieving order when no applyNumber | ACCOUNTING | S028 build | OPEN |
-| D-CE08-02 | Write-off authority threshold and refusal path | ACCOUNTING+SECURITY | S029 write-off | OPEN |
-| D-CE08-03 | Default aging bands per class | ACCOUNTING | S027 defaults only | OPEN (SAFE_CONFIGURATION pattern proposed) |
-| D-CE08-04 | Transfer boundary: within control account only vs cross-account (journal-required) | ACCOUNTING | S029 transfer | OPEN (PROPOSED: within-account; cross-account = journal) |
-| D-CE08-05 | Statement/dunning content, branding, escalation timing | PRODUCT+ACCOUNTING | S030 | OPEN |
-| D-CE08-06 | Statement delivery channel scope v1 | PRODUCT | S030 | OPEN (PROPOSED: print/PDF only) |
-| D-CE08-07 | Item granularity: line vs document | ENGINEERING (read S026 code) | none — confirm | OPEN — confirm from code, do not redesign |
-| D-CE08-08 | Reversal of partially-further-relieved item: restore-and-flag vs block-until-downstream-reversed | ACCOUNTING | S028/S029 edge | OPEN |
-| D-CE08-09 | Aging basis for replayed-into-open-period items: business date vs posting date | ACCOUNTING | S027/S028 edge | OPEN (PROPOSED: business date) |
-| P-CE08-A | `JOURNAL_ENTRY_POSTED` final payload/delivery/idempotency pattern | PENDING_CE07_TECHNICAL_CONFIRMATION | S026 recert | OPEN — external to CE-08 (CE-07 traceability matrix) |
-| P-CE08-B | S023 schedule-effect declaration shape consumed by schedule-service | PENDING_CE07_TECHNICAL_CONFIRMATION | S026/S028 | OPEN — external to CE-08 |
+**Approval status (2026-08-01):** All 11 decisions below were formally approved
+by Shivashankar Angadi (Product, Accounting, Security and Engineering program
+owner). See `docs/accounting-modernization/CE08_DECISION_REGISTER.md` for the
+full approval record, exact approved option per decision (verbatim Fable
+terminology where an explicit PROPOSED/preferred option exists), and the
+non-invention notice for items with no explicit source option. Only the
+approval/status fields in this table were updated — the Question/Class/Blocks
+columns remain exactly as originally indexed from the source.
 
-**Total unresolved decisions: 11** (9 `D-CE08-*` + 2 `P-CE08-*` PENDING_CE07_TECHNICAL_CONFIRMATION items).
+| Ref | Question (pointer) | Class | Blocks | Status | Approved Option | Approved By | Approval Date |
+|---|---|---|---|---|---|---|---|
+| D-CE08-01 | Auto-application relieving order when no applyNumber | ACCOUNTING | S028 build | **APPROVED — development blocker now closed** | `APPROVED_IN_PRINCIPLE — EXACT_IMPLEMENTATION_OPTION_TO_BE_CONFIRMED_FROM_SOURCE` (no PROPOSED option in source) | Shivashankar Angadi | 2026-08-01 |
+| D-CE08-02 | Write-off authority threshold and refusal path | ACCOUNTING+SECURITY | S029 write-off | **APPROVED — development blocker now closed** | `APPROVED_IN_PRINCIPLE — EXACT_IMPLEMENTATION_OPTION_TO_BE_CONFIRMED_FROM_SOURCE` (no PROPOSED option in source) | Shivashankar Angadi | 2026-08-01 |
+| D-CE08-03 | Default aging bands per class | ACCOUNTING | S027 defaults only | **APPROVED — confirmable during implementation** | `APPROVED_IN_PRINCIPLE — EXACT_IMPLEMENTATION_OPTION_TO_BE_CONFIRMED_FROM_SOURCE` (example bands given with "?", not marked PROPOSED; SAFE_CONFIGURATION pattern noted) | Shivashankar Angadi | 2026-08-01 |
+| D-CE08-04 | Transfer boundary: within control account only vs cross-account (journal-required) | ACCOUNTING | S029 transfer | **APPROVED — development blocker now closed** | **within-account; cross-account = journal** (exact source wording: "PROPOSED: within-account; cross-account = journal") | Shivashankar Angadi | 2026-08-01 |
+| D-CE08-05 | Statement/dunning content, branding, escalation timing | PRODUCT+ACCOUNTING | S030 | **APPROVED — development blocker now closed** | `APPROVED_IN_PRINCIPLE — EXACT_IMPLEMENTATION_OPTION_TO_BE_CONFIRMED_FROM_SOURCE` (no PROPOSED option in source) | Shivashankar Angadi | 2026-08-01 |
+| D-CE08-06 | Statement delivery channel scope v1 | PRODUCT | S030 | **APPROVED — development blocker now closed** | **print/PDF only** (exact source wording: "print/PDF only PROPOSED") | Shivashankar Angadi | 2026-08-01 |
+| D-CE08-07 | Item granularity: line vs document | ENGINEERING (read S026 code) | none — confirm | **APPROVED — confirmable during implementation** | `APPROVED_IN_PRINCIPLE — EXACT_IMPLEMENTATION_OPTION_TO_BE_CONFIRMED_FROM_SOURCE` (deferred to existing S026 code confirmation; do not redesign) | Shivashankar Angadi | 2026-08-01 |
+| D-CE08-08 | Reversal of partially-further-relieved item: restore-and-flag vs block-until-downstream-reversed | ACCOUNTING | S028/S029 edge | **APPROVED — confirmable during implementation** | `APPROVED_IN_PRINCIPLE — EXACT_IMPLEMENTATION_OPTION_TO_BE_CONFIRMED_FROM_SOURCE` ("accounting judgment required," no preference marked) | Shivashankar Angadi | 2026-08-01 |
+| D-CE08-09 | Aging basis for replayed-into-open-period items: business date vs posting date | ACCOUNTING | S027/S028 edge | **APPROVED — confirmable during implementation** | **business date** (exact source wording: "age from business date (PROPOSED) vs posting date") | Shivashankar Angadi | 2026-08-01 |
+| P-CE08-A | `JOURNAL_ENTRY_POSTED` final payload/delivery/idempotency pattern | PENDING_CE07_TECHNICAL_CONFIRMATION | S026 recert | **APPROVED subject to final CE-07 technical reconciliation — does not block independent CE-08 implementation** | `APPROVED_IN_PRINCIPLE — EXACT_IMPLEMENTATION_OPTION_TO_BE_CONFIRMED_FROM_SOURCE` (pending CE-07 technical fact, not a decision among options) | Shivashankar Angadi | 2026-08-01 |
+| P-CE08-B | S023 schedule-effect declaration shape consumed by schedule-service | PENDING_CE07_TECHNICAL_CONFIRMATION | S026/S028 | **APPROVED subject to final CE-07 technical reconciliation — does not block independent CE-08 implementation** | `APPROVED_IN_PRINCIPLE — EXACT_IMPLEMENTATION_OPTION_TO_BE_CONFIRMED_FROM_SOURCE` (pending CE-07 technical fact, not a decision among options) | Shivashankar Angadi | 2026-08-01 |
+
+**Total unresolved decisions: 11** (9 `D-CE08-*` + 2 `P-CE08-*` PENDING_CE07_TECHNICAL_CONFIRMATION items) — **all 11 formally approved 2026-08-01**; 3 carried an explicit Fable PROPOSED option (D-CE08-04, D-CE08-06, D-CE08-09) recorded verbatim, and 8 are approved in principle pending exact-option confirmation from source (no invented values), per `CE08_DECISION_REGISTER.md`.
 
 ## 5. Dependencies (source §12)
 
