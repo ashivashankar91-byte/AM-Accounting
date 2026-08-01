@@ -679,6 +679,42 @@ export const scheduleApi = {
   getAgingBucketConfig: () => apiFetch<{ buckets: any[] }>('/api/v1/schedules/aging-bucket-config'),
   setAgingBucketConfig: (buckets: { label: string; upperBoundDays: number | null }[]) =>
     apiFetch<{ buckets: any[] }>('/api/v1/schedules/aging-bucket-config', { method: 'PUT', body: JSON.stringify({ buckets }) }),
+
+  // S028 — auto-application (FIFO sweep on-account)
+  autoApply: (data: { scheduleNumber: string; controlNumber: string; amount: string; idempotencyKey: string }) =>
+    apiFetch<any>('/api/v1/schedules/open-items/auto-apply', { method: 'POST', body: JSON.stringify(data) }),
+
+  // S029 — Split / Transfer / Write-off ceremonies
+  splitOpenItem: (scheduleId: string, itemId: string, data: { parts: string[]; idempotencyKey: string; reason: string }) =>
+    apiFetch<any>(`/api/v1/schedules/${scheduleId}/open-items/${itemId}/split`, { method: 'POST', body: JSON.stringify(data) }),
+  transferOpenItem: (scheduleId: string, itemId: string, data: { toScheduleNumber: string; toControlNumber: string; toItemNumber: string; idempotencyKey: string; reason: string }) =>
+    apiFetch<any>(`/api/v1/schedules/${scheduleId}/open-items/${itemId}/transfer`, { method: 'POST', body: JSON.stringify(data) }),
+  writeOffOpenItem: (scheduleId: string, itemId: string, data: { offsetAccountCode: string; idempotencyKey: string; reason: string }) =>
+    apiFetch<any>(`/api/v1/schedules/${scheduleId}/open-items/${itemId}/write-off`, { method: 'POST', body: JSON.stringify(data) }),
+  getWriteOffConfig: () => apiFetch<{ thresholdAmount: string | null }>('/api/v1/schedules/open-items/write-off-config'),
+  setWriteOffConfig: (thresholdAmount: string | null) =>
+    apiFetch<{ thresholdAmount: string | null }>('/api/v1/schedules/open-items/write-off-config', { method: 'PUT', body: JSON.stringify({ thresholdAmount }) }),
+
+  // S027 completion — Exception queue
+  runExceptionEvaluation: (scheduleNumber?: string) =>
+    apiFetch<any>('/api/v1/schedules/exceptions/run', { method: 'POST', body: JSON.stringify(scheduleNumber ? { scheduleNumber } : {}) }),
+  getExceptions: (params?: string) => apiFetch<any[]>(`/api/v1/schedules/exceptions${params ? `?${params}` : ''}`),
+  dispositionException: (exceptionId: string, note: string) =>
+    apiFetch<any>(`/api/v1/schedules/exceptions/${exceptionId}/disposition`, { method: 'POST', body: JSON.stringify({ note }) }),
+  getExceptionRuleConfig: () => apiFetch<any>('/api/v1/schedules/exceptions/rule-config'),
+  setExceptionRuleConfig: (data: { staleDays: number; controlLimitAmount: string | null; normalBalance: 'DEBIT' | 'CREDIT' }) =>
+    apiFetch<any>('/api/v1/schedules/exceptions/rule-config', { method: 'PUT', body: JSON.stringify(data) }),
+
+  // S030 — Statements & Dunning
+  generateStatement: (data: { scheduleNumber: string; controlNumber: string; asOfDate?: string }) =>
+    apiFetch<any>('/api/v1/schedules/statements/generate', { method: 'POST', body: JSON.stringify(data) }),
+  listStatementRuns: (params?: string) => apiFetch<any[]>(`/api/v1/schedules/statements${params ? `?${params}` : ''}`),
+  getStatementRun: (statementId: string) => apiFetch<any>(`/api/v1/schedules/statements/${statementId}`),
+  generateDunning: (data: { scheduleNumber: string; controlNumber: string }) =>
+    apiFetch<any>('/api/v1/schedules/dunning/generate', { method: 'POST', body: JSON.stringify(data) }),
+  listDunningRuns: (params?: string) => apiFetch<any[]>(`/api/v1/schedules/dunning${params ? `?${params}` : ''}`),
+  getDunningConfig: () => apiFetch<{ levels: any[] }>('/api/v1/schedules/dunning/config'),
+  setDunningConfig: (levels: any[]) => apiFetch<{ levels: any[] }>('/api/v1/schedules/dunning/config', { method: 'PUT', body: JSON.stringify({ levels }) }),
 };
 
 // Cashflow API

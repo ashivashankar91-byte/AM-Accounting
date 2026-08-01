@@ -68,9 +68,9 @@ function makeTx(overrides: Partial<any> = {}) {
   };
 }
 
-function makeService(tx: any, openItemRepo: any = {}) {
+function makeService(tx: any, openItemRepo: any = {}, glPostingClient: any = { postWriteOff: vi.fn().mockResolvedValue('je-writeoff-1') }) {
   const prisma: any = { $transaction: (fn: any) => fn(tx) };
-  return new OpenItemService(prisma, openItemRepo as any);
+  return new OpenItemService(prisma, openItemRepo as any, glPostingClient as any);
 }
 
 const TENANT = 'tenant-acme';
@@ -306,11 +306,14 @@ describe('OpenItemService.applyManual', () => {
 
 describe('OpenItemService.reverseApplication', () => {
   it('creates a negating application and restores the remaining balance', async () => {
-    const original = { id: 'app-1', tenantId: TENANT, openItemId: 'item-1', amount: dec('40.00'), reversedAt: null };
+    const original = { id: 'app-1', tenantId: TENANT, openItemId: 'item-1', amount: dec('40.00'), reversedAt: null, appliedAt: new Date('2026-01-01') };
     const item = { id: 'item-1', tenantId: TENANT, originalAmount: dec('100.00'), remainingBalance: dec('60.00'), status: 'PARTIALLY_APPLIED' };
     const tx = makeTx({
       scheduleApplication: {
-        findFirst: vi.fn().mockResolvedValue(original),
+        // First call: load the application being reversed. Second call:
+        // the D-CE08-08 downstream-applications check — no later unreversed
+        // application exists in this scenario.
+        findFirst: vi.fn().mockResolvedValueOnce(original).mockResolvedValueOnce(null),
         create: vi.fn().mockImplementation((a: any) => Promise.resolve({ id: 'app-reversal', ...a.data })),
         update: vi.fn().mockImplementation((a: any) => Promise.resolve({ id: a.where.id, ...a.data })),
       },

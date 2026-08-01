@@ -161,3 +161,96 @@ export class CrossTenantAccessError extends Error {
     this.name = 'CrossTenantAccessError';
   }
 }
+
+// -----------------------------------------------------------------------
+// S028 — Relieving Policy (auto/on-account application)
+// -----------------------------------------------------------------------
+
+// @trace-fable §3-S028 — nothing to relieve against; the amount is routed to
+// the S023/CE-09 unapplied-receipt hand-off instead of being silently
+// absorbed or fabricated as a new open item.
+export class NoOpenItemsToRelieveError extends Error {
+  constructor(scheduleNumber: string, controlNumber: string) {
+    super(`No open items found to relieve for schedule ${scheduleNumber} control ${controlNumber}.`);
+    this.name = 'NoOpenItemsToRelieveError';
+  }
+}
+
+// -----------------------------------------------------------------------
+// S029 — Split / Transfer / Write-off ceremonies
+// -----------------------------------------------------------------------
+
+export class InvalidSplitError extends Error {
+  constructor(reason: string) {
+    super(`Cannot split open item: ${reason}`);
+    this.name = 'InvalidSplitError';
+  }
+}
+
+// @trace-fable D-CE08-04 APPROVED (within-account transfer only; cross-account
+// requires a journal entry, out of ceremony scope).
+export class CrossAccountTransferNotAllowedError extends Error {
+  constructor(fromSchedule: string, toSchedule: string) {
+    super(
+      `Transfer from schedule ${fromSchedule} to ${toSchedule} crosses control accounts; ` +
+        'this requires a journal entry, not a schedule transfer ceremony.',
+    );
+    this.name = 'CrossAccountTransferNotAllowedError';
+  }
+}
+
+export class ItemAlreadyWrittenOffError extends Error {
+  constructor(id: string) {
+    super(`Schedule open item ${id} has already been written off.`);
+    this.name = 'ItemAlreadyWrittenOffError';
+  }
+}
+
+// @trace-fable D-CE08-02 APPROVED_IN_PRINCIPLE — SAFE_CONFIGURATION
+// (ScheduleWriteOffConfig.thresholdAmount), refuse rather than invent an
+// authority level absent from the source.
+export class WriteOffThresholdExceededError extends Error {
+  constructor(amount: string, threshold: string) {
+    super(`Write-off amount ${amount} exceeds the configured authority threshold of ${threshold}.`);
+    this.name = 'WriteOffThresholdExceededError';
+  }
+}
+
+// @trace-fable D-CE08-08 — conservative default: block reversal of an item
+// that already has later, unreversed downstream applications until those are
+// reversed first (does not alter financial results; the alternative of
+// auto-cascading reversal would).
+export class DownstreamApplicationsExistError extends Error {
+  constructor(id: string) {
+    super(
+      `Cannot reverse this application: schedule open item ${id} has later, unreversed ` +
+        'applications. Reverse those first.',
+    );
+    this.name = 'DownstreamApplicationsExistError';
+  }
+}
+
+export class DuplicateCeremonyError extends Error {
+  constructor(idempotencyKey: string) {
+    super(`A ceremony with idempotency key "${idempotencyKey}" has already been recorded.`);
+    this.name = 'DuplicateCeremonyError';
+  }
+}
+
+// -----------------------------------------------------------------------
+// S027 completion — Exception engine
+// -----------------------------------------------------------------------
+
+export class ExceptionNotFoundError extends Error {
+  constructor(id: string) {
+    super(`Schedule exception not found: ${id}`);
+    this.name = 'ExceptionNotFoundError';
+  }
+}
+
+export class ExceptionAlreadyDispositionedError extends Error {
+  constructor(id: string) {
+    super(`Schedule exception ${id} has already been dispositioned.`);
+    this.name = 'ExceptionAlreadyDispositionedError';
+  }
+}

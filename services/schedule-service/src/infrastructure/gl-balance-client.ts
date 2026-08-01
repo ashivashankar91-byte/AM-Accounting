@@ -31,7 +31,21 @@ export interface IGlBalanceClient {
 export class HttpGlBalanceClient implements IGlBalanceClient {
   private readonly baseUrl: string;
 
-  constructor(baseUrl?: string) {
+  // Service-to-service calls to gl-service authenticate with a freshly-signed,
+  // short-lived (1h) HS256 service JWT via createServiceToken — the same
+  // pattern eom-service/apar-service/posting-recovery-service/the CE-08
+  // HttpGlPostingClient already use to call gl-service (packages/shared-kernel
+  // /src/middleware/auth.ts), never a static shared secret string.
+  // gl-service's authMiddleware requires a valid Authorization bearer on
+  // every route, including GET /trial-balance.
+  constructor(
+    baseUrl?: string,
+    private readonly jwtSecret: string = (() => {
+      const secret = process.env['AMACC_JWT_SECRET'];
+      if (!secret) throw new Error('AMACC_JWT_SECRET environment variable is required but not set');
+      return secret;
+    })(),
+  ) {
     // gl-service registers its routes under /api/v1/gl (services/gl-service/
     // src/index.ts:91) — GL_SERVICE_URL is the bare host:port, same env var
     // schedule-service's existing journal-source validation call already
@@ -45,8 +59,14 @@ export class HttpGlBalanceClient implements IGlBalanceClient {
     year: number,
     month: number,
   ): Promise<number> {
+    const { createServiceToken } = await import('@amacc/shared-kernel');
+    const serviceToken = createServiceToken('schedule-service', this.jwtSecret);
+
     const res = await fetch(`${this.baseUrl}/api/v1/gl/trial-balance?year=${year}&month=${month}`, {
-      headers: { 'x-tenant-id': tenantId },
+      headers: {
+        'x-tenant-id': tenantId,
+        Authorization: `Bearer ${serviceToken}`,
+      },
     });
     if (!res.ok) {
       throw new Error(`gl-service /api/v1/gl/trial-balance returned ${res.status}`);

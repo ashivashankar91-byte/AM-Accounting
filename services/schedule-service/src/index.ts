@@ -12,6 +12,8 @@ import { PrismaScheduleOpenItemRepository } from './infrastructure/schedule-open
 import { PrismaScheduleTieOutRepository } from './infrastructure/schedule-tie-out-repository';
 import { PrismaScheduleAgingConfigRepository } from './infrastructure/schedule-aging-config-repository';
 import { HttpGlBalanceClient } from './infrastructure/gl-balance-client';
+import { HttpGlPostingClient } from './infrastructure/gl-posting-client';
+import { HttpCustomerClient } from './infrastructure/customer-client';
 import {
   ScheduleApplicationService,
   SCHEDULE_REPO_TOKEN,
@@ -19,9 +21,11 @@ import {
   SCHEDULE_PERMISSION_REPO_TOKEN,
   EVENT_PUBLISHER_TOKEN,
 } from './application/schedule-service';
-import { OpenItemService, SCHEDULE_OPEN_ITEM_REPO_TOKEN } from './application/open-item-service';
+import { OpenItemService, SCHEDULE_OPEN_ITEM_REPO_TOKEN, GL_POSTING_CLIENT_TOKEN } from './application/open-item-service';
 import { TieOutService, SCHEDULE_TIE_OUT_REPO_TOKEN, GL_BALANCE_CLIENT_TOKEN } from './application/tie-out-service';
 import { AgingService, SCHEDULE_AGING_CONFIG_REPO_TOKEN } from './application/aging-service';
+import { ExceptionService } from './application/exception-service';
+import { StatementService, CUSTOMER_CLIENT_TOKEN } from './application/statement-service';
 import { ScheduleEventHandlers } from './application/event-handlers';
 import type { IEventPublisher, AuthzClient } from '@amacc/shared-kernel';
 import {
@@ -69,10 +73,14 @@ async function bootstrap() {
   container.register(SCHEDULE_TIE_OUT_REPO_TOKEN, { useClass: PrismaScheduleTieOutRepository });
   container.register(SCHEDULE_AGING_CONFIG_REPO_TOKEN, { useClass: PrismaScheduleAgingConfigRepository });
   container.registerInstance(GL_BALANCE_CLIENT_TOKEN, new HttpGlBalanceClient());
+  container.registerInstance(GL_POSTING_CLIENT_TOKEN, new HttpGlPostingClient());
+  container.registerInstance(CUSTOMER_CLIENT_TOKEN, new HttpCustomerClient());
   container.register(ScheduleApplicationService, { useClass: ScheduleApplicationService });
   container.register(OpenItemService, { useClass: OpenItemService });
   container.register(TieOutService, { useClass: TieOutService });
   container.register(AgingService, { useClass: AgingService });
+  container.register(ExceptionService, { useClass: ExceptionService });
+  container.register(StatementService, { useClass: StatementService });
   container.registerInstance<AuthzClient>(
     'AuthzClient',
     new HttpAuthzClient({

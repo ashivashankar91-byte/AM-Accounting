@@ -53,7 +53,7 @@ describe.skipIf(SKIP)('S026 Live database — schedule open-item core', () => {
   beforeAll(async () => {
     prisma = new PrismaClient({ datasources: { db: { url: LIVE_DB_URL } } });
     await prisma.$connect();
-    svc = new OpenItemService(prisma as any, new PrismaScheduleOpenItemRepository(prisma));
+    svc = new OpenItemService(prisma as any, new PrismaScheduleOpenItemRepository(prisma), { postWriteOff: async () => 'je-writeoff-stub' } as any);
 
     await prisma.schedule.create({
       data: {
