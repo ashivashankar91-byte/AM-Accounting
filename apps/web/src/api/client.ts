@@ -33,8 +33,15 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
   const goldenPathTenantId = localStorage.getItem('goldenpath.tenantId');
   const tenantId = goldenPathTenantId || localStorage.getItem('tenantId') || 'tenant-kunes';
   if (!goldenPathTenantId && !localStorage.getItem('tenantId')) localStorage.setItem('tenantId', tenantId);
+  // CE-10: the selected legal entity (set by the ContextBar/entity-selection
+  // flow) is sent on every request as x-legal-entity-id so entity-scoped
+  // services (tax-service) never require every caller to thread it through
+  // query params by hand — falls back gracefully (service treats it as
+  // "no entity selected yet") when nothing has been chosen.
+  const legalEntityId = localStorage.getItem('goldenpath.legalEntityId');
   const headers: Record<string, string> = {
     'x-tenant-id': tenantId,
+    ...(legalEntityId ? { 'x-legal-entity-id': legalEntityId } : {}),
     ...(goldenPathToken ? { Authorization: `Bearer ${goldenPathToken}` } : {}),
     ...(options.headers as Record<string, string> ?? {}),
   };
@@ -1436,4 +1443,244 @@ export const configApi = {
     return apiFetch<ResolvedConfigValue>(`/api/v1/config/${encodeURIComponent(key)}${suffix}`);
   },
   listCatalog: () => apiFetch<{ keys: any[] }>('/api/v1/config/catalog'),
+};
+
+// ── CE-10 — Tax (S124 Certified Tax Engine Adapter + S125 Regulatory Fee
+// Tables) ────────────────────────────────────────────────────────────────
+// Dedicated domain client (mirrors the postingRecoveryApi/configApi
+// split-by-domain convention, not the single giant goldenPathApi object) —
+// every endpoint lives under the fixed /api/v1/tax prefix specified by the
+// CE10 Fable epic package. All list endpoints return { items, total } per
+// the listAnalysisTypes convention; all mutating endpoints on existing rows
+// require a `version` field (optimistic concurrency), mirroring
+// updateAnalysisType/deactivateAnalysisType. No local mock data — every
+// screen built on this client calls these methods against the real
+// tax-service, never a hardcoded fixture array.
+export interface TaxAdapterStatus {
+  status: 'CONFIGURED' | 'NOT_CONFIGURED' | 'ENGINE_UNAVAILABLE';
+  engine: string | null;
+  engineVersion: string | null;
+  contentVersion: string | null;
+  lastSuccessfulCallAt: string | null;
+  queueDepth?: number;
+}
+
+export interface TaxAdapterConfig {
+  id: string;
+  engine: string;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  isActive: boolean;
+  version: number;
+  [key: string]: unknown;
+}
+
+export interface TaxJurisdiction {
+  id: string;
+  jurisdictionRefId: string;
+  jurisdictionLabel: string;
+  registrationNumber: string | null;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  isActive: boolean;
+  version: number;
+}
+
+export interface TaxExemptionCertificate {
+  id: string;
+  partyId: string;
+  partyName: string;
+  jurisdictionScope: string;
+  exemptionType: string;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  status: 'ACTIVE' | 'EXPIRING' | 'EXPIRED';
+  documentMetadata?: Record<string, unknown> | null;
+  version: number;
+}
+
+export interface TaxResultSummary {
+  id: string;
+  documentRef: string;
+  documentDate: string;
+  legalEntityId: string;
+  jurisdictions: string[];
+  status: 'CALCULATED' | 'EXEMPT_APPLIED' | 'ENGINE_UNAVAILABLE' | 'ENGINE_REJECTED' | 'NOT_CONFIGURED';
+}
+
+export interface TaxResultDetail extends TaxResultSummary {
+  requestSnapshot: Record<string, unknown>;
+  lines: Array<{
+    lineId: string;
+    jurisdictionId: string;
+    jurisdictionLevel: string;
+    taxType: string;
+    rateAsReturned: string;
+    taxableBase: string;
+    taxAmount: string;
+    engineResultId: string;
+  }>;
+  engineVersion: string | null;
+  contentVersion: string | null;
+  calculatedAt: string;
+  linkedJournalId: string | null;
+  unpostedAging: { days: number } | null;
+}
+
+export interface TaxException {
+  id: string;
+  documentRef: string;
+  reasonCode: 'ENGINE_UNAVAILABLE' | 'ENGINE_REJECTED' | 'NOT_CONFIGURED';
+  reasonDetail: string | null;
+  parkedAt: string;
+  status: string;
+}
+
+export interface TaxReconciliationRow {
+  jurisdiction: string;
+  engineSum: string;
+  postedSum: string;
+  glMovement: string | null;
+  variance: string;
+  balanced: boolean;
+}
+
+export interface TaxReconciliationResult {
+  period: string;
+  entityId: string;
+  glMovementSourceIsPending: boolean;
+  rows: TaxReconciliationRow[];
+}
+
+export interface TaxFee {
+  id: string;
+  feeCode: string;
+  name: string;
+  jurisdictionRefId: string;
+  jurisdictionLabel: string;
+  basis: 'FIXED_PER_UNIT' | 'FIXED_PER_DOCUMENT' | 'PERCENT_OF_BASE';
+  amount: string | null;
+  rate: string | null;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  isActive: boolean;
+  version: number;
+}
+
+export interface TaxAuditEntry {
+  id: string;
+  entityType: string;
+  entityId: string;
+  actor: string;
+  action: string;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export const taxApi = {
+  // Adapter status + test-connection (S124).
+  getAdapterStatus: () => apiFetch<TaxAdapterStatus>('/api/v1/tax/adapter/status'),
+  testAdapterConnection: () =>
+    apiFetch<{ success: boolean; message: string; testedAt: string }>('/api/v1/tax/adapter/test-connection', { method: 'POST' }),
+
+  // Adapter connection config — effective-dated, optimistic concurrency.
+  listAdapterConfig: () => apiFetch<{ items: TaxAdapterConfig[]; total: number }>('/api/v1/tax/adapter/config'),
+  createAdapterConfig: (data: Record<string, unknown>) =>
+    apiFetch<TaxAdapterConfig>('/api/v1/tax/adapter/config', { method: 'POST', body: JSON.stringify(data) }),
+  updateAdapterConfig: (id: string, data: { version: number } & Record<string, unknown>) =>
+    apiFetch<TaxAdapterConfig>(`/api/v1/tax/adapter/config/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+
+  // Jurisdiction Administration.
+  listJurisdictions: (params?: { status?: 'ACTIVE' | 'INACTIVE'; search?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set('status', params.status);
+    if (params?.search) qs.set('search', params.search);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return apiFetch<{ items: TaxJurisdiction[]; total: number }>(`/api/v1/tax/jurisdictions${suffix}`);
+  },
+  createJurisdiction: (data: {
+    jurisdictionRefId: string; registrationNumber?: string; effectiveFrom: string; effectiveTo?: string | null;
+  }) => apiFetch<TaxJurisdiction>('/api/v1/tax/jurisdictions', { method: 'POST', body: JSON.stringify(data) }),
+  updateJurisdiction: (id: string, data: { version: number } & Record<string, unknown>) =>
+    apiFetch<TaxJurisdiction>(`/api/v1/tax/jurisdictions/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deactivateJurisdiction: (id: string, data: { version: number; reason: string }) =>
+    apiFetch<TaxJurisdiction>(`/api/v1/tax/jurisdictions/${id}/deactivate`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // Exemption Configuration & Inquiry.
+  listExemptions: (params?: { status?: string; party?: string; jurisdiction?: string; expiring?: boolean }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set('status', params.status);
+    if (params?.party) qs.set('party', params.party);
+    if (params?.jurisdiction) qs.set('jurisdiction', params.jurisdiction);
+    if (params?.expiring) qs.set('expiring', 'true');
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return apiFetch<{ items: TaxExemptionCertificate[]; total: number }>(`/api/v1/tax/exemptions${suffix}`);
+  },
+  createExemption: (data: Record<string, unknown>) =>
+    apiFetch<TaxExemptionCertificate>('/api/v1/tax/exemptions', { method: 'POST', body: JSON.stringify(data) }),
+  updateExemption: (id: string, data: { version: number } & Record<string, unknown>) =>
+    apiFetch<TaxExemptionCertificate>(`/api/v1/tax/exemptions/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+
+  // Calculation / Result Inquiry — read-only, immutable.
+  listResults: (params?: { documentRef?: string; entityId?: string; jurisdiction?: string; status?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.documentRef) qs.set('documentRef', params.documentRef);
+    if (params?.entityId) qs.set('entityId', params.entityId);
+    if (params?.jurisdiction) qs.set('jurisdiction', params.jurisdiction);
+    if (params?.status) qs.set('status', params.status);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return apiFetch<{ items: TaxResultSummary[]; total: number }>(`/api/v1/tax/results${suffix}`);
+  },
+  getResult: (id: string) => apiFetch<TaxResultDetail>(`/api/v1/tax/results/${id}`),
+
+  // Exception & Outage Queue.
+  listExceptions: () => apiFetch<{ items: TaxException[]; total: number }>('/api/v1/tax/exceptions'),
+  reRequestException: (id: string) =>
+    apiFetch<TaxException>(`/api/v1/tax/exceptions/${id}/re-request`, { method: 'POST' }),
+  bulkReRequestExceptions: (ids: string[]) =>
+    apiFetch<{ results: Array<{ id: string; outcome: string }> }>('/api/v1/tax/exceptions/bulk-re-request', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }),
+
+  // Tax Liability Reconciliation.
+  getReconciliation: (params: { period: string; entityId: string; jurisdiction?: string }) => {
+    const qs = new URLSearchParams({ period: params.period, entityId: params.entityId });
+    if (params.jurisdiction) qs.set('jurisdiction', params.jurisdiction);
+    return apiFetch<TaxReconciliationResult>(`/api/v1/tax/reconciliation?${qs.toString()}`);
+  },
+  getReconciliationReport: (params: { period: string; entityId: string; jurisdiction?: string }) => {
+    const qs = new URLSearchParams({ period: params.period, entityId: params.entityId });
+    if (params.jurisdiction) qs.set('jurisdiction', params.jurisdiction);
+    return apiFetch<any>(`/api/v1/tax/reconciliation/report?${qs.toString()}`);
+  },
+  closeReconciliationPeriod: (params: { period: string; entityId: string }) => {
+    const qs = new URLSearchParams({ period: params.period, entityId: params.entityId });
+    return apiFetch<any>(`/api/v1/tax/reconciliation/close-period?${qs.toString()}`);
+  },
+
+  // Regulatory Fee Administration (S125).
+  listFees: (params?: { jurisdiction?: string; status?: string; date?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.jurisdiction) qs.set('jurisdiction', params.jurisdiction);
+    if (params?.status) qs.set('status', params.status);
+    if (params?.date) qs.set('date', params.date);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return apiFetch<{ items: TaxFee[]; total: number }>(`/api/v1/tax/fees${suffix}`);
+  },
+  createFee: (data: Record<string, unknown>) =>
+    apiFetch<TaxFee>('/api/v1/tax/fees', { method: 'POST', body: JSON.stringify(data) }),
+  updateFee: (id: string, data: { version: number } & Record<string, unknown>) =>
+    apiFetch<TaxFee>(`/api/v1/tax/fees/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deactivateFee: (id: string, data: { version: number; reason: string }) =>
+    apiFetch<TaxFee>(`/api/v1/tax/fees/${id}/deactivate`, { method: 'POST', body: JSON.stringify(data) }),
+  resolveFees: (params: Record<string, string>) => {
+    const qs = new URLSearchParams(params);
+    return apiFetch<{ items: TaxFee[] }>(`/api/v1/tax/fees/resolve?${qs.toString()}`);
+  },
+
+  // Effective-Date History (shared audit trail for every config surface).
+  getAuditTrail: (entityType: string, entityId: string) =>
+    apiFetch<{ items: TaxAuditEntry[] }>(`/api/v1/tax/audit/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}`),
 };

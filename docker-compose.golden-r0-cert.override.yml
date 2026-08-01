@@ -98,6 +98,9 @@ services:
   schedule-service:
     ports: !override
     - 33018:3018
+  tax-service:
+    ports: !override
+    - 33051:3051
   tenant-service:
     ports: !override
     - 33002:3002

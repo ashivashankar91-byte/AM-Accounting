@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   LayoutDashboard, BookOpen, CreditCard, Users, Calendar,
-  Wrench, Settings as SettingsIcon, Terminal, Search, Bell,
+  Wrench, Settings as SettingsIcon, Terminal, Search, Bell, Landmark,
 } from 'lucide-react';
 import ErrorBoundary from './components/ErrorBoundary';
 import { useAuth } from './auth/AuthContext';
@@ -70,6 +70,14 @@ import CashReceiptPrint from './pages/goldenpath/cash/ReceiptPrint';
 import CashBlindClose from './pages/goldenpath/cash/BlindClose';
 import CashSupervisorReconciliation from './pages/goldenpath/cash/SupervisorReconciliation';
 import AnalysisCodeRegistry from './pages/accounting/admin/AnalysisCodeRegistry';
+// CE-10 — Tax (S124 Certified Tax Engine Adapter + S125 Regulatory Fee Tables).
+import TaxAdapterStatus from './pages/accounting/tax/TaxAdapterStatus';
+import TaxJurisdictionAdmin from './pages/accounting/tax/TaxJurisdictionAdmin';
+import TaxExemptions from './pages/accounting/tax/TaxExemptions';
+import TaxResultInquiry from './pages/accounting/tax/TaxResultInquiry';
+import TaxExceptionQueue from './pages/accounting/tax/TaxExceptionQueue';
+import TaxReconciliation from './pages/accounting/tax/TaxReconciliation';
+import TaxFeeAdmin from './pages/accounting/tax/TaxFeeAdmin';
 import GoldenPathPostingRules from './pages/goldenpath/PostingRules';
 import GoldenPathPostingExecutions from './pages/goldenpath/PostingExecutions';
 import GoldenPathPostingRecoveryQueue from './pages/goldenpath/PostingRecoveryQueue';
@@ -299,6 +307,31 @@ const MODULES: AppModule[] = [
         { path: '/service/admin/technicians',   label: 'Technician Master' },
         { path: '/service/history',             label: 'Service History' },
         { path: '/accounting/vehicle-transfers', label: 'Vehicle Transfers' },
+      ]},
+    ],
+  },
+  {
+    // CE-10 — Tax (S124 Certified Tax Engine Adapter + S125 Regulatory Fee
+    // Tables). New top-level nav module, same pattern as 'service' — these
+    // are not steps in an existing sequential workflow, they're standalone
+    // Controller/Admin/Accountant screens spanning adapter config through
+    // reconciliation and fee administration.
+    key: 'tax',
+    Icon: Landmark,
+    label: 'Tax',
+    defaultPath: '/accounting/tax/adapter',
+    matchPrefixes: ['/accounting/tax'],
+    sections: [
+      { title: 'Configuration', items: [
+        { path: '/accounting/tax/adapter',      label: 'Vendor / Adapter Status' },
+        { path: '/accounting/tax/jurisdictions', label: 'Jurisdiction Administration' },
+        { path: '/accounting/tax/exemptions',    label: 'Exemption Configuration' },
+        { path: '/accounting/tax/fees',          label: 'Regulatory Fee Administration' },
+      ]},
+      { title: 'Operate', items: [
+        { path: '/accounting/tax/results',       label: 'Calculation / Result Inquiry' },
+        { path: '/accounting/tax/exceptions',    label: 'Exception & Outage Queue' },
+        { path: '/accounting/tax/reconciliation', label: 'Tax Liability Reconciliation' },
       ]},
     ],
   },
@@ -647,6 +680,17 @@ export default function App() {
                   analysis-codes), wrapped in the same real-auth Golden Path
                   guard as every other certified P01 screen. */}
               <Route path="/accounting/admin/analysis-codes" element={<GoldenPathProtectedRoute><AnalysisCodeRegistry /></GoldenPathProtectedRoute>} />
+              {/* CE-10 — Tax (S124 Certified Tax Engine Adapter + S125
+                  Regulatory Fee Tables). All seven screens render inside the
+                  unified Accounting app shell, same GoldenPathProtectedRoute
+                  guard as every other real-auth screen. */}
+              <Route path="/accounting/tax/adapter" element={<GoldenPathProtectedRoute><TaxAdapterStatus /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/tax/jurisdictions" element={<GoldenPathProtectedRoute><TaxJurisdictionAdmin /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/tax/exemptions" element={<GoldenPathProtectedRoute><TaxExemptions /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/tax/results" element={<GoldenPathProtectedRoute><TaxResultInquiry /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/tax/exceptions" element={<GoldenPathProtectedRoute><TaxExceptionQueue /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/tax/reconciliation" element={<GoldenPathProtectedRoute><TaxReconciliation /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/tax/fees" element={<GoldenPathProtectedRoute><TaxFeeAdmin /></GoldenPathProtectedRoute>} />
               {/* Posting Rules / Posting Executions moved into the normal
                   Accounting sidebar (General Ledger > Posting Engine). Old
                   URLs redirect. */}

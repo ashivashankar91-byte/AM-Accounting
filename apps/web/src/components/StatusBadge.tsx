@@ -17,6 +17,21 @@ const COLORS: Record<string, { bg: string; text: string }> = {
   VALIDATED:      { bg: '#ECFDF5', text: '#059669' },
   SUBMITTED:      { bg: '#EEF2FD', text: '#1B4FE4' },
   RELEASED:       { bg: '#ECFDF5', text: '#059669' },
+
+  // CE-10 — Tax (S124 Certified Tax Engine Adapter / S125 Regulatory Fee
+  // Tables) statuses.
+  CALCULATED:         { bg: '#ECFDF5', text: '#059669' },
+  EXEMPT_APPLIED:      { bg: '#EEF2FD', text: '#1B4FE4' },
+  ENGINE_UNAVAILABLE:  { bg: '#FEF2F2', text: '#DC2626' },
+  ENGINE_REJECTED:     { bg: '#FEF2F2', text: '#DC2626' },
+  NOT_CONFIGURED:      { bg: '#FFFBEB', text: '#D97706' },
+  PARKED:              { bg: '#FFFBEB', text: '#D97706' },
+  RESOLVED:            { bg: '#ECFDF5', text: '#059669' },
+  ACTIVE:              { bg: '#ECFDF5', text: '#059669' },
+  EXPIRING:            { bg: '#FFFBEB', text: '#D97706' },
+  EXPIRED:             { bg: '#FEF2F2', text: '#DC2626' },
+  BALANCED:            { bg: '#ECFDF5', text: '#059669' },
+  VARIANCE:            { bg: '#FEF2F2', text: '#DC2626' },
 };
 
 const DEFAULT = { bg: '#F1F5F9', text: '#64748B' };

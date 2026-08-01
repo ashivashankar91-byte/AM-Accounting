@@ -43,6 +43,7 @@ SERVICES=(
   auth-service
   coa-service
   posting-recovery-service
+  tax-service
   audit-service
   gl-service
   apar-service

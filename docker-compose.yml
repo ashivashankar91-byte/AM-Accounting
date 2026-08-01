@@ -379,6 +379,20 @@ services:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
 
+  tax-service:
+    build:
+      context: .
+      dockerfile: services/tax-service/Dockerfile
+    ports:
+      - "3051:3051"
+    environment:
+      <<: *service-env
+      PORT: 3051
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
+
   fs-service:
     build:
       context: .

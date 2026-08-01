@@ -93,6 +93,10 @@ const SERVICES: Array<{ prefix: string; upstream: string; rateLimit?: number; re
   { prefix: '/api/v1/esg',            upstream: process.env['GL_SERVICE_URL']             ?? 'http://gl-service:3010' },
   // Vendor shorthand (same as /apar/vendors)
   { prefix: '/api/v1/vendors',        upstream: process.env['APAR_SERVICE_URL']           ?? 'http://apar-service:3013', rewritePrefix: '/api/v1/apar/vendors' },
+  // CE-10 S124/S125 — certified tax engine adapter + regulatory fee tables.
+  // tax-service has zero direct GL writes; results only travel inside a
+  // consuming transaction's own envelope (owned by CE-07/CE-09/CE-11).
+  { prefix: '/api/v1/tax',            upstream: process.env['TAX_SERVICE_URL']            ?? 'http://tax-service:3051' },
 ];
 
 // ── Request logging hook ──────────────────────────────────────────────────────
