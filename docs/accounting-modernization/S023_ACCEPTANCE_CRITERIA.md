@@ -6,11 +6,11 @@ Status: `S023_APPROVED_EXCEPT_ACCOUNT_MAPPING_VALUES`. See `S023_DECISION_REGIST
 
 | Bucket | Criteria |
 |---|---|
-| **A — Ready for implementation now** | AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8 (mechanism only) |
+| **A — Ready for implementation now** | AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8 (mechanism only), AC-9 (mechanism), AC-10 |
 | **B — Blocked by `ACCOUNT_MAPPING_VALUES_PENDING`** | AC-1 (fully blocked); AC-8's diff *content* will show placeholder/blank values until real DR/CR values exist, even though the diff *mechanism* can be built now |
-| **C — Dependent on UQ-18 or the relieving-policy decision** | AC-10's schedule-effect/"zero direct GL writes" claim cannot be fully certified until D-S023-16/17's two surviving program dependencies (see `S023_DECISION_REGISTER.md`) are supplied; AC-9 is buildable now but its end-to-end proof depends on the in-scope producer changes (D-06) landing in S039/S043A/S052 |
+| **C — Dependent on UQ-18 or the relieving-policy decision** | *(none remaining — both dependencies resolved 2026-08-01, see `S023_DECISION_REGISTER.md` → "Two program dependencies — RESOLVED")*. AC-9's end-to-end proof still depends on the in-scope producer changes (D-06) landing in S039/S043A/S052, which is a scheduling/sequencing note, not an unresolved decision. |
 
-Nothing in Bucket A requires DR/CR account values or the UQ-18/relieving-policy dependencies to be built and tested; do not block Bucket A work on Bucket B/C dependencies.
+Nothing in Bucket A requires DR/CR account values to be built and tested; do not block Bucket A work on Bucket B dependencies. AC-10 moved from Bucket C to Bucket A on 2026-08-01 once UQ-18 and the relieving-policy decision resolved.
 
 ---
 
@@ -22,7 +22,7 @@ Nothing in Bucket A requires DR/CR account values or the UQ-18/relieving-policy 
 
 **AC-3 — Failure taxonomy.** *(Bucket A — ready)* Given no-matching-rule / invalid-account / missing-mandatory-field / imbalance-beyond-tolerance / closed-period, Then each rejects with its own deterministic code from the closed enum and creates an S021 case; no generic "rule error"; no suspense posting; no silent redating.
 
-**AC-4 — Idempotency.** *(Bucket A — ready)* Given a duplicate event (same envelope idempotency identity), Then the original result returns; no second journal, no second schedule effect, under concurrent delivery (live-DB test).
+**AC-4 — Idempotency.** *(Bucket A — ready)* Given a duplicate event (same envelope idempotency identity), Then the original result returns; no second journal, no second schedule effect, under concurrent delivery (live-DB test). Concrete case (approved 2026-08-01): `ap.invoice.accepted` and `ap.invoice.posted-request` for the same invoice share one canonical idempotency identity — whichever arrives first posts the single liability journal (including tax lines); the other returns the original result. Zero duplicate journal, zero duplicate AP open item.
 
 **AC-5 — Replay with dual-version audit.** *(Bucket A — ready, depends on the D-22 narrow engine change landing)* Given a corrected pack version activated and an authorized replay of a failed event, Then evaluation uses the currently active approved version and the audit trail preserves: originally attempted pack version, replay pack version, original failure, replay actor, replay reason, resulting journal/execution.
 
@@ -34,4 +34,4 @@ Nothing in Bucket A requires DR/CR account values or the UQ-18/relieving-policy 
 
 **AC-9 — Envelope enforcement.** *(Bucket A — ready to build now; end-to-end proof depends on D-06 producer work landing)* Given an event missing a mandatory envelope field, Then deterministic rejection naming the field; producers S039/S043A/S052 emit the canonical envelope (producer conformance tests pass).
 
-**AC-10 — Exactly-one rule source.** *(Bucket C — schedule-effect component dependent on UQ-18/relieving-policy)* Static/architecture check: no AP/AR/Cash posting path constructs journals outside pack evaluation; zero direct GL writes anywhere in S023 scope. The rule-evaluation half of this claim does not depend on UQ-18/relieving-policy; the schedule-effect half (D-16/D-17) does — do not certify AC-10 as fully satisfied until those two dependencies are supplied.
+**AC-10 — Exactly-one rule source.** *(Bucket A — ready; UQ-18 and the relieving-policy decision both resolved 2026-08-01)* Static/architecture check: no AP/AR/Cash posting path constructs journals outside pack evaluation; zero direct GL writes anywhere in S023 scope. The schedule-effect half (D-16/D-17) routes exclusively through the existing gl-service→schedule-service `JOURNAL_ENTRY_POSTED` path — no independent schedule-posting mechanism is authorized inside the posting engine, and a failed or rejected journal never creates or relieves an open item.

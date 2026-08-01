@@ -14,7 +14,7 @@ Provide the versioned, tenant-configurable rule content that converts accepted A
 
 ## 2. AP, AR and Cash transaction scope (D-02, D-03, D-04)
 
-- **AP:** invoice accepted (liability recognition), invoice posting with tax-line mapping per the D-18 boundary, manual payment posted (liability/schedule relief) — matching the built S039/S043A flows.
+- **AP:** invoice accepted (liability recognition, including any tax lines) and manual payment posted (liability/schedule relief) — matching the built S039/S043A flows. **`ap.invoice.accepted` is the single authoritative event that posts a vendor invoice's liability journal** (approved 2026-08-01, D-06 amendment); `ap.invoice.posted-request` is normalized to the same canonical event identity and idempotency key and never produces a second tax journal for the same invoice — see `S023_DECISION_REGISTER.md`'s D-06 amendment and `S023_ACCOUNTING_RULE_MATRIX.md` for the full rule.
 - **AR:** cash-receipt application (S052 producer exists); customer invoice/charge posting entries **DEFINED_NOT_YET_EXERCISED** until CE-09 AR builds their producers (honestly labeled in the matrix — S048 has no commit or branch anywhere in this repository today).
 - **Cash:** receipt→clearing, deposit→cash — greenfield, moved under governed, versioned packs as the single rule source of truth (no prior hard-wired cash-posting logic exists to migrate).
 
@@ -90,7 +90,7 @@ Canonical SourceEventEnvelope consumed → pack selection by event type + legal 
 
 ## Relationships
 
-**S019/S020 (D-22, approved narrow scope):** engine changes limited to deterministic ambiguity rejection, complete failure taxonomy, replay-version behavior, dual-version audit evidence — no redesign or replacement authorized (see reconciliation note on D-28's scope-boundary question in `S023_DECISION_REGISTER.md`). **S021 (D-23):** integrates with the merged, certified recovery service. **CE-08:** consumes schedule-effect declarations once UQ-18/relieving decisions land (see the two surviving program dependencies in `S023_DECISION_REGISTER.md`). **CE-09:** producer-side envelope changes to S039, S043A, S052 are in scope (D-06); further CE-09 stories consume the framework.
+**S019/S020 (D-22, approved narrow scope):** engine changes limited to deterministic ambiguity rejection, complete failure taxonomy, replay-version behavior, dual-version audit evidence — no redesign or replacement authorized (see reconciliation note on D-28's scope-boundary question in `S023_DECISION_REGISTER.md`). **S021 (D-23):** integrates with the merged, certified recovery service. **CE-08:** consumes schedule-effect declarations — UQ-18 reference/schedule-key semantics and the relieving-policy decision are both **resolved** (2026-08-01, see `S023_DECISION_REGISTER.md` → "Two program dependencies — RESOLVED"): S023 postings route through the existing gl-service→schedule-service `JOURNAL_ENTRY_POSTED` path; no independent schedule-posting mechanism is authorized inside the posting engine. **CE-09:** producer-side envelope changes to S039, S043A, S052 are in scope (D-06); further CE-09 stories consume the framework.
 
 ## Accounting boundary (D-12, approved in principle)
 
