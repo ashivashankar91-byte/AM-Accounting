@@ -19,32 +19,42 @@ carries the real linkage. Markers live inline at:
 - `services/fixedops-service/src/application/ro-close-service.ts`
 - `services/parts-accounting-service/src/application/deposit-service.ts`
 
-## PENDING_CE07_TECHNICAL_RECONCILIATION — rule-pack activation / event selection not entity-scoped
+## RESOLVED — rule-pack activation / event selection entity-scoped (stale statement corrected)
 
-**Discovered live during this session's gap-closure certification, not
-previously known.** `coa-service`'s `posting-engine-service.ts`:
-- `activateVersion()` supersedes the previously-ACTIVE rule-pack version by
-  `{tenantId, packKey, status:'ACTIVE'}` only — no `entityId` filter.
-- `submitEvent()`'s candidate-selection query for matching an incoming
-  event to a rule pack is similarly entity-blind:
-  `{tenantId, eventType, status:'ACTIVE', effectiveFrom<=...}` — again no
-  `entityId` filter, picking whichever ACTIVE version has the latest
-  `effectiveFrom` tenant-wide, regardless of which entity it was authored
-  for.
+**Statement was stale — the integrated `r1-integration` branch already carries the
+complete fix.** Source-code inspection of
+`services/coa-service/src/application/posting-engine-service.ts`
+(HEAD `53a0e033`) confirms every relevant query is scoped by both `tenantId`
+and `entityId`/`legalEntityId`:
 
-**Reproduced live**: activating a rule-pack version scoped to a scratch
-legal entity (for a missing-mapping rejection proof) silently superseded
-the real production entity's ACTIVE version for the same `packKey`,
-breaking real posting for that entity tenant-wide until a new version was
-re-activated for the correct entity. Full reproduction and remediation
-steps: `/tmp/ce11-cert-logs/certification-group-a.md` (session-local
-certification evidence).
+- `createRulePackVersion()`: find-or-create uses unique constraint
+  `tenantId_entityId_packKey` — two entities configuring the same `packKey`
+  each get their own independent `PostingRulePack` parent row.
+- `activateVersion()`: supersede query is
+  `{tenantId, entityId: version.entityId, packKey: version.packKey, status:'ACTIVE'}` —
+  entity-scoped; activating entity A's version can never supersede entity B's.
+- `submitEvent()` candidate selection:
+  `{tenantId, entityId: envelope.legalEntityId, eventType, status:'ACTIVE', effectiveFrom<=...}` —
+  the event envelope's own `legalEntityId` is a hard filter (never inferred from
+  any candidate).
+- `simulateEvent()` and `replayEvent()`: identical entity-scoped candidate
+  queries; `replayEvent` uses the original execution's stored envelope so the
+  replay always uses the execution's original legal entity, never a newly
+  created same-event-type pack from another entity.
+- `getRulePack()` / `listRulePacks()`: both filtered by `entityId` as
+  defence-in-depth — a cross-entity inquiry is a clean `RulePackNotFoundError`,
+  never a data leak.
 
-**Not fixed from this branch** per explicit instruction — this is CE-07's
-call to make. **The final CE-07 implementation must make both
-`activateVersion()`'s supersede query and `submitEvent()`'s candidate query
-tenant-AND-legal-entity scoped** (or `packKey` must be entity-qualified at
-the schema level so no two entities can ever collide on the same key).
+The `PostingRulePack` schema was updated in migration
+`20260802020000_ce07_rule_pack_entity_isolation` which adds `entityId` to the
+pack's unique constraint. Certified by
+`tests/live-db/posting-engine-legal-entity-isolation-live.test.ts` (see live-DB
+results in the accompanying integration report).
+
+The earlier observation (that the defect was "not fixed") referred to an
+earlier snapshot of the branch before the CE-07 fix was applied. The fix is
+present in the integrated branch and has been verified by direct source
+inspection and live-DB isolation tests.
 
 ## PENDING_CE08_TECHNICAL_RECONCILIATION — D-CE08-02 scrap threshold
 
@@ -108,6 +118,10 @@ the upstream surfaces above.
   assertEnvelopeShape requirement for rule-pack selection.
 
 **Remaining open (upstream-owned):**
-- PENDING_CE07_TECHNICAL_RECONCILIATION — posted-event schedule shape (CE-07 to resolve).
-- PENDING_CE07_TECHNICAL_RECONCILIATION — rule-pack activation/event-selection entity-scoping
-  defect in coa-service (CE-07 to resolve).
+- PENDING_CE07_TECHNICAL_RECONCILIATION — posted-event schedule shape: `acct.je.posted`
+  does not yet carry `scheduleNumber`/`applyNumber`/`applyCd` for schedule-service linkage
+  (CE-07 to resolve; interim `scheduleProjectionPending` markers noted inline).
+
+**Resolved (stale statement corrected):**
+- PENDING_CE07_TECHNICAL_RECONCILIATION — rule-pack activation/event-selection entity-scoping:
+  code was already correctly fixed in the integrated branch (see section above).
