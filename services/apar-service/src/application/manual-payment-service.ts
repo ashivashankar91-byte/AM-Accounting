@@ -102,6 +102,7 @@ export class VoidRefusedPaymentReconciledError extends Error {
  */
 @injectable()
 export class ManualPaymentService {
+  // @audit(CE-09): direct gl-service write — migrated to governed posting engine in a subsequent CE
   private glServiceUrl = process.env['GL_SERVICE_URL'] ?? 'http://gl-service:3010';
   private scheduleServiceUrl = process.env['SCHEDULE_SERVICE_URL'] ?? 'http://schedule-service:3020';
 

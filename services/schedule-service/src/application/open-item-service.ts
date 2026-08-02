@@ -53,6 +53,14 @@ export interface JournalEntryPostedEvent {
   description?: string;
   applyNumber?: string | null;
   applyCd?: string | null;
+  legalEntityId?: string | null;
+  journalNumber?: string | null;
+  sourceEventId?: string | null;
+  postingExecutionId?: string | null;
+  businessDate?: string | null;
+  postingDate?: string | null;
+  rulePackKey?: string | null;
+  rulePackVersion?: string | null;
 }
 
 export type PostingOutcome =

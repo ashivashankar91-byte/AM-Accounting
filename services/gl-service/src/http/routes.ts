@@ -87,6 +87,12 @@ const CreateJournalEntrySchema = z.object({
   adjustmentReason: z.string().optional(),
   /** CE-07 — authoritative idempotency identity. See JournalEntry.idempotencyKey (journal-repository.ts). */
   idempotencyKey: z.string().max(200).optional(),
+  /** CE-09 integration — posting context forwarded from CE-07 posting engine */
+  legalEntityId: z.string().max(36).optional().nullable(),
+  postingExecutionId: z.string().max(36).optional().nullable(),
+  rulePackKey: z.string().max(100).optional().nullable(),
+  rulePackVersion: z.string().max(20).optional().nullable(),
+  sourceEventId: z.string().max(36).optional().nullable(),
   lines: z.array(
     z.object({
       glAccountId: z.string().uuid().optional(),

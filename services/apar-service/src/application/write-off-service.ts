@@ -74,7 +74,7 @@ export class WriteOffNotFoundError extends Error {
  */
 @injectable()
 export class WriteOffService {
-  private glServiceUrl = process.env['GL_SERVICE_URL'] ?? 'http://gl-service:3010';
+  private postingEngineUrl = process.env['COA_SERVICE_URL'] ?? 'http://coa-service:3030';
 
   constructor(
     @inject('PrismaClient') private readonly prisma: any,
@@ -198,39 +198,58 @@ export class WriteOffService {
   }
 
   private async _postWriteOffJournal(tenantId: string, writeOff: any, actor: string, serviceToken?: string): Promise<string | null> {
-    const glConfig = await this.prisma.arWriteOffGlAccountConfig.findFirst({ where: { tenantId } });
-    if (!glConfig?.writeOffExpenseGlAccountId || !glConfig?.arControlGlAccountId) {
-      await this._recordGlFailure(tenantId, writeOff.id, 'Write-off expense/AR control GL accounts are not configured for this tenant (ACCOUNT_MAPPING_VALUES_PENDING)');
-      return null;
-    }
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json', 'x-tenant-id': tenantId };
       const AUTH_SCHEME = 'Bear' + 'er';
       if (serviceToken) headers['authorization'] = `${AUTH_SCHEME} ${serviceToken}`;
 
       const amount = Number(writeOff.amount);
-      const jeResp = await fetch(`${this.glServiceUrl}/api/v1/gl/journal-entries`, {
+      const eventId = `wo-${tenantId}-${writeOff.id}`;
+      const writeOffEvent = {
+        eventId,
+        eventType: 'WRITE_OFF_POSTED',
+        eventSchemaVersion: '1',
+        sourceSystem: 'apar-service',
+        sourceEntityType: 'ArDirectWriteOff',
+        sourceEntityId: writeOff.id,
+        tenantId,
+        legalEntityId: null,
+        correlationId: `write-off-${writeOff.id}`,
+        occurredAt: new Date().toISOString(),
+        businessDate: new Date().toISOString().substring(0, 10),
+        payload: {
+          tenantId,
+          writeOffId: writeOff.id,
+          arEntryId: writeOff.arEntryId,
+          amount: amount.toFixed(2),
+          reason: writeOff.reason,
+          actor,
+        },
+      };
+
+      const postingResp = await fetch(`${this.postingEngineUrl}/api/v1/coa/posting-engine/events`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          entryDate: new Date().toISOString(),
-          description: `Direct AR write-off — entry ${writeOff.arEntryId}`,
-          source: 'AR',
-          sourceRef: writeOff.arEntryId.slice(0, 8),
-          lines: [
-            { glAccountId: glConfig.writeOffExpenseGlAccountId, debit: amount, credit: 0, memo: `Write-off expense — ${writeOff.arEntryId}`, controlNumber: writeOff.arEntryId },
-            { glAccountId: glConfig.arControlGlAccountId, debit: 0, credit: amount, memo: `AR control relief — ${writeOff.arEntryId}`, controlNumber: writeOff.arEntryId },
-          ],
-        }),
+        body: JSON.stringify(writeOffEvent),
       });
-      if (!jeResp.ok) {
-        const errText = await jeResp.text().catch(() => '');
-        await this._recordGlFailure(tenantId, writeOff.id, `gl-service create failed: HTTP ${jeResp.status} ${errText}`);
+
+      if (!postingResp.ok) {
+        const errBody = await postingResp.json().catch(() => ({})) as any;
+        const msg = errBody?.status === 'NO_RULE_MATCH'
+          ? 'Write-off expense/AR control GL accounts are not configured for this tenant (ACCOUNT_MAPPING_VALUES_PENDING)'
+          : `posting engine create failed: HTTP ${postingResp.status} ${JSON.stringify(errBody)}`;
+        await this._recordGlFailure(tenantId, writeOff.id, msg);
         return null;
       }
-      const je = await jeResp.json() as { id: string };
-      await fetch(`${this.glServiceUrl}/api/v1/gl/journal-entries/${je.id}/post`, { method: 'POST', headers }).catch(() => null);
-      return je.id;
+
+      const result = await postingResp.json() as { status?: string; journalEntryId?: string | null };
+      if (result.status === 'REJECTED' || result.status === 'NO_RULE_MATCH' || result.status === 'FAILED') {
+        await this._recordGlFailure(tenantId, writeOff.id,
+          `Posting engine returned ${result.status} — no GL mutation (ACCOUNT_MAPPING_VALUES_PENDING)`);
+        return null;
+      }
+
+      return result.journalEntryId ?? null;
     } catch (err: any) {
       await this._recordGlFailure(tenantId, writeOff.id, err?.message ?? 'Unknown error');
       return null;

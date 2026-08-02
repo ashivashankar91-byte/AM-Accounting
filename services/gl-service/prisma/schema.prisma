@@ -181,6 +181,14 @@ model JournalEntry {
   /// of legacy NULL rows coexist without conflict.
   idempotencyKey        String?   @map("idempotency_key")
 
+  /// CE-09 integration — posting context forwarded from CE-07 posting engine.
+  /// All nullable: manual JE, reversal, and legacy paths leave these unset.
+  legalEntityId     String?   @map("legal_entity_id")
+  postingExecutionId String?  @map("posting_execution_id")
+  rulePackKey       String?   @map("rule_pack_key")
+  rulePackVersion   String?   @map("rule_pack_version")
+  sourceEventId     String?   @map("source_event_id")
+
   lines            JournalLine[]
   dealProductLines DealProductLine[]
 

@@ -344,10 +344,13 @@ export async function aparRoutes(app: FastifyInstance) {
   const FinanceChargeSchema = z.object({
     annualRatePercent: z.number().positive().max(100),
     minimumBalance: z.number().min(0).default(0.01),
-    chargeReceivableCode: z.string().min(1),
-    chargeRevenueCode: z.string().min(1),
+    /** Kept for backward compatibility — no longer passed to FinanceChargeConfig (posting engine rule pack resolves accounts) */
+    chargeReceivableCode: z.string().optional(),
+    /** Kept for backward compatibility — no longer passed to FinanceChargeConfig (posting engine rule pack resolves accounts) */
+    chargeRevenueCode: z.string().optional(),
     journalSource: z.string().min(1).max(2).default('FC'),
     gracePeriodDays: z.number().int().min(0).default(0),
+    legalEntityId: z.string().max(36).optional().nullable(),
     asOfDate: z.string().datetime().optional(),
     dryRun: z.boolean().default(false),
   });
@@ -384,10 +387,9 @@ export async function aparRoutes(app: FastifyInstance) {
       {
         annualRatePercent: body.annualRatePercent,
         minimumBalance: body.minimumBalance,
-        chargeReceivableCode: body.chargeReceivableCode,
-        chargeRevenueCode: body.chargeRevenueCode,
         journalSource: body.journalSource,
         gracePeriodDays: body.gracePeriodDays,
+        legalEntityId: body.legalEntityId ?? null,
       },
       serviceToken,
       body.dryRun,
@@ -414,10 +416,9 @@ export async function aparRoutes(app: FastifyInstance) {
       {
         annualRatePercent: body.annualRatePercent,
         minimumBalance: body.minimumBalance,
-        chargeReceivableCode: body.chargeReceivableCode,
-        chargeRevenueCode: body.chargeRevenueCode,
         journalSource: body.journalSource,
         gracePeriodDays: body.gracePeriodDays,
+        legalEntityId: body.legalEntityId ?? null,
       },
       '',   // dry run — no actual posting
       true, // dryRun

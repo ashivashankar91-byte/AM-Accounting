@@ -1,0 +1,22 @@
+{
+  "_comment": "CERTIFICATION-ONLY — not for production use. Finance charge rule pack for CE-09 integration tests.",
+  "_cert_only": true,
+  "rulePackKey": "FINANCE_CHARGE_CERT",
+  "rulePackVersion": "1.0.0",
+  "sourceEventType": "FINANCE_CHARGE_CALCULATED",
+  "legalEntityId": null,
+  "rules": [
+    {
+      "ruleId": "FC-001",
+      "priority": 1,
+      "description": "Finance charge receivable and revenue — certification fixture",
+      "conditions": [],
+      "blueprint": {
+        "lines": [
+          { "role": "DR", "accountCode": "${payload.chargeReceivableCode}", "amountExpr": "payload.totalFinanceCharge" },
+          { "role": "CR", "accountCode": "${payload.chargeRevenueCode}", "amountExpr": "payload.totalFinanceCharge" }
+        ]
+      }
+    }
+  ]
+}

@@ -96,6 +96,7 @@ export class ConsolidatedInvoiceNotFoundError extends Error {
  */
 @injectable()
 export class FleetBillingService {
+  // @audit(CE-09): direct gl-service write — migrated to governed posting engine in a subsequent CE
   private readonly glServiceUrl = process.env['GL_SERVICE_URL'] ?? 'http://localhost:3010';
 
   constructor(

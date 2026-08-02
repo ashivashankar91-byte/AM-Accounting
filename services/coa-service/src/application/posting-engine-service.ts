@@ -561,6 +561,11 @@ export class PostingEngineService {
         // a lost/crashed execution row — see gl-posting-bridge.ts and
         // journal-repository.ts's create() doc-comments.
         idempotencyKey: `${tenantId}:${envelope.eventId}`,
+        legalEntityId: envelope.legalEntityId,
+        postingExecutionId: executionId,
+        rulePackKey: pack.packKey,
+        rulePackVersion: pack.semver,
+        sourceEventId: envelope.eventId,
         // accountCode (the portable account number), never coa-service's own
         // gl_account.id — see GlPostingLine's doc-comment (gl-posting-
         // bridge.ts): coa-service and gl-service maintain separate GlAccount

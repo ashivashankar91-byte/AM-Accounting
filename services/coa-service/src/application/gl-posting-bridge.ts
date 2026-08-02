@@ -67,6 +67,12 @@ export interface GlPostingRequest {
    * (sequential) or a true concurrent race (two callers at once).
    */
   idempotencyKey?: string;
+  /** CE-09 integration — posting context to forward to gl-service for enriched JOURNAL_ENTRY_POSTED */
+  legalEntityId?: string | null;
+  postingExecutionId?: string | null;
+  rulePackKey?: string | null;
+  rulePackVersion?: string | null;
+  sourceEventId?: string | null;
 }
 
 export interface GlPostingResult {
@@ -114,6 +120,11 @@ export class HttpGlPostingBridge implements GlPostingBridge {
         source: request.journalSourceCode,
         sourceRef: request.sourceRef ?? undefined,
         idempotencyKey: request.idempotencyKey ?? undefined,
+        legalEntityId: request.legalEntityId ?? undefined,
+        postingExecutionId: request.postingExecutionId ?? undefined,
+        rulePackKey: request.rulePackKey ?? undefined,
+        rulePackVersion: request.rulePackVersion ?? undefined,
+        sourceEventId: request.sourceEventId ?? undefined,
         lines: request.lines.map((l) => ({
           accountCode: l.accountCode, debit: l.debit, credit: l.credit, memo: l.memo ?? undefined,
           storeId: l.storeId ?? undefined, departmentCode: l.departmentCode ?? undefined, controlNumber: l.controlNumber ?? undefined,
