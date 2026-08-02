@@ -103,7 +103,12 @@ describe.skipIf(SKIP)('S026 Live database — schedule open-item core', () => {
     expect(items[0].status).toBe('OPEN');
     expect(items[0].remainingBalance.toFixed(2)).toBe('200.00');
 
-    const partialPayment = postingEvent({ amount: '75.00', applyNumber: invoice.referenceNumber, applyCd: '#' });
+    // CE-12 gap-close: a posting-bridge relief line's amount is the raw
+    // dr-cr of the RELIEF leg — the opposite GL side of the origination —
+    // so it carries the OPPOSITE sign of a positive-original item's own
+    // amount (processPostingEvent negates it before computing the new
+    // balance; see open-item-service.ts's `relievingAmount`).
+    const partialPayment = postingEvent({ amount: '-75.00', applyNumber: invoice.referenceNumber, applyCd: '#' });
     const applyOutcome = await svc.processPostingEvent(TENANT, partialPayment, `corr-${randomUUID()}`);
     expect(applyOutcome).toBe('APPLICATION');
 
@@ -111,7 +116,7 @@ describe.skipIf(SKIP)('S026 Live database — schedule open-item core', () => {
     expect(afterPartial!.status).toBe('PARTIALLY_APPLIED');
     expect(afterPartial!.remainingBalance.toFixed(2)).toBe('125.00');
 
-    const finalPayment = postingEvent({ amount: '125.00', applyNumber: invoice.referenceNumber, applyCd: '#' });
+    const finalPayment = postingEvent({ amount: '-125.00', applyNumber: invoice.referenceNumber, applyCd: '#' });
     const closeOutcome = await svc.processPostingEvent(TENANT, finalPayment, `corr-${randomUUID()}`);
     expect(closeOutcome).toBe('APPLICATION');
 

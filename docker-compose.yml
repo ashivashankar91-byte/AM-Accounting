@@ -428,6 +428,72 @@ services:
       rabbitmq: { condition: service_healthy }
       migrator: { condition: service_completed_successfully }
       coa-service: { condition: service_started }
+      posting-recovery-service: { condition: service_started }
+
+  vehicle-accounting-service:
+    build:
+      context: .
+      dockerfile: services/vehicle-accounting-service/Dockerfile
+    ports:
+      - "3090:3090"
+    environment:
+      <<: *service-env
+      PORT: 3090
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
+      coa-service: { condition: service_started }
+      posting-recovery-service: { condition: service_started }
+
+  floorplan-service:
+    build:
+      context: .
+      dockerfile: services/floorplan-service/Dockerfile
+    ports:
+      - "3091:3091"
+    environment:
+      <<: *service-env
+      PORT: 3091
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
+      coa-service: { condition: service_started }
+      posting-recovery-service: { condition: service_started }
+
+  deal-accounting-service:
+    build:
+      context: .
+      dockerfile: services/deal-accounting-service/Dockerfile
+    ports:
+      - "3092:3092"
+    environment:
+      <<: *service-env
+      PORT: 3092
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
+      coa-service: { condition: service_started }
+      posting-recovery-service: { condition: service_started }
+      tax-service: { condition: service_started }
+
+  fni-reserve-service:
+    build:
+      context: .
+      dockerfile: services/fni-reserve-service/Dockerfile
+    ports:
+      - "3093:3093"
+    environment:
+      <<: *service-env
+      PORT: 3093
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
+      coa-service: { condition: service_started }
+      posting-recovery-service: { condition: service_started }
 
   fs-service:
     build:

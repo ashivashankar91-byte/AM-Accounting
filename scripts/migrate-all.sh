@@ -49,6 +49,10 @@ SERVICES=(
   apar-service
   cash-service
   schedule-service
+  vehicle-accounting-service
+  floorplan-service
+  deal-accounting-service
+  fni-reserve-service
   eom-service
   payroll-service
   fs-service

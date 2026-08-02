@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest';
 import { parseStrictJson, StrictJsonParseError, canonicalStringify, deepFreeze } from '../src/domain/posting-engine/strict-json';
 import { validateRulePackSource, AccountLookup } from '../src/domain/posting-engine/validator';
 import { hashRulePack, freezeRulePack } from '../src/domain/posting-engine/canonical';
+import { ACCOUNT_MAPPING_VALUES_PENDING } from '../src/domain/posting-engine/dsl';
 import { validRulePack, unbalancedRulePack } from './support/posting-engine-fixtures';
 
 const TENANT = 'tenant-a';
@@ -171,4 +172,23 @@ describe('S019 validateRulePackSource — structural/semantic errors', () => {
   it('a P&L (REVENUE/EXPENSE) account allocation missing deptCode fails', () => expectError((p) => {
     p.rules[0].blueprint.postingGroups[0].creditAllocations[0].accountNumber = '49000';
   }, 'MISSING_DEPT_CODE'));
+});
+
+describe('CE-12/S024 ACCOUNT_MAPPING_VALUES_PENDING sentinel', () => {
+  it('a row authored with the pending-mapping sentinel validates (WARNING, not ERROR) even though the account does not exist', async () => {
+    const pack = validRulePack(baseOpts());
+    (pack.rules[0].blueprint.postingGroups[0].debitAllocations[0] as any).accountNumber = ACCOUNT_MAPPING_VALUES_PENDING;
+    const result = await validateRulePackSource(JSON.stringify(pack), TENANT, lookup);
+    expect(result.valid).toBe(true);
+    expect(result.findings.some((f) => f.code === 'ACCOUNT_MAPPING_VALUES_PENDING' && f.severity === 'WARNING')).toBe(true);
+    expect(result.findings.some((f) => f.severity === 'ERROR')).toBe(false);
+  });
+
+  it('a pending-mapping row on a P&L account is not forced to carry a deptCode (account type is unknown until mapped)', async () => {
+    const pack = validRulePack(baseOpts());
+    (pack.rules[0].blueprint.postingGroups[0].creditAllocations[0] as any).accountNumber = ACCOUNT_MAPPING_VALUES_PENDING;
+    const result = await validateRulePackSource(JSON.stringify(pack), TENANT, lookup);
+    expect(result.valid).toBe(true);
+    expect(result.findings.some((f) => f.code === 'MISSING_DEPT_CODE')).toBe(false);
+  });
 });

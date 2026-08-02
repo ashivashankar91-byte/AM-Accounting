@@ -417,6 +417,37 @@ describe.skipIf(!LIVE_DB_URL)('S019/S020 Live database — posting engine certif
     });
   });
 
+  // ── CE-12/S024 additions: author!=activator SoD (scoped to "ce12." pack
+  // keys only — see posting-engine-service.ts's isCE12PackKey), the pending-
+  // mapping sentinel's real deterministic-rejection behavior at submit time,
+  // and the simulate() dry-run. ─────────────────────────────────────────────
+  describe('CE-12/S024 additions', () => {
+    it('a non-CE-12 pack key is unaffected by the SoD rule — same-actor author+activate still succeeds (no regression to pre-CE-12 epics)', async () => {
+      const draft = await engine.createRulePackVersion({ tenantId: TENANT, packKey: 'cert-sod-noncce12', sourceText: JSON.stringify(validRulePack({ ...fixtureOpts(), packKey: 'cert-sod-noncce12' })), actor: 'same-actor' });
+      await engine.validateVersion(TENANT, draft.id, 'same-actor');
+      const activated = await engine.activateVersion(TENANT, draft.id, 'same-actor');
+      expect(activated.status).toBe('ACTIVE');
+      await prisma.postingRulePackVersion.update({ where: { id: activated.id }, data: { status: 'SUPERSEDED', supersededAt: new Date() } });
+    });
+
+    it('a "ce12." pack key refuses same-actor activation (SoD) and audits the refusal', async () => {
+      const draft = await engine.createRulePackVersion({ tenantId: TENANT, packKey: 'ce12.sod-fixture', sourceText: JSON.stringify(validRulePack({ ...fixtureOpts(), packKey: 'ce12.sod-fixture' })), actor: 'author-1' });
+      await engine.validateVersion(TENANT, draft.id, 'author-1');
+      await expect(engine.activateVersion(TENANT, draft.id, 'author-1')).rejects.toThrow(/separately authorized user/);
+      const reloaded = await prisma.postingRulePackVersion.findUnique({ where: { id: draft.id } });
+      expect(reloaded?.status).toBe('VALIDATED'); // refusal never mutates status
+
+      const refusalAudit = await prisma.auditOutboxEvent.findFirst({ where: { tenantId: TENANT, docId: draft.id, action: 'ACTIVATION_REFUSED_SOD' } });
+      expect(refusalAudit).toBeTruthy();
+
+      // A different actor CAN activate it.
+      const activated = await engine.activateVersion(TENANT, draft.id, 'activator-2');
+      expect(activated.status).toBe('ACTIVE');
+      expect(activated.activatedBy).toBe('activator-2');
+      await prisma.postingRulePackVersion.update({ where: { id: activated.id }, data: { status: 'SUPERSEDED', supersededAt: new Date() } });
+    });
+  });
+
   describe('D-S023-08 — deterministic ambiguity rejection (never a silent cross-pack tie-break)', () => {
     const AMBIGUOUS_EVENT_TYPE = 'accounting.posting-engine.ambiguity-fixture.v1';
 
@@ -597,6 +628,53 @@ describe.skipIf(!LIVE_DB_URL)('S019/S020 Live database — posting engine certif
       expect(exceptions[0].reasonCode).toBe('INVALID_ACCOUNT');
       const reported = recoveryPort.reported.find((r) => r.input.executionId === result.executionId);
       expect(reported?.input.reasonCode).toBe('INVALID_ACCOUNT');
+
+      await prisma.postingRulePackVersion.update({ where: { id: activated.id }, data: { status: 'SUPERSEDED', supersededAt: new Date() } });
+    });
+
+    it('an ACCOUNT_MAPPING_VALUES_PENDING row activates successfully but deterministically rejects any event it evaluates (no silent post)', async () => {
+      const pack = validRulePack({ ...fixtureOpts(), packKey: 'ce12.pending-mapping-fixture' });
+      // A distinct eventType (not the shared CERT_EVENT_TYPE the rest of this
+      // file's "cert-main" pack stays ACTIVE for across the whole describe
+      // tree) so this pack is unambiguously the only candidate — no reliance
+      // on packKey tie-break ordering against another describe block's state.
+      pack.eventType = 'ce12.pending-mapping-fixture.v1';
+      (pack.rules[0].blueprint.postingGroups[0].debitAllocations[0] as any).accountNumber = 'ACCOUNT_MAPPING_VALUES_PENDING';
+      const draft = await engine.createRulePackVersion({ tenantId: TENANT, packKey: 'ce12.pending-mapping-fixture', sourceText: JSON.stringify(pack), actor: 'author-1' });
+      const validated = await engine.validateVersion(TENANT, draft.id, 'author-1');
+      expect(validated.valid).toBe(true); // WARNING only, not blocking
+
+      const activated = await engine.activateVersion(TENANT, draft.id, 'activator-2');
+      expect(activated.status).toBe('ACTIVE');
+
+      const eventId = `evt-pending-mapping-${randomUUID()}`;
+      const envelope = { ...certificationEnvelope({ tenantId: TENANT, eventId, amount: 100 }), eventType: pack.eventType };
+      const result = await engine.submitEvent(TENANT, envelope, 'tester');
+      expect(result.status).toBe('REJECTED');
+      expect(result.failureReason).toMatch(/ACCOUNT_MAPPING_VALUES_PENDING|could not be resolved/);
+      const journalCount = await prisma.journalEntry.count({ where: { tenantId: TENANT, idempotencyKey: `${TENANT}:${eventId}` } });
+      expect(journalCount).toBe(0);
+
+      await prisma.postingRulePackVersion.update({ where: { id: activated.id }, data: { status: 'SUPERSEDED', supersededAt: new Date() } });
+    });
+
+    it('simulate() returns the structural blueprint without creating a PostingExecution row or posting a journal', async () => {
+      const pack = validRulePack({ ...fixtureOpts(), packKey: 'ce12.simulate-fixture' });
+      pack.eventType = 'ce12.simulate-fixture.v1';
+      const draft = await engine.createRulePackVersion({ tenantId: TENANT, packKey: 'ce12.simulate-fixture', sourceText: JSON.stringify(pack), actor: 'author-1' });
+      await engine.validateVersion(TENANT, draft.id, 'author-1');
+      const activated = await engine.activateVersion(TENANT, draft.id, 'activator-2');
+
+      const eventId = `evt-simulate-${randomUUID()}`;
+      const envelope = { ...certificationEnvelope({ tenantId: TENANT, eventId, amount: 777 }), eventType: pack.eventType };
+      const before = await prisma.postingExecution.count({ where: { tenantId: TENANT, eventId } });
+      const sim = await engine.simulate(TENANT, envelope);
+      expect(sim.status).toBe('BLUEPRINT_GENERATED');
+      expect(sim.lines?.length).toBe(2);
+      expect(sim.lines?.reduce((s, l) => s + l.dr, 0)).toBe(777);
+      expect(sim.lines?.reduce((s, l) => s + l.cr, 0)).toBe(777);
+      const after = await prisma.postingExecution.count({ where: { tenantId: TENANT, eventId } });
+      expect(after).toBe(before); // no execution row created by a dry run
 
       await prisma.postingRulePackVersion.update({ where: { id: activated.id }, data: { status: 'SUPERSEDED', supersededAt: new Date() } });
     });

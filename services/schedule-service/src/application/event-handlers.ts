@@ -15,7 +15,15 @@ export class ScheduleEventHandlers {
   constructor(
     @inject(SCHEDULE_REPO_TOKEN) private readonly scheduleRepo: IScheduleRepository,
     @inject(SCHEDULE_DETAIL_REPO_TOKEN) private readonly detailRepo: IScheduleDetailRepository,
-    private readonly openItemService: OpenItemService,
+    // Explicit @inject required — under tsx/esbuild's transpilation,
+    // reflect-metadata's implicit design:paramtypes for an undecorated
+    // constructor param is unreliable (unlike tsc's), so tsyringe silently
+    // resolved this to undefined at runtime (readonly, works fine under
+    // `tsc`+`vitest`, which is why unit tests never caught it — only a real
+    // RabbitMQ-delivered JOURNAL_ENTRY_POSTED event, running the actual
+    // `npx tsx src/index.ts` process, hit the resulting `TypeError: Cannot
+    // read properties of undefined (reading 'processPostingEvent')`).
+    @inject(OpenItemService) private readonly openItemService: OpenItemService,
   ) {}
 
   // -----------------------------------------------------------------------

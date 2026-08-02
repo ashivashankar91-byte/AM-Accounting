@@ -28,7 +28,10 @@ const ACCOUNTS = [
   { id: 'a-rev', tenantId: TENANT, entityId: ENTITY, accountNumber: '49000', type: 'REVENUE', normalBalance: 'CR', postable: true, status: 'ACTIVE', balance: 0 },
 ];
 
-const SOURCES: Record<string, any> = { GJ: { code: 'GJ', sourceClass: 'MANUAL', status: 'ACTIVE' } };
+const SOURCES: Record<string, any> = {
+  GJ: { code: 'GJ', sourceClass: 'MANUAL', status: 'ACTIVE' },
+  CE12: { code: 'CE12', sourceClass: 'SYSTEM', status: 'ACTIVE' },
+};
 
 // Fiscal periods for the reversal eligible-target query. post() uses fakeFiscal (below).
 const PERIODS = [
@@ -217,6 +220,28 @@ describe('ReversalService.reverse — S218 acceptance criteria', () => {
     expect(original.status).toBe('REVERSED');
     expect(original.reversedBy).toBe(res.reversalId);
     expect(res.reinstatement).toBe(false);
+  });
+
+  it('BR013-3: reversing a SYSTEM-sourced journal (e.g. CE12) re-posts as callerClass SYSTEM, not hardcoded MANUAL', async () => {
+    const { prisma, posting, reversal } = build();
+    const orig = await posting.post({
+      tenantId: TENANT,
+      entityId: ENTITY,
+      date: '2026-01-15',
+      sourceCode: 'CE12',
+      idempotencyKey: 'ce12-orig-1',
+      callerClass: 'SYSTEM',
+      postedBy: 'system',
+      lines: BALANCED,
+    });
+
+    const res = await reversal.reverse(TENANT, orig.id, { reason: 'CE12 unwind' }, actor);
+
+    const reversalEntry = prisma._entries.find((e: any) => e.id === res.reversalId);
+    expect(reversalEntry.sourceCode).toBe('CE12');
+    expect(reversalEntry.reversalOf).toBe(orig.id);
+    const original = prisma._entries.find((e: any) => e.id === orig.id);
+    expect(original.status).toBe('REVERSED');
   });
 
   it('emits acct.je.posted (reversal, reversalOf) + a REVERSED audit on the original', async () => {

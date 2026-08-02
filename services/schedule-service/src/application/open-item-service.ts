@@ -189,8 +189,21 @@ export class OpenItemService {
         return 'NEW_ITEM';
       }
 
+      // A posting-bridge application's `amount` is the raw dr-cr signed
+      // value of the RELIEF leg, which is always the natural OPPOSITE GL
+      // side of the origination leg (e.g. a liability opened by a CREDIT,
+      // originalAmount negative, is relieved by a DEBIT, amount positive).
+      // applyAmount()/sweepFifo() below expect the OPPOSITE convention — a
+      // "relieving magnitude" that carries the SAME sign as originalAmount
+      // (proven by the manual-apply/auto-sweep-via-operator-endpoint call
+      // sites, the only ones previously exercised) — so negate it here, at
+      // this one call boundary, rather than changing the shared domain
+      // functions and silently flipping the sign those already-correct
+      // callers depend on.
+      const relievingAmount = amount.neg();
+
       if (isAutoApplication) {
-        return this._sweepAutoApplication(tx, tenantId, event, amount, sourceCorrelationId);
+        return this._sweepAutoApplication(tx, tenantId, event, relievingAmount, sourceCorrelationId);
       }
 
       // Application: target item's itemNumber must equal this line's applyNumber.
@@ -218,7 +231,7 @@ export class OpenItemService {
       const target = candidates[0];
       let newRemaining: Prisma.Decimal;
       try {
-        newRemaining = applyAmount(target.originalAmount, target.remainingBalance, ledgerAmount);
+        newRemaining = applyAmount(target.originalAmount, target.remainingBalance, relievingAmount);
       } catch {
         console.warn(
           `[schedule-service] S026: posted application would over-apply open item ${target.id} — schedule=${event.scheduleNumber} control=${event.controlNumber} applyNumber=${event.applyNumber} amount=${event.amount} remaining=${target.remainingBalance} (tenant ${tenantId}). Not applied; ScheduleDetail line retained, discrepancy will surface at next tie-out.`,
@@ -234,7 +247,7 @@ export class OpenItemService {
           openItemId: target.id,
           scheduleNumber: event.scheduleNumber!,
           controlNumber: event.controlNumber,
-          amount: ledgerAmount,
+          amount: relievingAmount,
           journalEntryId: event.journalEntryId,
           sourceCorrelationId,
           isManual: false,

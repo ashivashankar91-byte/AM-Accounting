@@ -1,0 +1,519 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/deal-accounting-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// CE-12 / Workstream D (S084-S090, S024's deal.finalized rule-pack family)
+/// — deal-accounting-service.
+///
+/// Ownership boundary: this service NEVER writes a journal_entry/journal_line
+/// row itself and NEVER computes a dollar figure that isn't already present
+/// on the recap (or fetched from tax-service as an authoritative upstream
+/// result). Every posted journal goes through coa-service's rule-pack-
+/// governed posting engine (POST /api/v1/coa/posting-engine/events); this
+/// service only decides STRUCTURE (which posting groups/events to submit,
+/// in what order, gated by what review/SoD/guard state).
+///
+/// Local sub-ledger note (see docs in src/infrastructure/schedule-open-item-
+/// client.ts and the CE12_FABLE_EPIC_PACKAGE.md summary in this repo's
+/// final delivery notes): the DSL's controlNumberPath/applyNumberPath
+/// mechanism is documented in coa-service as opening/relieving a real
+/// services/schedule-service ScheduleOpenItem when the target GL account
+/// carries a scheduleCode — but that bridge is driven ONLY by a
+/// 'JOURNAL_ENTRY_POSTED' broker event, which coa-service's own accepted
+/// posting path (PostingService.post()) never publishes (it publishes
+/// 'acct.je.posted' with a materially different, scheduleNumber-less
+/// payload). Verified by reading services/coa-service/src/application/
+/// posting-service.ts and services/schedule-service/src/index.ts /
+/// application/event-handlers.ts directly — this is a real, load-bearing
+/// platform gap, not an assumption. DealOpenItem below is this service's
+/// own authoritative local shadow ledger for CIT/reserve/product-remit/
+/// payoff/wholesale-AR items, used because the real schedule-service item
+/// cannot be created through any path this service can reach. Every
+/// DealOpenItem still carries an `itemNumber` matching exactly what the
+/// rule pack's applyNumberPath/controlNumberPath resolves to, so if/when
+/// the coa-service->schedule-service bridge is built centrally, the two
+/// ledgers reconcile by itemNumber with no further change here.
+model Deal {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  dealNumber    String   @map("deal_number")
+  dealType      String   @map("deal_type") // RETAIL | LEASE | WHOLESALE | DEALER_TRADE
+  vin           String?
+  stockNumber   String?  @map("stock_number")
+  legalEntityId String   @map("legal_entity_id")
+  storeId       String   @map("store_id")
+
+  status String @default("DESKED") @map("status")
+  // DESKED -> FINALIZED (recap intake) -> POSTED (core journal posted) ->
+  // UNWOUND | RECONTRACTED (terminal-ish; a deal may recontract many times)
+
+  currentRecapVersion Int @default(0) @map("current_recap_version")
+
+  finalizedByActor String? @map("finalized_by_actor") // desking identity — S085 SoD boundary reference
+
+  fundedFlag Boolean @default(false) @map("funded_flag") // S086 unwind-after-funding guard
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  recaps        DealRecap[]
+  reviewCases   DealReviewCase[]
+  postingRecords DealPostingRecord[]
+  openItems     DealOpenItem[]
+  dueBills      DueBill[]
+
+  @@unique([tenantId, dealNumber])
+  @@index([tenantId, status])
+  @@map("deal")
+}
+
+/// One immutable row per recap version. The recap is the authoritative
+/// financial input (BR CE12: "generator computes structure, not deal math").
+model DealRecap {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  dealId        String   @map("deal_id")
+  recapVersion  Int      @map("recap_version")
+
+  dealType      String   @map("deal_type")
+  payload       Json     // verbatim recap as received from Variable Ops desking
+  structureHash String   @map("structure_hash") // S087 D-CE12-01 — posting-group/account-role structure fingerprint
+
+  taxResultId   String?  @map("tax_result_id") // tax-service TaxResult.id (fetched + verified before posting)
+  taxAmount     Decimal? @db.Decimal(15, 2) @map("tax_amount") // snapshot of tax-service's totalTax at fetch time (evidence only)
+
+  hasTradeIn        Boolean  @default(false) @map("has_trade_in")
+  tradeAllowanceAmount Decimal? @db.Decimal(15, 2) @map("trade_allowance_amount")
+  tradeAcvAmount       Decimal? @db.Decimal(15, 2) @map("trade_acv_amount")
+
+  commissionBasisSnapshot Json? @map("commission_basis_snapshot") // CE-13 PUTR — basis figures only, no calculation
+  rebateReceivableAmount  Decimal? @db.Decimal(15, 2) @map("rebate_receivable_amount") // CE-14 PUTR boundary
+
+  createdAt DateTime @default(now()) @map("created_at")
+  createdBy String   @map("created_by")
+
+  deal Deal @relation(fields: [dealId], references: [id])
+
+  @@unique([tenantId, dealId, recapVersion])
+  @@index([tenantId, dealId])
+  @@map("deal_recap")
+}
+
+/// S085 — Biller Review Workbench state machine.
+model DealReviewCase {
+  id           String @id @default(uuid())
+  tenantId     String @map("tenant_id")
+  dealId       String @map("deal_id")
+  recapVersion Int    @map("recap_version")
+
+  status String @default("PENDING_REVIEW") @map("status")
+  // PENDING_REVIEW | HELD | RELEASED | RETURNED
+
+  autoPosted Boolean @default(false) @map("auto_posted")
+
+  heldReason      String? @map("held_reason")
+  heldBy          String? @map("held_by")
+  heldAt          DateTime? @map("held_at")
+
+  returnedReason  String? @map("returned_reason")
+  returnedBy      String? @map("returned_by")
+  returnedAt      DateTime? @map("returned_at")
+
+  releasedBy      String? @map("released_by")
+  releasedAt      DateTime? @map("released_at")
+
+  previewBlueprintHash String? @map("preview_blueprint_hash") // last simulate() call's blueprintHash, proven == released journal's
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  deal Deal @relation(fields: [dealId], references: [id])
+
+  @@unique([tenantId, dealId, recapVersion])
+  @@index([tenantId, status])
+  @@map("deal_review_case")
+}
+
+/// One row per journal SEGMENT this service has submitted to coa-service —
+/// the "core" deal.finalized segment, or one per deal.product_line_finalized
+/// segment (see design note in src/application/deal-finalize-service.ts for
+/// why a variable-arity deal becomes N segments rather than 1 literal
+/// journal), or a recontract-delta/reversal/payoff/CIT-fee/wholesale segment.
+model DealPostingRecord {
+  id           String  @id @default(uuid())
+  tenantId     String  @map("tenant_id")
+  dealId       String  @map("deal_id")
+  recapVersion Int?    @map("recap_version")
+
+  segmentType String  @map("segment_type")
+  // CORE | PRODUCT | RECONTRACT_DELTA | REVERSAL | CIT_SHORT_FUND_FEE |
+  // PAYOFF_ISSUANCE | PAYOFF_VARIANCE | WHOLESALE_DISPOSITION | ARBITRATION
+
+  productIndex Int? @map("product_index")
+
+  eventId        String @map("event_id")
+  eventType      String @map("event_type")
+  correlationId  String @map("correlation_id")
+
+  coaStatus       String  @map("coa_status") // POSTED | NO_RULE_MATCH | REJECTED | FAILED
+  coaExecutionId  String? @map("coa_execution_id")
+  rulePackVersionId String? @map("rule_pack_version_id")
+  ruleId          String? @map("rule_id")
+  journalEntryId  String? @map("journal_entry_id")
+  journalNumber   String? @map("journal_number")
+  blueprintHash   String? @map("blueprint_hash")
+  failureReason   String? @map("failure_reason")
+
+  reversalOfPostingRecordId String? @map("reversal_of_posting_record_id")
+  reversalJournalEntryId    String? @map("reversal_journal_entry_id")
+  reversalJournalNumber     String? @map("reversal_journal_number")
+  reversedAt                DateTime? @map("reversed_at")
+
+  amountsJson Json? @map("amounts_json") // conservation-proof evidence: {baseAmountPath: cents} snapshot at submit time
+
+  createdAt DateTime @default(now()) @map("created_at")
+  createdBy String   @map("created_by")
+
+  deal Deal @relation(fields: [dealId], references: [id])
+
+  @@unique([tenantId, eventId])
+  @@index([tenantId, dealId])
+  @@map("deal_posting_record")
+}
+
+/// This service's local authoritative sub-ledger substitute for a real
+/// services/schedule-service ScheduleOpenItem — see the model-group doc
+/// comment above Deal for exactly why. itemNumber mirrors what the rule
+/// pack's applyNumberPath resolves to (deal#, deal#:product:N, etc.).
+model DealOpenItem {
+  id       String @id @default(uuid())
+  tenantId String @map("tenant_id")
+  dealId   String @map("deal_id")
+
+  itemType String @map("item_type") // CIT | RESERVE | PRODUCT_REMIT | PAYOFF | WHOLESALE_AR
+  itemNumber String @map("item_number")
+  productIndex Int? @map("product_index")
+
+  originalAmount   Decimal @db.Decimal(15, 2) @map("original_amount")
+  appliedAmount    Decimal @default(0) @db.Decimal(15, 2) @map("applied_amount")
+  remainingBalance Decimal @db.Decimal(15, 2) @map("remaining_balance")
+
+  status String @default("OPEN") @map("status") // OPEN | CLOSED
+
+  openedByPostingRecordId String? @map("opened_by_posting_record_id")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  closedAt  DateTime? @map("closed_at")
+
+  deal         Deal                    @relation(fields: [dealId], references: [id])
+  applications DealOpenItemApplication[]
+
+  @@unique([tenantId, itemType, itemNumber])
+  @@index([tenantId, dealId])
+  @@map("deal_open_item")
+}
+
+model DealOpenItemApplication {
+  id         String @id @default(uuid())
+  tenantId   String @map("tenant_id")
+  openItemId String @map("open_item_id")
+
+  amount     Decimal @db.Decimal(15, 2)
+  sourceType String  @map("source_type") // CIT_FUNDING | CIT_SHORT_FUND_FEE | PAYOFF_ISSUANCE | UNWIND_CLOSE | MANUAL
+  sourceRecordId String? @map("source_record_id")
+
+  idempotencyKey String @map("idempotency_key")
+
+  appliedBy String   @map("applied_by")
+  appliedAt DateTime @default(now()) @map("applied_at")
+  note      String?
+
+  reversedAt DateTime? @map("reversed_at")
+
+  openItem DealOpenItem @relation(fields: [openItemId], references: [id])
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, openItemId])
+  @@map("deal_open_item_application")
+}
+
+/// S088 — CIT Funding Match.
+model CitFundingReceipt {
+  id       String @id @default(uuid())
+  tenantId String @map("tenant_id")
+  dealId   String @map("deal_id")
+
+  amount   Decimal  @db.Decimal(15, 2)
+  lenderRef String  @map("lender_ref")
+  receivedAt DateTime @map("received_at")
+
+  citOriginalAmount Decimal @db.Decimal(15, 2) @map("cit_original_amount")
+  shortfallAmount   Decimal @default(0) @db.Decimal(15, 2) @map("shortfall_amount")
+
+  status String @default("MATCHED") @map("status")
+  // MATCHED | SHORT_FUNDED_PENDING_DISPOSITION | SHORT_FUNDED_FEE_WITHHELD | SHORT_FUNDED_RETURNED_TO_BILLER
+
+  dispositionType   String?   @map("disposition_type") // FEE_WITHHELD | CONTRACT_ISSUE
+  dispositionReason String?   @map("disposition_reason")
+  dispositionedBy   String?   @map("dispositioned_by")
+  dispositionedAt   DateTime? @map("dispositioned_at")
+
+  feePostingRecordId String? @map("fee_posting_record_id")
+
+  idempotencyKey String @map("idempotency_key")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  createdBy String   @map("created_by")
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, dealId])
+  @@map("cit_funding_receipt")
+}
+
+/// S089 — Trade Payoff Issuance & Variance.
+model PayoffIssuance {
+  id     String @id @default(uuid())
+  tenantId String @map("tenant_id")
+  dealId String @map("deal_id")
+
+  recapPayoffAmount Decimal @db.Decimal(15, 2) @map("recap_payoff_amount")
+  actualAmount      Decimal @db.Decimal(15, 2) @map("actual_amount")
+  varianceAmount    Decimal @default(0) @db.Decimal(15, 2) @map("variance_amount") // actual - recap, signed
+
+  varianceDisposition String? @map("variance_disposition") // ADDITIONAL_PAYMENT | REFUND_RECEIVABLE | NONE
+  varianceReason       String? @map("variance_reason")
+
+  postingRecordId String? @map("posting_record_id")
+
+  idempotencyKey String @map("idempotency_key")
+
+  issuedAt DateTime @default(now()) @map("issued_at")
+  issuedBy String   @map("issued_by")
+
+  @@unique([tenantId, idempotencyKey])
+  @@unique([tenantId, dealId]) // AC: a payoff item is relieved exactly once
+  @@map("payoff_issuance")
+}
+
+/// S090 — Wholesale Disposition & Arbitration.
+model WholesaleDisposition {
+  id     String @id @default(uuid())
+  tenantId String @map("tenant_id")
+  dealId String @map("deal_id")
+
+  unitRef String @map("unit_ref") // VIN or stock#
+  titleStatus String @map("title_status")
+
+  wholesaleAmount    Decimal @db.Decimal(15, 2) @map("wholesale_amount")
+  unitReliefAmount   Decimal @db.Decimal(15, 2) @map("unit_relief_amount")
+  auctionFeesAmount  Decimal @db.Decimal(15, 2) @map("auction_fees_amount")
+  dispositionOutcome String  @map("disposition_outcome") // GAIN | LOSS
+  gainLossAmount     Decimal @db.Decimal(15, 2) @map("gain_loss_amount")
+
+  status String @default("POSTED") @map("status") // POSTED | ARBITRATED_ADJUSTED | ARBITRATED_RETURNED
+
+  postingRecordId String? @map("posting_record_id")
+
+  idempotencyKey String @map("idempotency_key")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  createdBy String   @map("created_by")
+
+  arbitrationCases ArbitrationCase[]
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, dealId])
+  @@map("wholesale_disposition")
+}
+
+model ArbitrationCase {
+  id             String @id @default(uuid())
+  tenantId       String @map("tenant_id")
+  dispositionId  String @map("disposition_id")
+
+  arbitrationType String @map("arbitration_type") // PRICE_ADJUSTMENT | UNIT_RETURN
+  adjustmentAmount Decimal? @db.Decimal(15, 2) @map("adjustment_amount")
+  conditionCostAmount Decimal? @db.Decimal(15, 2) @map("condition_cost_amount")
+
+  reason String
+
+  postingRecordId String? @map("posting_record_id")
+
+  idempotencyKey String @map("idempotency_key")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  createdBy String   @map("created_by")
+
+  disposition WholesaleDisposition @relation(fields: [dispositionId], references: [id])
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, dispositionId])
+  @@map("arbitration_case")
+}
+
+/// S086 — Deal Unwind.
+model DealUnwind {
+  id           String @id @default(uuid())
+  tenantId     String @map("tenant_id")
+  dealId       String @map("deal_id")
+  recapVersion Int    @map("recap_version")
+
+  status String @map("status") // COMPLETED | REFUSED
+  reason String
+
+  refusalCode   String? @map("refusal_code") // FUNDED_UNWIND_REFUSED
+  refusalDetail String? @map("refusal_detail")
+
+  reversalPostingRecordIds Json? @map("reversal_posting_record_ids") // string[]
+
+  idempotencyKey String @map("idempotency_key")
+
+  executedAt DateTime @default(now()) @map("executed_at")
+  executedBy String   @map("executed_by")
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, dealId])
+  @@map("deal_unwind")
+}
+
+/// S087 — Recontract Delta Posting, D-CE12-01 lineage chain.
+model DealRecontract {
+  id     String @id @default(uuid())
+  tenantId String @map("tenant_id")
+  dealId String @map("deal_id")
+
+  fromRecapVersion Int @map("from_recap_version")
+  toRecapVersion   Int @map("to_recap_version")
+
+  mode String @map("mode") // DELTA | REVERSE_REPOST
+  structureHashFrom String @map("structure_hash_from")
+  structureHashTo   String @map("structure_hash_to")
+
+  deltaPostingRecordId    String? @map("delta_posting_record_id")
+  reversalPostingRecordId String? @map("reversal_posting_record_id")
+  repostPostingRecordId   String? @map("repost_posting_record_id")
+
+  idempotencyKey String @map("idempotency_key")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  createdBy String   @map("created_by")
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, dealId])
+  @@map("deal_recontract")
+}
+
+/// Tenant-electable SAFE_CONFIGURATION — S085 auto-post vs review-required,
+/// S088 CIT funding-delay aging threshold.
+model DealTenantConfig {
+  id       String @id @default(uuid())
+  tenantId String @unique @map("tenant_id")
+
+  autoPostEnabled Boolean @default(false) @map("auto_post_enabled") // default: review-required (safe default)
+  citFundingDelayThresholdDays Int @default(5) @map("cit_funding_delay_threshold_days")
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedBy String?  @map("updated_by")
+
+  @@map("deal_tenant_config")
+}
+
+/// Mirrors coa-service's private audit() helper / posting-recovery's
+/// appendAuditReference — every mutating action, before/after.
+model DealAuditReference {
+  id       String @id @default(uuid())
+  tenantId String @map("tenant_id")
+
+  docType String @map("doc_type")
+  docId   String @map("doc_id")
+  action  String
+
+  before Json?
+  after  Json?
+  actor  String
+  correlationId String? @map("correlation_id")
+
+  publishedAt DateTime? @map("published_at")
+  retryCount  Int       @default(0) @map("retry_count")
+  lastError   String?   @map("last_error")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, docType, docId])
+  @@map("deal_audit_reference")
+}
+
+/// Gap-closure — Due-Bill / We-Owe items (Fable package mandatory
+/// schedule-effect area, schedule 91, GL DUE_BILL_PAYABLE). A due-bill is a
+/// dealer obligation to deliver something not yet delivered at delivery
+/// time (an accessory, a repair, a second key, etc.) — recorded against the
+/// deal, posted through the rule pack exactly like every other segment
+/// (DR DEAL_RECEIVABLE_CLEARING / CR DUE_BILL_PAYABLE), and later relieved
+/// when the item is fulfilled (a real services/schedule-service
+/// ScheduleOpenItem application, tracked by this row's postingRecordId for
+/// lineage — this service's own local status mirrors OPEN/CLOSED but the
+/// schedule-service open item is authoritative per the same convention as
+/// CIT/reserve/product-remit).
+model DueBill {
+  id     String @id @default(uuid())
+  tenantId String @map("tenant_id")
+  dealId String @map("deal_id")
+
+  itemDescription String @map("item_description")
+  amount          Decimal @db.Decimal(15, 2)
+  reason          String
+
+  status String @default("OPEN") @map("status") // OPEN | FULFILLED
+
+  postingRecordId String? @map("posting_record_id")
+  eventId         String  @map("event_id")
+  coaStatus       String  @map("coa_status")
+  journalEntryId  String? @map("journal_entry_id")
+  journalNumber   String? @map("journal_number")
+
+  fulfilledAt DateTime? @map("fulfilled_at")
+  fulfilledBy String?   @map("fulfilled_by")
+
+  idempotencyKey String @map("idempotency_key")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  createdBy String   @map("created_by")
+
+  deal Deal @relation(fields: [dealId], references: [id])
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, dealId])
+  @@index([tenantId, status])
+  @@map("due_bill")
+}
+
+/// Generic domain-event outbox for the PENDING_UPSTREAM_TECHNICAL_
+/// RECONCILIATION events this service emits for sibling services to
+/// eventually consume (deal.trade_in_received.v1, deal.wholesale_unit_
+/// relief.v1, deal.product_cancellation_flagged.v1, deal.reserve_
+/// chargeback_flagged.v1). Durable + best-effort broker publish, exactly
+/// like coa-service's coa_outbox_event / posting-service.ts pattern.
+model DealOutboxEvent {
+  id       String @id @default(uuid())
+  tenantId String @map("tenant_id")
+
+  eventType     String @map("event_type")
+  aggregateId   String @map("aggregate_id")
+  payload       Json
+  correlationId String @map("correlation_id")
+
+  publishedAt DateTime? @map("published_at")
+  retryCount  Int       @default(0) @map("retry_count")
+  lastError   String?   @map("last_error")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, eventType])
+  @@map("deal_outbox_event")
+}

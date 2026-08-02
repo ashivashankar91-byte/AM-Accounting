@@ -167,9 +167,15 @@ describe('OpenItemService.processPostingEvent', () => {
     };
     const tx = makeTx({ scheduleOpenItem: { findMany: vi.fn().mockResolvedValue([target]), create: vi.fn(), findFirst: vi.fn(), update: vi.fn().mockImplementation((a: any) => Promise.resolve({ id: a.where.id, ...a.data })) } });
     const svc = makeService(tx);
+    // A posting-bridge relief line's amount is the raw dr-cr of the RELIEF
+    // leg, which is the opposite GL side of the origination — a positive
+    // (asset-type) open item is relieved by a CREDIT, so amount is
+    // negative here (CE-12 gap-close finding: processPostingEvent negates
+    // this before calling applyAmount(), matching the sign convention
+    // proven live for both asset and liability schedules).
     const outcome = await svc.processPostingEvent(
       TENANT,
-      { ...baseEvent, amount: '50.00', applyNumber: 'INV-100', applyCd: '#' },
+      { ...baseEvent, amount: '-50.00', applyNumber: 'INV-100', applyCd: '#' },
       'corr-2',
     );
     expect(outcome).toBe('APPLICATION');
@@ -195,13 +201,46 @@ describe('OpenItemService.processPostingEvent', () => {
     const svc = makeService(tx);
     const outcome = await svc.processPostingEvent(
       TENANT,
-      { ...baseEvent, amount: '150.00', applyNumber: 'INV-100', applyCd: '#' },
+      { ...baseEvent, amount: '-150.00', applyNumber: 'INV-100', applyCd: '#' },
       'corr-2',
     );
     expect(outcome).toBe('APPLICATION');
     expect(tx.scheduleOpenItem.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'CLOSED', closedAt: expect.any(Date) }) }),
     );
+  });
+
+  it('CE-12 gap-close: fully closes a LIABILITY item (negative originalAmount) relieved by a DEBIT bridge line (positive amount)', async () => {
+    // Real, live-proven scenario: a liability schedule (e.g. floorplan
+    // notes-payable, trade-payoff) opens via a CREDIT (originalAmount
+    // negative) and is relieved by a DEBIT (bridge amount positive) — the
+    // opposite polarity from the asset case above. Before this fix,
+    // processPostingEvent passed the raw positive bridge amount straight
+    // into applyAmount() against a negative originalAmount/remainingBalance,
+    // which always computed as an over-application (moving further from
+    // zero, never toward it) and silently discarded the relief.
+    const target = {
+      id: 'liability-item',
+      originalAmount: dec('-7777.00'),
+      appliedAmount: dec('0.00'),
+      remainingBalance: dec('-7777.00'),
+    };
+    const tx = makeTx({ scheduleOpenItem: { findMany: vi.fn().mockResolvedValue([target]), create: vi.fn(), findFirst: vi.fn(), update: vi.fn().mockImplementation((a: any) => Promise.resolve({ id: a.where.id, ...a.data })) } });
+    const svc = makeService(tx);
+    const outcome = await svc.processPostingEvent(
+      TENANT,
+      { ...baseEvent, amount: '7777.00', applyNumber: 'INV-100', applyCd: '#' },
+      'corr-liability-relief',
+    );
+    expect(outcome).toBe('APPLICATION');
+    expect(tx.scheduleOpenItem.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'liability-item' },
+        data: expect.objectContaining({ status: 'CLOSED', remainingBalance: expect.anything(), closedAt: expect.any(Date) }),
+      }),
+    );
+    const updateCall = (tx.scheduleOpenItem.update as any).mock.calls[0][0];
+    expect(updateCall.data.remainingBalance.toString()).toBe('0');
   });
 
   it('does not fabricate an application when zero open items match the apply-to reference', async () => {
@@ -225,7 +264,7 @@ describe('OpenItemService.processPostingEvent', () => {
     const svc = makeService(tx);
     const outcome = await svc.processPostingEvent(
       TENANT,
-      { ...baseEvent, amount: '500.00', applyNumber: 'INV-100', applyCd: '#' },
+      { ...baseEvent, amount: '-500.00', applyNumber: 'INV-100', applyCd: '#' },
       'corr-4',
     );
     expect(outcome).toBe('UNRESOLVED_APPLICATION');

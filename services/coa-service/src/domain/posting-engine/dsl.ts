@@ -12,6 +12,21 @@ export const DSL_VERSION = 1;
 export const SUPPORTED_MATCH_STRATEGIES = ['FIRST_MATCH'] as const;
 export const SUPPORTED_NO_MATCH_BEHAVIORS = ['NO_RULE_MATCH_EXCEPTION'] as const;
 
+/**
+ * CE-12 (S024) — sentinel accountNumber literal for a rule-pack row whose
+ * real tenant GL account has not been mapped yet. A blank/pending row is
+ * authored with this literal instead of a guessed real account number
+ * (never a production account default — BR CE12-mapping). The validator
+ * (validator.ts) allows a version containing only this literal to reach
+ * VALIDATED/ACTIVE so the pack can be authored and activated ahead of
+ * tenant onboarding; the posting engine's real accountLookup at
+ * submit-time will never resolve this literal to a GlAccount row, so any
+ * event evaluated against it deterministically rejects
+ * (ACCOUNTING_MAPPING_UNRESOLVED) until the tenant activates a
+ * superseding version with a real accountNumber for that role.
+ */
+export const ACCOUNT_MAPPING_VALUES_PENDING = 'ACCOUNT_MAPPING_VALUES_PENDING' as const;
+
 export type MatchStrategy = (typeof SUPPORTED_MATCH_STRATEGIES)[number];
 export type NoMatchBehavior = (typeof SUPPORTED_NO_MATCH_BEHAVIORS)[number];
 
@@ -53,6 +68,26 @@ export interface PostingAllocation {
   deptCode?: string | null;
   /** Basis points of the group's base amount allocated to this line. Must be > 0. */
   bp: number;
+  /**
+   * CE-12/S074 et al — optional canonical path into the event envelope
+   * resolving to this line's subsidiary-ledger reference (e.g. a vehicle
+   * stock#, dealer-trade#, deal#). Flows through to JournalLine.controlNumber
+   * (PostingService already accepts/persists this field; this DSL addition
+   * only exposes it declaratively). When the resolved account carries a
+   * schedule-service scheduleCode, a posted line with a controlNumber and no
+   * applyNumberPath OPENS a new schedule-service open item using this value
+   * as its itemNumber (see services/schedule-service's OpenItemService).
+   * Purely additive/optional — omitting it reproduces pre-CE-12 behavior
+   * exactly (undefined -> controlNumber: null, unchanged from today).
+   */
+  controlNumberPath?: string | null;
+  /**
+   * CE-12/S074 et al — optional canonical path into the event envelope
+   * resolving to an EXISTING schedule-service open item's itemNumber this
+   * line should relieve/apply against, instead of opening a new item.
+   * Flows through to JournalLine.applyNumber. Purely additive/optional.
+   */
+  applyNumberPath?: string | null;
 }
 
 export interface PostingGroup {
@@ -143,4 +178,4 @@ export const RULE_PACK_TOP_LEVEL_FIELDS = [
 export const RULE_FIELDS = ['ruleId', 'priority', 'description', 'condition', 'blueprint'] as const;
 export const BLUEPRINT_FIELDS = ['memoTemplate', 'postingGroups'] as const;
 export const POSTING_GROUP_FIELDS = ['groupId', 'baseAmountPath', 'debitAllocations', 'debitLineItemsPath', 'creditAllocations', 'creditLineItemsPath'] as const;
-export const ALLOCATION_FIELDS = ['accountNumber', 'storeId', 'deptCode', 'bp'] as const;
+export const ALLOCATION_FIELDS = ['accountNumber', 'storeId', 'deptCode', 'bp', 'controlNumberPath', 'applyNumberPath'] as const;

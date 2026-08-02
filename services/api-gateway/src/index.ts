@@ -107,6 +107,13 @@ const SERVICES: Array<{ prefix: string; upstream: string; rateLimit?: number; re
   // revaluation, obsolescence/scrap, physical inventory, special-order
   // deposits, OEM returns, valuation config. Zero direct GL writes.
   { prefix: '/api/v1/parts-accounting', upstream: process.env['PARTS_ACCOUNTING_SERVICE_URL'] ?? 'http://parts-accounting-service:3061' },
+  // CE-12 — Vehicle, Deals & F&I Integrations. All four post exclusively
+  // through coa-service's posting engine (/api/v1/coa/posting-engine) —
+  // zero direct GL writes, same as tax-service above.
+  { prefix: '/api/v1/vehicle-accounting', upstream: process.env['VEHICLE_ACCOUNTING_SERVICE_URL'] ?? 'http://vehicle-accounting-service:3090' },
+  { prefix: '/api/v1/floorplan',          upstream: process.env['FLOORPLAN_SERVICE_URL']          ?? 'http://floorplan-service:3091' },
+  { prefix: '/api/v1/deal-accounting',    upstream: process.env['DEAL_ACCOUNTING_SERVICE_URL']    ?? 'http://deal-accounting-service:3092' },
+  { prefix: '/api/v1/fni-reserve',        upstream: process.env['FNI_RESERVE_SERVICE_URL']        ?? 'http://fni-reserve-service:3093' },
 ];
 
 // ── Request logging hook ──────────────────────────────────────────────────────

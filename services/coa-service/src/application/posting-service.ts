@@ -212,6 +212,12 @@ export class PostingService {
 
         // Lines + per-account aggregation for balance updates.
         const perAccount = new Map<string, { drC: number; crC: number }>();
+        // CE-12 — schedule-service bridge: one JOURNAL_ENTRY_POSTED-shaped
+        // event per line whose account opted in via scheduleCode AND which
+        // carries a controlNumber, mirroring gl-service's own
+        // scheduleCode-gated emission exactly (same payload shape, so
+        // schedule-service's existing subscription needs zero changes).
+        const scheduleBridgeEvents: Array<Record<string, unknown>> = [];
         for (let i = 0; i < dto.lines.length; i++) {
           const line = dto.lines[i];
           const acct = ctx.accounts.get(line.accountId)!;
@@ -235,6 +241,43 @@ export class PostingService {
               memo: line.memo ?? null,
             },
           });
+          if (acct.scheduleCode && line.controlNumber) {
+            // schedule-service's ScheduleDetail.controlNumber is VarChar(10)
+            // and .referenceNumber is VarChar(12) (which becomes the new
+            // ScheduleOpenItem's itemNumber — see OpenItemService.
+            // processPostingEvent: `itemNumber = referenceNumber || journalEntryId`).
+            // Both MUST resolve to the caller's real business key (stock#,
+            // deal#, trade#, ...) so the resulting open item is identifiable
+            // and queryable by that key — a fabricated/idempotency-derived
+            // value here would make every open item effectively anonymous.
+            // Previously this used a truncated idempotencyKey for
+            // referenceNumber; fixed to reuse the same controlNumber the
+            // caller already set for exactly this purpose.
+            const scheduleControlNumber = line.controlNumber.slice(0, 10);
+            scheduleBridgeEvents.push({
+              tenantId: dto.tenantId,
+              journalEntryId: entryId,
+              glAccountNumber: acct.accountNumber,
+              scheduleNumber: acct.scheduleCode,
+              controlNumber: scheduleControlNumber,
+              amount: String(drC / 100 - crC / 100),
+              referenceNumber: scheduleControlNumber,
+              journalSource: dto.sourceCode,
+              transactionDate: new Date(dto.date).toISOString(),
+              // schedule-service's ScheduleDetail.description is VarChar(35)
+              // (legacy PIC X(35)) — a rule pack's memoTemplate easily
+              // exceeds that (e.g. "Deferral booking origination — deal
+              // D1 product GAP" is well over 35 chars), which previously
+              // caused a genuine Postgres "value too long" P2000 error
+              // inside schedule-service's own transaction, silently
+              // swallowed by its RabbitMQ consumer. Truncated, never
+              // dropped or rejected — same policy as controlNumber/
+              // applyNumber above.
+              description: (line.memo ?? dto.memo ?? '').slice(0, 35) || null,
+              applyNumber: line.applyNumber ? line.applyNumber.slice(0, 12) : null,
+              applyCd: line.applyNumber ? '#' : null,
+            });
+          }
           // S011 BR011-2 — persist tags atomically with the line they belong
           // to (same transaction); already validated above (fail-closed,
           // before allocation) so this insert cannot fail on a bad tag.
@@ -332,7 +375,7 @@ export class PostingService {
           },
         });
 
-        return { entryId, payload };
+        return { entryId, payload, scheduleBridgeEvents };
       });
 
       // Best-effort broker publish (outbox is the source of truth).
@@ -346,6 +389,24 @@ export class PostingService {
         } as any);
       } catch {
         /* outbox row already durable */
+      }
+
+      // CE-12 — schedule-service bridge events, same best-effort semantics
+      // as the acct.je.posted publish above (the journalLine rows written
+      // inside the transaction, with controlNumber/applyNumber, remain the
+      // durable source of truth regardless of broker delivery).
+      for (const bridgeEvent of created.scheduleBridgeEvents) {
+        try {
+          await this.events.publish({
+            type: 'JOURNAL_ENTRY_POSTED',
+            tenantId: dto.tenantId,
+            payload: bridgeEvent,
+            occurredAt: new Date().toISOString(),
+            correlationId: `${created.entryId}-schedule-bridge-${bridgeEvent['glAccountNumber']}-${bridgeEvent['controlNumber']}`,
+          } as any);
+        } catch {
+          /* best-effort — journalLine.controlNumber/applyNumber remain durable */
+        }
       }
 
       return {
@@ -433,6 +494,7 @@ export class PostingService {
           normalBalance: r.normalBalance,
           postable: r.postable,
           status: r.status,
+          scheduleCode: (r as any).scheduleCode ?? null,
         });
       }
     }

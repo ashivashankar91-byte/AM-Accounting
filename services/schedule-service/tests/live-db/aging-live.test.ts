@@ -86,9 +86,12 @@ describe.skipIf(SKIP)('S027 Live database — schedule aging engine', () => {
     // Item 1: opened, then fully closed — must be excluded from aging.
     const closedInvoice = postingEvent({ amount: '80.00' });
     await openItemSvc.processPostingEvent(TENANT, closedInvoice, `corr-${randomUUID()}`);
+    // CE-12 gap-close: a posting-bridge relief line's amount carries the
+    // OPPOSITE sign of a positive-original item's own amount (the raw
+    // dr-cr of the relief leg, the opposite GL side of the origination).
     await openItemSvc.processPostingEvent(
       TENANT,
-      postingEvent({ amount: '80.00', applyNumber: closedInvoice.referenceNumber, applyCd: '#' }),
+      postingEvent({ amount: '-80.00', applyNumber: closedInvoice.referenceNumber, applyCd: '#' }),
       `corr-${randomUUID()}`,
     );
 
@@ -97,7 +100,7 @@ describe.skipIf(SKIP)('S027 Live database — schedule aging engine', () => {
     await openItemSvc.processPostingEvent(TENANT, partialInvoice, `corr-${randomUUID()}`);
     await openItemSvc.processPostingEvent(
       TENANT,
-      postingEvent({ amount: '40.00', applyNumber: partialInvoice.referenceNumber, applyCd: '#' }),
+      postingEvent({ amount: '-40.00', applyNumber: partialInvoice.referenceNumber, applyCd: '#' }),
       `corr-${randomUUID()}`,
     );
 

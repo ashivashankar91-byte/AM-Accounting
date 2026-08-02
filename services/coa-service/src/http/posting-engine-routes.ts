@@ -8,6 +8,7 @@ import {
   RulePackNotFoundError,
   RulePackVersionNotFoundError,
   ActivationNotEligibleError,
+  ActivationSoDViolationError,
   EventIdentityConflictError,
   SelfActivationForbiddenError,
   AmbiguousRulePackMatchError,
@@ -73,6 +74,7 @@ export const POSTING_ENGINE_PERMISSIONS = {
   EDIT_RULE_PACK: 'posting_engine.rule_pack.edit',
   VALIDATE_RULE_PACK: 'posting_engine.rule_pack.validate',
   ACTIVATE_RULE_PACK: 'posting_engine.rule_pack.activate',
+  SIMULATE_RULE_PACK: 'posting_engine.rule_pack.simulate',
   VIEW_EXECUTION: 'posting_engine.execution.view',
   VIEW_EXCEPTION: 'posting_engine.exception.view',
   /** D-S023-33 — new capability, added under the existing posting_engine.<noun>.<verb> namespace (S023_PERMISSION_MATRIX.md). */
@@ -98,7 +100,7 @@ function handleError(error: unknown, reply: any) {
   if (error instanceof RulePackNotFoundError || error instanceof RulePackVersionNotFoundError) {
     return reply.status(404).send({ error: error.code, message: error.message });
   }
-  if (error instanceof ActivationNotEligibleError || error instanceof ReplayNotEligibleError) {
+  if (error instanceof ActivationNotEligibleError || error instanceof ReplayNotEligibleError || error instanceof ActivationSoDViolationError) {
     return reply.status(422).send({ error: (error as any).code, message: error.message });
   }
   if (error instanceof SelfActivationForbiddenError) {
@@ -269,6 +271,25 @@ export async function postingEngineRoutes(app: FastifyInstance) {
       return handleError(err, reply);
     }
   });
+
+  // S024 (CE-12) — dry-run blueprint preview, no persistence/posting. Gated
+  // by a real business permission (unlike /events) since this is a human-
+  // facing preview action (S085 biller workbench), not a source-system feed.
+  app.post('/posting-engine/events/simulate', {
+    preHandler: requirePostingEnginePermission(POSTING_ENGINE_PERMISSIONS.SIMULATE_RULE_PACK, (request) => ({
+      entityId: (request.body as any)?.legalEntityId,
+    })),
+  }, async (request, reply) => {
+    try {
+      const tenantId = getTenantId(request);
+      const result = await svc.simulate(tenantId, request.body ?? {});
+      return reply.status(200).send(result);
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
+  // ── Execution / exception inquiry ───────────────────────────────────────────
 
   // ── Replay (D-S023-25, joint with D-S023-22): authorized corrected replay ──
   const ReplaySchema = z.object({ reason: z.string().min(1) });

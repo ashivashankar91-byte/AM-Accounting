@@ -18,15 +18,22 @@ export interface BlueprintLine {
   dr: number; // dollars
   cr: number; // dollars
   memo?: string | null;
+  /** CE-12 — resolved from a fixed allocation's controlNumberPath, if set. */
+  controlNumber?: string | null;
   /**
-   * Set only on a dynamic line item (debitLineItemsPath/creditLineItemsPath)
-   * whose event payload item carries an `applyNumber` — the schedule open-
-   * item business reference (ScheduleOpenItem.itemNumber) this line relieves
-   * via gl-service's applyCd='#' mechanism, instead of creating a new open
-   * item. Never set on a fixed rule-authored allocation (those have no
-   * per-occurrence relief target).
+   * Resolved from a fixed allocation's applyNumberPath (CE-12), OR set on a
+   * dynamic line item (debitLineItemsPath/creditLineItemsPath) whose event
+   * payload item carries an `applyNumber` — the schedule open-item business
+   * reference (ScheduleOpenItem.itemNumber) this line relieves via
+   * gl-service's applyCd='#' mechanism, instead of creating a new open item.
    */
   applyNumber?: string | null;
+}
+
+function resolveOptionalStringPath(path: string | null | undefined, envelope: SourceEventEnvelope): string | null {
+  if (!path) return null;
+  const raw = resolveEnvelopePath(envelope, path);
+  return raw === undefined || raw === null ? null : String(raw);
 }
 
 export interface RuleMatch {
@@ -146,6 +153,8 @@ export function generateBlueprint(rule: RuleDefinition, envelope: SourceEventEnv
           dr: centsToDollars(drCents[i]),
           cr: 0,
           memo,
+          controlNumber: resolveOptionalStringPath(alloc.controlNumberPath, envelope),
+          applyNumber: resolveOptionalStringPath(alloc.applyNumberPath, envelope),
         });
       });
     }
@@ -166,6 +175,8 @@ export function generateBlueprint(rule: RuleDefinition, envelope: SourceEventEnv
           dr: 0,
           cr: centsToDollars(crCents[i]),
           memo,
+          controlNumber: resolveOptionalStringPath(alloc.controlNumberPath, envelope),
+          applyNumber: resolveOptionalStringPath(alloc.applyNumberPath, envelope),
         });
       });
     }

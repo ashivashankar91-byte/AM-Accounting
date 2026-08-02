@@ -7,6 +7,7 @@ import { DeadLetterIntakeService } from '../application/dead-letter-intake-servi
 import { FixtureService } from '../application/fixture-service';
 import { ReplayService } from '../application/replay-service';
 import { ReplayReaperService } from '../application/replay-reaper-service';
+import { DeadLetterIntakeService } from '../application/dead-letter-intake-service';
 import { PostingRecoveryConflictError, PostingRecoveryNotFoundError, PostingRecoveryValidationError } from '../domain/errors';
 import { attachRouteSecurity, getActor, getTenantId, hasPermission, POSTING_RECOVERY_PERMISSIONS, RouteAuditSpec } from './security';
 
@@ -249,6 +250,32 @@ export async function postingRecoveryRoutes(app: FastifyInstance) {
         ? await reaperSvc.reapStaleReplays(tenantId, actor, staleAfterMs)
         : await reaperSvc.reapStaleReplays(tenantId, actor);
       return reply.status(200).send(result);
+    } catch (err) {
+      return mapError(err, reply);
+    }
+  });
+
+  // CE-12 (S024/S021 integration) — real, always-on producer-side intake.
+  // Unlike /_fixtures/dead-letters (test/demo-only, env-gated), this is the
+  // production seam a source-of-truth service (e.g. a CE-12 workstream
+  // service) calls when coa-service's posting engine returns REJECTED/
+  // FAILED (most commonly ACCOUNTING_MAPPING_UNRESOLVED — a rule pack row
+  // still pinned to ACCOUNT_MAPPING_VALUES_PENDING). Restricted to trusted
+  // service-to-service callers (createServiceToken, role SERVICE) — never
+  // reachable from a browser/end user, matching coa-service's own
+  // /posting-engine/events producer boundary. Deliberately not listed in
+  // resolvePermission() (falls through to `null` = no human-RBAC permission
+  // check applies to this route at all); the SERVICE-role check below is
+  // the actual gate.
+  app.post('/dead-letters', async (request, reply) => {
+    if ((request as any).user?.role !== 'SERVICE') {
+      return reply.status(403).send({ error: 'SERVICE_CALLERS_ONLY', message: 'POST /dead-letters is a service-to-service producer endpoint.' });
+    }
+    const intake = container.resolve(DeadLetterIntakeService);
+    try {
+      const body = request.body as any;
+      const result = await intake.intake(body?.envelope, getActor(request));
+      return reply.status(result.created ? 201 : 200).send(result);
     } catch (err) {
       return mapError(err, reply);
     }

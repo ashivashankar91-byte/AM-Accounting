@@ -60,6 +60,7 @@ function makePrisma(seed: any[] = []) {
     auditOutboxEvent: { create: async ({ data }: any) => (audits.push(data), data) },
     coaOutboxEvent: { create: async ({ data }: any) => (outbox.push(data), data) },
     glAccountReparent: { create: async ({ data }: any) => (reparents.push(data), data) },
+    $executeRawUnsafe: async () => undefined,
   };
   client.$transaction = async (arg: any) =>
     typeof arg === 'function' ? arg(client) : Promise.all(arg);

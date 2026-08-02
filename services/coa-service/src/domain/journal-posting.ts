@@ -57,6 +57,8 @@ export interface ResolvedAccount {
   normalBalance: 'DR' | 'CR' | string;
   postable: boolean;
   status: string; // ACTIVE | INACTIVE
+  /** CE-12 — optional schedule-service linkage; not used by evaluate()'s own balancing logic. */
+  scheduleCode?: string | null;
 }
 
 export interface ResolvedPeriod {

@@ -7,6 +7,7 @@ import {
   RulePackDefinition, RuleDefinition, ConditionExpr,
   RULE_PACK_TOP_LEVEL_FIELDS, RULE_FIELDS, BLUEPRINT_FIELDS, POSTING_GROUP_FIELDS, ALLOCATION_FIELDS,
   CONDITION_OPERATORS, DSL_VERSION, SUPPORTED_MATCH_STRATEGIES, SUPPORTED_NO_MATCH_BEHAVIORS, BP_TOTAL,
+  ACCOUNT_MAPPING_VALUES_PENDING,
 } from './dsl';
 import { parseStrictJson, StrictJsonParseError } from './strict-json';
 
@@ -329,9 +330,22 @@ export async function validateRulePackSource(
           } else {
             bpSum += aobj['bp'] as number;
           }
+          if (aobj['controlNumberPath'] !== undefined && aobj['controlNumberPath'] !== null && !isAllowedPath(aobj['controlNumberPath'])) {
+            err(findings, 'INVALID_EVENT_PATH', `${allocPath}.controlNumberPath`, 'controlNumberPath references a disallowed path.', ruleId);
+          }
+          if (aobj['applyNumberPath'] !== undefined && aobj['applyNumberPath'] !== null && !isAllowedPath(aobj['applyNumberPath'])) {
+            err(findings, 'INVALID_EVENT_PATH', `${allocPath}.applyNumberPath`, 'applyNumberPath references a disallowed path.', ruleId);
+          }
 
           // BR S019-15 — account reference + dimension validation via the accepted lookup contract.
-          if (typeof aobj['accountNumber'] === 'string' && aobj['accountNumber'].trim() !== '' && entityId) {
+          // CE-12/S024: a row deliberately authored with the pending-mapping
+          // sentinel is exempt from existence/postable/active/deptCode
+          // checks here — it is expected not to resolve yet. It still
+          // deterministically rejects at submit-time (posting-engine-
+          // service.ts's real accountLookup), never silently posts.
+          if (aobj['accountNumber'] === ACCOUNT_MAPPING_VALUES_PENDING) {
+            warn(findings, 'ACCOUNT_MAPPING_VALUES_PENDING', `${allocPath}.accountNumber`, `Row is a pending tenant account mapping — events matching this rule will be rejected until a real account is configured.`, ruleId);
+          } else if (typeof aobj['accountNumber'] === 'string' && aobj['accountNumber'].trim() !== '' && entityId) {
             // eslint-disable-next-line no-await-in-loop
             const account = await accountLookup(entityId, aobj['accountNumber']);
             if (!account) {

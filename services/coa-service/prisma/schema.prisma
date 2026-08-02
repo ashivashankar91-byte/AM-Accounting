@@ -219,6 +219,13 @@ model GlAccount {
   status        String   @default("ACTIVE") // ACTIVE | INACTIVE
   balance       Decimal  @default(0) @db.Decimal(15, 2)
   hasPostings   Boolean  @default(false) @map("has_postings")
+  /// CE-12 — optional schedule-service linkage. When set, a posted journal
+  /// line against this account whose controlNumber is present also emits a
+  /// JOURNAL_ENTRY_POSTED-shaped bridge event (see posting-service.ts's
+  /// post()) so schedule-service opens/relieves a real open item, mirroring
+  /// gl-service's own scheduleCode-gated JOURNAL_ENTRY_POSTED emission.
+  /// Null by default — no effect on any account that doesn't opt in.
+  scheduleCode  String?  @map("schedule_code")
   version       Int      @default(1)
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")

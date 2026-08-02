@@ -17,6 +17,7 @@ const ENTITY = 'e1';
 const ACCOUNTS = [
   { id: 'a-cash', tenantId: TENANT, entityId: ENTITY, accountNumber: '10000', type: 'ASSET', normalBalance: 'DR', postable: true, status: 'ACTIVE', balance: 0 },
   { id: 'a-rev', tenantId: TENANT, entityId: ENTITY, accountNumber: '49000', type: 'REVENUE', normalBalance: 'CR', postable: true, status: 'ACTIVE', balance: 0 },
+  { id: 'a-sched', tenantId: TENANT, entityId: ENTITY, accountNumber: '19500', type: 'ASSET', normalBalance: 'DR', postable: true, status: 'ACTIVE', balance: 0, scheduleCode: 'VEH-UNIT-LEDGER' },
 ];
 
 function makePrisma() {
@@ -239,6 +240,96 @@ describe('PostingService.post — event payload', () => {
     expect(payload.journalNumber).toBe('GJ-2026-01-000001');
     expect(payload.lines).toHaveLength(2);
     expect(payload.postedBy).toBe('alice');
+  });
+});
+
+describe('PostingService.post — CE-12 schedule-service bridge event', () => {
+  it('a line on a scheduleCode-linked account with a controlNumber also publishes a JOURNAL_ENTRY_POSTED bridge event', async () => {
+    const { svc, events } = setup();
+    await svc.post(dto({
+      lines: [
+        { accountId: 'a-sched', storeId: '01', dr: 100, controlNumber: 'STK-001' },
+        { accountId: 'a-rev', storeId: '01', deptCode: 'SVC', cr: 100 },
+      ],
+    }));
+    const bridge = events.published.find((e: any) => e.type === 'JOURNAL_ENTRY_POSTED');
+    expect(bridge).toBeTruthy();
+    expect(bridge.payload.tenantId).toBe(TENANT);
+    expect(bridge.payload.glAccountNumber).toBe('19500');
+    expect(bridge.payload.scheduleNumber).toBe('VEH-UNIT-LEDGER');
+    expect(bridge.payload.controlNumber).toBe('STK-001');
+    // referenceNumber becomes the new ScheduleOpenItem's itemNumber (see
+    // schedule-service's OpenItemService.processPostingEvent) — must be the
+    // real business key, not a fabricated/idempotency-derived value.
+    expect(bridge.payload.referenceNumber).toBe('STK-001');
+    expect(bridge.payload.amount).toBe('100');
+    expect(bridge.payload.applyNumber).toBeNull();
+  });
+
+  it('a line without controlNumber, even on a scheduleCode-linked account, does not publish a bridge event', async () => {
+    const { svc, events } = setup();
+    await svc.post(dto({
+      lines: [
+        { accountId: 'a-sched', storeId: '01', dr: 100 },
+        { accountId: 'a-rev', storeId: '01', deptCode: 'SVC', cr: 100 },
+      ],
+    }));
+    expect(events.published.some((e: any) => e.type === 'JOURNAL_ENTRY_POSTED')).toBe(false);
+  });
+
+  it('a line on an account with no scheduleCode never publishes a bridge event, regardless of controlNumber (pre-CE-12 behavior unaffected)', async () => {
+    const { svc, events } = setup();
+    await svc.post(dto({
+      lines: [
+        { accountId: 'a-cash', storeId: '01', dr: 100, controlNumber: 'IRRELEVANT' },
+        { accountId: 'a-rev', storeId: '01', deptCode: 'SVC', cr: 100 },
+      ],
+    }));
+    expect(events.published.some((e: any) => e.type === 'JOURNAL_ENTRY_POSTED')).toBe(false);
+  });
+
+  it('applyNumber (relieving an existing item) flows through with applyCd "#", matching gl-service\'s convention', async () => {
+    const { svc, events } = setup();
+    await svc.post(dto({
+      lines: [
+        { accountId: 'a-sched', storeId: '01', cr: 100, controlNumber: 'STK-001', applyNumber: 'STK-001' },
+        { accountId: 'a-rev', storeId: '01', deptCode: 'SVC', dr: 100 },
+      ],
+    }));
+    const bridge = events.published.find((e: any) => e.type === 'JOURNAL_ENTRY_POSTED');
+    expect(bridge.payload.applyNumber).toBe('STK-001');
+    expect(bridge.payload.applyCd).toBe('#');
+    expect(bridge.payload.amount).toBe('-100'); // CR line — matches gl-service's netAmount = dr - cr convention
+  });
+
+  it('a controlNumber/applyNumber longer than schedule-service\'s column limits is truncated, never dropped or rejected', async () => {
+    const { svc, events } = setup();
+    const longKey = 'DEAL-2026-000123456789'; // 22 chars — exceeds both VarChar(10) and VarChar(12)
+    await svc.post(dto({
+      lines: [
+        { accountId: 'a-sched', storeId: '01', dr: 100, controlNumber: longKey, applyNumber: longKey },
+        { accountId: 'a-rev', storeId: '01', deptCode: 'SVC', cr: 100 },
+      ],
+    }));
+    const bridge = events.published.find((e: any) => e.type === 'JOURNAL_ENTRY_POSTED');
+    expect(bridge.payload.controlNumber).toBe(longKey.slice(0, 10));
+    expect(bridge.payload.referenceNumber).toBe(longKey.slice(0, 10));
+    expect(bridge.payload.applyNumber).toBe(longKey.slice(0, 12));
+  });
+
+  it('a memo longer than schedule-service\'s ScheduleDetail.description VarChar(35) is truncated, never dropped or rejected', async () => {
+    const { svc, events } = setup();
+    const longMemo = 'Deferral booking origination — deal D1 product GAP'; // 51 chars — exceeds VarChar(35)
+    await svc.post(dto({
+      memo: longMemo,
+      lines: [
+        { accountId: 'a-sched', storeId: '01', dr: 100, controlNumber: 'D1-GAP', memo: longMemo },
+        { accountId: 'a-rev', storeId: '01', deptCode: 'SVC', cr: 100 },
+      ],
+    }));
+    const bridge = events.published.find((e: any) => e.type === 'JOURNAL_ENTRY_POSTED');
+    expect(bridge.payload.description).toBe(longMemo.slice(0, 35));
+    expect(bridge.payload.description.length).toBe(35);
   });
 });
 

@@ -3,7 +3,7 @@ import { Routes, Route, Navigate, useLocation, useNavigate, useParams } from 're
 import {
   LayoutDashboard, BookOpen, CreditCard, Users, Calendar,
   Wrench, Settings as SettingsIcon, Terminal, Search, Bell, Landmark,
-  ClipboardList, PackageSearch,
+  ClipboardList, PackageSearch, Car,
 } from 'lucide-react';
 import ErrorBoundary from './components/ErrorBoundary';
 import { useAuth } from './auth/AuthContext';
@@ -147,6 +147,18 @@ import InquiryMenu from './pages/accounting/InquiryMenu';
 import ScheduleInquiry from './pages/accounting/ScheduleInquiry';
 import ScheduleOpenItems from './pages/accounting/ScheduleOpenItems';
 import TransactionInquiry from './pages/accounting/TransactionInquiry';
+// CE-12 — Vehicle, Deals & F&I Integrations
+import VehicleUnitLedger from './pages/accounting/ce12/VehicleUnitLedger';
+import FloorplanWorkbench from './pages/accounting/ce12/FloorplanWorkbench';
+import SotMonitor from './pages/accounting/ce12/SotMonitor';
+import FloorplanInterestCurtailments from './pages/accounting/ce12/FloorplanInterestCurtailments';
+import DealPostingInquiry from './pages/accounting/ce12/DealPostingInquiry';
+import BillerWorkbench from './pages/accounting/ce12/BillerWorkbench';
+import DealAccountingDetail from './pages/accounting/ce12/DealAccountingDetail';
+import CitFundingWorkbench from './pages/accounting/ce12/CitFundingWorkbench';
+import ReserveChargeback from './pages/accounting/ce12/ReserveChargeback';
+import FniProducts from './pages/accounting/ce12/FniProducts';
+import WholesaleArbitration from './pages/accounting/ce12/WholesaleArbitration';
 // FINAL-R0 / UXMAP-02 (Golden R0 UI convergence): the /accounting/inquiry/gl
 // route previously rendered the legacy prototype at
 // ./pages/accounting/GLInquiry.tsx, which called the legacy gl-service
@@ -420,6 +432,33 @@ const MODULES: AppModule[] = [
         { path: '/accounting/parts/physical',      label: 'Physical Inventory Adjustment Review' },
         { path: '/accounting/parts/deposits',      label: 'Special-Order Deposit Inquiry' },
         { path: '/accounting/parts/valuation',     label: 'Price-Tape / Revaluation & Obsolescence' },
+      ]},
+    ],
+  },
+  {
+    // CE-12 — Vehicle, Deals & F&I Integrations. New top-level nav module,
+    // same pattern as 'tax' above.
+    key: 'vehicles-deals',
+    Icon: Car,
+    label: 'Vehicles & Deals',
+    defaultPath: '/accounting/vehicles/units',
+    matchPrefixes: ['/accounting/vehicles', '/accounting/deals'],
+    sections: [
+      { title: 'Vehicle Inventory', items: [
+        { path: '/accounting/vehicles/units',      label: 'Unit Ledger' },
+        { path: '/accounting/vehicles/floorplan',  label: 'Floorplan Workbench' },
+        { path: '/accounting/vehicles/sot',        label: 'SOT Monitor' },
+        { path: '/accounting/vehicles/interest',   label: 'Interest & Curtailments' },
+      ]},
+      { title: 'Deals', items: [
+        { path: '/accounting/deals/postings',      label: 'Deal Posting Inquiry' },
+        { path: '/accounting/deals/review',        label: 'Biller Workbench' },
+        { path: '/accounting/deals/cit',           label: 'CIT Funding Workbench' },
+        { path: '/accounting/deals/wholesale',     label: 'Wholesale & Arbitration' },
+      ]},
+      { title: 'Reserve & F&I Products', items: [
+        { path: '/accounting/deals/reserve',       label: 'Reserve & Chargeback' },
+        { path: '/accounting/deals/products',      label: 'F&I Products' },
       ]},
     ],
   },
@@ -778,6 +817,21 @@ export default function App() {
               <Route path="/accounting/tax/results" element={<GoldenPathProtectedRoute><TaxResultInquiry /></GoldenPathProtectedRoute>} />
               <Route path="/accounting/tax/exceptions" element={<GoldenPathProtectedRoute><TaxExceptionQueue /></GoldenPathProtectedRoute>} />
               <Route path="/accounting/tax/reconciliation" element={<GoldenPathProtectedRoute><TaxReconciliation /></GoldenPathProtectedRoute>} />
+
+              {/* CE-12 — Vehicle, Deals & F&I Integrations. Static paths under
+                  /accounting/deals/* registered before the :dealNumber param
+                  route below so they aren't shadowed by it. */}
+              <Route path="/accounting/vehicles/units" element={<GoldenPathProtectedRoute><VehicleUnitLedger /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/vehicles/floorplan" element={<GoldenPathProtectedRoute><FloorplanWorkbench /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/vehicles/sot" element={<GoldenPathProtectedRoute><SotMonitor /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/vehicles/interest" element={<GoldenPathProtectedRoute><FloorplanInterestCurtailments /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/deals/postings" element={<GoldenPathProtectedRoute><DealPostingInquiry /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/deals/review" element={<GoldenPathProtectedRoute><BillerWorkbench /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/deals/cit" element={<GoldenPathProtectedRoute><CitFundingWorkbench /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/deals/reserve" element={<GoldenPathProtectedRoute><ReserveChargeback /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/deals/products" element={<GoldenPathProtectedRoute><FniProducts /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/deals/wholesale" element={<GoldenPathProtectedRoute><WholesaleArbitration /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/deals/:dealNumber" element={<GoldenPathProtectedRoute><DealAccountingDetail /></GoldenPathProtectedRoute>} />
               <Route path="/accounting/tax/fees" element={<GoldenPathProtectedRoute><TaxFeeAdmin /></GoldenPathProtectedRoute>} />
               {/* CE-11 — Fixed Ops Integrations (S059-S072). */}
               <Route path="/accounting/fixedops/postings" element={<GoldenPathProtectedRoute><FixedOpsPostingInquiry /></GoldenPathProtectedRoute>} />

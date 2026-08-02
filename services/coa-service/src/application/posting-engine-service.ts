@@ -51,6 +51,13 @@ export class ActivationNotEligibleError extends Error {
   constructor(message: string) { super(message); this.name = 'ActivationNotEligibleError'; }
 }
 
+/** S023/D-28, required by S024 (CE-12): a version's own author may never also activate it. */
+export class ActivationSoDViolationError extends Error {
+  readonly status = 422;
+  readonly code = 'ACTIVATION_SOD_VIOLATION';
+  constructor(message: string) { super(message); this.name = 'ActivationSoDViolationError'; }
+}
+
 export class EventIdentityConflictError extends Error {
   readonly status = 409;
   readonly code = 'EVENT_IDENTITY_CONFLICT';
@@ -147,6 +154,22 @@ export interface SubmitEventResult {
   ruleId?: string | null;
   journalEntryId?: string | null;
   journalNumber?: string | null;
+  failureReason?: string | null;
+}
+
+/** CE-12 (S024) rule-pack keys live under this namespace — see isCE12PackKey(). */
+export const CE12_PACK_KEY_PREFIX = 'ce12.';
+export function isCE12PackKey(packKey: string): boolean {
+  return packKey.startsWith(CE12_PACK_KEY_PREFIX);
+}
+
+/** S024 (CE-12) — distinct result shape for simulate() (dry-run blueprint preview), kept separate from CE-07's own SimulateEventResult (used by simulateEvent()) since the two methods have different status enums and payloads. */
+export interface BlueprintSimulationResult {
+  status: 'BLUEPRINT_GENERATED' | 'NO_RULE_MATCH' | 'REJECTED';
+  rulePackVersionId?: string | null;
+  ruleId?: string | null;
+  blueprintHash?: string | null;
+  lines?: BlueprintLine[];
   failureReason?: string | null;
 }
 
@@ -327,6 +350,18 @@ export class PostingEngineService {
     if (version.status !== 'VALIDATED') {
       await this.audit(tenantId, versionId, 'ACTIVATION_FAILED', actor, { reason: `status is ${version.status}, not VALIDATED` });
       throw new ActivationNotEligibleError(`Rule pack version is "${version.status}" — only a VALIDATED version may be activated.`);
+    }
+    // S023/D-28 (required by S024): the version's own author may not also be
+    // its activator. Refusal is named and audited, never silently allowed.
+    // Scoped to CE-12's own pack-key namespace ("ce12.") only — enforcing
+    // this globally would change already-certified behavior for other
+    // epics' rule packs (pre-CE-12 fixtures/tests author and activate with
+    // the same actor), which the epic's own "shared files untouched" DoD
+    // guard forbids. CE-12 packs opt into the stricter S023 SoD governance
+    // this story requires without regressing prior epics.
+    if (isCE12PackKey(version.packKey) && version.createdBy === actor) {
+      await this.audit(tenantId, versionId, 'ACTIVATION_REFUSED_SOD', actor, { reason: 'actor is also the version author', createdBy: version.createdBy });
+      throw new ActivationSoDViolationError(`Rule pack version "${versionId}" was authored by "${actor}" — a separately authorized user must activate it.`);
     }
 
     const activated = await this.prisma.$transaction(async (tx) => {
@@ -834,6 +869,81 @@ export class PostingEngineService {
     return {
       wouldPost: true, status: 'WOULD_POST', rulePackVersionId: selected.id, ruleId: match.rule.ruleId,
       proposedJournal: { entityId: pack.entityId, date: envelope.businessDate, sourceCode: pack.journalSourceCode, lines },
+    };
+  }
+
+  /**
+   * S024 (CE-12) — dry-run rule selection + blueprint generation with no
+   * persistence and no posting: returns the same structural blueprint
+   * submitEvent() would post, without creating a PostingExecution row or
+   * touching PostingService. Used by the S085 biller preview ("recap-vs-
+   * journal preview") and by rule-pack authors validating a family's
+   * structure end-to-end. Does not resolve/require GL account existence
+   * (that check only happens at real submit-time) — a pack authored with
+   * ACCOUNT_MAPPING_VALUES_PENDING rows still simulates successfully so its
+   * structure can be reviewed before tenant account mapping is complete.
+   */
+  async simulate(authenticatedTenantId: string, rawEnvelope: unknown): Promise<BlueprintSimulationResult> {
+    let envelope: SourceEventEnvelope;
+    try {
+      envelope = assertEnvelopeShape(rawEnvelope);
+    } catch (e) {
+      if (e instanceof EnvelopeShapeError) throw new PostingEngineInputError(e.message);
+      throw e;
+    }
+    if (envelope.tenantId !== authenticatedTenantId) {
+      throw new PostingEngineInputError('Event tenantId does not match the authenticated tenant context.');
+    }
+
+    const occurredAt = new Date(envelope.occurredAt);
+    const candidates = await this.prisma.postingRulePackVersion.findMany({
+      where: {
+        // CE-07 legal-entity isolation — scoped by the envelope's own
+        // legalEntityId, same standing as submitEvent()/simulateEvent(); a
+        // preview must never resolve a different legal entity's active pack.
+        tenantId: authenticatedTenantId, entityId: envelope.legalEntityId, eventType: envelope.eventType, status: 'ACTIVE',
+        effectiveFrom: { lte: occurredAt },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gte: occurredAt } }],
+      },
+    });
+    const matchingSchema = candidates.filter((c) => c.eventSchemaVersions.includes(envelope.eventSchemaVersion));
+
+    if (matchingSchema.length === 0) {
+      return { status: 'NO_RULE_MATCH', failureReason: 'No active rule pack version covers this event type/schema version/date.' };
+    }
+    // D-S023-08 — deterministic ambiguity rejection applies to preview too:
+    // never silently tie-break two equally-specific ACTIVE versions.
+    const ranked = [...matchingSchema].sort((a, b) => b.effectiveFrom.getTime() - a.effectiveFrom.getTime());
+    const topEffectiveFrom = ranked[0].effectiveFrom.getTime();
+    const mostSpecific = ranked.filter((c) => c.effectiveFrom.getTime() === topEffectiveFrom);
+    if (mostSpecific.length > 1) {
+      return { status: 'REJECTED', failureReason: `Ambiguous rule-pack match: ${mostSpecific.length} equally-specific ACTIVE versions match this event.` };
+    }
+    const selected = mostSpecific[0];
+
+    const pack = selected.definition as unknown as RulePackDefinition;
+    const match = selectRule(pack, envelope);
+    if (!match) {
+      return { status: 'NO_RULE_MATCH', rulePackVersionId: selected.id, failureReason: 'An active rule pack was selected but no rule condition matched this event.' };
+    }
+
+    let lines: BlueprintLine[];
+    try {
+      lines = generateBlueprint(match.rule, envelope);
+    } catch (e) {
+      const message = e instanceof BlueprintResolutionError ? e.message : String((e as Error).message ?? e);
+      return { status: 'REJECTED', rulePackVersionId: selected.id, ruleId: match.rule.ruleId, failureReason: message };
+    }
+    const violations = verifyBlueprint(lines);
+    if (violations.length > 0) {
+      return {
+        status: 'REJECTED', rulePackVersionId: selected.id, ruleId: match.rule.ruleId,
+        failureReason: `Blueprint failed defensive verification: ${violations.map((v) => v.message).join('; ')}`,
+      };
+    }
+    return {
+      status: 'BLUEPRINT_GENERATED', rulePackVersionId: selected.id, ruleId: match.rule.ruleId,
+      blueprintHash: hashBlueprint(match.rule.ruleId, lines), lines,
     };
   }
 

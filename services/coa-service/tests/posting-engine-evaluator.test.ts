@@ -108,6 +108,25 @@ describe('S020 generateBlueprint — decimal-money, deterministic rounding, stab
     expect(() => generateBlueprint(rule, envelope(500))).toThrow(BlueprintResolutionError);
   });
 
+  it('CE-12: controlNumberPath/applyNumberPath resolve from the envelope onto BlueprintLine; omitting them reproduces pre-CE-12 behavior (null)', () => {
+    const rule: RuleDefinition = {
+      ruleId: 'r1', priority: 1, description: 'd', condition: null,
+      blueprint: {
+        postingGroups: [{
+          groupId: 'g1', baseAmountPath: 'payload.amount',
+          debitAllocations: [{ accountNumber: '10000', storeId: 's1', bp: 10000, controlNumberPath: 'sourceEntityId' }],
+          creditAllocations: [{ accountNumber: '10100', storeId: 's1', bp: 10000, applyNumberPath: 'correlationId' }],
+        }],
+      },
+    };
+    const env = envelope(100);
+    const lines = generateBlueprint(rule, env);
+    expect(lines[0].controlNumber).toBe(env.sourceEntityId);
+    expect(lines[0].applyNumber).toBeNull();
+    expect(lines[1].controlNumber).toBeNull();
+    expect(lines[1].applyNumber).toBe(env.correlationId);
+  });
+
   it('produces a balanced two-line blueprint for a single 10000bp/10000bp group', () => {
     const rule: RuleDefinition = {
       ruleId: 'r1', priority: 1, description: 'd', condition: null,

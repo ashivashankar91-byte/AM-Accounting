@@ -59,8 +59,12 @@ model ScheduleDetail {
   amount         Decimal   @db.Decimal(15, 2)
   // DE-REFNO: PIC X(12)
   referenceNumber String?  @db.VarChar(12) @map("reference_number")
-  // DE-SOURCE: PIC XX — 2-char journal source code
-  journalSource  String?   @db.Char(2) @map("journal_source")
+  // DE-SOURCE: PIC XX — 2-char journal source code for legacy gl-service-
+  // sourced details. CE-12 (coa-service posting-engine bridge) journal
+  // source codes are 3-6 chars (coa-service's JournalSource.code is
+  // VarChar(6)) — widened from CHAR(2) so those don't hard-fail on insert.
+  // Purely additive: existing 2-char values are unaffected.
+  journalSource  String?   @db.VarChar(10) @map("journal_source")
   // DE-DATE1: YYYYMMDD
   transactionDate DateTime? @map("transaction_date")
   // DE-ACCTNO: PIC X(20) — which of the schedule's GLs this line belongs to
@@ -137,7 +141,9 @@ model ScheduleOpenItem {
   // Targetable business reference a later application's applyNumber must match.
   itemNumber     String  @db.VarChar(20) @map("item_number")
   glAccountNumber String? @db.VarChar(20) @map("gl_account_number")
-  journalSource  String? @db.Char(2) @map("journal_source")
+  // Widened from CHAR(2) — see the identical ScheduleDetail.journalSource
+  // comment above; same CE-12 bridge-compatibility reasoning applies here.
+  journalSource  String? @db.VarChar(10) @map("journal_source")
 
   originalAmount   Decimal @db.Decimal(15, 2) @map("original_amount")
   appliedAmount    Decimal @default(0) @db.Decimal(15, 2) @map("applied_amount")

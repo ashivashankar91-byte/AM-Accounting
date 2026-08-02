@@ -152,11 +152,15 @@ describe('Posting Recovery routes — authorization, masking, pagination, errors
     // CE-07/S023 (D-S023-23) — real production case-intake route. Same
     // "route wiring only" fake as ReplayService/ReplayReaperService above;
     // real intake idempotency/validation logic is covered by
-    // tests/dead-letter-intake-service.test.ts.
+    // tests/dead-letter-intake-service.test.ts. Also covers CE-12's
+    // conflict-on-replay scenario (evt-conflict) via the same fake.
     container.registerInstance(DeadLetterIntakeService, {
       intake: vi.fn(async (envelope: any, _actor: string) => {
         if (envelope?.event?.eventId === MISSING_ID) {
           throw new PostingRecoveryValidationError('EVENT_CONTRACT_INVALID', 'event.tenantId is required');
+        }
+        if (envelope?.event?.eventId === 'evt-conflict') {
+          throw new PostingRecoveryConflictError('IDEMPOTENCY_CONFLICT', 'A different payload was already recorded');
         }
         return { deadLetterId: 'dl-new-1', created: true };
       }),
@@ -392,7 +396,12 @@ describe('Posting Recovery routes — authorization, masking, pagination, errors
     expect(res.statusCode).toBe(200);
   });
 
-  // ── CE-07/S023 (D-S023-23) — real production case intake ──────────────────
+  // ── CE-07/S023 (D-S023-23) case intake, merged with CE-12's stricter
+  // service-to-service producer boundary: POST /dead-letters is gated on
+  // request.user.role === 'SERVICE', not a business permission (mirrors
+  // coa-service's own producer boundary at POST /posting-engine/events). A
+  // human ADMIN token — even with every permission granted — must NOT be
+  // able to call this route; only a genuine SERVICE-role caller can. ──────
 
   const VALID_INTAKE_BODY = {
     envelope: {
@@ -410,21 +419,37 @@ describe('Posting Recovery routes — authorization, masking, pagination, errors
     expect(res.statusCode).toBe(401);
   });
 
-  it('denies case intake to a caller without posting-recovery.case.create (e.g. ACCOUNTANT)', async () => {
+  it('denies case intake to a caller without SERVICE role (e.g. ACCOUNTANT)', async () => {
     const res = await app.inject({ method: 'POST', url: '/posting-recovery/v1/dead-letters', headers: authed('ACCOUNTANT'), payload: VALID_INTAKE_BODY });
     expect(res.statusCode).toBe(403);
+    expect(res.json().error).toBe('SERVICE_CALLERS_ONLY');
   });
 
-  it('allows case intake for ADMIN and returns 201 with the created case id', async () => {
+  it('rejects a human ADMIN token (even fully permissioned) with 403 — this route is service-to-service only', async () => {
     const res = await app.inject({ method: 'POST', url: '/posting-recovery/v1/dead-letters', headers: authed('ADMIN'), payload: VALID_INTAKE_BODY });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toBe('SERVICE_CALLERS_ONLY');
+  });
+
+  it('allows case intake for a SERVICE-role caller and returns 201 with the created case id', async () => {
+    const res = await app.inject({ method: 'POST', url: '/posting-recovery/v1/dead-letters', headers: authed('SERVICE'), payload: VALID_INTAKE_BODY });
     expect(res.statusCode).toBe(201);
     expect(res.json()).toMatchObject({ deadLetterId: 'dl-new-1', created: true });
   });
 
   it('surfaces a validation error from the intake service as 400', async () => {
     const badBody = { envelope: { event: { ...VALID_INTAKE_BODY.envelope.event, eventId: MISSING_ID }, failure: VALID_INTAKE_BODY.envelope.failure } };
-    const res = await app.inject({ method: 'POST', url: '/posting-recovery/v1/dead-letters', headers: authed('ADMIN'), payload: badBody });
+    const res = await app.inject({ method: 'POST', url: '/posting-recovery/v1/dead-letters', headers: authed('SERVICE'), payload: badBody });
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe('EVENT_CONTRACT_INVALID');
+  });
+
+  it('maps an idempotency conflict from the intake service to 409', async () => {
+    const res = await app.inject({
+      method: 'POST', url: '/posting-recovery/v1/dead-letters', headers: authed('SERVICE'),
+      payload: { envelope: { event: { eventId: 'evt-conflict' }, failure: {} } },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('IDEMPOTENCY_CONFLICT');
   });
 });
