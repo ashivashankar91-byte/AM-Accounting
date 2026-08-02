@@ -757,5 +757,25 @@ services:
       rabbitmq: { condition: service_healthy }
       migrator: { condition: service_completed_successfully }
 
+  # CE-16 S129/S130/S131/S132 — accounting migration service
+  migration-service:
+    build:
+      context: .
+      dockerfile: services/migration-service/Dockerfile
+    ports:
+      - "3060:3060"
+    environment:
+      <<: *service-env
+      PORT: 3060
+      POSTING_SERVICE_URL: http://posting-recovery-service:3049
+      SCHEDULE_SERVICE_URL: http://schedule-service:3018
+      CLOSE_SERVICE_URL: http://close-service:3052
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
+
+
 volumes:
   pgdata:
+

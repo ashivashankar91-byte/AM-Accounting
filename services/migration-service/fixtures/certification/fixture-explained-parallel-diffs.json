@@ -1,0 +1,30 @@
+{
+  "$label": "CERTIFICATION-ONLY: synthetic non-production data",
+  "$description": "Parallel-run period with four real differences, one per explained classification. The exit criterion is that every difference is explained and dispositioned -- not that the difference count is zero.",
+  "legalEntityId": "LE-CERT-001",
+  "periodYear": 2025,
+  "periodMonth": 12,
+  "legacyFigures": [
+    { "diffType": "TB_ACCOUNT", "dimension": "1000", "value": 125000.00 },
+    { "diffType": "TB_ACCOUNT", "dimension": "1200", "value": 48250.75 },
+    { "diffType": "TB_ACCOUNT", "dimension": "2000", "value": -61300.25 },
+    { "diffType": "TB_ACCOUNT", "dimension": "4110", "value": 210400.00 },
+    { "diffType": "SCHEDULE_CONTROL", "dimension": "1300", "value": 7550.00 },
+    { "diffType": "STATEMENT_LINE", "dimension": "GROSS_PROFIT", "value": 88000.00 }
+  ],
+  "modernFigures": [
+    { "diffType": "TB_ACCOUNT", "dimension": "1000", "value": 125000.00 },
+    { "diffType": "TB_ACCOUNT", "dimension": "1200", "value": 46250.75 },
+    { "diffType": "TB_ACCOUNT", "dimension": "2000", "value": -61300.25 },
+    { "diffType": "TB_ACCOUNT", "dimension": "4110", "value": 210900.00 },
+    { "diffType": "SCHEDULE_CONTROL", "dimension": "1300", "value": 7100.00 },
+    { "diffType": "STATEMENT_LINE", "dimension": "GROSS_PROFIT", "value": 88250.00 }
+  ],
+  "classifications": [
+    { "dimension": "1200", "classification": "TIMING", "reason": "Legacy included a 2,000.00 receipt posted 2026-01-02 in the December cut; modern applies it to January." },
+    { "dimension": "4110", "classification": "MAPPING", "reason": "Legacy 4100 and 4105 both fold into modern 4110 under mapping set v1; the 500.00 delta is account 4105." },
+    { "dimension": "1300", "classification": "LEGACY_ERROR", "reason": "Legacy schedule double-counted WIP-0003 (450.00); confirmed against the source document." },
+    { "dimension": "GROSS_PROFIT", "classification": "MODERN_ERROR", "reason": "Modern statement line pulled an extra 250.00 of holdback; correction raised as a modern-side defect and tracked to closure." }
+  ],
+  "expected": { "totalDiffs": 4, "unexplainedAfterClassification": 0, "signOffAllowed": true, "signOffBlockedBeforeClassification": true }
+}

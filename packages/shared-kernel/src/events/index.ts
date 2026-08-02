@@ -87,7 +87,16 @@ export type EventType =
   | 'CE15_CURRENCY_TRANSLATION_INITIATED'
   | 'CE15_CLOSE_PERIOD_TRANSITIONED'
   | 'CE15_SNAPSHOT_SIGNED'
-  | 'CE15_SNAPSHOT_INTEGRITY_ALERT';
+  | 'CE15_SNAPSHOT_INTEGRITY_ALERT'
+  // CE-16 Accounting Migration events
+  | 'migration.run.created'
+  | 'migration.run.state_changed'
+  | 'migration.staging.complete'
+  | 'migration.validation.complete'
+  | 'migration.cutover.initiated'
+  | 'migration.cutover.complete'
+  | 'migration.rollback.initiated'
+  | 'migration.rollback.complete';
 
 export function createEvent(
   type: EventType,
@@ -179,4 +188,15 @@ export const EVENT_ROUTING: Record<EventType, string[]> = {
   'CE15_CLOSE_PERIOD_TRANSITIONED':            ['notification-service', 'audit-service'],
   'CE15_SNAPSHOT_SIGNED':                      ['audit-service'],
   'CE15_SNAPSHOT_INTEGRITY_ALERT':             ['notification-service', 'audit-service'],
+  // CE-16 Accounting Migration. Cutover and rollback are irreversible domain
+  // authority, so they fan out to notification as well as audit — a silent
+  // cutover is not an acceptable failure mode.
+  'migration.run.created':                     ['audit-service'],
+  'migration.run.state_changed':               ['audit-service'],
+  'migration.staging.complete':                ['audit-service'],
+  'migration.validation.complete':             ['audit-service'],
+  'migration.cutover.initiated':               ['notification-service', 'audit-service'],
+  'migration.cutover.complete':                ['notification-service', 'audit-service'],
+  'migration.rollback.initiated':              ['notification-service', 'audit-service'],
+  'migration.rollback.complete':               ['notification-service', 'audit-service'],
 };

@@ -1,0 +1,20 @@
+{
+  "$label": "CERTIFICATION-ONLY: synthetic non-production data",
+  "$description": "The same extract presented twice. Rerunning the import must not double-load: file-level checksum refusal blocks the second file, and row-level hash uniqueness blocks any row that slips through as part of a larger file.",
+  "legalEntityId": "LE-CERT-001",
+  "firstImport": [
+    { "accountCode": "1000", "documentRef": "INV-1001", "documentDate": "2025-11-03", "debit": 1500.00, "credit": 0 },
+    { "accountCode": "2000", "documentRef": "INV-1001", "documentDate": "2025-11-03", "debit": 0, "credit": 1500.00 }
+  ],
+  "secondImportIdentical": [
+    { "accountCode": "1000", "documentRef": "INV-1001", "documentDate": "2025-11-03", "debit": 1500.00, "credit": 0 },
+    { "accountCode": "2000", "documentRef": "INV-1001", "documentDate": "2025-11-03", "debit": 0, "credit": 1500.00 }
+  ],
+  "secondImportSupersetWithOneNewRow": [
+    { "accountCode": "1000", "documentRef": "INV-1001", "documentDate": "2025-11-03", "debit": 1500.00, "credit": 0 },
+    { "accountCode": "2000", "documentRef": "INV-1001", "documentDate": "2025-11-03", "debit": 0, "credit": 1500.00 },
+    { "accountCode": "1000", "documentRef": "INV-1002", "documentDate": "2025-11-04", "debit": 2750.00, "credit": 0 },
+    { "accountCode": "2000", "documentRef": "INV-1002", "documentDate": "2025-11-04", "debit": 0, "credit": 2750.00 }
+  ],
+  "expected": { "duplicateFileRefused": true, "rowsInsertedOnSuperset": 2, "rowsSkippedOnSuperset": 2 }
+}

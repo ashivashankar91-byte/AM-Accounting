@@ -126,6 +126,10 @@ const SERVICES: Array<{ prefix: string; upstream: string; rateLimit?: number; re
   // signed snapshots, WORM archive). close-service has zero direct GL
   // writes; all postings travel through the CE-07 governed posting path.
   { prefix: '/api/v1/close',          upstream: process.env['CLOSE_SERVICE_URL']          ?? 'http://close-service:3095' },
+  // CE-16 S129/S130/S131/S132 — accounting migration. migration-service writes
+  // only to its own controlled staging; every financial effect leaves staging
+  // through CE-07 governed posting, never through this proxy.
+  { prefix: '/api/v1/migration',      upstream: process.env['MIGRATION_SERVICE_URL']      ?? 'http://migration-service:3060' },
 ];
 
 // ── Request logging hook ──────────────────────────────────────────────────────
@@ -219,3 +223,4 @@ bootstrap().catch((err) => {
   logger.error(err, 'Failed to start api-gateway');
   process.exit(1);
 });
+

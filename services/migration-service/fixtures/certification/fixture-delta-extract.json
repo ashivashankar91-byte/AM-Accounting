@@ -1,0 +1,19 @@
+{
+  "$label": "CERTIFICATION-ONLY: synthetic non-production data",
+  "$description": "A post-freeze delta extract. Rows already present in the base snapshot are re-presented and must be skipped by hash; only genuinely new activity is staged.",
+  "legalEntityId": "LE-CERT-001",
+  "baseSnapshotRef": "SNAP-CERT-BASE-2025-12-31",
+  "deltaSnapshotRef": "SNAP-CERT-DELTA-2026-01-05",
+  "freezeTimestamp": "2025-12-31T23:59:59.000Z",
+  "baseRows": [
+    { "accountCode": "1000", "documentRef": "JE-7001", "documentDate": "2025-12-30", "debit": 5000.00, "credit": 0 },
+    { "accountCode": "4110", "documentRef": "JE-7001", "documentDate": "2025-12-30", "debit": 0, "credit": 5000.00 }
+  ],
+  "deltaRows": [
+    { "accountCode": "1000", "documentRef": "JE-7001", "documentDate": "2025-12-30", "debit": 5000.00, "credit": 0 },
+    { "accountCode": "4110", "documentRef": "JE-7001", "documentDate": "2025-12-30", "debit": 0, "credit": 5000.00 },
+    { "accountCode": "1000", "documentRef": "JE-7002", "documentDate": "2026-01-02", "debit": 3300.00, "credit": 0 },
+    { "accountCode": "4110", "documentRef": "JE-7002", "documentDate": "2026-01-02", "debit": 0, "credit": 3300.00 }
+  ],
+  "expected": { "deltaInserted": 2, "deltaSkippedDuplicates": 2, "deltaBalanced": true }
+}

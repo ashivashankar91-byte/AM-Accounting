@@ -2263,3 +2263,129 @@ export const closeApi = {
   // Tax pack
   generateTaxPack: (data: any) => apiFetch<any>('/api/v1/close/tax-pack/generate', { method: 'POST', body: JSON.stringify(data) }),
 };
+
+// ── CE-16 Accounting Migration (S129, S130, S131, S132) ──────────────────────
+
+const MIGRATION_BASE = '/api/v1/migration';
+const qs = (params: Record<string, unknown>) => {
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') search.set(key, String(value));
+  });
+  const encoded = search.toString();
+  return encoded ? `?${encoded}` : '';
+};
+
+export const migrationApi = {
+  // Runs
+  listRuns: (params: { legalEntityId?: string; state?: string; mode?: string } = {}) =>
+    apiFetch<{ items: any[]; total: number }>(`${MIGRATION_BASE}/runs${qs(params)}`),
+  createRun: (data: any) => apiFetch<any>(`${MIGRATION_BASE}/runs`, { method: 'POST', body: JSON.stringify(data) }),
+  getRun: (runId: string) => apiFetch<any>(`${MIGRATION_BASE}/runs/${runId}`),
+  transitionRun: (runId: string, data: any) =>
+    apiFetch<any>(`${MIGRATION_BASE}/runs/${runId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  getRunAudit: (runId: string) => apiFetch<{ items: any[]; total: number }>(`${MIGRATION_BASE}/runs/${runId}/audit`),
+  getReadiness: (runId: string) => apiFetch<any>(`${MIGRATION_BASE}/runs/${runId}/readiness`),
+  attestFreeze: (runId: string, data: any) =>
+    apiFetch<any>(`${MIGRATION_BASE}/runs/${runId}/freeze`, { method: 'POST', body: JSON.stringify(data) }),
+  markDeltaComplete: (runId: string, data: any) =>
+    apiFetch<any>(`${MIGRATION_BASE}/runs/${runId}/delta-complete`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // Sources and extracts
+  listSources: () => apiFetch<{
+    items: any[]; total: number; configured: boolean;
+    upstreamSignals: { moduleCode: string; status: string; detail: string }[];
+  }>(`${MIGRATION_BASE}/sources`),
+  registerSource: (data: any) => apiFetch<any>(`${MIGRATION_BASE}/sources`, { method: 'POST', body: JSON.stringify(data) }),
+  listSnapshots: (sourceId: string) =>
+    apiFetch<{ items: any[]; total: number }>(`${MIGRATION_BASE}/sources/${sourceId}/snapshots`),
+  registerSnapshot: (sourceId: string, data: any) =>
+    apiFetch<any>(`${MIGRATION_BASE}/sources/${sourceId}/snapshots`, { method: 'POST', body: JSON.stringify(data) }),
+  listSnapshotFiles: (sourceId: string, snapshotId: string) =>
+    apiFetch<{ items: any[]; total: number }>(`${MIGRATION_BASE}/sources/${sourceId}/snapshots/${snapshotId}/files`),
+  importFile: (sourceId: string, snapshotId: string, data: any) =>
+    apiFetch<any>(`${MIGRATION_BASE}/sources/${sourceId}/snapshots/${snapshotId}/files`, { method: 'POST', body: JSON.stringify(data) }),
+  listSnapshotRows: (sourceId: string, snapshotId: string, params: { limit?: number; offset?: number; sourceFileId?: string } = {}) =>
+    apiFetch<{ items: any[]; total: number }>(`${MIGRATION_BASE}/sources/${sourceId}/snapshots/${snapshotId}/rows${qs(params)}`),
+
+  // Mapping workbench
+  listMappingSets: (params: { legalEntityId?: string; sourceSystemId?: string } = {}) =>
+    apiFetch<{ items: any[]; total: number }>(`${MIGRATION_BASE}/mapping-sets${qs(params)}`),
+  createMappingSet: (data: any) => apiFetch<any>(`${MIGRATION_BASE}/mapping-sets`, { method: 'POST', body: JSON.stringify(data) }),
+  getMappingSet: (id: string) => apiFetch<any>(`${MIGRATION_BASE}/mapping-sets/${id}`),
+  listMappingEntries: (id: string) =>
+    apiFetch<{ items: any[]; coverage: any }>(`${MIGRATION_BASE}/mapping-sets/${id}/entries`),
+  seedMappingSet: (id: string, data: any) =>
+    apiFetch<any>(`${MIGRATION_BASE}/mapping-sets/${id}/seed`, { method: 'POST', body: JSON.stringify(data) }),
+  updateMappingEntry: (id: string, entryId: string, data: any) =>
+    apiFetch<any>(`${MIGRATION_BASE}/mapping-sets/${id}/entries/${entryId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  approveMappingEntry: (id: string, entryId: string, data: any = {}) =>
+    apiFetch<any>(`${MIGRATION_BASE}/mapping-sets/${id}/entries/${entryId}/approve`, { method: 'POST', body: JSON.stringify(data) }),
+  freezeMappingSet: (id: string, data: any = {}) =>
+    apiFetch<any>(`${MIGRATION_BASE}/mapping-sets/${id}/freeze`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // Staging, preview, validation
+  preview: (runId: string, params: { snapshotId: string; mappingSetId: string; limit?: number }) =>
+    apiFetch<any>(`${MIGRATION_BASE}/runs/${runId}/preview${qs(params)}`),
+  stage: (runId: string, data: any) =>
+    apiFetch<any>(`${MIGRATION_BASE}/runs/${runId}/stage`, { method: 'POST', body: JSON.stringify(data) }),
+  validate: (runId: string, data: any = {}) =>
+    apiFetch<any>(`${MIGRATION_BASE}/runs/${runId}/validate`, { method: 'POST', body: JSON.stringify(data) }),
+  listDatasets: (runId: string) => apiFetch<{ items: any[]; total: number }>(`${MIGRATION_BASE}/runs/${runId}/datasets`),
+  listStagingRows: (runId: string, datasetId: string, params: { limit?: number; offset?: number } = {}) =>
+    apiFetch<{ items: any[]; total: number }>(`${MIGRATION_BASE}/runs/${runId}/datasets/${datasetId}/rows${qs(params)}`),
+  listGates: (runId: string) => apiFetch<{ items: any[]; total: number }>(`${MIGRATION_BASE}/runs/${runId}/gates`),
+  listControlTotals: (runId: string) => apiFetch<{ items: any[]; total: number }>(`${MIGRATION_BASE}/runs/${runId}/control-totals`),
+
+  // Exceptions
+  listExceptions: (runId: string, params: { disposition?: string; exceptionType?: string } = {}) =>
+    apiFetch<any>(`${MIGRATION_BASE}/runs/${runId}/exceptions${qs(params)}`),
+  dispositionException: (runId: string, exceptionId: string, data: any) =>
+    apiFetch<any>(`${MIGRATION_BASE}/runs/${runId}/exceptions/${exceptionId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+
+  // Promotion, lineage
+  promote: (runId: string, data: any = {}) =>
+    apiFetch<any>(`${MIGRATION_BASE}/runs/${runId}/promote`, { method: 'POST', body: JSON.stringify(data) }),
+  listLineage: (runId: string, params: { sourceRowRef?: string; journalRef?: string } = {}) =>
+    apiFetch<{ items: any[]; total: number }>(`${MIGRATION_BASE}/runs/${runId}/lineage${qs(params)}`),
+
+  // Parallel-run comparison
+  listComparisons: (runId: string) => apiFetch<{ items: any[]; total: number }>(`${MIGRATION_BASE}/runs/${runId}/comparison`),
+  createComparison: (runId: string, data: any) =>
+    apiFetch<any>(`${MIGRATION_BASE}/runs/${runId}/comparison`, { method: 'POST', body: JSON.stringify(data) }),
+  getComparison: (runId: string, comparisonRunId: string) =>
+    apiFetch<any>(`${MIGRATION_BASE}/runs/${runId}/comparison/${comparisonRunId}`),
+  classifyDiff: (runId: string, diffId: string, data: any) =>
+    apiFetch<any>(`${MIGRATION_BASE}/runs/${runId}/comparison/diffs/${diffId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  signOffComparison: (runId: string, data: any) =>
+    apiFetch<any>(`${MIGRATION_BASE}/runs/${runId}/comparison/sign-off`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // Cutover ceremony, rollback, restart
+  getCeremony: (runId: string) => apiFetch<any>(`${MIGRATION_BASE}/runs/${runId}/cutover-ceremony`),
+  prepareCutover: (runId: string, data: any) =>
+    apiFetch<any>(`${MIGRATION_BASE}/runs/${runId}/cutover/prepare`, { method: 'POST', body: JSON.stringify(data) }),
+  approveCutover: (runId: string, data: any) =>
+    apiFetch<any>(`${MIGRATION_BASE}/runs/${runId}/cutover/approve`, { method: 'POST', body: JSON.stringify(data) }),
+  executeCutover: (runId: string, data: any = {}) =>
+    apiFetch<any>(`${MIGRATION_BASE}/runs/${runId}/cutover`, { method: 'POST', body: JSON.stringify(data) }),
+  rollback: (runId: string, data: any) =>
+    apiFetch<any>(`${MIGRATION_BASE}/runs/${runId}/rollback`, { method: 'POST', body: JSON.stringify(data) }),
+  getRestartPlan: (runId: string) => apiFetch<any>(`${MIGRATION_BASE}/runs/${runId}/restart-plan`),
+
+  // Statement archive (S132a)
+  listArchive: (params: { legalEntityId?: string; periodYear?: number; periodMonth?: number; statementType?: string; search?: string } = {}) =>
+    apiFetch<{ items: any[]; total: number }>(`${MIGRATION_BASE}/archive${qs(params)}`),
+  importArchive: (data: any) => apiFetch<any>(`${MIGRATION_BASE}/archive`, { method: 'POST', body: JSON.stringify(data) }),
+  recordArchiveAccess: (id: string) => apiFetch<any>(`${MIGRATION_BASE}/archive/${id}/access`, { method: 'POST', body: '{}' }),
+
+  // Runbooks (S132b)
+  listRunbookTemplates: () => apiFetch<{ items: any[]; total: number }>(`${MIGRATION_BASE}/runbooks/templates`),
+  createRunbookTemplate: (data: any) =>
+    apiFetch<any>(`${MIGRATION_BASE}/runbooks/templates`, { method: 'POST', body: JSON.stringify(data) }),
+  listRunbooks: (params: { runId?: string } = {}) =>
+    apiFetch<{ items: any[]; total: number }>(`${MIGRATION_BASE}/runbooks${qs(params)}`),
+  createRunbook: (data: any) => apiFetch<any>(`${MIGRATION_BASE}/runbooks`, { method: 'POST', body: JSON.stringify(data) }),
+  getRunbook: (id: string) => apiFetch<any>(`${MIGRATION_BASE}/runbooks/${id}`),
+  updateRunbookStep: (id: string, stepCode: string, data: any) =>
+    apiFetch<any>(`${MIGRATION_BASE}/runbooks/${id}/steps/${stepCode}`, { method: 'PATCH', body: JSON.stringify(data) }),
+};

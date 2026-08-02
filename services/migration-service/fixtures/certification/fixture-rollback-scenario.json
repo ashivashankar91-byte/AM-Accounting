@@ -1,0 +1,26 @@
+{
+  "$label": "CERTIFICATION-ONLY: synthetic non-production data",
+  "$description": "A promoted run that must be rolled back. Undo is by governed reversal entries through CE-07, carrying the original lineage forward. No staged row, source row, exception or audit record is deleted.",
+  "legalEntityId": "LE-CERT-001",
+  "promotedRows": [
+    { "accountCode": "1000", "debit": 125000.00, "credit": 0 },
+    { "accountCode": "1200", "debit": 48250.75, "credit": 0 },
+    { "accountCode": "2000", "debit": 0, "credit": 61300.25 },
+    { "accountCode": "3000", "debit": 0, "credit": 111950.50 }
+  ],
+  "expectedReversalLines": [
+    { "accountCode": "1000", "debit": 0, "credit": 125000.00 },
+    { "accountCode": "1200", "debit": 0, "credit": 48250.75 },
+    { "accountCode": "2000", "debit": 61300.25, "credit": 0 },
+    { "accountCode": "3000", "debit": 111950.50, "credit": 0 }
+  ],
+  "rollbackReason": "Certification rehearsal rollback: proving governed reversal preserves lineage",
+  "expected": {
+    "kind": "PROMOTED_FINANCIAL_REVERSAL",
+    "reversalRequired": true,
+    "preservesEvidence": true,
+    "journalFamily": "CONVERSION_REVERSAL",
+    "originalLineageRetained": true,
+    "prePromotionKind": "PRE_PROMOTION_CANCEL"
+  }
+}

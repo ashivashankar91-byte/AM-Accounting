@@ -201,6 +201,17 @@ import CloseReconciliations from './pages/accounting/close/reconciliations';
 import CloseScrub from './pages/accounting/close/scrub';
 import CloseYearEnd from './pages/accounting/close/year-end';
 import CloseTaxPack from './pages/accounting/close/tax-pack';
+import MigrationCommandCenter from './pages/accounting/migration/index';
+import MigrationSources from './pages/accounting/migration/sources';
+import MigrationMapping from './pages/accounting/migration/mapping';
+import MigrationRunDetail from './pages/accounting/migration/run-detail';
+import MigrationPreview from './pages/accounting/migration/preview';
+import MigrationExceptions from './pages/accounting/migration/exceptions';
+import MigrationReconcile from './pages/accounting/migration/reconcile';
+import MigrationParallel from './pages/accounting/migration/parallel';
+import MigrationCutover from './pages/accounting/migration/cutover';
+import MigrationArchive from './pages/accounting/migration/archive';
+import MigrationRunbooks from './pages/accounting/migration/runbooks';
 import DocReport from './pages/accounting/reports/doc';
 import StatementPackages from './pages/accounting/reports/packages';
 import CompliancePack from './pages/accounting/reports/compliance';
@@ -1039,6 +1050,17 @@ export default function App() {
               <Route path="/accounting/close/scrub" element={<GoldenPathProtectedRoute><CloseScrub /></GoldenPathProtectedRoute>} />
               <Route path="/accounting/close/year-end" element={<GoldenPathProtectedRoute><CloseYearEnd /></GoldenPathProtectedRoute>} />
               <Route path="/accounting/close/tax-pack" element={<GoldenPathProtectedRoute><CloseTaxPack /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/migration" element={<GoldenPathProtectedRoute><MigrationCommandCenter /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/migration/sources" element={<GoldenPathProtectedRoute><MigrationSources /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/migration/mapping" element={<GoldenPathProtectedRoute><MigrationMapping /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/migration/runs/:runId" element={<GoldenPathProtectedRoute><MigrationRunDetail /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/migration/preview" element={<GoldenPathProtectedRoute><MigrationPreview /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/migration/exceptions" element={<GoldenPathProtectedRoute><MigrationExceptions /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/migration/reconcile" element={<GoldenPathProtectedRoute><MigrationReconcile /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/migration/parallel" element={<GoldenPathProtectedRoute><MigrationParallel /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/migration/cutover" element={<GoldenPathProtectedRoute><MigrationCutover /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/migration/archive" element={<GoldenPathProtectedRoute><MigrationArchive /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/migration/runbooks" element={<GoldenPathProtectedRoute><MigrationRunbooks /></GoldenPathProtectedRoute>} />
               <Route path="/accounting/reports/doc" element={<GoldenPathProtectedRoute><DocReport /></GoldenPathProtectedRoute>} />
               <Route path="/accounting/reports/packages" element={<GoldenPathProtectedRoute><StatementPackages /></GoldenPathProtectedRoute>} />
               <Route path="/accounting/reports/compliance" element={<GoldenPathProtectedRoute><CompliancePack /></GoldenPathProtectedRoute>} />
