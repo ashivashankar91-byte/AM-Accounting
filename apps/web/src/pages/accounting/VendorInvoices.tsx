@@ -96,7 +96,7 @@ function InvoiceList() {
             </button>
           ))}
         </div>
-        <Btn variant="primary" size="md" icon={<Plus className="w-4 h-4" />} onClick={() => setShowNewInvoice(true)}>
+        <Btn variant="primary" size="md" icon={<Plus className="w-4 h-4" />} onClick={() => setShowNewInvoice(true)} data-testid="invoice-new-open">
           New Invoice
         </Btn>
       </div>
@@ -118,7 +118,7 @@ function InvoiceList() {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {invoices.map((inv: any) => (
-              <tr key={inv.id} style={{ height: 36 }} className="hover:bg-gray-50 cursor-pointer" onClick={() => navigate(`/accounting/ap/invoices/${inv.id}`)}>
+              <tr key={inv.id} data-testid={`invoice-row-${inv.id}`} style={{ height: 36 }} className="hover:bg-gray-50 cursor-pointer" onClick={() => navigate(`/accounting/ap/invoices/${inv.id}`)}>
                 <td className="px-4 py-2">{vendorName(inv.vendorId)}</td>
                 <td className="px-4 py-2 font-mono">{inv.invoiceNumber}</td>
                 <td className="px-4 py-2">{new Date(inv.invoiceDate).toLocaleDateString()}</td>
@@ -222,12 +222,12 @@ function NewInvoiceDialog({ vendors, onClose, onCreated }: { vendors: any[]; onC
 
         {duplicateWarning && (
           <div className="bg-amber-50 border border-amber-300 rounded p-3 text-sm space-y-2">
-            <p className="font-medium text-amber-800">A potential duplicate invoice already exists for this vendor:</p>
+            <p className="font-medium text-amber-800" data-testid="invoice-duplicate-warning">A potential duplicate invoice already exists for this vendor:</p>
             <ul className="list-disc pl-5 text-amber-700">
               {duplicateWarning.map((c) => (<li key={c.invoiceId}>{c.invoiceNumber} — {c.status} — ${fmt(c.totalAmount)}</li>))}
             </ul>
             <div className="flex gap-2 items-center">
-              <input value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} placeholder="Reason to proceed anyway..." className="flex-1 border rounded px-2 py-1.5 text-sm" />
+              <input data-testid="invoice-duplicate-override-reason" value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} placeholder="Reason to proceed anyway..." className="flex-1 border rounded px-2 py-1.5 text-sm" />
               <button
                 disabled={!overrideReason.trim() || createMut.isPending}
                 onClick={() => createMut.mutate(buildPayload({ reason: overrideReason }))}
@@ -242,14 +242,14 @@ function NewInvoiceDialog({ vendors, onClose, onCreated }: { vendors: any[]; onC
         <div className="grid grid-cols-3 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Vendor</label>
-            <select value={vendorId} onChange={(e) => { setVendorId(e.target.value); setPoId(''); }} className="w-full border rounded px-3 py-2 text-sm">
+            <select data-testid="invoice-vendor-select" value={vendorId} onChange={(e) => { setVendorId(e.target.value); setPoId(''); }} className="w-full border rounded px-3 py-2 text-sm">
               <option value="">Select vendor...</option>
               {vendors.map((v) => (<option key={v.id} value={v.id}>{v.vendorNumber} — {v.vendorName}</option>))}
             </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Invoice #</label>
-            <input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} className="w-full border rounded px-3 py-2 text-sm font-mono" placeholder="INV-1001" />
+            <input data-testid="invoice-number-input" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} className="w-full border rounded px-3 py-2 text-sm font-mono" placeholder="INV-1001" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Purchase Order (optional)</label>
@@ -263,7 +263,7 @@ function NewInvoiceDialog({ vendors, onClose, onCreated }: { vendors: any[]; onC
         <div className="grid grid-cols-3 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Invoice Date</label>
-            <input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} className="w-full border rounded px-3 py-2 text-sm" />
+            <input data-testid="invoice-date-input" type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} className="w-full border rounded px-3 py-2 text-sm" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Due Date</label>
@@ -317,17 +317,18 @@ function NewInvoiceDialog({ vendors, onClose, onCreated }: { vendors: any[]; onC
                         onChange={(e) => setLines(lines.map((l, idx) => idx === i ? { ...l, mode: 'GL', glAccountId: e.target.value } : l))}
                         placeholder="GL Account ID"
                         className="w-full border rounded px-2 py-1.5 text-sm font-mono"
+                        data-testid={`invoice-line-gl-account-${i}`}
                       />
                     )}
                   </td>
                   <td className="py-2 pr-2">
-                    <input value={line.description} onChange={(e) => setLines(lines.map((l, idx) => idx === i ? { ...l, description: e.target.value } : l))} className="w-full border rounded px-2 py-1.5 text-sm" placeholder="Description" />
+                    <input value={line.description} onChange={(e) => setLines(lines.map((l, idx) => idx === i ? { ...l, description: e.target.value } : l))} className="w-full border rounded px-2 py-1.5 text-sm" placeholder="Description" data-testid={`invoice-line-description-${i}`} />
                   </td>
                   <td className="py-2 pr-2">
-                    <input type="number" step="0.01" value={line.quantity} onChange={(e) => setLines(lines.map((l, idx) => idx === i ? { ...l, quantity: e.target.value } : l))} className="w-full border rounded px-2 py-1.5 text-sm text-right font-mono" />
+                    <input type="number" step="0.01" value={line.quantity} onChange={(e) => setLines(lines.map((l, idx) => idx === i ? { ...l, quantity: e.target.value } : l))} className="w-full border rounded px-2 py-1.5 text-sm text-right font-mono" data-testid={`invoice-line-qty-${i}`} />
                   </td>
                   <td className="py-2 pr-2">
-                    <input type="number" step="0.01" value={line.unitPrice} onChange={(e) => setLines(lines.map((l, idx) => idx === i ? { ...l, unitPrice: e.target.value } : l))} className="w-full border rounded px-2 py-1.5 text-sm text-right font-mono" />
+                    <input type="number" step="0.01" value={line.unitPrice} onChange={(e) => setLines(lines.map((l, idx) => idx === i ? { ...l, unitPrice: e.target.value } : l))} className="w-full border rounded px-2 py-1.5 text-sm text-right font-mono" data-testid={`invoice-line-unit-price-${i}`} />
                   </td>
                   <td className="py-2 pr-2">
                     <input type="number" step="0.01" value={line.taxAmount} onChange={(e) => setLines(lines.map((l, idx) => idx === i ? { ...l, taxAmount: e.target.value } : l))} className="w-full border rounded px-2 py-1.5 text-sm text-right font-mono" />
@@ -354,7 +355,7 @@ function NewInvoiceDialog({ vendors, onClose, onCreated }: { vendors: any[]; onC
 
         <div className="flex gap-2 justify-end pt-4 border-t">
           <button onClick={onClose} className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
-          <button onClick={handleSubmit} disabled={createMut.isPending} className="px-6 py-2 bg-brand text-white rounded-lg text-sm font-medium hover:bg-brand disabled:opacity-40">
+          <button data-testid="invoice-create-submit" onClick={handleSubmit} disabled={createMut.isPending} className="px-6 py-2 bg-brand text-white rounded-lg text-sm font-medium hover:bg-brand disabled:opacity-40">
             {createMut.isPending ? 'Saving...' : 'Save Draft'}
           </button>
         </div>
@@ -476,11 +477,11 @@ function InvoiceDetail({ id }: { id: string }) {
               {matchMut.isPending ? 'Running Match...' : 'Run Match'}
             </Btn>
             {!hasException && (
-              <Btn variant="primary" size="md" icon={<Check className="w-4 h-4" />} onClick={() => submitMut.mutate({ version: invoice.version })}>
+              <Btn variant="primary" size="md" icon={<Check className="w-4 h-4" />} onClick={() => submitMut.mutate({ version: invoice.version })} data-testid="invoice-submit-approval">
                 {submitMut.isPending ? 'Submitting...' : 'Submit for Approval'}
               </Btn>
             )}
-            <button onClick={() => setShowVoid(true)} className="flex items-center gap-2 px-4 py-2 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50">
+            <button data-testid="invoice-void-open" onClick={() => setShowVoid(true)} className="flex items-center gap-2 px-4 py-2 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50">
               <Ban className="w-4 h-4" /> Void
             </button>
           </div>
@@ -515,7 +516,7 @@ function InvoiceDetail({ id }: { id: string }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-xl shadow-2xl w-[420px] p-6 space-y-4">
             <h3 className="font-bold text-lg text-red-700 flex items-center gap-2"><Ban className="w-5 h-5" />Void Invoice {invoice.invoiceNumber}?</h3>
-            <input value={voidReason} onChange={(e) => setVoidReason(e.target.value)} placeholder="Reason for voiding..." className="w-full border rounded px-3 py-2 text-sm" autoFocus />
+            <input data-testid="invoice-void-reason" value={voidReason} onChange={(e) => setVoidReason(e.target.value)} placeholder="Reason for voiding..." className="w-full border rounded px-3 py-2 text-sm" autoFocus />
             <div className="flex gap-3 justify-end">
               <button onClick={() => setShowVoid(false)} className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
               <button
@@ -582,7 +583,7 @@ function ApprovalPanel({ invoice, onChange }: { invoice: any; onChange: () => vo
       {error && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">{error}</div>}
 
       {invoice.status === 'SUBMITTED' && (
-        <Btn variant="primary" size="md" onClick={() => startMut.mutate()}>
+        <Btn variant="primary" size="md" onClick={() => startMut.mutate()} data-testid="invoice-start-approval">
           {startMut.isPending ? 'Starting...' : 'Start Approval'}
         </Btn>
       )}

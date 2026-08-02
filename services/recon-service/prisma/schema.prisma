@@ -9,6 +9,167 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+/// AuditPort stub outbox (S007 dependency). Shared table — every service
+/// that writes audit events models this identically and creates it with
+/// CREATE TABLE IF NOT EXISTS (see cash-service/coa-service/gl-service).
+/// All AMACC services share one physical Postgres database.
+model AuditOutboxEvent {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  docType     String    @map("doc_type")
+  docId       String    @map("doc_id")
+  action      String
+  before      Json?
+  after       Json?
+  actor       String
+  publishedAt DateTime? @map("published_at")
+  retryCount  Int       @default(0) @map("retry_count")
+  lastError   String?   @map("last_error")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([publishedAt, retryCount])
+  @@map("audit_outbox")
+}
+
+/// S054A — Manual Bank Reconciliation Workbench. One session per
+/// bank-account + statement period. Conservation check on completion:
+/// cleared book total + outstanding items must equal statementEndingBalance
+/// (see domain/recon-session.ts checkConservation). Completion is a one-way
+/// lock — no cleared line is ever deleted, only unmatched before completion.
+model ReconSession {
+  id                        String    @id @default(uuid())
+  tenantId                  String    @map("tenant_id")
+  entityId                  String    @map("entity_id")
+  bankAccountCode           String    @map("bank_account_code")
+  periodStart               DateTime  @map("period_start")
+  periodEnd                 DateTime  @map("period_end")
+  statementBeginningBalance Decimal   @map("statement_beginning_balance") @db.Decimal(15, 2)
+  statementEndingBalance    Decimal   @map("statement_ending_balance") @db.Decimal(15, 2)
+  status                    String    @default("OPEN")
+  idempotencyKey            String    @map("idempotency_key")
+  createdBy                 String    @map("created_by")
+  createdAt                 DateTime  @default(now()) @map("created_at")
+  completedBy               String?   @map("completed_by")
+  completedAt               DateTime? @map("completed_at")
+  version                   Int       @default(0)
+
+  statementLines ReconStatementLine[]
+  bookItems      ReconBookItem[]
+  matchSuggestions ReconMatchSuggestion[]
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, bankAccountCode])
+  @@map("recon_session")
+}
+
+/// Bank-statement-side lines for a session — manual entry or imported.
+/// Never deleted once created; unmatch only reverts status to UNMATCHED
+/// before the session is completed.
+model ReconStatementLine {
+  id                 String    @id @default(uuid())
+  sessionId          String    @map("session_id")
+  tenantId           String    @map("tenant_id")
+  lineDate           DateTime  @map("line_date")
+  description        String
+  amount             Decimal   @db.Decimal(15, 2)
+  source             String
+  externalRef        String?   @map("external_ref")
+  status             String    @default("UNMATCHED")
+  clearedBookItemId  String?   @map("cleared_book_item_id")
+  clearedBy          String?   @map("cleared_by")
+  clearedAt          DateTime? @map("cleared_at")
+  matchRuleId        String?   @map("match_rule_id")
+  createdBy          String    @map("created_by")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  version            Int       @default(0)
+
+  session ReconSession @relation(fields: [sessionId], references: [id])
+
+  @@index([sessionId, status])
+  @@index([tenantId])
+  @@map("recon_statement_line")
+}
+
+/// Book-side item types (payment, deposit, fee, NSF, sweep) for a session —
+/// either synced (read-only) from cash-service/apar-service via HTTP, or
+/// manually entered (e.g. NSF, which has no source-service model yet).
+/// sourceId is unique per (session, sourceService) only when non-null, so
+/// synced items dedup idempotently while manual entries (sourceId null)
+/// never collide.
+model ReconBookItem {
+  id                     String    @id @default(uuid())
+  sessionId              String    @map("session_id")
+  tenantId               String    @map("tenant_id")
+  itemType               String    @map("item_type")
+  sourceService          String    @map("source_service")
+  sourceId               String?   @map("source_id")
+  itemDate               DateTime  @map("item_date")
+  description            String
+  amount                 Decimal   @db.Decimal(15, 2)
+  status                 String    @default("OUTSTANDING")
+  clearedStatementLineId String?   @map("cleared_statement_line_id")
+  clearedBy              String?   @map("cleared_by")
+  clearedAt              DateTime? @map("cleared_at")
+  matchRuleId            String?   @map("match_rule_id")
+  createdBy              String    @map("created_by")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  version                Int       @default(0)
+
+  session ReconSession @relation(fields: [sessionId], references: [id])
+
+  @@unique([sessionId, sourceService, sourceId])
+  @@index([sessionId, status])
+  @@index([tenantId])
+  @@map("recon_book_item")
+}
+
+/// S054B — tenant-configurable auto-match rule. Scoped optionally by
+/// entityId/bankAccountCode (null = applies broadly for the tenant); even
+/// a "global" rule only ever operates within one session's own lines/items
+/// at run time, so cross-account/entity clearing is structurally
+/// impossible regardless of rule scope.
+model ReconMatchRule {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  entityId        String?  @map("entity_id")
+  bankAccountCode String?  @map("bank_account_code")
+  ruleType        String   @map("rule_type")
+  tier            String
+  config          Json
+  priority        Int      @default(100)
+  active          Boolean  @default(true)
+  createdBy       String   @map("created_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, active])
+  @@map("recon_match_rule")
+}
+
+/// S054B — a candidate match produced by a SUGGESTED-tier rule, or by an
+/// EXACT-tier rule that found more than one ambiguous candidate. Never
+/// auto-clears anything by itself; requires an explicit confirm (which
+/// performs the same matchLine() clearing logic, stamping ruleId) or
+/// reject (leaves the statement line/book item untouched).
+model ReconMatchSuggestion {
+  id              String    @id @default(uuid())
+  sessionId       String    @map("session_id")
+  tenantId        String    @map("tenant_id")
+  statementLineId String    @map("statement_line_id")
+  bookItemId      String    @map("book_item_id")
+  ruleId          String    @map("rule_id")
+  tier            String
+  status          String    @default("PENDING")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  resolvedBy      String?   @map("resolved_by")
+  resolvedAt      DateTime? @map("resolved_at")
+
+  session ReconSession @relation(fields: [sessionId], references: [id])
+
+  @@unique([sessionId, statementLineId, bookItemId, ruleId])
+  @@index([sessionId, status])
+  @@map("recon_match_suggestion")
+}
+
 model BankRecon {
   id          String    @id @default(uuid())
   tenantId    String    @map("tenant_id")

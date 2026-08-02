@@ -38,6 +38,16 @@ model AREntry {
   remarks              String?
   /// S6-10: IRS Form 8300 — number of $100 bills received (required when cash >= $10,000)
   cash100BillCount     Int?      @default(0) @map("cash_100_bill_count")
+  /// S051: PUTR integration boundary with recon-service (S054A/S054B) —
+  /// recon-service is expected to set this when the deposit containing this
+  /// entry's receipt actually reconciles. Until that cross-service wiring
+  /// exists, an admin/test-only endpoint sets it for certification/local
+  /// testing (mirrors ApManualPayment.clearedAt from S045). Once set, an
+  /// NSF against this entry must NEVER mutate/reopen it — it posts as a
+  /// new bank-side adjustment event instead (same conservation boundary as
+  /// S045 void-after-cleared).
+  reconciledAt         DateTime? @map("reconciled_at")
+  reconciledBy         String?   @map("reconciled_by")
 
   @@map("ar_entries")
   @@index([tenantId])
@@ -152,6 +162,12 @@ model Customer {
   creditHoldSetBy       String?   @map("credit_hold_set_by")
   creditHoldClearedAt   DateTime? @map("credit_hold_cleared_at")
   creditHoldClearedBy   String?   @map("credit_hold_cleared_by")
+  /// S051: NSF (returned-payment) count — incremented by ArNsfService each
+  /// time a returned-payment event is recorded against this customer.
+  /// Drives auto-hold after N (see ArNsfHoldConfig); a missing config row
+  /// means no auto-hold is ever applied (never a silently invented count).
+  nsfCount              Int       @default(0) @map("nsf_count")
+  nsfHoldSetAt          DateTime? @map("nsf_hold_set_at")
   /// S046: effective date of the current credit profile (limit/terms/hold) —
   /// updated whenever any credit-profile field changes.
   creditProfileEffectiveDate DateTime? @map("credit_profile_effective_date")
@@ -920,6 +936,80 @@ model ApInvoiceApprovalStep {
 /// item created at approval (best-effort — schedule linkage depends on the
 /// AP control GL account having a configured scheduleCode, which is
 /// existing schedule-service configuration this slice does not invent).
+/// S042: tenant-scoped "matrix row" GL account configuration for the use-tax
+/// self-assessment accrual (use-tax expense Dr / use-tax payable Cr). Both
+/// columns are nullable ("blank" per the S023 ACCOUNT_MAPPING_VALUES_PENDING
+/// convention, same as APBankAccount.glAccountId/Vendor.defaultGlAccount) —
+/// engineering never fills these in; accounting authors the values per
+/// tenant. Single row per tenant (id = tenantId).
+model ApUseTaxGlAccountConfig {
+  tenantId               String   @id @map("tenant_id")
+  useTaxExpenseGlAccountId String? @map("use_tax_expense_gl_account_id")
+  useTaxPayableGlAccountId String? @map("use_tax_payable_gl_account_id")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  @@map("ap_use_tax_gl_account_configs")
+}
+
+/// S042: tenant/jurisdiction use-tax rate source. CE-10 boundary — rate
+/// determination itself is out of scope; this is only a place a rate CAN be
+/// configured. Absence of a row for a jurisdiction means the clerk must
+/// supply a manual rate + attestation (see ApUseTaxAssessment).
+model ApUseTaxRateConfig {
+  id           String   @id @default(uuid())
+  tenantId     String   @map("tenant_id")
+  jurisdiction String
+  rate         Decimal  @db.Decimal(7, 6)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, jurisdiction])
+  @@map("ap_use_tax_rate_configs")
+  @@index([tenantId])
+}
+
+/// S042: one self-assessment per (invoiceId, assessmentType) — the unique
+/// index is the idempotency guard against double-assessment on event
+/// replay (AC: "never double-assessed on replay"). assessmentType is
+/// currently always 'USE_TAX' but is carried so a future assessment type
+/// never collides with this one.
+model ApUseTaxAssessment {
+  id                 String    @id @default(uuid())
+  tenantId           String    @map("tenant_id")
+  invoiceId          String    @map("invoice_id")
+  assessmentType     String    @default("USE_TAX") @map("assessment_type")
+  jurisdiction       String
+  taxableAmount      Decimal   @db.Decimal(15, 2) @map("taxable_amount")
+  /// RATE_SOURCE_CONFIGURED | ADAPTER_BOUNDARY_MANUAL_RATE
+  rateSource         String    @map("rate_source")
+  rate               Decimal   @db.Decimal(7, 6)
+  assessedAmount     Decimal   @db.Decimal(15, 2) @map("assessed_amount")
+  /// Remittance-period bucket, e.g. '2026-08' — derived from businessDate
+  /// at assessment time (invoice date), used by the register endpoint.
+  period             String
+  /// Manual-rate attestation — required only when rateSource =
+  /// ADAPTER_BOUNDARY_MANUAL_RATE (enforced in UseTaxService, not the DB).
+  attestedBy         String?   @map("attested_by")
+  attestedAt         DateTime? @map("attested_at")
+  attestationBasis   String?   @map("attestation_basis")
+  /// ASSESSED | VOID
+  status             String    @default("ASSESSED")
+  glEntryId          String?   @map("gl_entry_id")
+  glPostingError     String?   @map("gl_posting_error")
+  voidedAt           DateTime? @map("voided_at")
+  voidedBy           String?   @map("voided_by")
+  voidReason         String?   @map("void_reason")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  createdBy          String?   @map("created_by")
+
+  @@unique([tenantId, invoiceId, assessmentType])
+  @@map("ap_use_tax_assessments")
+  @@index([tenantId])
+  @@index([tenantId, period])
+  @@index([tenantId, status])
+}
+
 model ApManualPayment {
   id                    String    @id @default(uuid())
   tenantId              String    @map("tenant_id")
@@ -946,6 +1036,18 @@ model ApManualPayment {
   voidedAt              DateTime? @map("voided_at")
   voidedBy              String?   @map("voided_by")
   voidReason            String?   @map("void_reason")
+  /// S045: PUTR integration boundary with recon-service (S054A/S054B).
+  /// recon-service is expected to set this when the check actually clears
+  /// the bank/is reconciled; until that cross-service wiring exists, an
+  /// admin/test-only endpoint (POST /manual-payments/:id/mark-cleared,
+  /// gated by ap.manual_payment.mark_cleared) sets it for certification and
+  /// local testing. Once set, D-CE09-01 REFUSES any void of this payment.
+  clearedAt             DateTime? @map("cleared_at")
+  clearedBy             String?   @map("cleared_by")
+  /// S045: set when this payment itself is a reissue of a voided original.
+  reissueOfPaymentId    String?   @map("reissue_of_payment_id")
+  /// S045: issue-date aging basis for the escheat stale-date queue.
+  issueDate             DateTime? @map("issue_date")
   createdAt             DateTime  @default(now()) @map("created_at")
   createdBy             String?   @map("created_by")
 
@@ -953,4 +1055,771 @@ model ApManualPayment {
   @@index([tenantId])
   @@index([tenantId, vendorId])
   @@index([tenantId, status])
+}
+
+/// S045: stop-payment request tracking against the bank. bankAck is
+/// truthful — MANUAL (someone called the bank) or PAYMENT_RAIL_NOT_CONFIGURED
+/// (no payment-rail adapter exists in this repo; S043B scope), never a
+/// fabricated automated acknowledgment.
+model ApStopPaymentRequest {
+  id            String    @id @default(uuid())
+  tenantId      String    @map("tenant_id")
+  paymentId     String    @map("payment_id")
+  reason        String
+  /// REQUESTED | ACKNOWLEDGED | FAILED
+  status        String    @default("REQUESTED")
+  /// MANUAL | PAYMENT_RAIL_NOT_CONFIGURED
+  bankAck       String    @default("PAYMENT_RAIL_NOT_CONFIGURED") @map("bank_ack")
+  bankAckNote   String?   @map("bank_ack_note")
+  requestedBy   String?   @map("requested_by")
+  requestedAt   DateTime  @default(now()) @map("requested_at")
+  resolvedAt    DateTime? @map("resolved_at")
+  resolvedBy    String?   @map("resolved_by")
+
+  @@map("ap_stop_payment_requests")
+  @@index([tenantId])
+  @@index([tenantId, paymentId])
+}
+
+/// S045: escheat jurisdiction timing configuration — tenant/jurisdiction
+/// scoped statutory stale-date window (D-CE09-03: a configuration table,
+/// jurisdiction-sourced; an empty/missing row for a jurisdiction leaves
+/// that jurisdiction's queue entries purely informational — no aging is
+/// computed and nothing may be posted for them).
+model ApEscheatJurisdictionConfig {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  jurisdiction  String
+  staleDays     Int      @map("stale_days")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, jurisdiction])
+  @@map("ap_escheat_jurisdiction_configs")
+  @@index([tenantId])
+}
+
+/// S045: due-diligence outreach attempt tracking for a stale-dated payment
+/// prior to escheat transfer (statutory notice-to-holder requirement in
+/// most US jurisdictions — tracked here as a plain fact log, no jurisdiction
+/// rule is invented about how many attempts are "enough").
+model ApEscheatDueDiligenceRecord {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  paymentId     String   @map("payment_id")
+  attemptedAt   DateTime @default(now()) @map("attempted_at")
+  /// LETTER | PHONE | EMAIL | OTHER
+  method        String
+  outcome       String
+  notes         String?
+  performedBy   String?  @map("performed_by")
+
+  @@map("ap_escheat_due_diligence_records")
+  @@index([tenantId, paymentId])
+}
+
+/// S045: escheat transfer posting — the actual GL event moving an unclaimed
+/// check's liability to the state. Gated by ApEscheatJurisdictionConfig
+/// existing for the payment's jurisdiction (D-CE09-03) and always an
+/// explicit user action; never auto-posted by the aging queue.
+model ApEscheatTransfer {
+  id             String    @id @default(uuid())
+  tenantId       String    @map("tenant_id")
+  paymentId      String    @unique @map("payment_id")
+  jurisdiction   String
+  amount         Decimal   @db.Decimal(15, 2)
+  /// PENDING | POSTED
+  status         String    @default("PENDING")
+  glEntryId      String?   @map("gl_entry_id")
+  glPostingError String?   @map("gl_posting_error")
+  postedBy       String?   @map("posted_by")
+  postedAt       DateTime? @map("posted_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  createdBy      String?   @map("created_by")
+
+  @@map("ap_escheat_transfers")
+  @@index([tenantId])
+  @@index([tenantId, jurisdiction])
+}
+
+/// S045: tenant-scoped "matrix row" GL account configuration for the
+/// escheat transfer entry (Dr AP-outstanding-checks-liability / Cr
+/// escheat-payable-to-state). Blank until Accounting configures it, same
+/// convention as ApUseTaxGlAccountConfig.
+model ApEscheatGlAccountConfig {
+  tenantId                    String   @id @map("tenant_id")
+  outstandingChecksGlAccountId String? @map("outstanding_checks_gl_account_id")
+  escheatPayableGlAccountId    String? @map("escheat_payable_gl_account_id")
+  createdAt                   DateTime @default(now()) @map("created_at")
+  updatedAt                   DateTime @updatedAt @map("updated_at")
+
+  @@map("ap_escheat_gl_account_configs")
+}
+
+/// S048: Wholesale Vehicle AR & Title Gate. A wholesale vehicle sale
+/// receivable with a server-enforced title-release gate — the title cannot
+/// be marked released via the API unless the item is paid in full, unless
+/// an explicit, permissioned, reasoned, audited exception is invoked (see
+/// ArTitleReleaseException). No existing AR-item model covers vehicle sales
+/// (AREntry is a flat legacy cash-entry shape without a paid/open-balance
+/// concept) — this is a new, narrowly-scoped receivable purely for this
+/// gate; it does not attempt to become the general AR invoicing engine.
+model ArWholesaleVehicleItem {
+  id                 String    @id @default(uuid())
+  tenantId           String    @map("tenant_id")
+  customerId         String    @map("customer_id")
+  vehicleVin         String    @map("vehicle_vin")
+  saleAmount         Decimal   @db.Decimal(15, 2) @map("sale_amount")
+  amountPaid         Decimal   @default(0) @db.Decimal(15, 2) @map("amount_paid")
+  /// OPEN | PAID_IN_FULL | CLOSED
+  status             String    @default("OPEN")
+  titleReleased      Boolean   @default(false) @map("title_released")
+  titleReleasedAt    DateTime? @map("title_released_at")
+  titleReleasedBy    String?   @map("title_released_by")
+  /// True only when release happened via the exception path (never true for
+  /// a normal paid-in-full release) — a fast, queryable audit signal
+  /// alongside the full ArTitleReleaseException record.
+  titleReleaseException Boolean @default(false) @map("title_release_exception")
+  version            Int       @default(1)
+  createdAt          DateTime  @default(now()) @map("created_at")
+  createdBy          String?   @map("created_by")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  exceptions         ArTitleReleaseException[]
+
+  @@map("ar_wholesale_vehicle_items")
+  @@index([tenantId])
+  @@index([tenantId, customerId])
+  @@index([tenantId, status])
+}
+
+/// S048: audit record of a title-release exception — server-enforced
+/// distinct permission (ar.wholesale.title_release_exception), mandatory
+/// reason, and the authorizing user, so the exception path itself is fully
+/// queryable/auditable (AC).
+model ArTitleReleaseException {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  itemId         String   @map("item_id")
+  reason         String
+  authorizedBy   String   @map("authorized_by")
+  outstandingBalance Decimal @db.Decimal(15, 2) @map("outstanding_balance")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  item           ArWholesaleVehicleItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@map("ar_title_release_exceptions")
+  @@index([tenantId, itemId])
+}
+
+/// S050: direct AR write-off ceremony — distinct permission, mandatory
+/// reason, threshold-gated refusal with an explicit higher-authority
+/// override (also audited). References AREntry (the existing AR
+/// receivable/open-item shape) by id, no parallel AR-item model.
+model ArDirectWriteOff {
+  id                String    @id @default(uuid())
+  tenantId          String    @map("tenant_id")
+  arEntryId         String    @map("ar_entry_id")
+  amount            Decimal   @db.Decimal(15, 2)
+  reason            String
+  /// True when the amount exceeded the configured threshold and the actor
+  /// used the higher-authority override permission (audited by virtue of
+  /// this flag + actor being recorded on every write-off).
+  thresholdOverride Boolean   @default(false) @map("threshold_override")
+  /// POSTED | REVERSED
+  status            String    @default("POSTED")
+  glEntryId         String?   @map("gl_entry_id")
+  glPostingError    String?   @map("gl_posting_error")
+  /// S218-style reversal symmetry — set on the reversing write-off row,
+  /// pointing back at the original.
+  reversalOfId      String?   @map("reversal_of_id")
+  reversedAt        DateTime? @map("reversed_at")
+  reversedBy        String?   @map("reversed_by")
+  reversalReason    String?   @map("reversal_reason")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  createdBy         String?   @map("created_by")
+
+  @@map("ar_direct_write_offs")
+  @@index([tenantId])
+  @@index([tenantId, arEntryId])
+  @@index([tenantId, status])
+}
+
+/// S050: per-tenant direct-write-off threshold — SAFE_CONFIGURATION. A
+/// missing row means no configured limit — the conservative behavior in
+/// ArWriteOffService is to require the override permission for ANY amount
+/// when unconfigured is deliberately NOT chosen (that would silently block
+/// all normal write-offs); instead, an unconfigured tenant has no threshold
+/// enforcement (documented explicitly in ArWriteOffService) until Accounting
+/// configures one — mirrors ApInvoiceMatchToleranceConfig's "framework, not
+/// invented policy" precedent.
+model ArWriteOffThresholdConfig {
+  tenantId        String   @id @map("tenant_id")
+  thresholdAmount Decimal  @db.Decimal(15, 2) @map("threshold_amount")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("ar_write_off_threshold_configs")
+}
+
+/// S050: tenant-scoped "matrix row" GL account configuration for the direct
+/// write-off entry (Dr bad-debt/write-off expense / Cr AR control). Blank
+/// until Accounting configures it.
+model ArWriteOffGlAccountConfig {
+  tenantId              String   @id @map("tenant_id")
+  writeOffExpenseGlAccountId String? @map("write_off_expense_gl_account_id")
+  arControlGlAccountId       String? @map("ar_control_gl_account_id")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@map("ar_write_off_gl_account_configs")
+}
+
+/// S050: tenant-configured aging-band allowance percentages —
+/// SAFE_CONFIGURATION, additive config table (D-CE09-02: "System previews
+/// from config; NOTHING posts without explicit approval of the amount").
+model ArAllowanceBandConfig {
+  id           String   @id @default(uuid())
+  tenantId     String   @map("tenant_id")
+  bandDaysMin  Int      @map("band_days_min")
+  /// Null = open-ended (this band's upper bound is "and beyond").
+  bandDaysMax  Int?     @map("band_days_max")
+  percent      Decimal  @db.Decimal(5, 2)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, bandDaysMin])
+  @@map("ar_allowance_band_configs")
+  @@index([tenantId])
+}
+
+/// S050: one allowance computation preview per run. Posting requires a
+/// distinct explicit "approve preview" action, then posting must equal the
+/// approved amount exactly — no re-computation at post time (AC).
+model ArAllowancePreview {
+  id                       String    @id @default(uuid())
+  tenantId                 String    @map("tenant_id")
+  asOfDate                 DateTime  @map("as_of_date") @db.Date
+  totalReceivablesAnalyzed Decimal   @db.Decimal(15, 2) @map("total_receivables_analyzed")
+  computedAmount           Decimal   @db.Decimal(15, 2) @map("computed_amount")
+  /// Array of { bandDaysMin, bandDaysMax, percent, openAmount, allowanceAmount }
+  bandBreakdown            Json      @map("band_breakdown")
+  /// PREVIEWED | APPROVED | POSTED
+  status                   String    @default("PREVIEWED")
+  approvedAmount           Decimal?  @db.Decimal(15, 2) @map("approved_amount")
+  approvedBy               String?   @map("approved_by")
+  approvedAt               DateTime? @map("approved_at")
+  glEntryId                String?   @map("gl_entry_id")
+  glPostingError           String?   @map("gl_posting_error")
+  postedBy                 String?   @map("posted_by")
+  postedAt                 DateTime? @map("posted_at")
+  createdAt                DateTime  @default(now()) @map("created_at")
+  createdBy                String?   @map("created_by")
+
+  @@map("ar_allowance_previews")
+  @@index([tenantId])
+  @@index([tenantId, status])
+}
+
+/// S050: tenant-scoped "matrix row" GL account configuration for the
+/// allowance adjustment entry (Dr bad-debt expense / Cr allowance for
+/// doubtful accounts contra-asset). Blank until Accounting configures it.
+model ArAllowanceGlAccountConfig {
+  tenantId                String   @id @map("tenant_id")
+  badDebtExpenseGlAccountId String? @map("bad_debt_expense_gl_account_id")
+  allowanceContraGlAccountId String? @map("allowance_contra_gl_account_id")
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+
+  @@map("ar_allowance_gl_account_configs")
+}
+
+/// S051: NSF (returned-payment) event. Reverses the original receipt
+/// application (AREntry row — the existing AR receipt/cash-entry shape) and
+/// optionally creates a separate fee AR item. If the originating deposit is
+/// already reconciled, this NEVER mutates/reopens that AREntry — it instead
+/// posts a bank-side adjustment only (same conservation boundary as S045
+/// void-after-cleared; see depositReconciled/postedAsBankAdjustment below).
+model ArNsfEvent {
+  id                     String    @id @default(uuid())
+  tenantId               String    @map("tenant_id")
+  customerId             String    @map("customer_id")
+  originalArEntryId      String    @map("original_ar_entry_id")
+  amount                 Decimal   @db.Decimal(15, 2)
+  reason                 String
+  /// MANUAL | BANK_FEED_NOT_CONFIGURED — truthful adapter-state, mirrors
+  /// ApStopPaymentRequest.bankAck.
+  source                 String    @default("MANUAL")
+  /// True if the originating deposit was already reconciled at the moment
+  /// this NSF was recorded — set once, from the AREntry's reconciled state,
+  /// and drives which posting path is taken (never re-derived later).
+  depositReconciled      Boolean   @default(false) @map("deposit_reconciled")
+  /// True when this NSF posted as a new bank-side adjustment event (deposit
+  /// already reconciled) rather than reversing/reopening the original entry.
+  postedAsBankAdjustment Boolean   @default(false) @map("posted_as_bank_adjustment")
+  feeArEntryId           String?   @map("fee_ar_entry_id")
+  feeAmount              Decimal?  @db.Decimal(15, 2) @map("fee_amount")
+  glEntryId              String?   @map("gl_entry_id")
+  glPostingError         String?   @map("gl_posting_error")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  createdBy              String?   @map("created_by")
+
+  @@map("ar_nsf_events")
+  @@index([tenantId])
+  @@index([tenantId, customerId])
+  @@index([tenantId, originalArEntryId])
+}
+
+/// S051: per-tenant NSF fee amount — SAFE_CONFIGURATION. Null/missing =
+/// no fee item is created (never a fabricated fee amount).
+model ArNsfFeeConfig {
+  tenantId  String   @id @map("tenant_id")
+  feeAmount Decimal  @db.Decimal(15, 2) @map("fee_amount")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("ar_nsf_fee_configs")
+}
+
+/// S051: per-tenant NSF auto-hold threshold — SAFE_CONFIGURATION. Null/
+/// missing row = no auto-hold behavior (Customer.creditHold is never
+/// silently flipped without a configured count).
+model ArNsfHoldConfig {
+  tenantId       String   @id @map("tenant_id")
+  holdAfterCount Int      @map("hold_after_count")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("ar_nsf_hold_configs")
+}
+
+/// S051: tenant-scoped "matrix row" GL account configuration for the NSF
+/// reversal + fee entries. Blank until Accounting configures it.
+model ArNsfGlAccountConfig {
+  tenantId              String   @id @map("tenant_id")
+  arControlGlAccountId    String? @map("ar_control_gl_account_id")
+  cashGlAccountId         String? @map("cash_gl_account_id")
+  nsfFeeIncomeGlAccountId String? @map("nsf_fee_income_gl_account_id")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@map("ar_nsf_gl_account_configs")
+}
+
+/// S043B: an AP payment run — the PROPOSAL of the run (invoice selection),
+/// separately APPROVED with SoD (proposedBy must differ from approvedBy,
+/// enforced in PaymentRunService, not by a DB constraint — same convention
+/// as VendorInvoiceLine's poLineId/glAccountId XOR being application-
+/// enforced), then EXECUTED (per-invoice payments created atomically per
+/// item — a partial run is allowed; see ApPaymentRunItem.status/failureReason
+/// for named per-item isolation). Idempotent by run id: once EXECUTED,
+/// re-invoking execute returns the already-stored item results — never a
+/// second payment run.
+///
+/// discountDateThrough is accepted but currently a documented no-op: this
+/// schema's VendorInvoice has no discount-date field yet, so "select by
+/// discount date" cannot be implemented truthfully until that data exists
+/// (a real gap, not silently ignored — see PaymentRunService.createProposal).
+model ApPaymentRun {
+  id                    String    @id @default(uuid())
+  tenantId              String    @map("tenant_id")
+  bankAccountId         String    @map("bank_account_id")
+  /// DRAFT never used (createProposal creates directly as PROPOSED) | PROPOSED | APPROVED | EXECUTING | EXECUTED | REJECTED
+  status                String    @default("PROPOSED")
+  dueDateThrough        DateTime  @map("due_date_through") @db.Date
+  discountDateThrough   DateTime? @map("discount_date_through") @db.Date
+  vendorFilter          Json?     @map("vendor_filter")
+  cashRequirementTotal  Decimal   @default(0) @db.Decimal(15, 2) @map("cash_requirement_total")
+  proposedBy            String    @map("proposed_by")
+  proposedAt            DateTime  @default(now()) @map("proposed_at")
+  approvedBy            String?   @map("approved_by")
+  approvedAt            DateTime? @map("approved_at")
+  rejectedBy            String?   @map("rejected_by")
+  rejectedAt            DateTime? @map("rejected_at")
+  rejectionReason       String?   @map("rejection_reason")
+  executedBy            String?   @map("executed_by")
+  executedAt            DateTime? @map("executed_at")
+  createdAt             DateTime  @default(now()) @map("created_at")
+
+  items                 ApPaymentRunItem[]
+  railArtifacts         ApPaymentRunRailArtifact[]
+
+  @@map("ap_payment_runs")
+  @@index([tenantId])
+  @@index([tenantId, status])
+}
+
+/// S043B: per-invoice line of a payment run. Each item is executed in its
+/// own transaction (row-locked, gap-accounted check-number issuance reusing
+/// APBankAccount.nextCheckNumber's atomic-increment pattern) so a single
+/// invoice's failure NEVER blocks the rest of the run — isolated and named
+/// via failureReason, never silent.
+model ApPaymentRunItem {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  runId         String   @map("run_id")
+  invoiceId     String   @map("invoice_id")
+  vendorId      String   @map("vendor_id")
+  amount        Decimal  @db.Decimal(15, 2)
+  /// PENDING | PAID | FAILED
+  status        String   @default("PENDING")
+  paymentId     String?  @map("payment_id")
+  checkNumber   Int?     @map("check_number")
+  failureReason String?  @map("failure_reason")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  run           ApPaymentRun @relation(fields: [runId], references: [id])
+
+  @@map("ap_payment_run_items")
+  @@index([tenantId])
+  @@index([tenantId, runId])
+  @@index([tenantId, invoiceId])
+}
+
+/// S043B: rail artifact (check-print file / positive-pay export / ACH-NACHA
+/// file) generated for a run. File-generation-only is a valid COMPLETED
+/// outcome — status GENERATED never claims an actual bank transmission
+/// occurred; status PAYMENT_RAIL_NOT_CONFIGURED is the truthful adapter
+/// state when no rail (e.g. real ACH origination) is configured, mirroring
+/// ApStopPaymentRequest.bankAck's PAYMENT_RAIL_NOT_CONFIGURED precedent
+/// from S045 exactly — never a fabricated transmission/ack.
+model ApPaymentRunRailArtifact {
+  id           String   @id @default(uuid())
+  tenantId     String   @map("tenant_id")
+  runId        String   @map("run_id")
+  /// CHECK_PRINT | POSITIVE_PAY | ACH_NACHA
+  mode         String
+  /// GENERATED | PAYMENT_RAIL_NOT_CONFIGURED
+  status       String
+  fileContent  String   @map("file_content")
+  totalAmount  Decimal  @db.Decimal(15, 2) @map("total_amount")
+  itemCount    Int      @map("item_count")
+  generatedAt  DateTime @default(now()) @map("generated_at")
+  generatedBy  String?  @map("generated_by")
+
+  run          ApPaymentRun @relation(fields: [runId], references: [id])
+
+  @@map("ap_payment_run_rail_artifacts")
+  @@index([tenantId])
+  @@index([tenantId, runId])
+}
+
+/// CE-09 S044: Trade-Payoff Fast Lane — a one-time payoff payment for a
+/// vehicle trade lien. The payee is a "payee-for-deal" capture (name/remit
+/// address/reference), NOT necessarily a mastered Vendor row — no FK to
+/// vendors by design. amount/goodThroughDate are entered verbatim from the
+/// payoff quote; the system computes nothing actuarial/per-diem. If
+/// goodThroughDate is in the past at submission time, reconfirmedAmount/
+/// reconfirmedBy/reconfirmedAt must be populated (an explicit acknowledged
+/// re-confirmation) before the payment is allowed. dealReference is a
+/// PUTR reference-only field for future CE-12 consumption — no CE-12
+/// logic is invoked here. This is a priority execution path outside the
+/// normal S043B payment-run cadence — see PaymentRunService's doc comment
+/// for the run-based path this deliberately bypasses.
+model ApTradePayoffPayment {
+  id                 String    @id @default(uuid())
+  tenantId           String    @map("tenant_id")
+  dealReference      String    @map("deal_reference")
+  payeeName          String    @map("payee_name")
+  payeeRemitAddress  String    @map("payee_remit_address")
+  payeeReference     String?   @map("payee_reference")
+  amount             Decimal   @db.Decimal(15, 2)
+  goodThroughDate    DateTime  @map("good_through_date") @db.Date
+  reconfirmedAmount  Decimal?  @db.Decimal(15, 2) @map("reconfirmed_amount")
+  reconfirmedBy      String?   @map("reconfirmed_by")
+  reconfirmedAt      DateTime? @map("reconfirmed_at")
+  bankAccountId      String    @map("bank_account_id")
+  checkNumber        Int?      @map("check_number")
+  /// POSTED | VOID
+  status             String    @default("POSTED")
+  glEntryId          String?   @map("gl_entry_id")
+  glPostingError     String?   @map("gl_posting_error")
+  createdBy          String    @map("created_by")
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  @@map("ap_trade_payoff_payments")
+  @@index([tenantId])
+  @@index([tenantId, dealReference])
+}
+
+/// CE-09 S044: per-tenant "matrix row" GL account config for trade-payoff
+/// postings (Dr payoff-clearing / Cr bank), following the exact blank-row
+/// ACCOUNT_MAPPING_VALUES_PENDING convention established by
+/// ApUseTaxGlAccountConfig (S042).
+model ApTradePayoffGlAccountConfig {
+  tenantId                  String   @id @map("tenant_id")
+  payoffClearingGlAccountId String?  @map("payoff_clearing_gl_account_id")
+  updatedAt                 DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("ap_trade_payoff_gl_account_configs")
+}
+
+/// CE-09 S047: Fleet AR Consolidated Billing — links a "unit" (sub-account)
+/// Customer row to a fleet "parent" Customer row. A unit belongs to at
+/// most one parent at a time (unique on tenantId+childCustomerId).
+/// billingGroupName is a free-text grouping label only (no separate
+/// billing-group table — the parentCustomerId itself is the natural
+/// grouping key, matching how S046 already treats Customer as the unit of
+/// billing identity).
+model ArFleetUnitLink {
+  id               String   @id @default(uuid())
+  tenantId         String   @map("tenant_id")
+  parentCustomerId String   @map("parent_customer_id")
+  childCustomerId  String   @map("child_customer_id")
+  billingGroupName String?  @map("billing_group_name")
+  createdBy        String   @map("created_by")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@map("ar_fleet_unit_links")
+  @@unique([tenantId, childCustomerId])
+  @@index([tenantId])
+  @@index([tenantId, parentCustomerId])
+}
+
+/// CE-09 S047: the one consolidated document produced for a fleet parent.
+/// totalAmount is ALWAYS computed server-side as the sum of this
+/// invoice's own ArConsolidatedInvoiceItem rows — it is never accepted
+/// as caller input — so conservation (sum of child items == parent total)
+/// is a structural invariant, not a runtime check that could drift.
+model ArConsolidatedInvoice {
+  id               String   @id @default(uuid())
+  tenantId         String   @map("tenant_id")
+  parentCustomerId String   @map("parent_customer_id")
+  invoiceDate      DateTime @map("invoice_date") @db.Date
+  totalAmount      Decimal  @default(0) @db.Decimal(15, 2) @map("total_amount")
+  /// POSTED | VOID
+  status           String   @default("POSTED")
+  glEntryId        String?  @map("gl_entry_id")
+  glPostingError   String?  @map("gl_posting_error")
+  createdBy        String   @map("created_by")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  items ArConsolidatedInvoiceItem[]
+
+  @@map("ar_consolidated_invoices")
+  @@index([tenantId])
+  @@index([tenantId, parentCustomerId])
+}
+
+/// CE-09 S047: a per-unit AR item created as part of a consolidated
+/// invoice run. consolidatedInvoiceId is this item's permanent lineage
+/// back to the one consolidated document produced for the fleet parent.
+model ArConsolidatedInvoiceItem {
+  id                     String   @id @default(uuid())
+  tenantId               String   @map("tenant_id")
+  consolidatedInvoiceId  String   @map("consolidated_invoice_id")
+  childCustomerId        String   @map("child_customer_id")
+  amount                 Decimal  @db.Decimal(15, 2)
+  description            String?
+  /// OPEN | PAID | VOIDED
+  status                 String   @default("OPEN")
+  createdAt              DateTime @default(now()) @map("created_at")
+
+  consolidatedInvoice ArConsolidatedInvoice @relation(fields: [consolidatedInvoiceId], references: [id])
+
+  @@map("ar_consolidated_invoice_items")
+  @@index([tenantId])
+  @@index([tenantId, consolidatedInvoiceId])
+  @@index([tenantId, childCustomerId])
+}
+
+/// CE-09 S047: per-tenant "matrix row" GL account config for consolidated
+/// fleet-billing postings (Dr AR-control / Cr revenue), following the
+/// exact blank-row ACCOUNT_MAPPING_VALUES_PENDING convention established
+/// by ApUseTaxGlAccountConfig (S042) / ApTradePayoffGlAccountConfig (S044).
+model ArFleetBillingGlAccountConfig {
+  tenantId              String   @id @map("tenant_id")
+  arControlGlAccountId  String?  @map("ar_control_gl_account_id")
+  revenueGlAccountId    String?  @map("revenue_gl_account_id")
+  updatedAt             DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("ar_fleet_billing_gl_account_configs")
+}
+
+/// CE-09 S049: Insurance AR (Body Shop) — models the insurer as a payer
+/// distinct from the vehicle-owning customer. claimAmount is the
+/// ORIGINAL claim amount as first submitted and is never mutated
+/// in-place — claim-amount revisions are tracked exclusively via
+/// ArInsuranceClaimSupplement rows, each posting its own governed
+/// adjustment journal. The claim's current/effective amount is always
+/// (claimAmount + sum(supplements.adjustmentAmount)), computed on read —
+/// never stored/cached in a mutable column. roReference is a PUTR
+/// reference-only field for future CE-11 (repair-order) consumption — no
+/// CE-11 logic is invoked here.
+model ArInsuranceClaim {
+  id                 String    @id @default(uuid())
+  tenantId           String    @map("tenant_id")
+  customerId         String    @map("customer_id")
+  insurerName        String    @map("insurer_name")
+  insurerReference   String?   @map("insurer_reference")
+  claimNumber        String    @map("claim_number")
+  roReference        String?   @map("ro_reference")
+  claimAmount        Decimal   @db.Decimal(15, 2) @map("claim_amount")
+  amountApplied      Decimal   @default(0) @db.Decimal(15, 2) @map("amount_applied")
+  /// OPEN | PARTIALLY_APPLIED | RESOLVED | CLOSED
+  status             String    @default("OPEN")
+  /// Set exactly once, the moment a short-pay disposition is recorded —
+  /// the idempotency guard for "creates the remainder item/adjustment
+  /// exactly once" (AC).
+  shortPayDisposedAt DateTime? @map("short_pay_disposed_at")
+  glEntryId          String?   @map("gl_entry_id")
+  glPostingError     String?   @map("gl_posting_error")
+  createdBy          String    @map("created_by")
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  supplements  ArInsuranceClaimSupplement[]
+  applications ArInsurancePaymentApplication[]
+  dispositions ArInsuranceShortPayDisposition[]
+
+  @@map("ar_insurance_claims")
+  @@index([tenantId])
+  @@index([tenantId, customerId])
+  @@index([tenantId, claimNumber])
+}
+
+/// CE-09 S049: a governed adjustment to a claim's amount — the ONLY
+/// mechanism by which a claim's effective amount changes. Never a raw
+/// edit of ArInsuranceClaim.claimAmount.
+model ArInsuranceClaimSupplement {
+  id                String   @id @default(uuid())
+  tenantId          String   @map("tenant_id")
+  claimId           String   @map("claim_id")
+  adjustmentAmount  Decimal  @db.Decimal(15, 2) @map("adjustment_amount")
+  reason            String
+  glEntryId         String?  @map("gl_entry_id")
+  glPostingError    String?  @map("gl_posting_error")
+  createdBy         String   @map("created_by")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  claim ArInsuranceClaim @relation(fields: [claimId], references: [id])
+
+  @@map("ar_insurance_claim_supplements")
+  @@index([tenantId])
+  @@index([tenantId, claimId])
+}
+
+/// CE-09 S049: an insurer payment applied against a claim. Relieves the
+/// claim by exactly the applied amount (AC).
+model ArInsurancePaymentApplication {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  claimId        String   @map("claim_id")
+  amount         Decimal  @db.Decimal(15, 2)
+  glEntryId      String?  @map("gl_entry_id")
+  glPostingError String?  @map("gl_posting_error")
+  createdBy      String   @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  claim ArInsuranceClaim @relation(fields: [claimId], references: [id])
+
+  @@map("ar_insurance_payment_applications")
+  @@index([tenantId])
+  @@index([tenantId, claimId])
+}
+
+/// CE-09 S049: explicit, audited clerk disposition of an insurer
+/// short-pay remainder — either to a customer-responsibility AR item or
+/// to a write-off/adjustment. Never auto-decided (AC). Exactly one row
+/// per claim, guarded by ArInsuranceClaim.shortPayDisposedAt.
+model ArInsuranceShortPayDisposition {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  claimId         String   @map("claim_id")
+  amount          Decimal  @db.Decimal(15, 2)
+  /// CUSTOMER_RESPONSIBILITY | WRITE_OFF
+  dispositionType String   @map("disposition_type")
+  reason          String
+  glEntryId       String?  @map("gl_entry_id")
+  glPostingError  String?  @map("gl_posting_error")
+  createdBy       String   @map("created_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  claim ArInsuranceClaim @relation(fields: [claimId], references: [id])
+
+  @@map("ar_insurance_short_pay_dispositions")
+  @@index([tenantId])
+  @@index([tenantId, claimId])
+}
+
+/// CE-09 S049: per-tenant "matrix row" GL account config for insurance-AR
+/// postings, following the exact blank-row ACCOUNT_MAPPING_VALUES_PENDING
+/// convention established by ApUseTaxGlAccountConfig (S042) /
+/// ApTradePayoffGlAccountConfig (S044) / ArFleetBillingGlAccountConfig
+/// (S047).
+model ArInsuranceGlAccountConfig {
+  tenantId                     String   @id @map("tenant_id")
+  arInsurerControlGlAccountId  String?  @map("ar_insurer_control_gl_account_id")
+  revenueGlAccountId           String?  @map("revenue_gl_account_id")
+  arCustomerControlGlAccountId String?  @map("ar_customer_control_gl_account_id")
+  writeOffExpenseGlAccountId   String?  @map("write_off_expense_gl_account_id")
+  updatedAt                    DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("ar_insurance_gl_account_configs")
+}
+
+/// CE-09 S037: per-vendor 1099/T4A flag rule — assigns a form type
+/// (1099-MISC | 1099-NEC | T4A) and box/class code to a vendor for a
+/// specific tax year. Distinct from (and layered on top of) the legacy
+/// Vendor.is1099Misc/is1099Nec/income1099Type columns (S6-08 era): this
+/// table supports per-tax-year, multi-form-type rules including T4A
+/// (Canadian jurisdictions), which the legacy vendor-level flags cannot
+/// express.
+model Ap1099VendorBoxRule {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  vendorId  String   @map("vendor_id")
+  taxYear   Int      @map("tax_year")
+  /// 1099-MISC | 1099-NEC | T4A
+  formType  String   @map("form_type")
+  boxCode   String   @map("box_code")
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("ap_1099_vendor_box_rules")
+  @@unique([tenantId, vendorId, taxYear, formType])
+  @@index([tenantId])
+  @@index([tenantId, vendorId])
+}
+
+/// CE-09 S037: jurisdiction statutory reporting threshold, tenant-scoped
+/// SAFE_CONFIGURATION — never hardcoded in code. A vendor's accumulated
+/// posted-payment total for a tax year is compared against this
+/// configured threshold at preview time; the preview never invents its
+/// own threshold.
+model Ap1099ThresholdConfig {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  formType        String   @map("form_type")
+  taxYear         Int      @map("tax_year")
+  thresholdAmount Decimal  @map("threshold_amount") @db.Decimal(15, 2)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("ap_1099_threshold_configs")
+  @@unique([tenantId, formType, taxYear])
+  @@index([tenantId])
+}
+
+/// CE-09 S037: an audited correction to a vendor's computed 1099/T4A
+/// accumulation for a tax year — NEVER a silent edit of the underlying
+/// posted payments. The year-preview layers the most recent correction
+/// (if any) on top of the live-computed originalAmount; the original
+/// posted-payment total is always preserved on the correction row for
+/// audit/reconciliation.
+model Ap1099Correction {
+  id               String   @id @default(uuid())
+  tenantId         String   @map("tenant_id")
+  vendorId         String   @map("vendor_id")
+  taxYear          Int      @map("tax_year")
+  formType         String   @map("form_type")
+  originalAmount   Decimal  @map("original_amount") @db.Decimal(15, 2)
+  correctedAmount  Decimal  @map("corrected_amount") @db.Decimal(15, 2)
+  reason           String
+  createdBy        String   @map("created_by")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@map("ap_1099_corrections")
+  @@index([tenantId])
+  @@index([tenantId, vendorId, taxYear])
 }

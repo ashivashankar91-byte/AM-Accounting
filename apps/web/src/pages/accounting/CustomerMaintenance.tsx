@@ -199,6 +199,17 @@ export default function CustomerMaintenance() {
     retry: false,
   });
 
+  // S046: eligibility display — shown in the detail panel header whenever
+  // a customer is selected. Keeps the AR team instantly aware of credit-hold
+  // state and charge eligibility without navigating to a separate screen.
+  const { data: eligibility } = useQuery({
+    queryKey: ['customer-eligibility', selectedId],
+    queryFn: () => aparApi.getCustomerEligibility(selectedId!),
+    enabled: !!selectedId && !isNew,
+    staleTime: 30_000,
+    retry: false,
+  });
+
   useEffect(() => {
     if (selectedCustomer) setFormData(selectedCustomer);
   }, [selectedCustomer]);
@@ -444,6 +455,7 @@ export default function CustomerMaintenance() {
           <div className="flex items-center justify-between">
             <h2 className="font-bold text-sm text-gray-800">Customer Maintenance</h2>
             <button
+              data-testid="customer-new"
               onClick={handleNewCustomer}
               className="flex items-center gap-1 bg-brand text-white text-xs px-2.5 py-1.5 rounded hover:bg-brand"
             >
@@ -490,6 +502,7 @@ export default function CustomerMaintenance() {
           {((customers ?? []) as Customer[]).map((c: any) => (
             <div
               key={c.id}
+              data-testid={`customer-list-row-${c.id}`}
               onClick={() => { setSelectedId(c.id); setIsNew(false); setActiveTab('module-data'); }}
               className={`px-3 py-2.5 border-b cursor-pointer hover:bg-brand-light transition-colors ${
                 selectedId === c.id ? 'bg-brand-light border-l-2 border-l-blue-600' : ''
@@ -624,6 +637,7 @@ export default function CustomerMaintenance() {
                       </label>
                       <input
                         ref={nameRef}
+                        data-testid="customer-name-input"
                         type="text"
                         value={formData.customerName}
                         onChange={e => set('customerName', e.target.value)}
@@ -840,7 +854,7 @@ export default function CustomerMaintenance() {
 
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Credit Limit</label>
-                      <input type="number" min="0" step="0.01" value={formData.creditLimit}
+                      <input type="number" min="0" step="0.01" data-testid="customer-credit-limit" value={formData.creditLimit}
                         onChange={e => set('creditLimit', parseFloat(e.target.value) || 0)}
                         disabled={formData.employeeFlag}
                         className="w-full border rounded px-3 py-2 text-sm font-mono text-right disabled:bg-gray-100" />
@@ -1058,6 +1072,7 @@ export default function CustomerMaintenance() {
             <div className="flex items-center justify-between bg-white rounded-lg shadow p-4">
               <div className="flex gap-3 items-center">
                 <button
+                  data-testid="customer-save"
                   onClick={handleSave}
                   disabled={isSaving || !!formData.employeeFlag || formData.status === 'INACTIVE'}
                   className="flex items-center gap-2 bg-brand text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-brand disabled:opacity-40"
@@ -1075,6 +1090,12 @@ export default function CustomerMaintenance() {
                 {selectedId && !isNew && <StatusBadge status={formData.status} />}
                 {selectedId && !isNew && formData.creditHold && (
                   <span className="text-xs px-2 py-0.5 rounded bg-red-100 text-red-700 font-semibold">CREDIT HOLD</span>
+                )}
+                {selectedId && !isNew && eligibility && (
+                  <span className={`text-xs px-2 py-0.5 rounded font-semibold ${eligibility.eligible ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                    {eligibility.eligible ? '✓ Eligible for charges' : '✗ Ineligible for charges'}
+                    {eligibility.reason ? ` — ${eligibility.reason}` : ''}
+                  </span>
                 )}
               </div>
               {selectedId && !isNew && (

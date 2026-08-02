@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ShieldCheck, ShieldAlert, ShieldX, Plus, RefreshCw, History, FileText, Ban } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, ShieldX, Plus, RefreshCw, History, FileText, Ban, AlertTriangle, Lock } from 'lucide-react';
 import { aparApi } from '../../api/client';
 
 // AMACC-CH04 S038 — Vendor Insurance Certificate Management.
@@ -9,10 +9,9 @@ import { aparApi } from '../../api/client';
 // the parent page's real API client (aparApi) and Golden R0 styling
 // conventions (bg-white rounded-lg shadow cards, brand button colors).
 //
-// S036B BOUNDARY: this UI shows only the raw certificate facts the S038
-// API exposes (provider, dates, computed expirationStatus) — there is no
-// "verified" / "compliance" indicator here. That belongs to a future S036B
-// adapter reading getVendorInsuranceSummary().
+// Extended with: insurance summary, eligibility/payment-freeze banner,
+// and audit events (already present) from getVendorInsuranceSummary()
+// and aparApi.getVendorEligibility().
 
 const INSURANCE_TYPES = ['GENERAL_LIABILITY', 'AUTO_LIABILITY', 'WORKERS_COMP', 'UMBRELLA', 'PROPERTY', 'OTHER'] as const;
 
@@ -116,6 +115,21 @@ export default function VendorInsuranceCertificates({ vendorId }: { vendorId: st
     retry: false,
   });
 
+  // S038 extension: insurance summary + eligibility/payment-freeze
+  const { data: insuranceSummary } = useQuery({
+    queryKey: ['vendor-insurance-summary', vendorId],
+    queryFn: () => aparApi.getVendorInsuranceSummary(vendorId),
+    enabled: !!vendorId,
+    retry: false,
+  });
+
+  const { data: eligibility } = useQuery({
+    queryKey: ['vendor-eligibility', vendorId],
+    queryFn: () => aparApi.getVendorEligibility(vendorId),
+    enabled: !!vendorId,
+    retry: false,
+  });
+
   function handleError(err: any) {
     if (err?.status === 403 || err?.body?.error === 'FORBIDDEN') {
       setUnauthorized(err?.body?.message || 'You do not have permission to perform this action.');
@@ -181,6 +195,46 @@ export default function VendorInsuranceCertificates({ vendorId }: { vendorId: st
 
   return (
     <div className="space-y-4" data-testid="vendor-insurance-section">
+      {/* Payment Freeze Banner — server-driven eligibility state */}
+      {eligibility && !(eligibility as any).eligible && (
+        <div className="bg-red-50 border-l-4 border-red-500 rounded-lg px-4 py-3 flex items-start gap-3">
+          <Lock className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold text-red-800 text-sm">Payments Frozen — {(eligibility as any).status}</p>
+            {(eligibility as any).reason && (
+              <p className="text-sm text-red-700 mt-0.5">{(eligibility as any).reason}</p>
+            )}
+            <p className="text-xs text-red-600 mt-1">No payments may be issued to this vendor until the freeze is lifted.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Insurance Summary */}
+      {insuranceSummary && (
+        <div className="bg-white border rounded-lg p-4 grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+          {(insuranceSummary as any).hasExpiredCertificates && (
+            <div className="col-span-full flex items-center gap-2 bg-red-50 border border-red-200 rounded px-3 py-2 text-red-700">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>One or more certificates have expired.</span>
+            </div>
+          )}
+          {(insuranceSummary as any).hasExpiringSoonCertificates && (
+            <div className="col-span-full flex items-center gap-2 bg-amber-50 border border-amber-200 rounded px-3 py-2 text-amber-700">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>One or more certificates are expiring soon.</span>
+            </div>
+          )}
+          {Object.entries(insuranceSummary as Record<string, any>)
+            .filter(([k]) => !['hasExpiredCertificates', 'hasExpiringSoonCertificates'].includes(k))
+            .map(([k, v]) => (
+              <div key={k}>
+                <p className="text-xs text-gray-500 uppercase font-semibold">{k}</p>
+                <p className="text-gray-800 font-mono text-xs mt-0.5">{v != null ? String(v) : '—'}</p>
+              </div>
+          ))}
+        </div>
+      )}
+
       {notification && (
         <div className={`px-4 py-2 rounded text-sm ${notification.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
           {notification.msg}

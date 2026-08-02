@@ -296,3 +296,329 @@ model CashVarianceToleranceConfig {
   @@index([tenantId, scope, scopeId])
   @@map("cash_variance_tolerance_config")
 }
+
+/// S053 — a deposit batch of undeposited cash receipts bound for one bank
+/// account. Lifecycle: OPEN (accumulating lines) -> POSTED (clearing->cash
+/// journal emitted, immutable) or -> VOID (cancelled before posting, never
+/// after). idempotencyKey guards double-posting the same logical deposit
+/// action; CashDepositLine's (tenantId, receiptId) unique constraint is the
+/// DB-level guard that a receipt can never be deposited twice.
+model CashDeposit {
+  id              String    @id @default(uuid())
+  tenantId        String    @map("tenant_id")
+  entityId        String    @map("entity_id")
+  storeId         String    @map("store_id")
+  bankAccountCode String    @map("bank_account_code")
+  businessDate    DateTime  @map("business_date") @db.Date
+  currency        String    @default("USD") @db.VarChar(3)
+  status          String    @default("OPEN") // OPEN | POSTED | VOID
+  totalAmount     Decimal   @map("total_amount") @db.Decimal(15, 2)
+  idempotencyKey  String    @map("idempotency_key")
+  preparedBy      String    @map("prepared_by")
+  preparedAt      DateTime  @default(now()) @map("prepared_at")
+  postedBy        String?   @map("posted_by")
+  postedAt        DateTime? @map("posted_at")
+  voidedBy        String?   @map("voided_by")
+  voidedAt        DateTime? @map("voided_at")
+  voidReason      String?   @map("void_reason")
+  version         Int       @default(1)
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  lines CashDepositLine[]
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, storeId, businessDate])
+  @@index([tenantId, status])
+  @@map("cash_deposit")
+}
+
+/// S053 — one deposited receipt within a batch. (tenantId, receiptId) is
+/// unique tenant-wide: a receipt can belong to at most one deposit, ever
+/// (enforced at the DB level, not just app logic).
+model CashDepositLine {
+  id         String   @id @default(uuid())
+  tenantId   String   @map("tenant_id")
+  depositId  String   @map("deposit_id")
+  receiptId  String   @map("receipt_id")
+  tenderType String   @map("tender_type") // CASH | CHECK
+  amount     Decimal  @db.Decimal(15, 2)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  deposit CashDeposit @relation(fields: [depositId], references: [id])
+
+  @@unique([tenantId, receiptId])
+  @@index([tenantId, depositId])
+  @@map("cash_deposit_line")
+}
+
+/// S053 — a bank statement/feed line, manually imported (always available)
+/// or pushed by a real feed adapter (BANK_FEED_NOT_CONFIGURED today — no
+/// adapter is wired; see infrastructure/bank-feed-adapter.ts). Matched
+/// against a CashDeposit (clearing) or a CashReceipt (pre-deposit match).
+model BankFeedLine {
+  id               String    @id @default(uuid())
+  tenantId         String    @map("tenant_id")
+  bankAccountCode  String    @map("bank_account_code")
+  source           String    @default("MANUAL") // MANUAL | FEED
+  externalId       String?   @map("external_id")
+  amount           Decimal   @db.Decimal(15, 2)
+  valueDate        DateTime  @map("value_date") @db.Date
+  description      String?
+  status           String    @default("UNMATCHED") // UNMATCHED | MATCHED | IGNORED
+  matchedDepositId String?   @map("matched_deposit_id")
+  matchedReceiptId String?   @map("matched_receipt_id")
+  matchedBy        String?   @map("matched_by")
+  matchedAt        DateTime? @map("matched_at")
+  importedBy       String    @map("imported_by")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  @@unique([tenantId, bankAccountCode, externalId])
+  @@index([tenantId, status])
+  @@index([tenantId, bankAccountCode])
+  @@map("bank_feed_line")
+}
+
+/// S055 — one merchant card-settlement batch, manually imported (adapter;
+/// no real processor wired here — see infrastructure/settlement-adapter.ts)
+/// or matched to card-tender receipts/deposits from S053. gross/fees/net
+/// are all stated on the batch; fee recognition always posts its own
+/// journal line (cash.settlement.fee.recognized) — never silently netted
+/// into the deposit.
+model SettlementBatch {
+  id              String    @id @default(uuid())
+  tenantId        String    @map("tenant_id")
+  entityId        String    @map("entity_id")
+  bankAccountCode String    @map("bank_account_code")
+  processorName   String    @map("processor_name")
+  batchReference  String    @map("batch_reference")
+  settlementDate  DateTime  @map("settlement_date") @db.Date
+  currency        String    @default("USD") @db.VarChar(3)
+  grossAmount     Decimal   @map("gross_amount") @db.Decimal(15, 2)
+  feeAmount       Decimal   @map("fee_amount") @db.Decimal(15, 2)
+  netAmount       Decimal   @map("net_amount") @db.Decimal(15, 2)
+  status          String    @default("IMPORTED") // IMPORTED | MATCHED | POSTED | VOID
+  idempotencyKey  String    @map("idempotency_key")
+  importedBy      String    @map("imported_by")
+  importedAt      DateTime  @default(now()) @map("imported_at")
+  postedBy        String?   @map("posted_by")
+  postedAt        DateTime? @map("posted_at")
+  version         Int       @default(1)
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  lines       SettlementBatchLine[]
+  chargebacks SettlementChargeback[]
+
+  @@unique([tenantId, idempotencyKey])
+  @@unique([tenantId, processorName, batchReference])
+  @@index([tenantId, status])
+  @@map("settlement_batch")
+}
+
+/// S055 — a single card-tender receipt/deposit matched into a settlement
+/// batch. Unmatched settlement lines never get folded silently into a
+/// batch — they stay in the SettlementWorklistItem table below until an
+/// explicit match action.
+model SettlementBatchLine {
+  id         String   @id @default(uuid())
+  tenantId   String   @map("tenant_id")
+  batchId    String   @map("batch_id")
+  receiptId  String?  @map("receipt_id")
+  depositId  String?  @map("deposit_id")
+  amount     Decimal  @db.Decimal(15, 2)
+  matchedBy  String   @map("matched_by")
+  matchedAt  DateTime @default(now()) @map("matched_at")
+
+  batch SettlementBatch @relation(fields: [batchId], references: [id])
+
+  @@index([tenantId, batchId])
+  @@map("settlement_batch_line")
+}
+
+/// S055 AC: unmatched settlement lines land in an explicit worklist, never
+/// auto-absorbed into a batch or silently dropped.
+model SettlementWorklistItem {
+  id              String    @id @default(uuid())
+  tenantId        String    @map("tenant_id")
+  batchId         String?   @map("batch_id")
+  bankAccountCode String    @map("bank_account_code")
+  amount          Decimal   @db.Decimal(15, 2)
+  cardLast4       String?   @map("card_last4")
+  transactionRef  String?   @map("transaction_ref")
+  status          String    @default("OPEN") // OPEN | RESOLVED | IGNORED
+  resolvedBy      String?   @map("resolved_by")
+  resolvedAt      DateTime? @map("resolved_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@index([tenantId, status])
+  @@map("settlement_worklist_item")
+}
+
+/// S055 — a governed chargeback disposition. Exactly one
+/// SettlementAdjustment (below) is created per chargeback, per an explicit
+/// disposition action — never automatically. PUTR: this is modeled as a
+/// local settlement-adjustment record; it is NOT an AR open item. When
+/// apar-service exposes a reachable "create customer-responsibility item"
+/// endpoint, this record's disposition should call it — documented here as
+/// the integration point, not invented today.
+model SettlementChargeback {
+  id                  String    @id @default(uuid())
+  tenantId            String    @map("tenant_id")
+  batchId             String?   @map("batch_id")
+  entityId            String    @map("entity_id")
+  customerId          String?   @map("customer_id")
+  amount              Decimal   @db.Decimal(15, 2)
+  reasonCode          String?   @map("reason_code")
+  status              String    @default("INTAKE") // INTAKE | DISPOSITIONED
+  dispositionAction    String?   @map("disposition_action") // CUSTOMER_RESPONSIBILITY | MERCHANT_ABSORBED
+  dispositionedBy      String?   @map("dispositioned_by")
+  dispositionedAt      DateTime? @map("dispositioned_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+
+  batch       SettlementBatch?        @relation(fields: [batchId], references: [id])
+  adjustment  SettlementAdjustment?
+
+  @@index([tenantId, status])
+  @@map("settlement_chargeback")
+}
+
+/// S055 — one governed adjustment + (when disposition =
+/// CUSTOMER_RESPONSIBILITY) one customer-responsibility item, created
+/// exactly once per chargeback via the unique FK to SettlementChargeback.
+/// PUTR note (see model comment above): `arItemReference` is populated only
+/// once apar-service's AR-item-creation endpoint is reachable; until then
+/// it stays null and this row IS the customer-responsibility record.
+model SettlementAdjustment {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  chargebackId    String   @unique @map("chargeback_id")
+  entityId        String   @map("entity_id")
+  amount          Decimal  @db.Decimal(15, 2)
+  dispositionAction String @map("disposition_action")
+  arItemReference String?  @map("ar_item_reference") // PUTR — populated once apar-service integration lands
+  createdBy       String   @map("created_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  chargeback SettlementChargeback @relation(fields: [chargebackId], references: [id])
+
+  @@map("settlement_adjustment")
+}
+
+/// S056 — tenant-configured pair of accounts a ZBA sweep moves cash
+/// between (store <-> operating). One row per configured pair.
+model SweepAccountPairConfig {
+  id                String   @id @default(uuid())
+  tenantId          String   @map("tenant_id")
+  entityId          String   @map("entity_id")
+  storeAccountCode  String   @map("store_account_code")
+  operatingAccountCode String @map("operating_account_code")
+  active            Boolean  @default(true)
+  createdBy         String   @map("created_by")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  sweeps ZbaSweep[]
+
+  @@unique([tenantId, storeAccountCode, operatingAccountCode])
+  @@map("sweep_account_pair_config")
+}
+
+/// S056 — one ZBA sweep event between the configured pair. direction
+/// STORE_TO_OPERATING sweeps the store account down to zero into
+/// operating; OPERATING_TO_STORE funds the store account back up.
+/// confirmationState is truthful: FEED_CONFIRMED only when a real bank feed
+/// match exists, otherwise MANUAL_RECORDED. AC: the posted journal pair
+/// (see cash.sweep.posted event) nets exactly zero across the two accounts.
+model ZbaSweep {
+  id                String    @id @default(uuid())
+  tenantId          String    @map("tenant_id")
+  pairConfigId      String    @map("pair_config_id")
+  sweepDate         DateTime  @map("sweep_date") @db.Date
+  direction         String    // STORE_TO_OPERATING | OPERATING_TO_STORE
+  amount            Decimal   @db.Decimal(15, 2)
+  confirmationState String    @default("MANUAL_RECORDED") @map("confirmation_state") // MANUAL_RECORDED | FEED_CONFIRMED
+  status            String    @default("RECORDED") // RECORDED | POSTED | VOID
+  idempotencyKey    String    @map("idempotency_key")
+  recordedBy        String    @map("recorded_by")
+  recordedAt        DateTime  @default(now()) @map("recorded_at")
+  postedAt          DateTime? @map("posted_at")
+  version           Int       @default(1)
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  pairConfig SweepAccountPairConfig @relation(fields: [pairConfigId], references: [id])
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, status])
+  @@map("zba_sweep")
+}
+
+/// S056 — floorplan-offset allocation: a manually entered lender-statement
+/// figure allocated against floorplan interest lines. Pure allocation of
+/// entered numbers — no interest calculation/actuarial math is performed
+/// here (explicitly out of scope). AC: sum(lines.amount) == statementAmount
+/// exactly.
+model FpOffsetAllocation {
+  id                String   @id @default(uuid())
+  tenantId          String   @map("tenant_id")
+  entityId          String   @map("entity_id")
+  lenderName        String   @map("lender_name")
+  statementDate     DateTime @map("statement_date") @db.Date
+  statementAmount   Decimal  @map("statement_amount") @db.Decimal(15, 2)
+  status            String   @default("DRAFT") // DRAFT | POSTED
+  idempotencyKey    String   @map("idempotency_key")
+  enteredBy         String   @map("entered_by")
+  enteredAt         DateTime @default(now()) @map("entered_at")
+  postedAt          DateTime? @map("posted_at")
+  version           Int      @default(1)
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  lines FpOffsetAllocationLine[]
+
+  @@unique([tenantId, idempotencyKey])
+  @@map("fp_offset_allocation")
+}
+
+model FpOffsetAllocationLine {
+  id             String  @id @default(uuid())
+  tenantId       String  @map("tenant_id")
+  allocationId   String  @map("allocation_id")
+  floorplanUnitRef String @map("floorplan_unit_ref")
+  amount         Decimal @db.Decimal(15, 2)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  allocation FpOffsetAllocation @relation(fields: [allocationId], references: [id])
+
+  @@index([tenantId, allocationId])
+  @@map("fp_offset_allocation_line")
+}
+
+/// S057 — per-tenant/jurisdiction statutory large-cash-transaction
+/// threshold. Empty table = no flags, never guessed (BR — this is a
+/// governed configuration value, not a hardcoded constant).
+model LargeCashThresholdConfig {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  jurisdiction   String
+  thresholdAmount Decimal @map("threshold_amount") @db.Decimal(15, 2)
+  currency       String   @default("USD") @db.VarChar(3)
+  updatedBy      String   @map("updated_by")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, jurisdiction])
+  @@map("large_cash_threshold_config")
+}
+
+/// S057 — an audited export of the daily cash position report. The export
+/// itself contains no financial computation — it is a retained, audited
+/// record of a read-model snapshot already composed elsewhere.
+model CashPositionExport {
+  id           String   @id @default(uuid())
+  tenantId     String   @map("tenant_id")
+  entityId     String   @map("entity_id")
+  businessDate DateTime @map("business_date") @db.Date
+  requestedBy  String   @map("requested_by")
+  requestedAt  DateTime @default(now()) @map("requested_at")
+  snapshot     Json
+
+  @@index([tenantId, entityId, businessDate])
+  @@map("cash_position_export")
+}

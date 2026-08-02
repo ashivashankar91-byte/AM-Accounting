@@ -118,6 +118,10 @@ function makePrisma(overrides: Partial<{
     outboxEvent: {
       create: vi.fn().mockResolvedValue({}),
     },
+    // CE-09 cert fix: setTenantContextOnConnection() now runs first inside
+    // every interactive $transaction callback in customer-service.ts (RLS
+    // hardening), so the mock tx must stub this call.
+    $executeRawUnsafe: vi.fn().mockResolvedValue(undefined),
   };
   client.$transaction = async (arg: any) => (typeof arg === 'function' ? arg(client) : Promise.all(arg));
   return client;
@@ -419,6 +423,8 @@ describe('CustomerService cross-tenant isolation', () => {
       },
       auditOutboxEvent: { create: vi.fn().mockResolvedValue({}) },
       outboxEvent: { create: vi.fn().mockResolvedValue({}) },
+      // CE-09 cert fix: see makePrisma() above for rationale.
+      $executeRawUnsafe: vi.fn().mockResolvedValue(undefined),
     };
     client.$transaction = async (arg: any) => (typeof arg === 'function' ? arg(client) : Promise.all(arg));
     return client;

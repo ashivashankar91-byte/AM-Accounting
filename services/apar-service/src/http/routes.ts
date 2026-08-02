@@ -75,7 +75,71 @@ import {
   PaymentNotFoundError,
   PaymentConflictError,
   PaymentValidationError,
+  VoidRefusedPaymentReconciledError,
 } from '../application/manual-payment-service';
+import {
+  InvoiceNotFoundForUseTaxError,
+  UseTaxAssessmentValidationError,
+  UseTaxAssessmentAlreadyExistsError,
+  UseTaxAssessmentNotFoundError,
+} from '../application/use-tax-service';
+import {
+  EscheatConfigNotFoundError,
+  EscheatTransferAlreadyExistsError,
+} from '../application/payment-lifecycle-service';
+import {
+  WholesaleVehicleItemNotFoundError,
+  WholesaleVehicleValidationError,
+  TitleReleaseRefusedUnpaidError,
+} from '../application/wholesale-vehicle-service';
+import {
+  ArEntryNotFoundForWriteOffError,
+  WriteOffValidationError,
+  WriteOffRefusedOverThresholdError,
+  WriteOffNotFoundError,
+} from '../application/write-off-service';
+import {
+  AllowancePreviewNotFoundError,
+  AllowanceValidationError,
+  AllowancePostAmountMismatchError,
+} from '../application/allowance-service';
+import {
+  ArEntryNotFoundForNsfError,
+  NsfValidationError,
+  NsfEventNotFoundError,
+} from '../application/nsf-service';
+import {
+  PaymentRunNotFoundError,
+  PaymentRunValidationError,
+  RunApprovalRefusedSoDError,
+} from '../application/payment-run-service';
+import {
+  TradePayoffValidationError,
+  PayoffReconfirmationRequiredError,
+  DuplicatePayoffPaymentError,
+  BankAccountNotFoundError as TradePayoffBankAccountNotFoundError,
+  TradePayoffNotFoundError,
+} from '../application/trade-payoff-service';
+import {
+  FleetBillingValidationError,
+  FleetCustomerNotFoundError,
+  FleetUnitAlreadyLinkedError,
+  FleetUnitLinkNotFoundError,
+  FleetUnitNotLinkedToParentError,
+  ConsolidatedInvoiceNotFoundError,
+} from '../application/fleet-billing-service';
+import {
+  InsuranceArValidationError,
+  InsuranceClaimNotFoundError,
+  InsurerPaymentExceedsClaimBalanceError,
+  NoShortPayRemainderError,
+  ShortPayAlreadyDisposedError,
+} from '../application/insurance-ar-service';
+import {
+  Vendor1099ValidationError,
+  Vendor1099VendorNotFoundError,
+  Vendor1099BoxRuleNotFoundError,
+} from '../application/vendor-1099-service';
 
 function getTenantId(request: any) {
   const id = request.headers['x-tenant-id'] as string;
@@ -138,6 +202,17 @@ export async function aparRoutes(app: FastifyInstance) {
   const approvalRuleSvc = container.resolve<ApprovalRuleService>('ApprovalRuleService');
   const invoiceApprovalSvc = container.resolve<import('../application/invoice-approval-service').InvoiceApprovalService>('InvoiceApprovalService');
   const manualPaymentSvc = container.resolve<import('../application/manual-payment-service').ManualPaymentService>('ManualPaymentService');
+  const useTaxSvc = container.resolve<import('../application/use-tax-service').UseTaxService>('UseTaxService');
+  const paymentLifecycleSvc = container.resolve<import('../application/payment-lifecycle-service').PaymentLifecycleService>('PaymentLifecycleService');
+  const wholesaleVehicleSvc = container.resolve<import('../application/wholesale-vehicle-service').WholesaleVehicleService>('WholesaleVehicleService');
+  const writeOffSvc = container.resolve<import('../application/write-off-service').WriteOffService>('WriteOffService');
+  const allowanceSvc = container.resolve<import('../application/allowance-service').AllowanceService>('AllowanceService');
+  const nsfSvc = container.resolve<import('../application/nsf-service').NsfService>('NsfService');
+  const paymentRunSvc = container.resolve<import('../application/payment-run-service').PaymentRunService>('PaymentRunService');
+  const tradePayoffSvc = container.resolve<import('../application/trade-payoff-service').TradePayoffService>('TradePayoffService');
+  const fleetBillingSvc = container.resolve<import('../application/fleet-billing-service').FleetBillingService>('FleetBillingService');
+  const insuranceArSvc = container.resolve<import('../application/insurance-ar-service').InsuranceArService>('InsuranceArService');
+  const vendor1099Svc = container.resolve<import('../application/vendor-1099-service').Vendor1099Service>('Vendor1099Service');
   const authzClient = container.resolve<AuthzClient>('AuthzClient');
   const requirePermission = createAuthzGuard(authzClient, { getTenantId });
 
@@ -2724,6 +2799,9 @@ export async function aparRoutes(app: FastifyInstance) {
     if (error instanceof PaymentConflictError) {
       return reply.status(409).send({ error: error.code, message: error.message });
     }
+    if (error instanceof VoidRefusedPaymentReconciledError) {
+      return reply.status(409).send({ error: 'VOID_REFUSED_PAYMENT_RECONCILED', message: error.message });
+    }
     if (error instanceof InvoiceNotApprovedError || error instanceof PaymentValidationError) {
       return reply.status(422).send({ error: (error as any).code ?? 'NOT_APPROVED', message: error.message });
     }
@@ -2786,4 +2864,1223 @@ export async function aparRoutes(app: FastifyInstance) {
       return handlePaymentError(err, reply);
     }
   });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CE-09 S042: Use-Tax Self-Assessment
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const AP_USE_TAX_PERMISSIONS = {
+    VIEW:   'ap.use_tax.view',
+    ASSESS: 'ap.use_tax.assess',
+  } as const;
+
+  const UseTaxAssessSchema = z.object({
+    jurisdiction: z.string().min(1),
+    taxableAmount: z.number().positive(),
+    manualRate: z.number().min(0).optional(),
+    attestationBasis: z.string().min(1).optional(),
+  });
+
+  function handleUseTaxError(error: unknown, reply: any) {
+    if (error instanceof InvoiceNotFoundForUseTaxError || error instanceof UseTaxAssessmentNotFoundError) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof UseTaxAssessmentAlreadyExistsError) {
+      return reply.status(409).send({ error: 'ALREADY_ASSESSED', message: error.message });
+    }
+    if (error instanceof UseTaxAssessmentValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    throw error;
+  }
+
+  app.get('/use-tax/assessments', { preHandler: requirePermission(AP_USE_TAX_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { invoiceId } = request.query as { invoiceId?: string };
+    const assessments = await useTaxSvc.list(tenantId, invoiceId);
+    return reply.send(assessments);
+  });
+
+  app.get('/use-tax/assessments/:id', { preHandler: requirePermission(AP_USE_TAX_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const assessment = await useTaxSvc.getById(tenantId, id);
+      return reply.send(assessment);
+    } catch (err) {
+      return handleUseTaxError(err, reply);
+    }
+  });
+
+  app.get('/use-tax/register', { preHandler: requirePermission(AP_USE_TAX_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { period } = request.query as { period?: string };
+    if (!period) return reply.status(400).send({ error: 'VALIDATION_ERROR', message: 'period (YYYY-MM) query parameter is required' });
+    const register = await useTaxSvc.register(tenantId, { period });
+    return reply.send(register);
+  });
+
+  app.post('/invoices/:id/use-tax-assessment', { preHandler: requirePermission(AP_USE_TAX_PERMISSIONS.ASSESS) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = UseTaxAssessSchema.parse(request.body);
+      const assessment = await useTaxSvc.assess(tenantId, id, body, actor, getServiceToken(), correlationId);
+      return reply.status(201).send(assessment);
+    } catch (err) {
+      return handleUseTaxError(err, reply);
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CE-09 S045: Void/Stop/Reissue & Check Escheat
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const AP_PAYMENT_LIFECYCLE_PERMISSIONS = {
+    MARK_CLEARED_TEST_ONLY: 'ap.payment_lifecycle.mark_cleared_test_only',
+    REISSUE: 'ap.payment_lifecycle.reissue',
+    STOP_PAYMENT_REQUEST: 'ap.payment_lifecycle.stop_payment_request',
+    STOP_PAYMENT_RESOLVE: 'ap.payment_lifecycle.stop_payment_resolve',
+    ESCHEAT_VIEW: 'ap.payment_lifecycle.escheat_view',
+    ESCHEAT_DUE_DILIGENCE: 'ap.payment_lifecycle.escheat_due_diligence',
+    ESCHEAT_TRANSFER: 'ap.payment_lifecycle.escheat_transfer',
+  } as const;
+
+  const MarkClearedSchema = z.object({
+    clearedAt: z.string().transform((s) => new Date(s)).optional(),
+  });
+
+  const StopPaymentRequestSchema = z.object({
+    reason: z.string().min(1),
+  });
+
+  const ResolveStopPaymentSchema = z.object({
+    status: z.enum(['ACKNOWLEDGED', 'FAILED']),
+    bankAck: z.enum(['MANUAL', 'PAYMENT_RAIL_NOT_CONFIGURED']),
+    bankAckNote: z.string().optional(),
+  });
+
+  const ReissuePaymentSchema = z.object({
+    bankAccountId: z.string().uuid(),
+    paymentDate: z.string().transform((s) => new Date(s)).optional(),
+  });
+
+  const RecordDueDiligenceSchema = z.object({
+    method: z.enum(['LETTER', 'PHONE', 'EMAIL', 'OTHER']),
+    outcome: z.string().min(1),
+    notes: z.string().optional(),
+  });
+
+  const PostEscheatTransferSchema = z.object({
+    jurisdiction: z.string().min(1),
+  });
+
+  function handleLifecycleError(error: unknown, reply: any) {
+    if (error instanceof PaymentNotFoundError) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof VoidRefusedPaymentReconciledError) {
+      return reply.status(409).send({ error: 'VOID_REFUSED_PAYMENT_RECONCILED', message: error.message });
+    }
+    if (error instanceof EscheatConfigNotFoundError) {
+      return reply.status(422).send({ error: 'ESCHEAT_CONFIG_NOT_FOUND', message: error.message });
+    }
+    if (error instanceof EscheatTransferAlreadyExistsError) {
+      return reply.status(409).send({ error: 'ESCHEAT_TRANSFER_ALREADY_EXISTS', message: error.message });
+    }
+    if (error instanceof PaymentValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    throw error;
+  }
+
+  // NOTE: this endpoint is a PUTR (Point Until The Real thing) integration
+  // boundary with recon-service (S054A/S054B) — recon-service is expected
+  // to set clearedAt/clearedBy once genuine bank-clearing/reconciliation
+  // wiring exists. Until then, this is admin/test-only and MUST NOT be
+  // exposed to ordinary AP clerks — gated by a distinct permission.
+  app.post('/manual-payments/:id/mark-cleared-test-only', { preHandler: requirePermission(AP_PAYMENT_LIFECYCLE_PERMISSIONS.MARK_CLEARED_TEST_ONLY) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    try {
+      const body = MarkClearedSchema.parse(request.body ?? {});
+      const payment = await paymentLifecycleSvc.markCleared(tenantId, id, body, actor);
+      return reply.send(payment);
+    } catch (err) {
+      return handleLifecycleError(err, reply);
+    }
+  });
+
+  app.post('/manual-payments/:id/reissue', { preHandler: requirePermission(AP_PAYMENT_LIFECYCLE_PERMISSIONS.REISSUE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = ReissuePaymentSchema.parse(request.body);
+      const payment = await paymentLifecycleSvc.reissue(tenantId, id, body, actor, getServiceToken(), correlationId);
+      return reply.status(201).send(payment);
+    } catch (err) {
+      return handleLifecycleError(err, reply);
+    }
+  });
+
+  app.post('/manual-payments/:id/stop-payment-requests', { preHandler: requirePermission(AP_PAYMENT_LIFECYCLE_PERMISSIONS.STOP_PAYMENT_REQUEST) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = StopPaymentRequestSchema.parse(request.body);
+      const req = await paymentLifecycleSvc.requestStopPayment(tenantId, id, body, actor, correlationId);
+      return reply.status(201).send(req);
+    } catch (err) {
+      return handleLifecycleError(err, reply);
+    }
+  });
+
+  app.get('/manual-payments/:id/stop-payment-requests', { preHandler: requirePermission(AP_PAYMENT_LIFECYCLE_PERMISSIONS.ESCHEAT_VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const requests = await paymentLifecycleSvc.listStopPaymentRequests(tenantId, id);
+    return reply.send(requests);
+  });
+
+  app.post('/stop-payment-requests/:requestId/resolve', { preHandler: requirePermission(AP_PAYMENT_LIFECYCLE_PERMISSIONS.STOP_PAYMENT_RESOLVE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { requestId } = request.params as { requestId: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = ResolveStopPaymentSchema.parse(request.body);
+      const resolved = await paymentLifecycleSvc.resolveStopPayment(tenantId, requestId, body, actor, correlationId);
+      return reply.send(resolved);
+    } catch (err) {
+      return handleLifecycleError(err, reply);
+    }
+  });
+
+  // D-CE09-03: purely informational — never auto-computes/auto-posts an
+  // escheat without an explicit jurisdiction configuration + a separate
+  // explicit transfer action below.
+  app.get('/escheat/queue', { preHandler: requirePermission(AP_PAYMENT_LIFECYCLE_PERMISSIONS.ESCHEAT_VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const queue = await paymentLifecycleSvc.escheatQueue(tenantId);
+    return reply.send(queue);
+  });
+
+  app.post('/manual-payments/:id/due-diligence', { preHandler: requirePermission(AP_PAYMENT_LIFECYCLE_PERMISSIONS.ESCHEAT_DUE_DILIGENCE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    try {
+      const body = RecordDueDiligenceSchema.parse(request.body);
+      const record = await paymentLifecycleSvc.recordDueDiligence(tenantId, id, body, actor);
+      return reply.status(201).send(record);
+    } catch (err) {
+      return handleLifecycleError(err, reply);
+    }
+  });
+
+  app.get('/manual-payments/:id/due-diligence', { preHandler: requirePermission(AP_PAYMENT_LIFECYCLE_PERMISSIONS.ESCHEAT_VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const records = await paymentLifecycleSvc.listDueDiligence(tenantId, id);
+    return reply.send(records);
+  });
+
+  app.post('/manual-payments/:id/escheat-transfer', { preHandler: requirePermission(AP_PAYMENT_LIFECYCLE_PERMISSIONS.ESCHEAT_TRANSFER) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = PostEscheatTransferSchema.parse(request.body);
+      const transfer = await paymentLifecycleSvc.postEscheatTransfer(tenantId, id, body, actor, getServiceToken(), correlationId);
+      return reply.status(201).send(transfer);
+    } catch (err) {
+      return handleLifecycleError(err, reply);
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CE-09 S048: Wholesale Vehicle AR & Title Gate
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const AR_WHOLESALE_VEHICLE_PERMISSIONS = {
+    VIEW:              'ar.wholesale.view',
+    CREATE:            'ar.wholesale.create',
+    RECORD_PAYMENT:    'ar.wholesale.record_payment',
+    RELEASE_TITLE:     'ar.wholesale.release_title',
+    RELEASE_EXCEPTION: 'ar.wholesale.title_release_exception',
+  } as const;
+
+  const WholesaleVehicleCreateSchema = z.object({
+    customerId: z.string().min(1),
+    vehicleVin: z.string().min(1),
+    saleAmount: z.number().positive(),
+  });
+
+  const WholesaleVehicleRecordPaymentSchema = z.object({
+    amount: z.number().positive(),
+  });
+
+  const WholesaleVehicleReleaseExceptionSchema = z.object({
+    reason: z.string().min(1),
+  });
+
+  function handleWholesaleVehicleError(error: unknown, reply: any) {
+    if (error instanceof WholesaleVehicleItemNotFoundError) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof TitleReleaseRefusedUnpaidError) {
+      return reply.status(409).send({ error: 'TITLE_RELEASE_REFUSED_UNPAID', message: error.message });
+    }
+    if (error instanceof WholesaleVehicleValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    throw error;
+  }
+
+  app.get('/wholesale-vehicle-items', { preHandler: requirePermission(AR_WHOLESALE_VEHICLE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { customerId } = request.query as { customerId?: string };
+    const items = await wholesaleVehicleSvc.list(tenantId, customerId);
+    return reply.send(items);
+  });
+
+  app.get('/wholesale-vehicle-items/:id', { preHandler: requirePermission(AR_WHOLESALE_VEHICLE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const item = await wholesaleVehicleSvc.getById(tenantId, id);
+      return reply.send(item);
+    } catch (err) {
+      return handleWholesaleVehicleError(err, reply);
+    }
+  });
+
+  app.post('/wholesale-vehicle-items', { preHandler: requirePermission(AR_WHOLESALE_VEHICLE_PERMISSIONS.CREATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    try {
+      const body = WholesaleVehicleCreateSchema.parse(request.body);
+      const item = await wholesaleVehicleSvc.create(tenantId, body, actor);
+      return reply.status(201).send(item);
+    } catch (err) {
+      return handleWholesaleVehicleError(err, reply);
+    }
+  });
+
+  app.post('/wholesale-vehicle-items/:id/payments', { preHandler: requirePermission(AR_WHOLESALE_VEHICLE_PERMISSIONS.RECORD_PAYMENT) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    try {
+      const body = WholesaleVehicleRecordPaymentSchema.parse(request.body);
+      const item = await wholesaleVehicleSvc.recordPayment(tenantId, id, body, actor);
+      return reply.send(item);
+    } catch (err) {
+      return handleWholesaleVehicleError(err, reply);
+    }
+  });
+
+  // AC: unpaid release attempt returns a named refusal
+  // (TITLE_RELEASE_REFUSED_UNPAID); paid-in-full items are auto-eligible.
+  app.post('/wholesale-vehicle-items/:id/release-title', { preHandler: requirePermission(AR_WHOLESALE_VEHICLE_PERMISSIONS.RELEASE_TITLE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const item = await wholesaleVehicleSvc.releaseTitle(tenantId, id, actor, correlationId);
+      return reply.send(item);
+    } catch (err) {
+      return handleWholesaleVehicleError(err, reply);
+    }
+  });
+
+  // Exception path: requires a DISTINCT permission from ordinary release,
+  // a mandatory reason, and creates a fully-audited/queryable
+  // ArTitleReleaseException record naming the authorizing user (AC).
+  app.post('/wholesale-vehicle-items/:id/release-title-exception', { preHandler: requirePermission(AR_WHOLESALE_VEHICLE_PERMISSIONS.RELEASE_EXCEPTION) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = WholesaleVehicleReleaseExceptionSchema.parse(request.body);
+      const result = await wholesaleVehicleSvc.releaseTitleWithException(tenantId, id, body, actor, correlationId);
+      return reply.status(201).send(result);
+    } catch (err) {
+      return handleWholesaleVehicleError(err, reply);
+    }
+  });
+
+  app.get('/wholesale-vehicle-items/:id/release-exceptions', { preHandler: requirePermission(AR_WHOLESALE_VEHICLE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const exceptions = await wholesaleVehicleSvc.listExceptions(tenantId, id);
+    return reply.send(exceptions);
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CE-09 S050: AR Write-offs & Allowance Model
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const AR_WRITE_OFF_PERMISSIONS = {
+    VIEW:     'ar.write_off.view',
+    CREATE:   'ar.write_off.create',
+    OVERRIDE: 'ar.write_off.override',
+    REVERSE:  'ar.write_off.reverse',
+  } as const;
+
+  const AR_ALLOWANCE_PERMISSIONS = {
+    VIEW:            'ar.allowance.view',
+    COMPUTE_PREVIEW: 'ar.allowance.compute_preview',
+    APPROVE_PREVIEW: 'ar.allowance.approve_preview',
+    POST:            'ar.allowance.post',
+  } as const;
+
+  const DirectWriteOffSchema = z.object({
+    arEntryId: z.string().min(1),
+    amount: z.number().positive(),
+    reason: z.string().min(1),
+  });
+
+  const ReverseWriteOffSchema = z.object({
+    reason: z.string().min(1),
+  });
+
+  const WriteOffRegisterQuerySchema = z.object({
+    period: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+  });
+
+  const ComputeAllowancePreviewSchema = z.object({
+    asOfDate: z.string().min(1),
+  });
+
+  const ApproveAllowancePreviewSchema = z.object({
+    approvedBy: z.string().optional(),
+  });
+
+  const PostAllowancePreviewSchema = z.object({
+    postedAmount: z.number(),
+  });
+
+  function handleWriteOffError(error: unknown, reply: any) {
+    if (error instanceof ArEntryNotFoundForWriteOffError || error instanceof WriteOffNotFoundError) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof WriteOffRefusedOverThresholdError) {
+      return reply.status(409).send({ error: 'WRITE_OFF_REFUSED_OVER_THRESHOLD', message: error.message });
+    }
+    if (error instanceof WriteOffValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    throw error;
+  }
+
+  function handleAllowanceError(error: unknown, reply: any) {
+    if (error instanceof AllowancePreviewNotFoundError) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof AllowancePostAmountMismatchError) {
+      return reply.status(409).send({ error: 'ALLOWANCE_POST_AMOUNT_MISMATCH', message: error.message });
+    }
+    if (error instanceof AllowanceValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    throw error;
+  }
+
+  app.get('/write-offs', { preHandler: requirePermission(AR_WRITE_OFF_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { arEntryId } = request.query as { arEntryId?: string };
+    const rows = await writeOffSvc.list(tenantId, arEntryId);
+    return reply.send(rows);
+  });
+
+  app.get('/write-offs/register', { preHandler: requirePermission(AR_WRITE_OFF_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    try {
+      const query = WriteOffRegisterQuerySchema.parse(request.query);
+      const register = await writeOffSvc.register(tenantId, query);
+      return reply.send(register);
+    } catch (err) {
+      return handleWriteOffError(err, reply);
+    }
+  });
+
+  app.get('/write-offs/:id', { preHandler: requirePermission(AR_WRITE_OFF_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const row = await writeOffSvc.getById(tenantId, id);
+      return reply.send(row);
+    } catch (err) {
+      return handleWriteOffError(err, reply);
+    }
+  });
+
+  // AC: refused above the configured threshold (WRITE_OFF_REFUSED_OVER_THRESHOLD)
+  // unless the caller holds the distinct ar.write_off.override permission —
+  // useOverride is only ever forwarded to the service when the actor's own
+  // permission grant includes OVERRIDE, so the "higher authority" check is
+  // itself server-enforced, not merely a client-supplied flag.
+  app.post('/write-offs', { preHandler: requirePermission(AR_WRITE_OFF_PERMISSIONS.CREATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = DirectWriteOffSchema.parse(request.body);
+      let useOverride = false;
+      if ((request.body as any)?.useOverride) {
+        const authzResult = await authzClient.check({ userId: actor, permissionKey: AR_WRITE_OFF_PERMISSIONS.OVERRIDE, scope: { tenantId } });
+        useOverride = !!authzResult?.allow;
+      }
+      const writeOff = await writeOffSvc.directWriteOff(tenantId, { ...body, useOverride }, actor, getServiceToken(), correlationId);
+      return reply.status(201).send(writeOff);
+    } catch (err) {
+      return handleWriteOffError(err, reply);
+    }
+  });
+
+  app.post('/write-offs/:id/reverse', { preHandler: requirePermission(AR_WRITE_OFF_PERMISSIONS.REVERSE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = ReverseWriteOffSchema.parse(request.body);
+      const reversed = await writeOffSvc.reverseWriteOff(tenantId, id, body, actor, correlationId);
+      return reply.send(reversed);
+    } catch (err) {
+      return handleWriteOffError(err, reply);
+    }
+  });
+
+  app.get('/allowance-previews', { preHandler: requirePermission(AR_ALLOWANCE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const rows = await allowanceSvc.list(tenantId);
+    return reply.send(rows);
+  });
+
+  app.get('/allowance-previews/:id', { preHandler: requirePermission(AR_ALLOWANCE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const row = await allowanceSvc.getById(tenantId, id);
+      return reply.send(row);
+    } catch (err) {
+      return handleAllowanceError(err, reply);
+    }
+  });
+
+  // D-CE09-02: this endpoint ONLY EVER produces a preview — nothing posts here.
+  app.post('/allowance-previews', { preHandler: requirePermission(AR_ALLOWANCE_PERMISSIONS.COMPUTE_PREVIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    try {
+      const body = ComputeAllowancePreviewSchema.parse(request.body);
+      const preview = await allowanceSvc.computePreview(tenantId, body, actor);
+      return reply.status(201).send(preview);
+    } catch (err) {
+      return handleAllowanceError(err, reply);
+    }
+  });
+
+  // Separate, explicit "approve preview" action by an accountant (AC) —
+  // stores the approved amount so post-time can verify equality.
+  app.post('/allowance-previews/:id/approve', { preHandler: requirePermission(AR_ALLOWANCE_PERMISSIONS.APPROVE_PREVIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = ApproveAllowancePreviewSchema.parse(request.body);
+      const approved = await allowanceSvc.approvePreview(tenantId, id, body, actor, correlationId);
+      return reply.send(approved);
+    } catch (err) {
+      return handleAllowanceError(err, reply);
+    }
+  });
+
+  // D-CE09-02: postedAmount must exactly equal the approved preview amount
+  // — mismatch is refused (ALLOWANCE_POST_AMOUNT_MISMATCH), never silently
+  // re-computed.
+  app.post('/allowance-previews/:id/post', { preHandler: requirePermission(AR_ALLOWANCE_PERMISSIONS.POST) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = PostAllowancePreviewSchema.parse(request.body);
+      const posted = await allowanceSvc.postPreview(tenantId, id, body, actor, getServiceToken(), correlationId);
+      return reply.send(posted);
+    } catch (err) {
+      return handleAllowanceError(err, reply);
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CE-09 S051: NSF (returned-payment) Handling
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const AR_NSF_PERMISSIONS = {
+    VIEW:                     'ar.nsf.view',
+    RECORD:                   'ar.nsf.record',
+    MARK_RECONCILED_TEST_ONLY: 'ar.nsf.mark_deposit_reconciled_test_only',
+  } as const;
+
+  const RecordNsfSchema = z.object({
+    customerId: z.string().min(1),
+    originalArEntryId: z.string().min(1),
+    amount: z.number().positive(),
+    reason: z.string().min(1),
+    source: z.enum(['MANUAL', 'BANK_FEED_NOT_CONFIGURED']).optional(),
+  });
+
+  const MarkDepositReconciledSchema = z.object({
+    reconciledAt: z.string().transform((s) => new Date(s)).optional(),
+  });
+
+  function handleNsfError(error: unknown, reply: any) {
+    if (error instanceof ArEntryNotFoundForNsfError || error instanceof NsfEventNotFoundError) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof NsfValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    throw error;
+  }
+
+  app.get('/nsf-events', { preHandler: requirePermission(AR_NSF_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { customerId } = request.query as { customerId?: string };
+    const rows = await nsfSvc.list(tenantId, customerId);
+    return reply.send(rows);
+  });
+
+  app.get('/nsf-events/:id', { preHandler: requirePermission(AR_NSF_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const row = await nsfSvc.getById(tenantId, id);
+      return reply.send(row);
+    } catch (err) {
+      return handleNsfError(err, reply);
+    }
+  });
+
+  // Manual entry endpoint (AC: sufficient — no bank-feed integration exists
+  // in this repo; a caller supplies source: 'BANK_FEED_NOT_CONFIGURED' to
+  // record that truthfully rather than fabricating an automated adapter).
+  app.post('/nsf-events', { preHandler: requirePermission(AR_NSF_PERMISSIONS.RECORD) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = RecordNsfSchema.parse(request.body);
+      const nsfEvent = await nsfSvc.recordNsf(tenantId, body, actor, getServiceToken(), correlationId);
+      return reply.status(201).send(nsfEvent);
+    } catch (err) {
+      return handleNsfError(err, reply);
+    }
+  });
+
+  // PUTR integration boundary with recon-service (S054A/S054B) — see
+  // NsfService.markDepositReconciled()'s doc comment. Test/admin-only until
+  // that cross-service wiring exists; mirrors POST
+  // /manual-payments/:id/mark-cleared-test-only from S045 exactly.
+  app.post('/ar-entries/:id/mark-deposit-reconciled-test-only', { preHandler: requirePermission(AR_NSF_PERMISSIONS.MARK_RECONCILED_TEST_ONLY) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    try {
+      const body = MarkDepositReconciledSchema.parse(request.body ?? {});
+      const entry = await nsfSvc.markDepositReconciled(tenantId, id, body, actor);
+      return reply.send(entry);
+    } catch (err) {
+      return handleNsfError(err, reply);
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CE-09 S043B: AP Payment Runs & Rails
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const AP_PAYMENT_RUN_PERMISSIONS = {
+    VIEW:          'ap.payment_run.view',
+    PROPOSE:       'ap.payment_run.propose',
+    APPROVE:       'ap.payment_run.approve',
+    REJECT:        'ap.payment_run.reject',
+    EXECUTE:       'ap.payment_run.execute',
+    GENERATE_RAIL: 'ap.payment_run.generate_rail',
+  } as const;
+
+  const CreatePaymentRunProposalSchema = z.object({
+    bankAccountId: z.string().min(1),
+    dueDateThrough: z.string().min(1),
+    discountDateThrough: z.string().optional(),
+    vendorIds: z.array(z.string()).optional(),
+  });
+
+  const ApproveRunSchema = z.object({ note: z.string().optional() });
+  const RejectRunSchema = z.object({ reason: z.string().min(1) });
+  const GenerateRailArtifactSchema = z.object({ mode: z.enum(['CHECK_PRINT', 'POSITIVE_PAY', 'ACH_NACHA']) });
+
+  function handlePaymentRunError(error: unknown, reply: any) {
+    if (error instanceof PaymentRunNotFoundError) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof RunApprovalRefusedSoDError) {
+      return reply.status(409).send({ error: 'RUN_APPROVAL_REFUSED_SOD', message: error.message });
+    }
+    if (error instanceof PaymentRunValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    throw error;
+  }
+
+  app.get('/payment-runs', { preHandler: requirePermission(AP_PAYMENT_RUN_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const rows = await paymentRunSvc.list(tenantId);
+    return reply.send(rows);
+  });
+
+  app.get('/payment-runs/:id', { preHandler: requirePermission(AP_PAYMENT_RUN_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const run = await paymentRunSvc.getById(tenantId, id);
+      return reply.send(run);
+    } catch (err) {
+      return handlePaymentRunError(err, reply);
+    }
+  });
+
+  app.post('/payment-runs', { preHandler: requirePermission(AP_PAYMENT_RUN_PERMISSIONS.PROPOSE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    try {
+      const body = CreatePaymentRunProposalSchema.parse(request.body);
+      const run = await paymentRunSvc.createProposal(tenantId, body, actor);
+      return reply.status(201).send(run);
+    } catch (err) {
+      return handlePaymentRunError(err, reply);
+    }
+  });
+
+  // SoD (segregation of duties) is enforced in PaymentRunService.approveRun
+  // itself — server-side identity comparison (proposedBy !== actor), not a
+  // client-trusted flag and not merely a permission check.
+  app.post('/payment-runs/:id/approve', { preHandler: requirePermission(AP_PAYMENT_RUN_PERMISSIONS.APPROVE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    try {
+      const body = ApproveRunSchema.parse(request.body ?? {});
+      const run = await paymentRunSvc.approveRun(tenantId, id, body, actor);
+      return reply.send(run);
+    } catch (err) {
+      return handlePaymentRunError(err, reply);
+    }
+  });
+
+  app.post('/payment-runs/:id/reject', { preHandler: requirePermission(AP_PAYMENT_RUN_PERMISSIONS.REJECT) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    try {
+      const body = RejectRunSchema.parse(request.body);
+      const run = await paymentRunSvc.rejectRun(tenantId, id, body, actor);
+      return reply.send(run);
+    } catch (err) {
+      return handlePaymentRunError(err, reply);
+    }
+  });
+
+  // Idempotent by run id — a duplicate execution attempt returns the
+  // original stored results (no double-pay). Per-invoice failures are
+  // isolated (named failureReason per item) and do not fail the request.
+  app.post('/payment-runs/:id/execute', { preHandler: requirePermission(AP_PAYMENT_RUN_PERMISSIONS.EXECUTE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const run = await paymentRunSvc.executeRun(tenantId, id, actor, getServiceToken(), correlationId);
+      return reply.send(run);
+    } catch (err) {
+      return handlePaymentRunError(err, reply);
+    }
+  });
+
+  app.post('/payment-runs/:id/rail-artifacts', { preHandler: requirePermission(AP_PAYMENT_RUN_PERMISSIONS.GENERATE_RAIL) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    try {
+      const body = GenerateRailArtifactSchema.parse(request.body);
+      const artifact = await paymentRunSvc.generateRailArtifact(tenantId, id, body, actor);
+      return reply.status(201).send(artifact);
+    } catch (err) {
+      return handlePaymentRunError(err, reply);
+    }
+  });
+
+  app.get('/payment-runs/:id/rail-artifacts', { preHandler: requirePermission(AP_PAYMENT_RUN_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const rows = await paymentRunSvc.listRailArtifacts(tenantId, id);
+    return reply.send(rows);
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CE-09 S044: Trade-Payoff Fast Lane
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const AP_TRADE_PAYOFF_PERMISSIONS = {
+    VIEW:   'ap.trade_payoff.view',
+    CREATE: 'ap.trade_payoff.create',
+  } as const;
+
+  const CreateTradePayoffSchema = z.object({
+    dealReference: z.string().min(1),
+    payeeName: z.string().min(1),
+    payeeRemitAddress: z.string().min(1),
+    payeeReference: z.string().optional(),
+    amount: z.number().positive(),
+    goodThroughDate: z.string().min(1),
+    bankAccountId: z.string().min(1),
+    reconfirmedAmount: z.number().positive().optional(),
+    acknowledgePastGoodThrough: z.boolean().optional(),
+  });
+
+  function handleTradePayoffError(error: unknown, reply: any) {
+    if (error instanceof TradePayoffNotFoundError || error instanceof TradePayoffBankAccountNotFoundError) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof PayoffReconfirmationRequiredError) {
+      return reply.status(422).send({ error: 'PAYOFF_RECONFIRMATION_REQUIRED', message: error.message });
+    }
+    if (error instanceof DuplicatePayoffPaymentError) {
+      return reply.status(409).send({ error: 'DUPLICATE_PAYOFF_PAYMENT', message: error.message });
+    }
+    if (error instanceof TradePayoffValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    throw error;
+  }
+
+  app.get('/trade-payoff-payments', { preHandler: requirePermission(AP_TRADE_PAYOFF_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const rows = await tradePayoffSvc.list(tenantId);
+    return reply.send(rows);
+  });
+
+  app.get('/trade-payoff-payments/:id', { preHandler: requirePermission(AP_TRADE_PAYOFF_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const row = await tradePayoffSvc.getById(tenantId, id);
+      return reply.send(row);
+    } catch (err) {
+      return handleTradePayoffError(err, reply);
+    }
+  });
+
+  // Priority execution path — outside the normal S043B payment-run
+  // cadence. Same overpay/duplicate-payment-style guards as S043A manual
+  // payments (see TradePayoffService's doc comment).
+  app.post('/trade-payoff-payments', { preHandler: requirePermission(AP_TRADE_PAYOFF_PERMISSIONS.CREATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = CreateTradePayoffSchema.parse(request.body);
+      const payment = await tradePayoffSvc.create(tenantId, body, actor, getServiceToken(), correlationId);
+      return reply.status(201).send(payment);
+    } catch (err) {
+      return handleTradePayoffError(err, reply);
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CE-09 S047: Fleet AR Consolidated Billing
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const AR_FLEET_BILLING_PERMISSIONS = {
+    VIEW:               'ar.fleet_billing.view',
+    MANAGE_LINKS:       'ar.fleet_billing.manage_links',
+    CREATE_CONSOLIDATED_INVOICE: 'ar.fleet_billing.create_consolidated_invoice',
+  } as const;
+
+  const LinkFleetUnitSchema = z.object({
+    parentCustomerId: z.string().min(1),
+    childCustomerId: z.string().min(1),
+    billingGroupName: z.string().optional(),
+  });
+
+  const CreateConsolidatedInvoiceSchema = z.object({
+    parentCustomerId: z.string().min(1),
+    invoiceDate: z.string().min(1),
+    items: z.array(z.object({
+      childCustomerId: z.string().min(1),
+      amount: z.number().positive(),
+      description: z.string().optional(),
+    })).min(1),
+  });
+
+  function handleFleetBillingError(error: unknown, reply: any) {
+    if (
+      error instanceof FleetCustomerNotFoundError ||
+      error instanceof FleetUnitLinkNotFoundError ||
+      error instanceof ConsolidatedInvoiceNotFoundError
+    ) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof FleetUnitAlreadyLinkedError) {
+      return reply.status(409).send({ error: 'FLEET_UNIT_ALREADY_LINKED', message: error.message });
+    }
+    if (error instanceof FleetUnitNotLinkedToParentError) {
+      return reply.status(422).send({ error: 'FLEET_UNIT_NOT_LINKED_TO_PARENT', message: error.message });
+    }
+    if (error instanceof FleetBillingValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    throw error;
+  }
+
+  app.post('/fleet-billing/unit-links', { preHandler: requirePermission(AR_FLEET_BILLING_PERMISSIONS.MANAGE_LINKS) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = LinkFleetUnitSchema.parse(request.body);
+      const link = await fleetBillingSvc.linkUnit(tenantId, body, actor, correlationId);
+      return reply.status(201).send(link);
+    } catch (err) {
+      return handleFleetBillingError(err, reply);
+    }
+  });
+
+  app.delete('/fleet-billing/unit-links/:id', { preHandler: requirePermission(AR_FLEET_BILLING_PERMISSIONS.MANAGE_LINKS) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const result = await fleetBillingSvc.unlinkUnit(tenantId, id, actor, correlationId);
+      return reply.send(result);
+    } catch (err) {
+      return handleFleetBillingError(err, reply);
+    }
+  });
+
+  app.get('/fleet-billing/parents/:parentCustomerId/units', { preHandler: requirePermission(AR_FLEET_BILLING_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { parentCustomerId } = request.params as { parentCustomerId: string };
+    const rows = await fleetBillingSvc.listUnitsForParent(tenantId, parentCustomerId);
+    return reply.send(rows);
+  });
+
+  app.post('/fleet-billing/consolidated-invoices', { preHandler: requirePermission(AR_FLEET_BILLING_PERMISSIONS.CREATE_CONSOLIDATED_INVOICE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = CreateConsolidatedInvoiceSchema.parse(request.body);
+      const invoice = await fleetBillingSvc.createConsolidatedInvoice(tenantId, body, actor, getServiceToken(), correlationId);
+      return reply.status(201).send(invoice);
+    } catch (err) {
+      return handleFleetBillingError(err, reply);
+    }
+  });
+
+  app.get('/fleet-billing/consolidated-invoices', { preHandler: requirePermission(AR_FLEET_BILLING_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { parentCustomerId } = request.query as { parentCustomerId?: string };
+    const rows = await fleetBillingSvc.list(tenantId, parentCustomerId);
+    return reply.send(rows);
+  });
+
+  app.get('/fleet-billing/consolidated-invoices/:id', { preHandler: requirePermission(AR_FLEET_BILLING_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const invoice = await fleetBillingSvc.getById(tenantId, id);
+      return reply.send(invoice);
+    } catch (err) {
+      return handleFleetBillingError(err, reply);
+    }
+  });
+
+  app.get('/fleet-billing/parents/:parentCustomerId/statement', { preHandler: requirePermission(AR_FLEET_BILLING_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { parentCustomerId } = request.params as { parentCustomerId: string };
+    const statement = await fleetBillingSvc.getStatement(tenantId, parentCustomerId);
+    return reply.send(statement);
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CE-09 S049: Insurance AR (Body Shop)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const AR_INSURANCE_PERMISSIONS = {
+    VIEW:               'ar.insurance_claim.view',
+    CREATE:              'ar.insurance_claim.create',
+    POST_SUPPLEMENT:     'ar.insurance_claim.post_supplement',
+    APPLY_PAYMENT:       'ar.insurance_claim.apply_payment',
+    DISPOSE_SHORT_PAY:   'ar.insurance_claim.dispose_short_pay',
+  } as const;
+
+  const CreateInsuranceClaimSchema = z.object({
+    customerId: z.string().min(1),
+    insurerName: z.string().min(1),
+    insurerReference: z.string().optional(),
+    claimNumber: z.string().min(1),
+    roReference: z.string().optional(),
+    claimAmount: z.number().positive(),
+  });
+
+  const PostSupplementSchema = z.object({
+    adjustmentAmount: z.number().refine((v) => v !== 0, 'adjustmentAmount must be non-zero'),
+    reason: z.string().min(1),
+  });
+
+  const ApplyInsurerPaymentSchema = z.object({
+    amount: z.number().positive(),
+  });
+
+  const DisposeShortPaySchema = z.object({
+    dispositionType: z.enum(['CUSTOMER_RESPONSIBILITY', 'WRITE_OFF']),
+    reason: z.string().min(1),
+  });
+
+  function handleInsuranceArError(error: unknown, reply: any) {
+    if (error instanceof InsuranceClaimNotFoundError) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof InsurerPaymentExceedsClaimBalanceError) {
+      return reply.status(422).send({ error: 'INSURER_PAYMENT_EXCEEDS_CLAIM_BALANCE', message: error.message });
+    }
+    if (error instanceof NoShortPayRemainderError) {
+      return reply.status(422).send({ error: 'NO_SHORT_PAY_REMAINDER', message: error.message });
+    }
+    if (error instanceof ShortPayAlreadyDisposedError) {
+      return reply.status(409).send({ error: 'SHORT_PAY_ALREADY_DISPOSED', message: error.message });
+    }
+    if (error instanceof InsuranceArValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    throw error;
+  }
+
+  app.get('/insurance-claims', { preHandler: requirePermission(AR_INSURANCE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { customerId } = request.query as { customerId?: string };
+    const rows = await insuranceArSvc.list(tenantId, customerId);
+    return reply.send(rows);
+  });
+
+  app.get('/insurance-claims/:id', { preHandler: requirePermission(AR_INSURANCE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const claim = await insuranceArSvc.getById(tenantId, id);
+      return reply.send(claim);
+    } catch (err) {
+      return handleInsuranceArError(err, reply);
+    }
+  });
+
+  app.post('/insurance-claims', { preHandler: requirePermission(AR_INSURANCE_PERMISSIONS.CREATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = CreateInsuranceClaimSchema.parse(request.body);
+      const claim = await insuranceArSvc.createClaim(tenantId, body, actor, getServiceToken(), correlationId);
+      return reply.status(201).send(claim);
+    } catch (err) {
+      return handleInsuranceArError(err, reply);
+    }
+  });
+
+  app.post('/insurance-claims/:id/supplements', { preHandler: requirePermission(AR_INSURANCE_PERMISSIONS.POST_SUPPLEMENT) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = PostSupplementSchema.parse(request.body);
+      const claim = await insuranceArSvc.postSupplement(tenantId, id, body, actor, getServiceToken(), correlationId);
+      return reply.status(201).send(claim);
+    } catch (err) {
+      return handleInsuranceArError(err, reply);
+    }
+  });
+
+  app.post('/insurance-claims/:id/apply-payment', { preHandler: requirePermission(AR_INSURANCE_PERMISSIONS.APPLY_PAYMENT) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = ApplyInsurerPaymentSchema.parse(request.body);
+      const claim = await insuranceArSvc.applyInsurerPayment(tenantId, id, body, actor, getServiceToken(), correlationId);
+      return reply.send(claim);
+    } catch (err) {
+      return handleInsuranceArError(err, reply);
+    }
+  });
+
+  app.post('/insurance-claims/:id/dispose-short-pay', { preHandler: requirePermission(AR_INSURANCE_PERMISSIONS.DISPOSE_SHORT_PAY) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = DisposeShortPaySchema.parse(request.body);
+      const claim = await insuranceArSvc.disposeShortPay(tenantId, id, body, actor, getServiceToken(), correlationId);
+      return reply.send(claim);
+    } catch (err) {
+      return handleInsuranceArError(err, reply);
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CE-09 S037: 1099/T4A Flag Rules & Preview
+  //
+  // PUTR: actual e-filing transmission (IRS FIRE / CRA XML submission) is
+  // explicitly EXCLUDED from this story's scope (compliance-vendor scope) —
+  // no route here transmits anything; the year-preview is a report only.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const VENDOR_1099_PERMISSIONS = {
+    VIEW:               'ap.vendor_1099.view',
+    MANAGE_BOX_RULES:    'ap.vendor_1099.manage_box_rules',
+    MANAGE_THRESHOLDS:   'ap.vendor_1099.manage_thresholds',
+    POST_CORRECTION:     'ap.vendor_1099.post_correction',
+  } as const;
+
+  const SetVendorBoxRuleSchema = z.object({
+    vendorId: z.string().min(1),
+    taxYear: z.number().int(),
+    formType: z.enum(['1099-MISC', '1099-NEC', 'T4A']),
+    boxCode: z.string().min(1),
+  });
+
+  const SetThresholdConfigSchema = z.object({
+    formType: z.enum(['1099-MISC', '1099-NEC', 'T4A']),
+    taxYear: z.number().int(),
+    thresholdAmount: z.number().min(0),
+  });
+
+  const PostCorrectionSchema = z.object({
+    vendorId: z.string().min(1),
+    taxYear: z.number().int(),
+    formType: z.enum(['1099-MISC', '1099-NEC', 'T4A']),
+    correctedAmount: z.number().min(0),
+    reason: z.string().min(1),
+  });
+
+  function handleVendor1099Error(error: unknown, reply: any) {
+    if (error instanceof Vendor1099VendorNotFoundError || error instanceof Vendor1099BoxRuleNotFoundError) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof Vendor1099ValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    throw error;
+  }
+
+  app.post('/vendor-1099/box-rules', { preHandler: requirePermission(VENDOR_1099_PERMISSIONS.MANAGE_BOX_RULES) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = SetVendorBoxRuleSchema.parse(request.body);
+      const rule = await vendor1099Svc.setVendorBoxRule(tenantId, body, actor, correlationId);
+      return reply.status(201).send(rule);
+    } catch (err) {
+      return handleVendor1099Error(err, reply);
+    }
+  });
+
+  app.get('/vendor-1099/box-rules', { preHandler: requirePermission(VENDOR_1099_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { vendorId, taxYear } = request.query as { vendorId?: string; taxYear?: string };
+    const rows = await vendor1099Svc.listVendorBoxRules(tenantId, vendorId, taxYear ? Number(taxYear) : undefined);
+    return reply.send(rows);
+  });
+
+  app.post('/vendor-1099/threshold-configs', { preHandler: requirePermission(VENDOR_1099_PERMISSIONS.MANAGE_THRESHOLDS) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = SetThresholdConfigSchema.parse(request.body);
+      const config = await vendor1099Svc.setThresholdConfig(tenantId, body, actor, correlationId);
+      return reply.status(201).send(config);
+    } catch (err) {
+      return handleVendor1099Error(err, reply);
+    }
+  });
+
+  app.get('/vendor-1099/threshold-configs', { preHandler: requirePermission(VENDOR_1099_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { taxYear } = request.query as { taxYear?: string };
+    const rows = await vendor1099Svc.listThresholdConfigs(tenantId, taxYear ? Number(taxYear) : undefined);
+    return reply.send(rows);
+  });
+
+  app.post('/vendor-1099/corrections', { preHandler: requirePermission(VENDOR_1099_PERMISSIONS.POST_CORRECTION) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = PostCorrectionSchema.parse(request.body);
+      const correction = await vendor1099Svc.postCorrection(tenantId, body, actor, correlationId);
+      return reply.status(201).send(correction);
+    } catch (err) {
+      return handleVendor1099Error(err, reply);
+    }
+  });
+
+  app.get('/vendor-1099/corrections', { preHandler: requirePermission(VENDOR_1099_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { vendorId, taxYear } = request.query as { vendorId?: string; taxYear?: string };
+    const rows = await vendor1099Svc.listCorrections(tenantId, vendorId, taxYear ? Number(taxYear) : undefined);
+    return reply.send(rows);
+  });
+
+  app.get('/vendor-1099/year-preview/:taxYear', { preHandler: requirePermission(VENDOR_1099_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { taxYear } = request.params as { taxYear: string };
+    try {
+      const preview = await vendor1099Svc.getYearPreview(tenantId, Number(taxYear));
+      return reply.send(preview);
+    } catch (err) {
+      return handleVendor1099Error(err, reply);
+    }
+  });
 }
+
+

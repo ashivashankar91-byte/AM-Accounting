@@ -1,5 +1,5 @@
 import { inject, injectable } from 'tsyringe';
-import { IEventPublisher } from '@amacc/shared-kernel';
+import { IEventPublisher, setTenantContextOnConnection } from '@amacc/shared-kernel';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -306,6 +306,7 @@ export class CustomerService {
     }
 
     const customer = await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, dto.tenantId);
       const customerNumber = dto.customerNumber
         ? normalizeCustomerNumber(dto.customerNumber)
         : await this._nextCustomerNumber(tx, dto.tenantId);
@@ -449,6 +450,7 @@ export class CustomerService {
     if (creditProfileChanged) data.creditProfileEffectiveDate = new Date();
 
     const customer = await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, tenantId);
       const c = await tx.customer.update({ where: { id }, data });
       await this._audit(tenantId, 'Customer', id, 'UPDATED', current, c, actor, tx, correlationId);
       return c;
@@ -469,6 +471,7 @@ export class CustomerService {
     }
 
     const customer = await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, tenantId);
       const c = await tx.customer.update({
         where: { id },
         data: {
@@ -497,6 +500,7 @@ export class CustomerService {
     }
 
     const customer = await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, tenantId);
       const c = await tx.customer.update({
         where: { id },
         data: {
@@ -532,6 +536,7 @@ export class CustomerService {
     }
 
     const customer = await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, tenantId);
       const c = await tx.customer.update({
         where: { id },
         data: {
@@ -585,6 +590,7 @@ export class CustomerService {
     }
 
     const customer = await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, tenantId);
       const c = await tx.customer.update({
         where: { id },
         data: {
@@ -619,6 +625,7 @@ export class CustomerService {
     }
 
     const customer = await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, tenantId);
       const c = await tx.customer.update({
         where: { id },
         data: {

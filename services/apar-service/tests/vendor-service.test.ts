@@ -120,8 +120,7 @@ function makePrisma(overrides: Partial<{
     // inside every interactive $transaction callback, see rls-middleware.ts)
     // issues a raw SET on the transaction's own connection; the mock tx here
     // IS this same client object (see $transaction below), so it needs the
-    // method too, even though nothing asserts on its calls.
-    $executeRawUnsafe: vi.fn().mockResolvedValue(undefined),
+    // method too, even though nothing asserts on its calls.    $executeRawUnsafe: vi.fn().mockResolvedValue(undefined),
   };
   client.$transaction = async (arg: any) => (typeof arg === 'function' ? arg(client) : Promise.all(arg));
   return client;
@@ -341,6 +340,8 @@ describe('VendorService cross-tenant isolation', () => {
       },
       auditOutboxEvent: { create: vi.fn().mockResolvedValue({}) },
       outboxEvent: { create: vi.fn().mockResolvedValue({}) },
+      // CE-09 cert fix: see makePrisma() above for rationale.
+      $executeRawUnsafe: vi.fn().mockResolvedValue(undefined),
     };
     client.$transaction = async (arg: any) => (typeof arg === 'function' ? arg(client) : Promise.all(arg));
     return client;

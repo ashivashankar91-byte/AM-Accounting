@@ -4,6 +4,10 @@ import cors from '@fastify/cors';
 import { container } from 'tsyringe';
 import { cashDrawerRoutes } from './http/cash-drawer-routes';
 import { cashReceiptRoutes } from './http/cash-receipt-routes';
+import { depositRoutes } from './http/deposit-routes';
+import { settlementRoutes } from './http/settlement-routes';
+import { sweepRoutes } from './http/sweep-routes';
+import { cashPositionRoutes } from './http/cash-position-routes';
 import { DrawerService } from './application/cash-drawer-service';
 import { ReceiptSequenceService } from './application/receipt-sequence-service';
 import { ReceiptService } from './application/cash-receipt-service';
@@ -11,7 +15,14 @@ import { ToleranceService } from './application/tolerance-service';
 import { BlindCloseService } from './application/blind-close-service';
 import { ReconciliationService } from './application/reconciliation-service';
 import { CashReceiptPostingPort, HttpCashReceiptPostingPort, NoopCashReceiptPostingPort } from './application/cash-receipt-posting-consumer';
-import { RabbitMQEventPublisher } from './infrastructure/event-publisher';
+import { DepositService } from './application/deposit-service';
+import { BankFeedService } from './application/bank-feed-service';
+import { SettlementService } from './application/settlement-service';
+import { SweepService } from './application/sweep-service';
+import { FpOffsetService } from './application/fp-offset-service';
+import { CashPositionService } from './application/cash-position-service';
+import { UnconfiguredBankFeedAdapter } from './infrastructure/bank-feed-adapter';
+import { UnconfiguredSettlementAdapter } from './infrastructure/settlement-adapter';import { RabbitMQEventPublisher } from './infrastructure/event-publisher';
 import {
   IEventPublisher, HttpAuthzClient, AuthzClient,
   HttpAuditClient, AuditOutboxDrainer, makePrismaAuditOutboxStore,
@@ -61,10 +72,22 @@ async function bootstrap() {
   container.register('ToleranceService', { useClass: ToleranceService });
   container.register('BlindCloseService', { useClass: BlindCloseService });
   container.register('ReconciliationService', { useClass: ReconciliationService });
+  container.registerInstance('BankFeedAdapter', new UnconfiguredBankFeedAdapter());
+  container.register('DepositService', { useClass: DepositService });
+  container.register('BankFeedService', { useClass: BankFeedService });
+  container.registerInstance('SettlementAdapter', new UnconfiguredSettlementAdapter());
+  container.register('SettlementService', { useClass: SettlementService });
+  container.register('SweepService', { useClass: SweepService });
+  container.register('FpOffsetService', { useClass: FpOffsetService });
+  container.register('CashPositionService', { useClass: CashPositionService });
 
   // ── Routes ────────────────────────────────────────────────────────────────────
   await app.register(cashDrawerRoutes, { prefix: '/api/v1/cash' });
   await app.register(cashReceiptRoutes, { prefix: '/api/v1/cash' });
+  await app.register(depositRoutes, { prefix: '/api/v1/cash' });
+  await app.register(settlementRoutes, { prefix: '/api/v1/cash' });
+  await app.register(sweepRoutes, { prefix: '/api/v1/cash' });
+  await app.register(cashPositionRoutes, { prefix: '/api/v1/cash' });
 
   app.get('/health', async () => ({ status: 'ok', service: 'cash-service' }));
 

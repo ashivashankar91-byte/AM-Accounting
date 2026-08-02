@@ -19,6 +19,7 @@ import {
   BankAccountNotFoundError,
   PaymentConflictError,
   PaymentValidationError,
+  VoidRefusedPaymentReconciledError,
 } from '../src/application/manual-payment-service';
 import type { PostingEnginePort } from '../src/application/posting-engine-port';
 
@@ -49,6 +50,15 @@ function makePrisma(overrides: any = {}) {
     },
     auditOutboxEvent: { create: vi.fn().mockResolvedValue({}) },
     outboxEvent: { create: vi.fn().mockResolvedValue({}) },
+    // CE-09 S045: void()'s in-transaction row-lock re-read of cleared_at —
+    // by default mirrors whatever paymentFindFirst returned (no
+    // clearedAt/version override supplied), so pre-S045 tests that never
+    // set clearedAt keep passing unchanged.
+    $queryRawUnsafe: overrides.queryRawUnsafe ?? vi.fn().mockImplementation(async () => {
+      const current = await (overrides.paymentFindFirst ?? (() => Promise.resolve(null)))();
+      if (!current) return [];
+      return [{ id: current.id, cleared_at: current.clearedAt ?? null, version: current.version }];
+    }),
   };
   // CE-07 — setTenantContextOnConnection() (first statement inside every
   // interactive $transaction callback, see rls-middleware.ts) issues a raw
@@ -175,5 +185,17 @@ describe('ManualPaymentService.void', () => {
     const result = await svc.void(TENANT_ID, 'payment-1', { version: 1, reason: 'Wrong vendor' });
     expect(result.status).toBe('VOID');
     expect(prisma.vendorInvoice.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'APPROVED' }) }));
+  });
+
+  // CE-09 S045 / D-CE09-01: void of a cleared/reconciled payment must be
+  // refused, not configurable — verified via the row-locked re-read inside
+  // the transaction (not just the pre-transaction findFirst).
+  it('refuses to void a payment that has already cleared/reconciled (D-CE09-01)', async () => {
+    const prisma = makePrisma({
+      paymentFindFirst: vi.fn().mockResolvedValue({ id: 'payment-1', tenantId: TENANT_ID, invoiceId: INVOICE_ID, version: 1, status: 'POSTED', clearedAt: new Date('2026-01-01') }),
+    });
+    const svc = new ManualPaymentService(prisma, {} as any);
+    await expect(svc.void(TENANT_ID, 'payment-1', { version: 1, reason: 'Trying anyway' })).rejects.toBeInstanceOf(VoidRefusedPaymentReconciledError);
+    expect(prisma.apManualPayment.update).not.toHaveBeenCalled();
   });
 });

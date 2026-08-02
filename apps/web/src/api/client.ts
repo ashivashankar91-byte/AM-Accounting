@@ -1761,3 +1761,287 @@ export const taxApi = {
   getAuditTrail: (entityType: string, entityId: string) =>
     apiFetch<{ items: TaxAuditEntry[] }>(`/api/v1/tax/audit/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}`),
 };
+
+// ═══════════════════════════════════════════════════════════════════════
+// CE-09 — AP, AR & Cash Operations frontend wiring (24 canonical stories).
+// All modules below call the real apar-service (gateway prefix
+// /api/v1/apar), cash-service (/api/v1/cash) and recon-service
+// (/api/v1/recon) routes as implemented in services/*/src/http/*.ts — no
+// mock data, no client-side policy invention.
+// ═══════════════════════════════════════════════════════════════════════
+
+// S043A/S045 — Payment Runs (proposal -> approve/reject -> execute -> rail
+// artifacts). Mirrors services/apar-service routes.ts CreatePaymentRunProposalSchema.
+export const paymentRunApi = {
+  list: (params?: string) => apiFetch<any[]>(`/api/v1/apar/payment-runs${params ? `?${params}` : ''}`),
+  getById: (id: string) => apiFetch<any>(`/api/v1/apar/payment-runs/${id}`),
+  create: (data: { bankAccountId: string; dueDateThrough: string; discountDateThrough?: string; vendorIds?: string[] }) =>
+    apiFetch<any>('/api/v1/apar/payment-runs', { method: 'POST', body: JSON.stringify(data) }),
+  approve: (id: string, data?: { note?: string }) =>
+    apiFetch<any>(`/api/v1/apar/payment-runs/${id}/approve`, { method: 'POST', body: JSON.stringify(data ?? {}) }),
+  reject: (id: string, data: { reason: string }) =>
+    apiFetch<any>(`/api/v1/apar/payment-runs/${id}/reject`, { method: 'POST', body: JSON.stringify(data) }),
+  execute: (id: string) => apiFetch<any>(`/api/v1/apar/payment-runs/${id}/execute`, { method: 'POST' }),
+  generateRailArtifact: (id: string, data: { mode: 'CHECK_PRINT' | 'POSITIVE_PAY' | 'ACH_NACHA' }) =>
+    apiFetch<any>(`/api/v1/apar/payment-runs/${id}/rail-artifacts`, { method: 'POST', body: JSON.stringify(data) }),
+  getRailArtifacts: (id: string) => apiFetch<any[]>(`/api/v1/apar/payment-runs/${id}/rail-artifacts`),
+};
+
+// S043A — Manual payment lifecycle: void/stop-payment/reissue/escheat/due-diligence.
+// Extends manualPaymentApi above (void/create/retryScheduleRelief already exist there).
+export const paymentLifecycleApi = {
+  markClearedTestOnly: (id: string, data?: { clearedAt?: string }) =>
+    apiFetch<any>(`/api/v1/apar/manual-payments/${id}/mark-cleared-test-only`, { method: 'POST', body: JSON.stringify(data ?? {}) }),
+  reissue: (id: string, data: { bankAccountId: string; paymentDate?: string }) =>
+    apiFetch<any>(`/api/v1/apar/manual-payments/${id}/reissue`, { method: 'POST', body: JSON.stringify(data) }),
+  requestStopPayment: (id: string, data: { reason: string }) =>
+    apiFetch<any>(`/api/v1/apar/manual-payments/${id}/stop-payment-requests`, { method: 'POST', body: JSON.stringify(data) }),
+  getStopPaymentRequests: (id: string) => apiFetch<any[]>(`/api/v1/apar/manual-payments/${id}/stop-payment-requests`),
+  resolveStopPayment: (requestId: string, data: { status: 'ACKNOWLEDGED' | 'FAILED'; bankAck: 'MANUAL' | 'PAYMENT_RAIL_NOT_CONFIGURED'; bankAckNote?: string }) =>
+    apiFetch<any>(`/api/v1/apar/stop-payment-requests/${requestId}/resolve`, { method: 'POST', body: JSON.stringify(data) }),
+  getEscheatQueue: () => apiFetch<any[]>('/api/v1/apar/escheat/queue'),
+  recordDueDiligence: (id: string, data: { method: 'LETTER' | 'PHONE' | 'EMAIL' | 'OTHER'; outcome: string; notes?: string }) =>
+    apiFetch<any>(`/api/v1/apar/manual-payments/${id}/due-diligence`, { method: 'POST', body: JSON.stringify(data) }),
+  getDueDiligence: (id: string) => apiFetch<any[]>(`/api/v1/apar/manual-payments/${id}/due-diligence`),
+  // Server refuses with ESCHEAT_CONFIG_NOT_FOUND (422) when no jurisdiction
+  // config exists — the UI must render that as an "informational only, no
+  // config" state, never silently compute an escheat amount client-side.
+  postEscheatTransfer: (id: string, data: { jurisdiction: string }) =>
+    apiFetch<any>(`/api/v1/apar/manual-payments/${id}/escheat-transfer`, { method: 'POST', body: JSON.stringify(data) }),
+};
+
+// S044 — Use Tax Assessments/Register
+export const useTaxApi = {
+  getAssessments: (params?: string) => apiFetch<any[]>(`/api/v1/apar/use-tax/assessments${params ? `?${params}` : ''}`),
+  getAssessment: (id: string) => apiFetch<any>(`/api/v1/apar/use-tax/assessments/${id}`),
+  getRegister: (params?: string) => apiFetch<any[]>(`/api/v1/apar/use-tax/register${params ? `?${params}` : ''}`),
+  assessInvoice: (invoiceId: string, data: any) =>
+    apiFetch<any>(`/api/v1/apar/invoices/${invoiceId}/use-tax-assessment`, { method: 'POST', body: JSON.stringify(data) }),
+};
+
+// S036A/S039 — Purchase Orders (2/3-way match input, distinct from the
+// legacy purchaseOrderApi which targets a different schema/route set).
+export const apPurchaseOrderApi = {
+  list: (params?: string) => apiFetch<any[]>(`/api/v1/apar/purchase-orders${params ? `?${params}` : ''}`),
+  getById: (id: string) => apiFetch<any>(`/api/v1/apar/purchase-orders/${id}`),
+  create: (data: any) => apiFetch<any>('/api/v1/apar/purchase-orders', { method: 'POST', body: JSON.stringify(data) }),
+  submit: (id: string) => apiFetch<any>(`/api/v1/apar/purchase-orders/${id}/submit`, { method: 'POST' }),
+  approve: (id: string) => apiFetch<any>(`/api/v1/apar/purchase-orders/${id}/approve`, { method: 'POST' }),
+  cancel: (id: string, data?: { reason?: string }) =>
+    apiFetch<any>(`/api/v1/apar/purchase-orders/${id}/cancel`, { method: 'POST', body: JSON.stringify(data ?? {}) }),
+  void: (id: string, data?: { reason?: string }) =>
+    apiFetch<any>(`/api/v1/apar/purchase-orders/${id}/void`, { method: 'POST', body: JSON.stringify(data ?? {}) }),
+  close: (id: string) => apiFetch<any>(`/api/v1/apar/purchase-orders/${id}/close`, { method: 'POST' }),
+};
+
+// S047 — Trade Payoff Payments
+export const tradePayoffApi = {
+  list: (params?: string) => apiFetch<any[]>(`/api/v1/apar/trade-payoff-payments${params ? `?${params}` : ''}`),
+  getById: (id: string) => apiFetch<any>(`/api/v1/apar/trade-payoff-payments/${id}`),
+  create: (data: { dealReference: string; payeeName: string; payeeRemitAddress: string; payeeReference?: string; amount: number; goodThroughDate: string }) =>
+    apiFetch<any>('/api/v1/apar/trade-payoff-payments', { method: 'POST', body: JSON.stringify(data) }),
+};
+
+// S048 — Wholesale Vehicle AR & Title Release Gate (mandatory security-
+// critical action boundary — release-title requires the item to be paid in
+// full; release-title-exception requires a distinct permission + mandatory
+// reason and produces an audited ArTitleReleaseException record).
+export const wholesaleVehicleApi = {
+  list: (params?: string) => apiFetch<any[]>(`/api/v1/apar/wholesale-vehicle-items${params ? `?${params}` : ''}`),
+  getById: (id: string) => apiFetch<any>(`/api/v1/apar/wholesale-vehicle-items/${id}`),
+  create: (data: { customerId: string; vehicleVin: string; saleAmount: number }) =>
+    apiFetch<any>('/api/v1/apar/wholesale-vehicle-items', { method: 'POST', body: JSON.stringify(data) }),
+  recordPayment: (id: string, data: { amount: number }) =>
+    apiFetch<any>(`/api/v1/apar/wholesale-vehicle-items/${id}/payments`, { method: 'POST', body: JSON.stringify(data) }),
+  releaseTitle: (id: string) => apiFetch<any>(`/api/v1/apar/wholesale-vehicle-items/${id}/release-title`, { method: 'POST' }),
+  releaseTitleException: (id: string, data: { reason: string }) =>
+    apiFetch<any>(`/api/v1/apar/wholesale-vehicle-items/${id}/release-title-exception`, { method: 'POST', body: JSON.stringify(data) }),
+  getReleaseExceptions: (id: string) => apiFetch<any[]>(`/api/v1/apar/wholesale-vehicle-items/${id}/release-exceptions`),
+};
+
+// S049 — Fleet Billing: parent/unit consolidation links + consolidated invoices
+export const fleetBillingApi = {
+  linkUnit: (data: { parentCustomerId: string; childCustomerId: string; billingGroupName?: string }) =>
+    apiFetch<any>('/api/v1/apar/fleet-billing/unit-links', { method: 'POST', body: JSON.stringify(data) }),
+  unlinkUnit: (id: string) => apiFetch<any>(`/api/v1/apar/fleet-billing/unit-links/${id}`, { method: 'DELETE' }),
+  getParentUnits: (parentCustomerId: string) => apiFetch<any[]>(`/api/v1/apar/fleet-billing/parents/${parentCustomerId}/units`),
+  createConsolidatedInvoice: (data: { parentCustomerId: string; invoiceDate: string; items: Array<{ childCustomerId: string; amount: number; description?: string }> }) =>
+    apiFetch<any>('/api/v1/apar/fleet-billing/consolidated-invoices', { method: 'POST', body: JSON.stringify(data) }),
+  listConsolidatedInvoices: (params?: string) => apiFetch<any[]>(`/api/v1/apar/fleet-billing/consolidated-invoices${params ? `?${params}` : ''}`),
+  getConsolidatedInvoice: (id: string) => apiFetch<any>(`/api/v1/apar/fleet-billing/consolidated-invoices/${id}`),
+  getParentStatement: (parentCustomerId: string) => apiFetch<any>(`/api/v1/apar/fleet-billing/parents/${parentCustomerId}/statement`),
+};
+
+// S050 — Write-offs (direct write-off + reverse + register)
+export const writeOffApi = {
+  list: (params?: string) => apiFetch<any[]>(`/api/v1/apar/write-offs${params ? `?${params}` : ''}`),
+  getRegister: (params?: string) => apiFetch<any[]>(`/api/v1/apar/write-offs/register${params ? `?${params}` : ''}`),
+  getById: (id: string) => apiFetch<any>(`/api/v1/apar/write-offs/${id}`),
+  create: (data: { arEntryId: string; amount: number; reason: string; useOverride?: boolean }) =>
+    apiFetch<any>('/api/v1/apar/write-offs', { method: 'POST', body: JSON.stringify(data) }),
+  reverse: (id: string, data: { reason: string }) =>
+    apiFetch<any>(`/api/v1/apar/write-offs/${id}/reverse`, { method: 'POST', body: JSON.stringify(data) }),
+};
+
+// S051 — Allowance previews: compute (preview only, never posts) -> approve
+// (explicit human step) -> post (must equal the approved amount exactly,
+// server refuses ALLOWANCE_POST_AMOUNT_MISMATCH otherwise).
+export const allowancePreviewApi = {
+  list: () => apiFetch<any[]>('/api/v1/apar/allowance-previews'),
+  getById: (id: string) => apiFetch<any>(`/api/v1/apar/allowance-previews/${id}`),
+  computePreview: (data: { asOfDate: string }) =>
+    apiFetch<any>('/api/v1/apar/allowance-previews', { method: 'POST', body: JSON.stringify(data) }),
+  approvePreview: (id: string, data?: { approvedBy?: string }) =>
+    apiFetch<any>(`/api/v1/apar/allowance-previews/${id}/approve`, { method: 'POST', body: JSON.stringify(data ?? {}) }),
+  post: (id: string, data: { postedAmount: number }) =>
+    apiFetch<any>(`/api/v1/apar/allowance-previews/${id}/post`, { method: 'POST', body: JSON.stringify(data) }),
+};
+
+// S045 (NSF sub-flow) — NSF Events
+export const nsfEventApi = {
+  list: (params?: string) => apiFetch<any[]>(`/api/v1/apar/nsf-events${params ? `?${params}` : ''}`),
+  getById: (id: string) => apiFetch<any>(`/api/v1/apar/nsf-events/${id}`),
+  create: (data: { customerId: string; originalArEntryId: string; amount: number; reason: string; source?: 'MANUAL' | 'BANK_FEED_NOT_CONFIGURED' }) =>
+    apiFetch<any>('/api/v1/apar/nsf-events', { method: 'POST', body: JSON.stringify(data) }),
+};
+
+// S047 (dependency) — Insurance Claims (short-pay disposition)
+export const insuranceClaimApi = {
+  list: (params?: string) => apiFetch<any[]>(`/api/v1/apar/insurance-claims${params ? `?${params}` : ''}`),
+  getById: (id: string) => apiFetch<any>(`/api/v1/apar/insurance-claims/${id}`),
+  create: (data: { customerId: string; insurerName: string; insurerReference?: string; claimNumber: string; roReference?: string; claimAmount: number }) =>
+    apiFetch<any>('/api/v1/apar/insurance-claims', { method: 'POST', body: JSON.stringify(data) }),
+  postSupplement: (id: string, data: { adjustmentAmount: number; reason: string }) =>
+    apiFetch<any>(`/api/v1/apar/insurance-claims/${id}/supplements`, { method: 'POST', body: JSON.stringify(data) }),
+  applyPayment: (id: string, data: { amount: number }) =>
+    apiFetch<any>(`/api/v1/apar/insurance-claims/${id}/apply-payment`, { method: 'POST', body: JSON.stringify(data) }),
+  disposeShortPay: (id: string, data: { dispositionType: 'CUSTOMER_RESPONSIBILITY' | 'WRITE_OFF'; reason: string }) =>
+    apiFetch<any>(`/api/v1/apar/insurance-claims/${id}/dispose-short-pay`, { method: 'POST', body: JSON.stringify(data) }),
+};
+
+// S036B/S037 — Vendor 1099 admin (box rules, threshold configs,
+// corrections, year preview). Distinct from the legacy glApi 1099
+// endpoints (/api/v1/ap/1099/*), which target a different report surface.
+export const vendor1099AdminApi = {
+  setBoxRule: (data: { vendorId: string; taxYear: number; formType: '1099-MISC' | '1099-NEC' | 'T4A'; boxCode: string }) =>
+    apiFetch<any>('/api/v1/apar/vendor-1099/box-rules', { method: 'POST', body: JSON.stringify(data) }),
+  getBoxRules: (params?: string) => apiFetch<any[]>(`/api/v1/apar/vendor-1099/box-rules${params ? `?${params}` : ''}`),
+  setThresholdConfig: (data: { formType: '1099-MISC' | '1099-NEC' | 'T4A'; taxYear: number; thresholdAmount: number }) =>
+    apiFetch<any>('/api/v1/apar/vendor-1099/threshold-configs', { method: 'POST', body: JSON.stringify(data) }),
+  getThresholdConfigs: (params?: string) => apiFetch<any[]>(`/api/v1/apar/vendor-1099/threshold-configs${params ? `?${params}` : ''}`),
+  postCorrection: (data: { vendorId: string; taxYear: number; formType: '1099-MISC' | '1099-NEC' | 'T4A'; correctedAmount: number; reason: string }) =>
+    apiFetch<any>('/api/v1/apar/vendor-1099/corrections', { method: 'POST', body: JSON.stringify(data) }),
+  getCorrections: (params?: string) => apiFetch<any[]>(`/api/v1/apar/vendor-1099/corrections${params ? `?${params}` : ''}`),
+  getYearPreview: (taxYear: number) => apiFetch<any>(`/api/v1/apar/vendor-1099/year-preview/${taxYear}`),
+};
+
+// ─── cash-service (proxied at /api/v1/cash by the gateway) ───────────────
+
+// S053 — Deposits (batch creation/slip/status) + bank-feed
+export const depositApi = {
+  create: (data: { entityId: string; storeId: string; bankAccountCode: string; businessDate: string; receiptIds: string[]; idempotencyKey: string }) =>
+    apiFetch<any>('/api/v1/cash/deposits', { method: 'POST', body: JSON.stringify(data) }),
+  list: (params?: string) => apiFetch<any[]>(`/api/v1/cash/deposits${params ? `?${params}` : ''}`),
+  getById: (id: string) => apiFetch<any>(`/api/v1/cash/deposits/${id}`),
+  getSlip: (id: string) => apiFetch<any>(`/api/v1/cash/deposits/${id}/slip`),
+  post: (id: string) => apiFetch<any>(`/api/v1/cash/deposits/${id}/post`, { method: 'POST' }),
+  void: (id: string, data: { reason: string }) =>
+    apiFetch<any>(`/api/v1/cash/deposits/${id}/void`, { method: 'POST', body: JSON.stringify(data) }),
+  getBankFeedStatus: () => apiFetch<any>('/api/v1/cash/bank-feed/status'),
+  getBankFeedLines: (params?: string) => apiFetch<any[]>(`/api/v1/cash/bank-feed/lines${params ? `?${params}` : ''}`),
+  addManualFeedLine: (data: { bankAccountCode: string; externalId?: string | null; amount: number | string; valueDate: string; description?: string | null }) =>
+    apiFetch<any>('/api/v1/cash/bank-feed/lines', { method: 'POST', body: JSON.stringify(data) }),
+  syncBankFeed: () => apiFetch<any>('/api/v1/cash/bank-feed/sync', { method: 'POST' }),
+  matchFeedLine: (feedLineId: string, data: { depositId?: string; receiptId?: string }) =>
+    apiFetch<any>(`/api/v1/cash/bank-feed/lines/${feedLineId}/match`, { method: 'POST', body: JSON.stringify(data) }),
+};
+
+// S055 — Settlements: merchant batches, chargebacks, worklist
+export const settlementApi = {
+  getStatus: () => apiFetch<any>('/api/v1/cash/settlements/status'),
+  importBatch: (data: { entityId: string; bankAccountCode: string; processorName: string; batchReference: string; settlementDate: string; grossAmount: number | string }) =>
+    apiFetch<any>('/api/v1/cash/settlements/batches', { method: 'POST', body: JSON.stringify(data) }),
+  listBatches: (params?: string) => apiFetch<any[]>(`/api/v1/cash/settlements/batches${params ? `?${params}` : ''}`),
+  getBatch: (id: string) => apiFetch<any>(`/api/v1/cash/settlements/batches/${id}`),
+  matchBatch: (id: string, data: { receiptId?: string; depositId?: string; amount: number | string }) =>
+    apiFetch<any>(`/api/v1/cash/settlements/batches/${id}/match`, { method: 'POST', body: JSON.stringify(data) }),
+  postBatch: (id: string) => apiFetch<any>(`/api/v1/cash/settlements/batches/${id}/post`, { method: 'POST' }),
+  getWorklist: (params?: string) => apiFetch<any[]>(`/api/v1/cash/settlements/worklist${params ? `?${params}` : ''}`),
+  addWorklistItem: (data: { batchId?: string; bankAccountCode: string; amount: number | string; cardLast4?: string | null; transactionRef?: string | null }) =>
+    apiFetch<any>('/api/v1/cash/settlements/worklist', { method: 'POST', body: JSON.stringify(data) }),
+  // Backend resolveWorklistItem(tenantId, itemId, actor) takes no request
+  // body at all (see services/cash-service/src/http/settlement-routes.ts) —
+  // resolution is derived server-side, not client-supplied.
+  resolveWorklistItem: (itemId: string) =>
+    apiFetch<any>(`/api/v1/cash/settlements/worklist/${itemId}/resolve`, { method: 'POST' }),
+  intakeChargeback: (data: { entityId: string; batchId?: string; customerId?: string | null; amount: number | string; reasonCode?: string | null }) =>
+    apiFetch<any>('/api/v1/cash/settlements/chargebacks', { method: 'POST', body: JSON.stringify(data) }),
+  dispositionChargeback: (chargebackId: string, data: { dispositionAction: 'CUSTOMER_RESPONSIBILITY' | 'MERCHANT_ABSORBED' }) =>
+    apiFetch<any>(`/api/v1/cash/settlements/chargebacks/${chargebackId}/disposition`, { method: 'POST', body: JSON.stringify(data) }),
+};
+
+// S056 — Sweeps (store->operating account pairs + fp-offset-allocations)
+export const sweepApi = {
+  configurePair: (data: { entityId: string; storeAccountCode: string; operatingAccountCode: string }) =>
+    apiFetch<any>('/api/v1/cash/sweeps/pairs', { method: 'POST', body: JSON.stringify(data) }),
+  listPairs: () => apiFetch<any[]>('/api/v1/cash/sweeps/pairs'),
+  record: (data: { pairConfigId: string; sweepDate: string; direction: string; amount: number | string; confirmationState?: 'MANUAL_RECORDED' | 'FEED_CONFIRMED'; idempotencyKey: string }) =>
+    apiFetch<any>('/api/v1/cash/sweeps', { method: 'POST', body: JSON.stringify(data) }),
+  list: (params?: string) => apiFetch<any[]>(`/api/v1/cash/sweeps${params ? `?${params}` : ''}`),
+  getById: (id: string) => apiFetch<any>(`/api/v1/cash/sweeps/${id}`),
+  post: (id: string) => apiFetch<any>(`/api/v1/cash/sweeps/${id}/post`, { method: 'POST' }),
+  void: (id: string, data: { reason: string }) =>
+    apiFetch<any>(`/api/v1/cash/sweeps/${id}/void`, { method: 'POST', body: JSON.stringify(data) }),
+  createFpOffsetAllocation: (data: { entityId: string; lenderName: string; statementDate: string; statementAmount: number | string; lines: Array<{ floorplanUnitRef: string; amount: number | string }>; idempotencyKey: string }) =>
+    apiFetch<any>('/api/v1/cash/fp-offset-allocations', { method: 'POST', body: JSON.stringify(data) }),
+  listFpOffsetAllocations: (params?: string) => apiFetch<any[]>(`/api/v1/cash/fp-offset-allocations${params ? `?${params}` : ''}`),
+  getFpOffsetAllocation: (id: string) => apiFetch<any>(`/api/v1/cash/fp-offset-allocations/${id}`),
+  postFpOffsetAllocation: (id: string) => apiFetch<any>(`/api/v1/cash/fp-offset-allocations/${id}/post`, { method: 'POST' }),
+};
+
+// S057 — Cash Position dashboard: server-computed authoritative values only.
+export const cashPositionApi = {
+  get: (params?: string) => apiFetch<any>(`/api/v1/cash/position${params ? `?${params}` : ''}`),
+  exportPosition: (data: any) => apiFetch<any>('/api/v1/cash/position/export', { method: 'POST', body: JSON.stringify(data) }),
+  listExports: (params?: string) => apiFetch<any[]>(`/api/v1/cash/position/exports${params ? `?${params}` : ''}`),
+};
+
+// ─── recon-service (proxied at /api/v1/recon by the gateway) ────────────
+// S054A/S054B — real recon-session model: statement-lines, book-items,
+// manual match/unmatch, session lock, out-of-balance completion refusal,
+// plus auto-match rules/run/suggestions/confirm/reject. Distinct from the
+// legacy reconApi above, which targets an older/simpler recon route set.
+export const reconSessionApi = {
+  create: (data: { entityId: string; bankAccountCode: string; periodStart: string; periodEnd: string; statementBeginningBalance: number; statementEndingBalance: number }) =>
+    apiFetch<any>('/api/v1/recon/sessions', { method: 'POST', body: JSON.stringify(data) }),
+  list: (params?: string) => apiFetch<any[]>(`/api/v1/recon/sessions${params ? `?${params}` : ''}`),
+  getById: (id: string) => apiFetch<any>(`/api/v1/recon/sessions/${id}`),
+  getStatementLines: (id: string) => apiFetch<any[]>(`/api/v1/recon/sessions/${id}/statement-lines`),
+  addStatementLine: (id: string, data: { lineDate: string; description: string; amount: number; source: 'MANUAL' | 'IMPORTED'; externalRef?: string | null }) =>
+    apiFetch<any>(`/api/v1/recon/sessions/${id}/statement-lines`, { method: 'POST', body: JSON.stringify(data) }),
+  importStatementLines: (id: string, lines: Array<{ lineDate: string; description: string; amount: number; externalRef?: string | null }>) =>
+    apiFetch<any>(`/api/v1/recon/sessions/${id}/statement-lines/import`, { method: 'POST', body: JSON.stringify({ lines }) }),
+  getBookItems: (id: string) => apiFetch<any[]>(`/api/v1/recon/sessions/${id}/book-items`),
+  addManualBookItem: (id: string, data: { itemType: 'PAYMENT' | 'DEPOSIT' | 'FEE' | 'NSF' | 'SWEEP'; itemDate: string; description: string; amount: number }) =>
+    apiFetch<any>(`/api/v1/recon/sessions/${id}/book-items`, { method: 'POST', body: JSON.stringify(data) }),
+  syncBookItems: (id: string) => apiFetch<any>(`/api/v1/recon/sessions/${id}/book-items/sync`, { method: 'POST' }),
+  match: (id: string, data: { statementLineId: string; bookItemId: string }) =>
+    apiFetch<any>(`/api/v1/recon/sessions/${id}/match`, { method: 'POST', body: JSON.stringify(data) }),
+  unmatch: (id: string, data: { statementLineId: string; reason: string }) =>
+    apiFetch<any>(`/api/v1/recon/sessions/${id}/unmatch`, { method: 'POST', body: JSON.stringify(data) }),
+  // Server refuses completion when out of balance — surface its error as-is,
+  // never allow a client-side "force complete".
+  complete: (id: string) => apiFetch<any>(`/api/v1/recon/sessions/${id}/complete`, { method: 'POST' }),
+};
+
+export const autoMatchApi = {
+  createRule: (data: { entityId?: string | null; bankAccountCode?: string | null; ruleType: 'AMOUNT_DATE_WINDOW' | 'REFERENCE_CONTAINS' | 'CHECK_NUMBER' | 'BATCH_TOTAL'; tier: 'EXACT' | 'SUGGESTED'; config: Record<string, any>; priority?: number }) =>
+    apiFetch<any>('/api/v1/recon/match-rules', { method: 'POST', body: JSON.stringify(data) }),
+  listRules: () => apiFetch<any[]>('/api/v1/recon/match-rules'),
+  run: (sessionId: string) => apiFetch<any>(`/api/v1/recon/sessions/${sessionId}/auto-match`, { method: 'POST' }),
+  getSuggestions: (sessionId: string) => apiFetch<any[]>(`/api/v1/recon/sessions/${sessionId}/suggestions`),
+  confirmSuggestion: (sessionId: string, suggestionId: string) =>
+    apiFetch<any>(`/api/v1/recon/sessions/${sessionId}/suggestions/${suggestionId}/confirm`, { method: 'POST' }),
+  rejectSuggestion: (sessionId: string, suggestionId: string, data?: { reason?: string }) =>
+    apiFetch<any>(`/api/v1/recon/sessions/${sessionId}/suggestions/${suggestionId}/reject`, { method: 'POST', body: JSON.stringify(data ?? {}) }),
+};

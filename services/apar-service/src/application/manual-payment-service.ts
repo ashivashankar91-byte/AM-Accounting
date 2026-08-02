@@ -68,6 +68,16 @@ export class PaymentValidationError extends Error {
   }
 }
 
+/** CE-09 S045 (D-CE09-01) — hard accounting rule, not configurable.
+ * Void-after-cleared must be REFUSED; the correction path is a
+ * deposit/bank-side adjustment, never unwinding a reconciled item. */
+export class VoidRefusedPaymentReconciledError extends Error {
+  constructor(paymentId: string) {
+    super(`Payment ${paymentId} has already cleared/reconciled — void is refused (D-CE09-01). Correct via a deposit/bank-side adjustment, not by unwinding a reconciled item.`);
+    this.name = 'VoidRefusedPaymentReconciledError';
+  }
+}
+
 // ── Service ───────────────────────────────────────────────────────────────────
 
 /**
@@ -163,6 +173,15 @@ export class ManualPaymentService {
     return updated;
   }
 
+  /**
+   * CE-09 S045 (D-CE09-01): a payment whose clearedAt is set (recon-service
+   * has confirmed it cleared/reconciled — see PaymentLifecycleService.
+   * markCleared doc comment for the PUTR boundary) can never be voided —
+   * this is a hard accounting rule, not configurable. The clearedAt check
+   * runs inside the same transaction as the version-checked update, under
+   * a row lock (SELECT ... FOR UPDATE), so a concurrent
+   * mark-cleared-then-void race can never both succeed.
+   */
   async void(tenantId: string, id: string, dto: VoidPaymentDTO, actor = 'system', correlationId?: string) {
     const current = await this.prisma.apManualPayment.findFirst({ where: { id, tenantId } });
     if (!current) throw new PaymentNotFoundError(id);
@@ -174,6 +193,13 @@ export class ManualPaymentService {
 
     const updated = await this.prisma.$transaction(async (tx: any) => {
       await setTenantContextOnConnection(tx, tenantId); // CE-07 discovery: interactive $transaction runs on its own connection, separate from the base client's RLS middleware — see rls-middleware.ts.
+      const locked = await tx.$queryRawUnsafe(
+        `SELECT id, cleared_at, version FROM ap_manual_payments WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
+        id, tenantId,
+      );
+      if (!locked || locked.length === 0) throw new PaymentNotFoundError(id);
+      if (locked[0].cleared_at) throw new VoidRefusedPaymentReconciledError(id);
+      if (locked[0].version !== dto.version) throw new PaymentConflictError('VERSION_CONFLICT', `Version conflict: expected ${dto.version}, current is ${locked[0].version}`);
       const voided = await tx.apManualPayment.update({
         where: { id }, data: { status: 'VOID', version: current.version + 1, voidedAt: new Date(), voidedBy: actor, voidReason: dto.reason },
       });

@@ -481,6 +481,7 @@ export default function VendorMaintenance() {
             <option value="INACTIVE">Inactive only</option>
           </select>
           <button
+            data-testid="vendor-new"
             onClick={handleNew}
             className="w-full flex items-center justify-center gap-1.5 bg-brand text-white py-1.5 rounded text-sm font-medium hover:bg-brand"
           >
@@ -598,6 +599,7 @@ export default function VendorMaintenance() {
                   <button
                     onClick={handleSave}
                     disabled={saveMut.isPending || vendorDetail?.status === 'INACTIVE'}
+                    data-testid="vendor-save"
                     className="flex items-center gap-2 bg-brand text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-brand disabled:opacity-40"
                   >
                     <Check className="w-4 h-4" />
@@ -608,6 +610,7 @@ export default function VendorMaintenance() {
                   <button
                     onClick={handleSave}
                     disabled={saveMut.isPending}
+                    data-testid="vendor-save-new"
                     className="flex items-center gap-2 bg-brand text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-brand disabled:opacity-40"
                   >
                     <Check className="w-4 h-4" />
@@ -629,6 +632,7 @@ export default function VendorMaintenance() {
               {SECTIONS.map(s => (
                 <button
                   key={s.key}
+                  data-testid={`vendor-section-${s.key}`}
                   onClick={() => setSection(s.key)}
                   className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
                     section === s.key
@@ -674,6 +678,7 @@ export default function VendorMaintenance() {
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Vendor Name *</label>
                       <input
+                        data-testid="vendor-name-input"
                         type="text"
                         value={form.vendorName}
                         onChange={e => setField('vendorName', e.target.value)}
@@ -727,7 +732,7 @@ export default function VendorMaintenance() {
                       <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">Hold Payments</label>
                         <label className="flex items-center gap-2 mt-2 cursor-pointer">
-                          <input type="checkbox" checked={form.holdPayments} onChange={e => setField('holdPayments', e.target.checked)} className="rounded" />
+                          <input data-testid="vendor-hold-payments-checkbox" type="checkbox" checked={form.holdPayments} onChange={e => setField('holdPayments', e.target.checked)} className="rounded" />
                           <span className={`text-sm font-medium ${form.holdPayments ? 'text-red-600' : 'text-gray-600'}`}>
                             {form.holdPayments ? 'HOLD — no payments issued' : 'Payments allowed'}
                           </span>

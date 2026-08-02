@@ -20,7 +20,17 @@ import { ApprovalRuleService } from './application/approval-rule-service';
 import { InvoiceApprovalService } from './application/invoice-approval-service';
 import { ManualPaymentService } from './application/manual-payment-service';
 import { PostingEnginePort, HttpPostingEnginePort } from './application/posting-engine-port';
-import {
+import { UseTaxService } from './application/use-tax-service';
+import { PaymentLifecycleService } from './application/payment-lifecycle-service';
+import { WholesaleVehicleService } from './application/wholesale-vehicle-service';
+import { WriteOffService } from './application/write-off-service';
+import { AllowanceService } from './application/allowance-service';
+import { NsfService } from './application/nsf-service';
+import { PaymentRunService } from './application/payment-run-service';
+import { TradePayoffService } from './application/trade-payoff-service';
+import { FleetBillingService } from './application/fleet-billing-service';
+import { InsuranceArService } from './application/insurance-ar-service';
+import { Vendor1099Service } from './application/vendor-1099-service';import {
   IEventPublisher, IAREntryRepository, IAPEntryRepository, OutboxProcessor,
   HttpAuthzClient, AuthzClient, HttpAuditClient, AuditOutboxDrainer, makePrismaAuditOutboxStore,
   createTenantRlsMiddleware, tenantContextHook,
@@ -90,6 +100,17 @@ async function bootstrap() {
 
   container.register('InvoiceApprovalService', { useClass: InvoiceApprovalService });
   container.register('ManualPaymentService', { useClass: ManualPaymentService });
+  container.register('UseTaxService', { useClass: UseTaxService });
+  container.register('PaymentLifecycleService', { useClass: PaymentLifecycleService });
+  container.register('WholesaleVehicleService', { useClass: WholesaleVehicleService });
+  container.register('WriteOffService', { useClass: WriteOffService });
+  container.register('AllowanceService', { useClass: AllowanceService });
+  container.register('NsfService', { useClass: NsfService });
+  container.register('PaymentRunService', { useClass: PaymentRunService });
+  container.register('TradePayoffService', { useClass: TradePayoffService });
+  container.register('FleetBillingService', { useClass: FleetBillingService });
+  container.register('InsuranceArService', { useClass: InsuranceArService });
+  container.register('Vendor1099Service', { useClass: Vendor1099Service });
   container.registerInstance<AuthzClient>('AuthzClient', new HttpAuthzClient({
     onError: (err: unknown, req: any) => logger.error({ err, permission: req.permissionKey }, 'authz/check failed'),
   }));

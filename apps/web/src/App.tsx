@@ -99,6 +99,24 @@ import VendorMaintenance from './pages/accounting/VendorMaintenance';
 import VendorInvoices from './pages/accounting/VendorInvoices';
 import ApprovalMatrixConfig from './pages/accounting/ApprovalMatrixConfig';
 import CustomerMaintenance from './pages/accounting/CustomerMaintenance';
+// CE-09 — AP, AR & Cash Operations (24 canonical stories)
+import InvoiceApprovalQueue from './pages/accounting/InvoiceApprovalQueue';
+import UseTaxAssessments from './pages/accounting/UseTaxAssessments';
+import PaymentRuns from './pages/accounting/PaymentRuns';
+import ManualPayments from './pages/accounting/ManualPayments';
+import TradePayoffPayments from './pages/accounting/TradePayoffPayments';
+import WholesaleVehicleTitleRelease from './pages/accounting/WholesaleVehicleTitleRelease';
+import FleetBilling from './pages/accounting/FleetBilling';
+import WriteOffsAndAllowances from './pages/accounting/WriteOffsAndAllowances';
+import NSFEvents from './pages/accounting/NSFEvents';
+import InsuranceClaims from './pages/accounting/InsuranceClaims';
+import Deposits from './pages/accounting/Deposits';
+import Settlements from './pages/accounting/Settlements';
+import Sweeps from './pages/accounting/Sweeps';
+import PurchaseOrders2 from './pages/accounting/PurchaseOrders2';
+import BankReconSessions from './pages/accounting/BankReconSessions';
+import BankReconSessionDetail from './pages/accounting/BankReconSessionDetail';
+import CashPosition from './pages/accounting/CashPosition';
 import VehicleTransfers from './pages/accounting/VehicleTransfers';
 import APWorkflow from './pages/accounting/AccountsPayable';
 import ARWorkflow from './pages/accounting/AccountsReceivable';
@@ -225,27 +243,43 @@ const MODULES: AppModule[] = [
     matchPrefixes: [
       '/accounting/ap', '/accounting/ar', '/accounting/bank-recon',
       '/accounting/purchase-orders', '/ap', '/cash-receipts', '/bank-deposits',
-      '/vendors', '/po', '/accounting/cash',
+      '/vendors', '/po', '/accounting/cash', '/accounting/cash-position',
     ],
     sections: [
       { title: 'Accounts Receivable', items: [
-        { path: '/accounting/ar',           label: 'Cash Receipts' },
-        { path: '/accounting/ar/customers', label: 'Customer Master' },
+        { path: '/accounting/ar',                    label: 'Cash Receipts' },
+        { path: '/accounting/ar/customers',          label: 'Customer Master' },
+        { path: '/accounting/ar/trade-payoff',       label: 'Trade Payoff Payments (S047)' },
+        { path: '/accounting/ar/wholesale-vehicle',  label: 'Wholesale Vehicle Title Release (S048)' },
+        { path: '/accounting/ar/fleet-billing',      label: 'Fleet Billing (S049)' },
+        { path: '/accounting/ar/write-offs',         label: 'Write-Offs & Allowances (S050/S051)' },
+        { path: '/accounting/ar/nsf',                label: 'NSF Events' },
+        { path: '/accounting/ar/insurance-claims',   label: 'Insurance Claims (Short-Pay)' },
       ]},
       { title: 'Cashiering (S052)', items: [
         { path: '/accounting/cash',          label: 'Cashier Drawer' },
         { path: '/accounting/cash/receive',  label: 'Cash Receipts (POS)' },
         { path: '/accounting/cash/receipts', label: 'Receipt Search' },
+        { path: '/accounting/cash/deposits',    label: 'Deposits (S053)' },
+        { path: '/accounting/cash/settlements', label: 'Settlements (S055)' },
+        { path: '/accounting/cash/sweeps',      label: 'Sweeps (S056)' },
+        { path: '/accounting/cash-position',    label: 'Cash Position (S057)' },
       ]},
       { title: 'Accounts Payable', items: [
         { path: '/accounting/ap',                 label: 'AP Invoices' },
         { path: '/accounting/ap/invoices',         label: 'Vendor Invoice Match (S039)' },
-        { path: '/accounting/ap/approval-matrix',  label: 'Approval Matrix (S041)' },
+        { path: '/accounting/ap/approvals',        label: 'Invoice Approval Queue (S041)' },
+        { path: '/accounting/ap/approval-matrix',  label: 'Approval Matrix Config (S041)' },
         { path: '/accounting/ap/vendors',          label: 'Vendor Master' },
+        { path: '/accounting/ap/purchase-orders',  label: 'Purchase Orders (S036A/S039)' },
+        { path: '/accounting/ap/payment-runs',     label: 'Payment Runs (S043A)' },
+        { path: '/accounting/ap/manual-payments',  label: 'Manual Payments & Escheat (S043A/S045)' },
+        { path: '/accounting/ap/use-tax',          label: 'Use Tax Assessments (S044)' },
       ]},
       { title: 'Banking', items: [
-        { path: '/accounting/bank-recon',       label: 'Bank Reconciliation' },
-        { path: '/accounting/purchase-orders',  label: 'Purchase Orders' },
+        { path: '/accounting/bank-recon',           label: 'Bank Reconciliation (legacy)' },
+        { path: '/accounting/bank-recon/sessions',  label: 'Bank Recon Sessions (S054A/B)' },
+        { path: '/accounting/purchase-orders',      label: 'Purchase Orders (legacy)' },
       ]},
     ],
   },
@@ -762,6 +796,31 @@ export default function App() {
               <Route path="/accounting/vehicle-transfers" element={<VehicleTransfers />} />
               <Route path="/accounting/ar" element={<ARWorkflow />} />
               <Route path="/accounting/bank-recon" element={<BankReconWorkflow />} />
+
+              {/* CE-09 — AP, AR & Cash Operations (24 canonical stories) */}
+              <Route path="/accounting/ap/approvals" element={<InvoiceApprovalQueue />} />
+              <Route path="/accounting/ap/payment-runs" element={<PaymentRuns />} />
+              <Route path="/accounting/ap/payment-runs/:id" element={<PaymentRuns />} />
+              <Route path="/accounting/ap/use-tax" element={<UseTaxAssessments />} />
+              <Route path="/accounting/ap/manual-payments" element={<ManualPayments />} />
+              <Route path="/accounting/ap/manual-payments/:id" element={<ManualPayments />} />
+              <Route path="/accounting/ap/purchase-orders" element={<PurchaseOrders2 />} />
+              <Route path="/accounting/ap/purchase-orders/:id" element={<PurchaseOrders2 />} />
+              <Route path="/accounting/ar/trade-payoff" element={<TradePayoffPayments />} />
+              <Route path="/accounting/ar/wholesale-vehicle" element={<WholesaleVehicleTitleRelease />} />
+              <Route path="/accounting/ar/wholesale-vehicle/:id" element={<WholesaleVehicleTitleRelease />} />
+              <Route path="/accounting/ar/fleet-billing" element={<FleetBilling />} />
+              <Route path="/accounting/ar/write-offs" element={<WriteOffsAndAllowances />} />
+              <Route path="/accounting/ar/allowances" element={<WriteOffsAndAllowances />} />
+              <Route path="/accounting/ar/nsf" element={<NSFEvents />} />
+              <Route path="/accounting/ar/insurance-claims" element={<InsuranceClaims />} />
+              <Route path="/accounting/cash/deposits" element={<Deposits />} />
+              <Route path="/accounting/cash/deposits/:id" element={<Deposits />} />
+              <Route path="/accounting/cash/settlements" element={<Settlements />} />
+              <Route path="/accounting/cash/sweeps" element={<Sweeps />} />
+              <Route path="/accounting/bank-recon/sessions" element={<BankReconSessions />} />
+              <Route path="/accounting/bank-recon/sessions/:id" element={<BankReconSessionDetail />} />
+              <Route path="/accounting/cash-position" element={<CashPosition />} />
               <Route path="/accounting/payroll" element={<PayrollWorkflow />} />
               <Route path="/accounting/eom" element={<EOMWorkflow />} />
               <Route path="/accounting/admin/periods" element={<PeriodControl />} />

@@ -10,7 +10,11 @@ import crypto from 'crypto';
 function matches(row: any, where: any = {}): boolean {
   return Object.entries(where).every(([key, cond]) => {
     if (cond === undefined) return true;
-    if (cond && typeof cond === 'object' && !(cond instanceof Date)) {
+    if (cond instanceof Date) {
+      const rowVal = row[key];
+      return rowVal instanceof Date ? rowVal.getTime() === cond.getTime() : rowVal === cond;
+    }
+    if (cond && typeof cond === 'object') {
       if ('not' in cond) return row[key] !== (cond as any).not;
       if ('in' in cond) return (cond as any).in.includes(row[key]);
       if ('contains' in cond) return String(row[key] ?? '').toLowerCase().includes(String((cond as any).contains).toLowerCase());
@@ -75,6 +79,13 @@ function makeTable<T extends { id: string }>(name: string, uniqueConflict?: (row
       return rows[idx];
     },
     count: async ({ where }: any = {}) => rows.filter((r) => matches(r, where)).length,
+    deleteMany: async ({ where }: any = {}) => {
+      const before = rows.length;
+      const keep = rows.filter((r) => !matches(r, where));
+      rows.length = 0;
+      rows.push(...keep);
+      return { count: before - rows.length };
+    },
   };
 }
 
@@ -102,6 +113,45 @@ export function makeFakePrisma() {
     cashVarianceToleranceConfig: makeTable('cash_variance_tolerance_config'),
     auditOutboxEvent: makeTable('audit_outbox'),
     cashOutboxEvent: makeTable('cash_outbox_events'),
+    cashDeposit: makeTable('cash_deposit', (rows: any[], data: any) =>
+      rows.some((r) => r.tenantId === data.tenantId && r.idempotencyKey === data.idempotencyKey)
+        ? ['tenant_id', 'idempotency_key']
+        : null),
+    cashDepositLine: makeTable('cash_deposit_line', (rows: any[], data: any) =>
+      rows.some((r) => r.tenantId === data.tenantId && r.receiptId === data.receiptId)
+        ? ['tenant_id', 'receipt_id']
+        : null),
+    bankFeedLine: makeTable('bank_feed_line', (rows: any[], data: any) =>
+      rows.some((r) => r.tenantId === data.tenantId && r.bankAccountCode === data.bankAccountCode && data.externalId != null && r.externalId === data.externalId)
+        ? ['tenant_id', 'bank_account_code', 'external_id']
+        : null),
+    settlementBatch: makeTable('settlement_batch', (rows: any[], data: any) =>
+      rows.some((r) => r.tenantId === data.tenantId && r.idempotencyKey === data.idempotencyKey)
+        ? ['tenant_id', 'idempotency_key']
+        : null),
+    settlementBatchLine: makeTable('settlement_batch_line'),
+    settlementWorklistItem: makeTable('settlement_worklist_item'),
+    settlementChargeback: makeTable('settlement_chargeback'),
+    settlementAdjustment: makeTable('settlement_adjustment', (rows: any[], data: any) =>
+      rows.some((r) => r.chargebackId === data.chargebackId) ? ['chargeback_id'] : null),
+    sweepAccountPairConfig: makeTable('sweep_account_pair_config', (rows: any[], data: any) =>
+      rows.some((r) => r.tenantId === data.tenantId && r.storeAccountCode === data.storeAccountCode && r.operatingAccountCode === data.operatingAccountCode)
+        ? ['tenant_id', 'store_account_code', 'operating_account_code']
+        : null),
+    zbaSweep: makeTable('zba_sweep', (rows: any[], data: any) =>
+      rows.some((r) => r.tenantId === data.tenantId && r.idempotencyKey === data.idempotencyKey)
+        ? ['tenant_id', 'idempotency_key']
+        : null),
+    fpOffsetAllocation: makeTable('fp_offset_allocation', (rows: any[], data: any) =>
+      rows.some((r) => r.tenantId === data.tenantId && r.idempotencyKey === data.idempotencyKey)
+        ? ['tenant_id', 'idempotency_key']
+        : null),
+    fpOffsetAllocationLine: makeTable('fp_offset_allocation_line'),
+    largeCashThresholdConfig: makeTable('large_cash_threshold_config', (rows: any[], data: any) =>
+      rows.some((r) => r.tenantId === data.tenantId && r.jurisdiction === data.jurisdiction)
+        ? ['tenant_id', 'jurisdiction']
+        : null),
+    cashPositionExport: makeTable('cash_position_export'),
   };
 
   // Give findUniqueOrThrow a real `this` for cashReceipt/cashVarianceApproval etc.
@@ -128,8 +178,57 @@ export function makeFakePrisma() {
   const baseReceiptFindMany = tables.cashReceipt.findMany;
   (tables.cashReceipt as any).findMany = async (args: any) => (await baseReceiptFindMany(args)).map(hydrateReceipt);
 
-  const baseBlindCountFindUnique = tables.cashBlindCount.findUnique;
-  (tables.cashBlindCount as any).findUnique = async (args: any) => {
+  // cash_deposit.findUnique/findFirst/findMany with `include: { lines: true }`.
+  const hydrateDeposit = (r: any) => (r ? { ...r, lines: tables.cashDepositLine._rows.filter((l: any) => l.depositId === r.id) } : r);
+  const baseDepositFindUnique = tables.cashDeposit.findUnique;
+  const baseDepositFindFirst = tables.cashDeposit.findFirst;
+  const baseDepositFindMany = tables.cashDeposit.findMany;
+  (tables.cashDeposit as any).findUnique = async (args: any) => hydrateDeposit(await baseDepositFindUnique(args));
+  (tables.cashDeposit as any).findFirst = async (args: any) => hydrateDeposit(await baseDepositFindFirst(args));
+  (tables.cashDeposit as any).findMany = async (args: any) => (await baseDepositFindMany(args)).map(hydrateDeposit);
+  (tables.cashDeposit as any).findUniqueOrThrow = async (args: any) => {
+    const found = hydrateDeposit(await baseDepositFindUnique(args));
+    if (!found) throw new Error('Row not found (findUniqueOrThrow)');
+    return found;
+  };
+
+  // settlement_batch.findUnique/findFirst/findMany with `include: { lines: true, chargebacks: true }`.
+  const hydrateBatch = (r: any) => (r
+    ? {
+        ...r,
+        lines: tables.settlementBatchLine._rows.filter((l: any) => l.batchId === r.id),
+        chargebacks: tables.settlementChargeback._rows.filter((c: any) => c.batchId === r.id),
+      }
+    : r);
+  const baseBatchFindUnique = tables.settlementBatch.findUnique;
+  const baseBatchFindFirst = tables.settlementBatch.findFirst;
+  const baseBatchFindMany = tables.settlementBatch.findMany;
+  (tables.settlementBatch as any).findUnique = async (args: any) => hydrateBatch(await baseBatchFindUnique(args));
+  (tables.settlementBatch as any).findFirst = async (args: any) => hydrateBatch(await baseBatchFindFirst(args));
+  (tables.settlementBatch as any).findMany = async (args: any) => (await baseBatchFindMany(args)).map(hydrateBatch);
+  (tables.settlementBatch as any).findUniqueOrThrow = async (args: any) => {
+    const found = hydrateBatch(await baseBatchFindUnique(args));
+    if (!found) throw new Error('Row not found (findUniqueOrThrow)');
+    return found;
+  };
+
+  // fp_offset_allocation.findUnique/findFirst/findMany with `include: { lines: true }`.
+  const hydrateFpOffset = (r: any) => (r
+    ? { ...r, lines: tables.fpOffsetAllocationLine._rows.filter((l: any) => l.allocationId === r.id) }
+    : r);
+  const baseFpOffsetFindUnique = tables.fpOffsetAllocation.findUnique;
+  const baseFpOffsetFindFirst = tables.fpOffsetAllocation.findFirst;
+  const baseFpOffsetFindMany = tables.fpOffsetAllocation.findMany;
+  (tables.fpOffsetAllocation as any).findUnique = async (args: any) => hydrateFpOffset(await baseFpOffsetFindUnique(args));
+  (tables.fpOffsetAllocation as any).findFirst = async (args: any) => hydrateFpOffset(await baseFpOffsetFindFirst(args));
+  (tables.fpOffsetAllocation as any).findMany = async (args: any) => (await baseFpOffsetFindMany(args)).map(hydrateFpOffset);
+  (tables.fpOffsetAllocation as any).findUniqueOrThrow = async (args: any) => {
+    const found = hydrateFpOffset(await baseFpOffsetFindUnique(args));
+    if (!found) throw new Error('Row not found (findUniqueOrThrow)');
+    return found;
+  };
+
+  const baseBlindCountFindUnique = tables.cashBlindCount.findUnique;  (tables.cashBlindCount as any).findUnique = async (args: any) => {
     const r: any = await baseBlindCountFindUnique(args);
     if (!r) return null;
     return { ...r, lines: tables.cashBlindCountLine._rows.filter((l: any) => l.blindCountId === r.id) };
