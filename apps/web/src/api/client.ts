@@ -1397,8 +1397,14 @@ export const authzApi = {
 
 // S019/S020 — Posting Engine: DSL rule packs + idempotent posting executions.
 export const postingEngineApi = {
-  listRulePacks: () => apiFetch<{ items: Array<{ pack: any; versions: any[] }> }>('/api/v1/coa/posting-engine/rule-packs'),
-  getRulePack: (packKey: string) => apiFetch<{ pack: any; versions: any[] }>(`/api/v1/coa/posting-engine/rule-packs/${encodeURIComponent(packKey)}`),
+  // CE-07 legal-entity isolation defect — entityId is REQUIRED, never
+  // optional: the browser must not infer or calculate legal-entity
+  // ownership, so every caller supplies the entity scope explicitly (from
+  // EntityScopeContext, the app's own first-class, server-validated entity
+  // axis — never computed here). The server rejects a missing entityId
+  // with 400, matching how x-tenant-id is already enforced.
+  listRulePacks: (entityId: string) => apiFetch<{ items: Array<{ pack: any; versions: any[] }> }>(`/api/v1/coa/posting-engine/rule-packs?entityId=${encodeURIComponent(entityId)}`),
+  getRulePack: (packKey: string, entityId: string) => apiFetch<{ pack: any; versions: any[] }>(`/api/v1/coa/posting-engine/rule-packs/${encodeURIComponent(packKey)}?entityId=${encodeURIComponent(entityId)}`),
   validateDraft: (sourceText: string) =>
     apiFetch<{ valid: boolean; findings: Array<{ severity: string; code: string; path: string; ruleId?: string; message: string }> }>(
       '/api/v1/coa/posting-engine/rule-packs/validate',
@@ -1418,18 +1424,53 @@ export const postingEngineApi = {
       journalEntryId?: string | null; journalNumber?: string | null; failureReason?: string | null;
     }>('/api/v1/coa/posting-engine/events', { method: 'POST', body: JSON.stringify(envelope) }),
 
-  searchExecutions: (params: { correlationId?: string; sourceEntityId?: string; status?: string }) => {
+  // D-S023-33 — validation + evaluation only, never posts. Used by the
+  // Posting Executions screen's "Simulate" panel to preview the proposed
+  // balanced journal a real event would produce before it's ever submitted.
+  simulateEvent: (envelope: Record<string, unknown>) =>
+    apiFetch<{
+      wouldPost: boolean;
+      status: 'WOULD_POST' | 'NO_RULE_MATCH' | 'AMBIGUOUS_RULE_PACK_MATCH' | 'WOULD_REJECT';
+      rulePackVersionId?: string | null;
+      ruleId?: string | null;
+      proposedJournal?: {
+        entityId: string; date: string; sourceCode: string;
+        lines: Array<{ accountNumber: string; storeId: string; deptCode?: string | null; dr: number; cr: number; memo?: string | null }>;
+      } | null;
+      failureReason?: string | null;
+    }>('/api/v1/coa/posting-engine/simulate', { method: 'POST', body: JSON.stringify(envelope) }),
+
+  // CE-07 legal-entity isolation defect — entityId is REQUIRED so an
+  // execution search can never span every entity in the tenant by
+  // omission; a rule pack/execution belonging to another legal entity must
+  // never appear in this tenant's inquiry results.
+  searchExecutions: (entityId: string, params: { correlationId?: string; sourceEntityId?: string; status?: string }) => {
     const qs = new URLSearchParams();
+    qs.set('entityId', entityId);
     if (params.correlationId) qs.set('correlationId', params.correlationId);
     if (params.sourceEntityId) qs.set('sourceEntityId', params.sourceEntityId);
     if (params.status) qs.set('status', params.status);
-    const suffix = qs.toString() ? `?${qs.toString()}` : '';
-    return apiFetch<{ items: any[] }>(`/api/v1/coa/posting-engine/executions${suffix}`);
+    return apiFetch<{ items: any[] }>(`/api/v1/coa/posting-engine/executions?${qs.toString()}`);
   },
   getExecutionById: (id: string) => apiFetch<any>(`/api/v1/coa/posting-engine/executions/${id}`),
   getExecutionByEventId: (eventId: string) => apiFetch<any>(`/api/v1/coa/posting-engine/executions/by-event/${encodeURIComponent(eventId)}`),
+  listReplaysForExecution: (id: string) => apiFetch<{ items: Array<{
+    id: string; originalRulePackVersionId: string | null; replayRulePackVersionId: string | null;
+    replayActor: string; replayReason: string; resultingStatus: string;
+    resultingJournalEntryId: string | null; resultingJournalNumber: string | null; createdAt: string;
+  }> }>(`/api/v1/coa/posting-engine/executions/${id}/replays`),
   listExceptions: (reasonCode?: string) =>
     apiFetch<{ items: any[] }>(`/api/v1/coa/posting-engine/exceptions${reasonCode ? `?reasonCode=${encodeURIComponent(reasonCode)}` : ''}`),
+
+  // D-S023-25/28 — authorized, governed replay of a NO_RULE_MATCH/REJECTED/
+  // FAILED execution once a corrected rule pack is active. Reuses S021's own
+  // permission (posting-recovery.replay.execute), not a new S023 string.
+  replayExecution: (executionId: string, reason: string) =>
+    apiFetch<{
+      executionId: string; eventId: string; status: string; idempotent: boolean;
+      rulePackVersionId?: string | null; ruleId?: string | null;
+      journalEntryId?: string | null; journalNumber?: string | null; failureReason?: string | null;
+    }>(`/api/v1/coa/posting-engine/executions/${executionId}/replay`, { method: 'POST', body: JSON.stringify({ reason }) }),
 };
 
 // S021 — Posting Recovery (DLQ inspection workbench). Note the literal

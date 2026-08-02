@@ -1,5 +1,8 @@
 import { inject, injectable } from 'tsyringe';
-import { IEventPublisher } from '@amacc/shared-kernel';
+import { IEventPublisher, setTenantContextOnConnection } from '@amacc/shared-kernel';
+import { PostingEnginePort } from './posting-engine-port';
+import { buildApPaymentPostedEnvelope } from './ap-payment-envelope';
+import { resolveGlAccountCode } from './gl-account-code-resolver';
 
 // ── DTOs ─────────────────────────────────────────────────────────────────────
 
@@ -71,16 +74,21 @@ export class PaymentValidationError extends Error {
  * S043A — Manual Single Payment (L1, lowest complexity of the five-story
  * wave). Pays exactly one APPROVED VendorInvoice in full by check — no
  * partial/split payment. Draws its check number from the existing S3-09
- * APBankAccount sequence. Creates a reversing GL entry (Dr AP control, Cr
- * Bank) via the same cross-service HTTP posting pattern as S041, then
- * attempts to relieve the schedule-service open item created at approval
- * (keyed by controlNumber = invoiceNumber, on whichever Schedule has the
- * vendor's AP control GL account code configured — existing schedule-
- * service configuration, not invented here). Both the GL posting and the
- * schedule relief are best-effort/non-blocking: the payment itself is
- * durable regardless of downstream service availability, and truthfully
- * records what actually happened (glPostingError / scheduleReliefStatus)
- * rather than fabricating success.
+ * APBankAccount sequence.
+ *
+ * CE-07 (single authoritative ledger decision): submits a canonical
+ * `ap.payment.posted` event (Dr AP control, Cr Bank) to coa-service's
+ * S019/S020 posting engine, which posts the resulting journal through
+ * gl-service's EXISTING posting door — no direct gl-service journal-entry
+ * call from this service anymore. Still attempts to relieve the
+ * schedule-service open item created at approval (keyed by controlNumber =
+ * invoiceNumber, on whichever Schedule has the vendor's AP control GL
+ * account code configured — existing schedule-service configuration, not
+ * invented here). Both the GL posting and the schedule relief are
+ * best-effort/non-blocking: the payment itself is durable regardless of
+ * downstream service availability, and truthfully records what actually
+ * happened (glPostingError / scheduleReliefStatus) rather than fabricating
+ * success.
  */
 @injectable()
 export class ManualPaymentService {
@@ -90,6 +98,7 @@ export class ManualPaymentService {
   constructor(
     @inject('PrismaClient') private readonly prisma: any,
     @inject('IEventPublisher') private readonly eventPublisher: IEventPublisher,
+    @inject('PostingEnginePort') private readonly postingEnginePort: PostingEnginePort,
   ) {}
 
   async list(tenantId: string, vendorId?: string) {
@@ -117,6 +126,7 @@ export class ManualPaymentService {
     if (!vendor) throw new InvoiceNotFoundForPaymentError(dto.invoiceId);
 
     const { payment, checkNumber } = await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, tenantId); // CE-07 discovery: interactive $transaction runs on its own connection, separate from the base client's RLS middleware — see rls-middleware.ts.
       const updatedBank = await tx.aPBankAccount.update({
         where: { id: dto.bankAccountId },
         data: { nextCheckNumber: { increment: 1 } },
@@ -142,7 +152,7 @@ export class ManualPaymentService {
 
     await this._writeOutbox(tenantId, 'AP_MANUAL_PAYMENT_CREATED', payment.id, { invoiceId: dto.invoiceId, checkNumber, actor });
 
-    const glEntryId = await this._postPaymentReversal(tenantId, invoice, vendor, bankAccount, payment.id, actor, serviceToken, correlationId);
+    const glEntryId = await this._postPaymentReversal(tenantId, invoice, vendor, bankAccount, payment.id, actor, serviceToken, correlationId, payment.paymentDate);
     let updated = payment;
     if (glEntryId) {
       updated = await this.prisma.apManualPayment.update({ where: { id: payment.id }, data: { glEntryId } });
@@ -163,6 +173,7 @@ export class ManualPaymentService {
     const invoice = await this.prisma.vendorInvoice.findFirst({ where: { id: current.invoiceId, tenantId } });
 
     const updated = await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, tenantId); // CE-07 discovery: interactive $transaction runs on its own connection, separate from the base client's RLS middleware — see rls-middleware.ts.
       const voided = await tx.apManualPayment.update({
         where: { id }, data: { status: 'VOID', version: current.version + 1, voidedAt: new Date(), voidedBy: actor, voidReason: dto.reason },
       });
@@ -181,39 +192,46 @@ export class ManualPaymentService {
 
   private async _postPaymentReversal(
     tenantId: string, invoice: any, vendor: any, bankAccount: any, paymentId: string,
-    actor: string, serviceToken?: string, correlationId?: string,
+    actor: string, serviceToken?: string, correlationId?: string, paymentDate?: Date,
   ): Promise<string | null> {
     if (!vendor.defaultGlAccount || !bankAccount.glAccountId) {
       await this._recordGlFailure(tenantId, paymentId, !vendor.defaultGlAccount ? 'Vendor has no default AP control GL account configured' : 'Bank account has no linked GL account configured');
       return null;
     }
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json', 'x-tenant-id': tenantId };
-      if (serviceToken) headers['authorization'] = `Bearer ${serviceToken}`;
-
-      const jeResp = await fetch(`${this.glServiceUrl}/api/v1/gl/journal-entries`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          entryDate: new Date().toISOString(),
-          description: `Manual payment — invoice ${invoice.invoiceNumber}`,
-          source: 'AP',
-          sourceRef: invoice.invoiceNumber.slice(0, 8),
-          lines: [
-            { glAccountId: vendor.defaultGlAccount, debit: Number(invoice.totalAmount), credit: 0, memo: `AP relief — invoice ${invoice.invoiceNumber}`, controlNumber: invoice.invoiceNumber },
-            { glAccountId: bankAccount.glAccountId, debit: 0, credit: Number(invoice.totalAmount), memo: `Check payment — invoice ${invoice.invoiceNumber}` },
-          ],
-        }),
-      });
-
-      if (!jeResp.ok) {
-        const errText = await jeResp.text().catch(() => '');
-        await this._recordGlFailure(tenantId, paymentId, `gl-service create failed: HTTP ${jeResp.status} ${errText}`);
+      const apControlAccountNumber = await resolveGlAccountCode(this.glServiceUrl, tenantId, vendor.defaultGlAccount, serviceToken);
+      if (!apControlAccountNumber) {
+        await this._recordGlFailure(tenantId, paymentId, `Vendor's default GL account ${vendor.defaultGlAccount} could not be resolved to an account number`);
         return null;
       }
-      const je = await jeResp.json() as { id: string };
-      await fetch(`${this.glServiceUrl}/api/v1/gl/journal-entries/${je.id}/post`, { method: 'POST', headers }).catch(() => null);
-      return je.id;
+      const bankAccountNumber = await resolveGlAccountCode(this.glServiceUrl, tenantId, bankAccount.glAccountId, serviceToken);
+      if (!bankAccountNumber) {
+        await this._recordGlFailure(tenantId, paymentId, `Bank account's GL account ${bankAccount.glAccountId} could not be resolved to an account number`);
+        return null;
+      }
+
+      // NARROW SCOPE SIMPLIFICATION (disclosed) — see invoice-approval-
+      // service.ts's AP_DEFAULT_STORE_ID: apar-service has no per-payment
+      // store dimension today.
+      const envelope = buildApPaymentPostedEnvelope({
+        paymentId,
+        tenantId,
+        legalEntityId: tenantId, // see ap-payment-envelope.ts's doc-comment — single-entity-per-tenant default
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        paymentDate: paymentDate ?? invoice.invoiceDate,
+        amount: invoice.totalAmount,
+        apControlAccountNumber,
+        bankAccountNumber,
+        storeId: 'AP-CENTRAL',
+      }, correlationId);
+
+      const result = await this.postingEnginePort.submit(envelope);
+      if (!result.ok) {
+        await this._recordGlFailure(tenantId, paymentId, result.failureReason ?? 'posting engine submission failed');
+        return null;
+      }
+      return result.journalEntryId ?? null;
     } catch (err: any) {
       await this._recordGlFailure(tenantId, paymentId, err?.message ?? 'Unknown error');
       return null;

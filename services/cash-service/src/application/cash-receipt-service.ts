@@ -6,6 +6,7 @@ import { validateTenders, TenderInput } from '../domain/cash-receipt';
 import { canIssueReceipt, canVoidDirect, DrawerStatus, Violation } from '../domain/cash-drawer';
 import { toCents, centsToDollars } from '../domain/money';
 import { ReceiptSequenceService } from './receipt-sequence-service';
+import { CashReceiptPostingPort } from './cash-receipt-posting-consumer';
 
 export class ReceiptInputError extends Error {
   readonly status = 400;
@@ -92,6 +93,7 @@ export class ReceiptService {
     @inject('PrismaClient') private readonly prisma: PrismaClient,
     @inject('IEventPublisher') private readonly events: IEventPublisher,
     @inject('ReceiptSequenceService') private readonly sequence: ReceiptSequenceService,
+    @inject('CashReceiptPostingPort') private readonly posting: CashReceiptPostingPort,
   ) {}
 
   /**
@@ -212,6 +214,15 @@ export class ReceiptService {
       } catch {
         /* outbox row already durable */
       }
+
+      // CE-07/S052 real accounting consumer (D-S023-04) — best-effort,
+      // never blocks or fails the receipt itself.
+      await this.posting.submit({
+        tenantId: dto.tenantId, entityId: dto.entityId, receiptId, receiptNumber: alloc.receiptNumber,
+        totalAmount: centsToDollars(totalCents), currency: dto.currency ?? drawer.currency,
+        sourceDocType: dto.sourceDocType, sourceDocId: dto.sourceDocId,
+        businessDate: drawer.businessDate.toISOString().slice(0, 10),
+      });
 
       return { ...created, idempotent: false };
     } catch (err: any) {

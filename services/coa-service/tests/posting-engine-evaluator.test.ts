@@ -13,7 +13,7 @@ const TENANT = 'tenant-a';
 const ENTITY = 'entity-1';
 
 function envelope(amount = 250) {
-  return assertEnvelopeShape(certificationEnvelope({ tenantId: TENANT, eventId: 'evt-1', amount }));
+  return assertEnvelopeShape(certificationEnvelope({ tenantId: TENANT, entityId: ENTITY, eventId: 'evt-1', amount }));
 }
 
 describe('S020 condition operators', () => {

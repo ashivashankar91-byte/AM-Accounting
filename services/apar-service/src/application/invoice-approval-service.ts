@@ -1,6 +1,8 @@
 import { inject, injectable } from 'tsyringe';
-import { IEventPublisher } from '@amacc/shared-kernel';
+import { IEventPublisher, setTenantContextOnConnection } from '@amacc/shared-kernel';
 import { ApprovalRuleService, ANY_APPROVER_ROLE } from './approval-rule-service';
+import { PostingEnginePort } from './posting-engine-port';
+import { buildApInvoiceAcceptedEnvelope, ResolvedInvoiceLineForEnvelope } from './ap-invoice-envelope';
 
 // ── DTOs ─────────────────────────────────────────────────────────────────────
 
@@ -70,16 +72,25 @@ export class ApprovalValidationError extends Error {
 /**
  * S041 — Invoice Approval Matrix workflow. Sits directly on top of S039's
  * VendorInvoice.status (SUBMITTED -> PENDING_APPROVAL -> APPROVED/REJECTED).
- * On final-tier approval, creates + submits the AP liability GL journal
- * entry (Dr expense/asset lines from the invoice, Cr the vendor's AP
- * control account) via HTTP to gl-service — mirrors the FinanceChargeJob
- * cross-service posting pattern. The entry is left at PENDING_REVIEW; S041
- * never force-calls approveJournalEntry itself (that gate — agent review or
- * GlSource.autoPost — belongs to gl-service per PO-DEC-001). GL posting
- * failure does not roll back the approval decision (same non-blocking/
- * retry-later philosophy as the EOM archive step) — approvalGlEntryId stays
- * null and a GL_POSTING_FAILED audit event is recorded; retryGlPosting()
- * lets a caller retry later.
+ *
+ * CE-07 (single authoritative ledger decision): on final-tier approval,
+ * submits a canonical `ap.invoice.accepted` event to coa-service's S019/S020
+ * posting engine, which evaluates the tenant's governed rule pack and
+ * posts the resulting balanced journal (Dr expense/asset lines from the
+ * invoice, Cr the vendor's AP control account) through gl-service's
+ * EXISTING, certified posting door — never a direct gl-service call from
+ * this service anymore. The entry is left at PENDING_REVIEW; this service
+ * never force-approves it (that gate — agent review or GlSource.autoPost —
+ * belongs to gl-service per PO-DEC-001, and the posting engine's own
+ * GlPostingBridge never bypasses it either). Posting failure does not roll
+ * back the approval decision (same non-blocking/retry-later philosophy as
+ * the EOM archive step) — approvalGlEntryId stays null and a
+ * GL_POSTING_FAILED audit event is recorded; retryGlPosting() lets a caller
+ * retry later. Still resolves GL account NUMBERS via a read-only gl-service
+ * GET (the accounts referenced by invoice lines/Vendor.defaultGlAccount are
+ * gl-service ids, not account-number strings the posting engine needs) —
+ * this is a read, never a GL write, and mirrors manual-payment-service's
+ * own established `GET /gl/accounts/:id` pattern.
  */
 @injectable()
 export class InvoiceApprovalService {
@@ -89,7 +100,22 @@ export class InvoiceApprovalService {
     @inject('PrismaClient') private readonly prisma: any,
     @inject('IEventPublisher') private readonly eventPublisher: IEventPublisher,
     @inject(ApprovalRuleService) private readonly ruleService: ApprovalRuleService,
+    @inject('PostingEnginePort') private readonly postingEnginePort: PostingEnginePort,
   ) {}
+
+  /** Read-only account-number resolution against gl-service's own accounts table — never a GL write. Returns null (never throws) so callers can fail the posting attempt cleanly. */
+  private async _resolveAccountCode(tenantId: string, glAccountId: string, serviceToken?: string): Promise<string | null> {
+    try {
+      const headers: Record<string, string> = { 'x-tenant-id': tenantId };
+      if (serviceToken) headers['authorization'] = `Bearer ${serviceToken}`;
+      const res = await fetch(`${this.glServiceUrl}/api/v1/gl/accounts/${glAccountId}`, { headers });
+      if (!res.ok) return null;
+      const account = await res.json() as { code?: string };
+      return account.code ?? null;
+    } catch {
+      return null;
+    }
+  }
 
   async getInstance(tenantId: string, invoiceId: string) {
     const instance = await this.prisma.apInvoiceApprovalInstance.findFirst({
@@ -108,6 +134,7 @@ export class InvoiceApprovalService {
     const tiers = await this.ruleService.resolveTiers(tenantId, Number(invoice.totalAmount));
 
     const instance = await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, tenantId); // CE-07 discovery: interactive $transaction runs on its own connection, separate from the base client's RLS middleware — see rls-middleware.ts.
       const created = await tx.apInvoiceApprovalInstance.create({
         data: {
           tenantId, invoiceId, status: 'PENDING',
@@ -153,6 +180,7 @@ export class InvoiceApprovalService {
     const isFinalTier = remainingAfterThis === 0;
 
     const result = await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, tenantId); // CE-07 discovery: interactive $transaction runs on its own connection, separate from the base client's RLS middleware — see rls-middleware.ts.
       await tx.apInvoiceApprovalStep.update({ where: { id: step.id }, data: { status: 'APPROVED', decidedBy: actor, decidedAt: new Date(), note: dto.note ?? null } });
 
       if (isFinalTier) {
@@ -194,6 +222,7 @@ export class InvoiceApprovalService {
     }
 
     await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, tenantId); // CE-07 discovery: interactive $transaction runs on its own connection, separate from the base client's RLS middleware — see rls-middleware.ts.
       await tx.apInvoiceApprovalStep.update({ where: { id: step.id }, data: { status: 'REJECTED', decidedBy: actor, decidedAt: new Date(), note: dto.reason } });
       await tx.apInvoiceApprovalStep.updateMany({
         where: { instanceId: instance.id, status: 'PENDING' },
@@ -229,12 +258,20 @@ export class InvoiceApprovalService {
         return null;
       }
 
-      // controlNumber = invoiceNumber on every line, so schedule-service (if
-      // the AP control account is configured with a scheduleCode) creates an
-      // open item keyed to this specific invoice — S043A's manual payment
-      // relieves it by the same controlNumber. See gl-service GLAccount
-      // scheduleCode / JOURNAL_ENTRY_POSTED outbox event.
-      const debitLines: Array<{ glAccountId: string; debit: number; credit: number; memo: string; controlNumber: string }> = [];
+      // NARROW SCOPE SIMPLIFICATION (disclosed, not silently narrowed):
+      // apar-service's VendorInvoice has no storeId/rooftop dimension in its
+      // schema today (AP invoices are processed centrally, not per-store).
+      // The posting engine's DSL requires a non-empty storeId dimension on
+      // every line (BR013-5) — 'AP-CENTRAL' is a fixed, documented default
+      // until a real per-invoice store dimension is added to apar-service,
+      // not a per-tenant configured value.
+      const AP_DEFAULT_STORE_ID = 'AP-CENTRAL';
+
+      // Resolve every referenced gl-service account id -> account NUMBER —
+      // the posting engine's rule pack resolves accounts by number, never
+      // by a raw gl-service/apar-service id (see ap-invoice-envelope.ts's
+      // doc-comment). Read-only; never a GL write.
+      const resolvedLines: ResolvedInvoiceLineForEnvelope[] = [];
       for (const line of fullInvoice.lines) {
         let glAccountId = line.glAccountId;
         if (!glAccountId && line.poLineId) {
@@ -245,41 +282,48 @@ export class InvoiceApprovalService {
           await this._auditGlFailure(tenantId, fullInvoice.id, actor, `Invoice line ${line.id} has no resolvable GL account`, correlationId);
           return null;
         }
-        debitLines.push({ glAccountId, debit: Number(line.lineTotal), credit: 0, memo: line.description, controlNumber: fullInvoice.invoiceNumber });
+        const accountNumber = await this._resolveAccountCode(tenantId, glAccountId, serviceToken);
+        if (!accountNumber) {
+          await this._auditGlFailure(tenantId, fullInvoice.id, actor, `Invoice line ${line.id}'s GL account ${glAccountId} could not be resolved to an account number`, correlationId);
+          return null;
+        }
+        resolvedLines.push({ id: line.id, description: line.description, lineTotal: line.lineTotal, accountNumber, storeId: AP_DEFAULT_STORE_ID });
       }
-      debitLines.push({ glAccountId: vendor.defaultGlAccount, debit: 0, credit: Number(fullInvoice.totalAmount), memo: `AP liability — invoice ${fullInvoice.invoiceNumber}`, controlNumber: fullInvoice.invoiceNumber });
-
-      const headers: Record<string, string> = { 'Content-Type': 'application/json', 'x-tenant-id': tenantId };
-      if (serviceToken) headers['authorization'] = `Bearer ${serviceToken}`;
-
-      const jeResp = await fetch(`${this.glServiceUrl}/api/v1/gl/journal-entries`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          entryDate: new Date().toISOString(),
-          description: `AP invoice ${fullInvoice.invoiceNumber} approved — liability`,
-          source: 'AP',
-          sourceRef: fullInvoice.invoiceNumber.slice(0, 8),
-          lines: debitLines,
-        }),
-      });
-
-      if (!jeResp.ok) {
-        const errText = await jeResp.text().catch(() => '');
-        await this._auditGlFailure(tenantId, fullInvoice.id, actor, `gl-service create failed: HTTP ${jeResp.status} ${errText}`, correlationId);
+      const creditAccountNumber = await this._resolveAccountCode(tenantId, vendor.defaultGlAccount, serviceToken);
+      if (!creditAccountNumber) {
+        await this._auditGlFailure(tenantId, fullInvoice.id, actor, `Vendor's default GL account ${vendor.defaultGlAccount} could not be resolved to an account number`, correlationId);
         return null;
       }
-      const je = await jeResp.json() as { id: string };
 
-      // Submit for review (DRAFT -> PENDING_REVIEW). Never force-approve —
-      // that gate belongs to gl-service's own agent-review/autoPost logic.
-      await fetch(`${this.glServiceUrl}/api/v1/gl/journal-entries/${je.id}/post`, { method: 'POST', headers }).catch(() => null);
+      // controlNumber = invoiceNumber (see ap-invoice-envelope.ts's
+      // payload.sourceDocId), so schedule-service (if the AP control account
+      // is configured with a scheduleCode) creates an open item keyed to
+      // this specific invoice — S043A's manual payment relieves it by the
+      // same controlNumber. See gl-service GLAccount scheduleCode /
+      // JOURNAL_ENTRY_POSTED outbox event.
+      const envelope = buildApInvoiceAcceptedEnvelope({
+        id: fullInvoice.id,
+        tenantId,
+        legalEntityId: tenantId, // see VendorInvoiceForEnvelope's doc-comment — single-entity-per-tenant default
+        invoiceNumber: fullInvoice.invoiceNumber,
+        invoiceDate: fullInvoice.invoiceDate,
+        totalAmount: fullInvoice.totalAmount,
+        lines: resolvedLines,
+        creditAccountNumber,
+        storeId: AP_DEFAULT_STORE_ID,
+      }, correlationId);
 
-      await this.prisma.vendorInvoice.update({ where: { id: fullInvoice.id }, data: { approvalGlEntryId: je.id } });
+      const result = await this.postingEnginePort.submit(envelope);
+      if (!result.ok) {
+        await this._auditGlFailure(tenantId, fullInvoice.id, actor, result.failureReason ?? 'posting engine submission failed', correlationId);
+        return null;
+      }
+
+      await this.prisma.vendorInvoice.update({ where: { id: fullInvoice.id }, data: { approvalGlEntryId: result.journalEntryId } });
       await this.prisma.auditOutboxEvent.create({
-        data: { tenantId, docType: 'VendorInvoice', docId: fullInvoice.id, action: 'GL_LIABILITY_POSTED', before: null, after: { journalEntryId: je.id }, actor, correlationId: correlationId ?? null },
+        data: { tenantId, docType: 'VendorInvoice', docId: fullInvoice.id, action: 'GL_LIABILITY_POSTED', before: null, after: { journalEntryId: result.journalEntryId, journalNumber: result.journalNumber }, actor, correlationId: correlationId ?? null },
       });
-      return je.id;
+      return result.journalEntryId;
     } catch (err: any) {
       await this._auditGlFailure(tenantId, invoice.id, actor, err?.message ?? 'Unknown error', correlationId);
       return null;

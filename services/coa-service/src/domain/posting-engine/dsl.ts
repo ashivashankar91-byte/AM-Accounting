@@ -59,8 +59,40 @@ export interface PostingGroup {
   groupId: string;
   /** Canonical path into the event envelope resolving to a decimal amount (dollars). */
   baseAmountPath: string;
+  /**
+   * Exactly one of `debitAllocations` (non-empty) or `debitLineItemsPath`
+   * must be set — never both. `debitAllocations` covers the common case
+   * (a fixed, rule-authored set of accounts). `debitLineItemsPath` covers
+   * source events whose debit side is inherently dynamic per-occurrence
+   * (e.g. an AP invoice with N lines, each independently GL-coded) — see
+   * CE-07 Requirement C: apar-service's AP invoice liability posting has
+   * exactly this shape and cannot be expressed as a fixed allocation set.
+   */
   debitAllocations: PostingAllocation[];
+  /**
+   * Canonical path into the event envelope resolving to a non-empty array
+   * of `{accountNumber: string, storeId: string, deptCode?: string|null,
+   * amount: number|string}` items. Each item becomes exactly one debit
+   * line at its own dollar amount (never basis-point allocated — the
+   * event itself already carries the exact per-line amount). The sum of
+   * all item amounts must equal the group's baseAmountPath-resolved total
+   * (enforced at blueprint-generation time via LINE_ITEMS_TOTAL_MISMATCH),
+   * keeping the balance invariant identical to the fixed-allocation case.
+   * Per-item account existence/postability/deptCode can only be checked at
+   * posting time (INVALID_ACCOUNT/MISSING_DEPT_CODE), never at rule-pack
+   * validate/activate time, since the accounts are event-driven, not
+   * rule-authored — a documented, narrower validation guarantee than the
+   * fixed-allocation path.
+   */
+  debitLineItemsPath?: string | null;
+  /**
+   * Mirrors `debitLineItemsPath` for the credit side — e.g. an AP invoice
+   * whose liability account varies per-vendor (`Vendor.defaultGlAccount`),
+   * not a single tenant-wide fixed account. Exactly one of
+   * `creditAllocations` (non-empty) or `creditLineItemsPath` must be set.
+   */
   creditAllocations: PostingAllocation[];
+  creditLineItemsPath?: string | null;
 }
 
 export interface JournalBlueprintDefinition {
@@ -110,5 +142,5 @@ export const RULE_PACK_TOP_LEVEL_FIELDS = [
 
 export const RULE_FIELDS = ['ruleId', 'priority', 'description', 'condition', 'blueprint'] as const;
 export const BLUEPRINT_FIELDS = ['memoTemplate', 'postingGroups'] as const;
-export const POSTING_GROUP_FIELDS = ['groupId', 'baseAmountPath', 'debitAllocations', 'creditAllocations'] as const;
+export const POSTING_GROUP_FIELDS = ['groupId', 'baseAmountPath', 'debitAllocations', 'debitLineItemsPath', 'creditAllocations', 'creditLineItemsPath'] as const;
 export const ALLOCATION_FIELDS = ['accountNumber', 'storeId', 'deptCode', 'bp'] as const;

@@ -52,6 +52,7 @@ describe.skipIf(!LIVE_DB_URL)('Live database — cash-service atomicity, idempot
     container.registerInstance('IEventPublisher', noopEvents as any);
     container.register('DrawerService', { useClass: DrawerService });
     container.register('ReceiptSequenceService', { useClass: ReceiptSequenceService });
+    container.registerInstance('CashReceiptPostingPort', { submit: async () => {} } as any);
     container.register('ReceiptService', { useClass: ReceiptService });
     container.register('ToleranceService', { useClass: ToleranceService });
     container.register('BlindCloseService', { useClass: BlindCloseService });

@@ -123,7 +123,7 @@ for svc in tenant-service auth-service coa-service audit-service; do
     # as sole creator) is what actually runs.
     eval "$GEN" \
       | sed -E '/^CREATE TABLE "fiscal_period_transition"/,/^\);$/d; /^CREATE TABLE "adjusting_entry_attestation"/,/^\);$/d; /ON "fiscal_period_transition"/d; /ON "adjusting_entry_attestation"/d; /^ALTER TABLE "fiscal_period_transition" ADD CONSTRAINT/d' \
-      | sed -E '/^CREATE TABLE "posting_rule_pack"/,/^\);$/d; /^CREATE TABLE "posting_rule_pack_version"/,/^\);$/d; /^CREATE TABLE "posting_execution"/,/^\);$/d; /^CREATE TABLE "posting_execution_attempt"/,/^\);$/d; /^CREATE TABLE "posting_exception"/,/^\);$/d; /ON "posting_rule_pack"/d; /ON "posting_rule_pack_version"/d; /ON "posting_execution"/d; /ON "posting_execution_attempt"/d; /ON "posting_exception"/d; /^ALTER TABLE "posting_rule_pack_version" ADD CONSTRAINT/d; /^ALTER TABLE "posting_execution" ADD CONSTRAINT/d; /^ALTER TABLE "posting_execution_attempt" ADD CONSTRAINT/d; /^ALTER TABLE "posting_exception" ADD CONSTRAINT/d' \
+      | sed -E '/^CREATE TABLE "posting_rule_pack"/,/^\);$/d; /^CREATE TABLE "posting_rule_pack_version"/,/^\);$/d; /^CREATE TABLE "posting_execution"/,/^\);$/d; /^CREATE TABLE "posting_execution_attempt"/,/^\);$/d; /^CREATE TABLE "posting_exception"/,/^\);$/d; /^CREATE TABLE "posting_execution_replay"/,/^\);$/d; /ON "posting_rule_pack"/d; /ON "posting_rule_pack_version"/d; /ON "posting_execution"/d; /ON "posting_execution_attempt"/d; /ON "posting_exception"/d; /ON "posting_execution_replay"/d; /^ALTER TABLE "posting_rule_pack_version" ADD CONSTRAINT/d; /^ALTER TABLE "posting_execution" ADD CONSTRAINT/d; /^ALTER TABLE "posting_execution_attempt" ADD CONSTRAINT/d; /^ALTER TABLE "posting_exception" ADD CONSTRAINT/d; /^ALTER TABLE "posting_execution_replay" ADD CONSTRAINT/d' \
       | sed -E 's/^CREATE TABLE "/CREATE TABLE IF NOT EXISTS "/g; s/^CREATE (UNIQUE )?INDEX /CREATE \1INDEX IF NOT EXISTS /g' \
       >> "$COMBINED"
   else
@@ -182,6 +182,22 @@ echo "==> S019/S020: applying posting-engine tables + CHECK constraints + immuta
 echo "    trigger + RLS (excluded from the bootstrap step above; sole creator here)."
 psql -h "$PGHOST" -p "$PGPORT" -U amacc_test -d "$DB_NAME" -v ON_ERROR_STOP=1 \
   -f "$REPO_ROOT/services/coa-service/prisma/migrations/20260729010000_add_posting_engine/migration.sql" >/dev/null
+
+echo "==> S023: applying replay evidence table + widened posting_exception reason-code"
+echo "    CHECK constraint (posting_execution_replay excluded from the bootstrap step"
+echo "    above for the same reason as the posting-engine tables; applied in order,"
+echo "    after its own posting_execution FK target already exists)."
+psql -h "$PGHOST" -p "$PGPORT" -U amacc_test -d "$DB_NAME" -v ON_ERROR_STOP=1 \
+  -f "$REPO_ROOT/services/coa-service/prisma/migrations/20260801010000_posting_engine_s023_replay_and_taxonomy/migration.sql" >/dev/null
+
+echo "==> CE-07: applying single-authoritative-ledger posting_execution status CHECK widening"
+psql -h "$PGHOST" -p "$PGPORT" -U amacc_test -d "$DB_NAME" -v ON_ERROR_STOP=1 \
+  -f "$REPO_ROOT/services/coa-service/prisma/migrations/20260802010000_posting_engine_single_ledger_status/migration.sql" >/dev/null
+
+echo "==> CE-07: applying legal-entity isolation (posting_rule_pack.entity_id,"
+echo "    posting_execution.entity_id, and both widened unique constraints)."
+psql -h "$PGHOST" -p "$PGPORT" -U amacc_test -d "$DB_NAME" -v ON_ERROR_STOP=1 \
+  -f "$REPO_ROOT/services/coa-service/prisma/migrations/20260802020000_ce07_rule_pack_entity_isolation/migration.sql" >/dev/null
 
 echo ""
 echo "==> ready. Connection strings:"

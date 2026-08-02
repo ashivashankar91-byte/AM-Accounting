@@ -10,6 +10,7 @@ import { ReceiptService } from './application/cash-receipt-service';
 import { ToleranceService } from './application/tolerance-service';
 import { BlindCloseService } from './application/blind-close-service';
 import { ReconciliationService } from './application/reconciliation-service';
+import { CashReceiptPostingPort, HttpCashReceiptPostingPort, NoopCashReceiptPostingPort } from './application/cash-receipt-posting-consumer';
 import { RabbitMQEventPublisher } from './infrastructure/event-publisher';
 import {
   IEventPublisher, HttpAuthzClient, AuthzClient,
@@ -45,6 +46,14 @@ async function bootstrap() {
   container.registerInstance<AuthzClient>('AuthzClient', new HttpAuthzClient({
     onError: (err, req) => logger.error({ err, permission: req.permissionKey }, 'authz/check failed'),
   }));
+
+  // CE-07/S052 (D-S023-04) — real accounting consumer for cash.receipt.issued.
+  // Falls back to a no-op when AMACC_JWT_SECRET isn't configured.
+  const postingJwtSecret = process.env['AMACC_JWT_SECRET'];
+  container.registerInstance<CashReceiptPostingPort>(
+    'CashReceiptPostingPort',
+    postingJwtSecret ? new HttpCashReceiptPostingPort(postingJwtSecret) : new NoopCashReceiptPostingPort(),
+  );
 
   container.register('DrawerService', { useClass: DrawerService });
   container.register('ReceiptSequenceService', { useClass: ReceiptSequenceService });

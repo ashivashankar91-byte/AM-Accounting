@@ -15,3 +15,5 @@ export * from './middleware/logger';
 export * from './middleware/health';
 export * from './middleware/circuit-breaker';
 export * from './messaging/event-publisher';
+export * from './posting/canonical-event-envelope';
+export * from './posting/idempotency-identity';

@@ -17,6 +17,7 @@ function setup() {
   container.registerInstance('IEventPublisher', events as any);
   container.register('DrawerService', { useClass: DrawerService });
   container.register('ReceiptSequenceService', { useClass: ReceiptSequenceService });
+  container.registerInstance('CashReceiptPostingPort', { submit: async () => {} } as any);
   container.register('ReceiptService', { useClass: ReceiptService });
   return {
     drawers: container.resolve<DrawerService>('DrawerService'),

@@ -5,6 +5,7 @@ import { container } from 'tsyringe';
 import * as crypto from 'crypto';
 import { postingRecoveryRoutes } from '../src/http/dead-letter-routes';
 import { PostingRecoveryQueryService } from '../src/application/posting-recovery-query-service';
+import { DeadLetterIntakeService } from '../src/application/dead-letter-intake-service';
 import { ReplayService } from '../src/application/replay-service';
 import { ReplayReaperService } from '../src/application/replay-reaper-service';
 import { PostingRecoveryConflictError, PostingRecoveryNotFoundError, PostingRecoveryValidationError } from '../src/domain/errors';
@@ -147,6 +148,18 @@ describe('Posting Recovery routes — authorization, masking, pagination, errors
       reapStaleReplays: vi.fn(async (_tenantId: string, _actor: string, _staleAfterMs?: number) => ({
         reapedCaseIds: ['dl-stuck-1', 'dl-stuck-2'],
       })),
+    } as any);
+    // CE-07/S023 (D-S023-23) — real production case-intake route. Same
+    // "route wiring only" fake as ReplayService/ReplayReaperService above;
+    // real intake idempotency/validation logic is covered by
+    // tests/dead-letter-intake-service.test.ts.
+    container.registerInstance(DeadLetterIntakeService, {
+      intake: vi.fn(async (envelope: any, _actor: string) => {
+        if (envelope?.event?.eventId === MISSING_ID) {
+          throw new PostingRecoveryValidationError('EVENT_CONTRACT_INVALID', 'event.tenantId is required');
+        }
+        return { deadLetterId: 'dl-new-1', created: true };
+      }),
     } as any);
     app = Fastify();
     await app.register(postingRecoveryRoutes, { prefix: '/posting-recovery/v1' });
@@ -377,5 +390,41 @@ describe('Posting Recovery routes — authorization, masking, pagination, errors
   it('allows reap-stale-replays for CONTROLLER', async () => {
     const res = await app.inject({ method: 'POST', url: '/posting-recovery/v1/dead-letters/reap-stale-replays', headers: authed('CONTROLLER') });
     expect(res.statusCode).toBe(200);
+  });
+
+  // ── CE-07/S023 (D-S023-23) — real production case intake ──────────────────
+
+  const VALID_INTAKE_BODY = {
+    envelope: {
+      event: {
+        eventId: 'evt-intake-1', tenantId: 'tenant-a', eventType: 'ap.invoice.accepted', sourceSystem: 'coa-service',
+        correlationId: 'corr-1', occurredAt: '2026-08-01T00:00:00.000Z', postingIdempotencyKey: 'tenant-a:evt-intake-1',
+        payload: { foo: 'bar' }, payloadHash: 'irrelevant-for-this-fake',
+      },
+      failure: { failureCategory: 'RULE_NOT_FOUND', failureCode: 'NO_RULE_MATCH', failureStage: 'RULE_RESOLUTION', failureMessage: 'no rule matched', occurredAt: '2026-08-01T00:00:00.000Z' },
+    },
+  };
+
+  it('rejects an unauthenticated case-intake request with 401', async () => {
+    const res = await app.inject({ method: 'POST', url: '/posting-recovery/v1/dead-letters', headers: { 'x-tenant-id': 'tenant-a' }, payload: VALID_INTAKE_BODY });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('denies case intake to a caller without posting-recovery.case.create (e.g. ACCOUNTANT)', async () => {
+    const res = await app.inject({ method: 'POST', url: '/posting-recovery/v1/dead-letters', headers: authed('ACCOUNTANT'), payload: VALID_INTAKE_BODY });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('allows case intake for ADMIN and returns 201 with the created case id', async () => {
+    const res = await app.inject({ method: 'POST', url: '/posting-recovery/v1/dead-letters', headers: authed('ADMIN'), payload: VALID_INTAKE_BODY });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ deadLetterId: 'dl-new-1', created: true });
+  });
+
+  it('surfaces a validation error from the intake service as 400', async () => {
+    const badBody = { envelope: { event: { ...VALID_INTAKE_BODY.envelope.event, eventId: MISSING_ID }, failure: VALID_INTAKE_BODY.envelope.failure } };
+    const res = await app.inject({ method: 'POST', url: '/posting-recovery/v1/dead-letters', headers: authed('ADMIN'), payload: badBody });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('EVENT_CONTRACT_INVALID');
   });
 });

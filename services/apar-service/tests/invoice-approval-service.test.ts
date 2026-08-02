@@ -1,6 +1,13 @@
 /**
  * AMACC-CH04 S041 — InvoiceApprovalService domain tests. Mocked-Prisma unit
- * tests; the GL posting HTTP call is verified via a mocked global fetch.
+ * tests.
+ *
+ * CE-07 (single authoritative ledger decision): the AP liability posting no
+ * longer calls gl-service's journal-entries endpoints directly — it submits
+ * a canonical event through PostingEnginePort (mocked here, real behavior
+ * covered by coa-service's own live-db gl-posting-bridge-live.test.ts). A
+ * mocked global fetch still covers the read-only gl-service account-number
+ * resolution GET calls (_resolveAccountCode) this service still makes.
  */
 import 'reflect-metadata';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -13,6 +20,7 @@ import {
   WrongApproverRoleError,
 } from '../src/application/invoice-approval-service';
 import { ANY_APPROVER_ROLE } from '../src/application/approval-rule-service';
+import type { PostingEnginePort } from '../src/application/posting-engine-port';
 
 const TENANT_ID = 'tenant-approval-svc';
 const INVOICE_ID = 'invoice-1';
@@ -20,9 +28,16 @@ const VENDOR_ID = 'vendor-1';
 
 const BASE_INVOICE = {
   id: INVOICE_ID, tenantId: TENANT_ID, vendorId: VENDOR_ID, invoiceNumber: 'INV-500',
-  totalAmount: '1000.00', status: 'SUBMITTED', version: 1,
+  totalAmount: '1000.00', status: 'SUBMITTED', version: 1, invoiceDate: new Date('2026-06-01'),
   lines: [{ id: 'line-1', glAccountId: 'gl-expense-1', poLineId: null, description: 'Widget', lineTotal: '1000.00' }],
 };
+
+function makePostingEnginePort(overrides: Partial<PostingEnginePort> = {}): PostingEnginePort {
+  return {
+    submit: vi.fn().mockResolvedValue({ ok: true, status: 'PENDING_REVIEW', journalEntryId: 'je-123', journalNumber: 'JE-000123' }),
+    ...overrides,
+  };
+}
 
 function makePrisma(overrides: any = {}) {
   const client: any = {
@@ -44,6 +59,11 @@ function makePrisma(overrides: any = {}) {
     auditOutboxEvent: { create: vi.fn().mockResolvedValue({}) },
     outboxEvent: { create: vi.fn().mockResolvedValue({}) },
   };
+  // CE-07 — setTenantContextOnConnection() (first statement inside every
+  // interactive $transaction callback, see rls-middleware.ts) issues a raw
+  // SET on the transaction's own connection; the mock tx here is this same
+  // client object (see $transaction below), so it needs the method too.
+  client.$executeRawUnsafe = vi.fn().mockResolvedValue(undefined);
   client.$transaction = async (arg: any) => (typeof arg === 'function' ? arg(client) : Promise.all(arg));
   return client;
 }
@@ -55,13 +75,13 @@ const fakeRuleService: any = {
 describe('InvoiceApprovalService.start', () => {
   it('throws when the invoice is not SUBMITTED', async () => {
     const prisma = makePrisma({ invoiceFindFirst: vi.fn().mockResolvedValue({ ...BASE_INVOICE, status: 'DRAFT' }) });
-    const svc = new InvoiceApprovalService(prisma, {} as any, fakeRuleService);
+    const svc = new InvoiceApprovalService(prisma, {} as any, fakeRuleService, makePostingEnginePort());
     await expect(svc.start(TENANT_ID, INVOICE_ID)).rejects.toBeInstanceOf(InvoiceNotSubmittedError);
   });
 
   it('creates an approval instance with tiers from the rule service and moves the invoice to PENDING_APPROVAL', async () => {
     const prisma = makePrisma();
-    const svc = new InvoiceApprovalService(prisma, {} as any, fakeRuleService);
+    const svc = new InvoiceApprovalService(prisma, {} as any, fakeRuleService, makePostingEnginePort());
     const instance = await svc.start(TENANT_ID, INVOICE_ID);
     expect(instance.steps).toHaveLength(1);
     expect(prisma.vendorInvoice.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'PENDING_APPROVAL' }) }));
@@ -84,61 +104,77 @@ describe('InvoiceApprovalService.approveStep', () => {
 
   let fetchMock: ReturnType<typeof vi.fn>;
   beforeEach(() => {
-    fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: 'je-123' }) });
+    // Serves the read-only GET /gl/accounts/:id calls _resolveAccountCode
+    // makes (line accounts + vendor's default GL account) — never a GL write.
+    fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ code: 'MOCK-ACCT' }) });
     vi.stubGlobal('fetch', fetchMock);
   });
   afterEach(() => vi.unstubAllGlobals());
 
   it('throws ApprovalInstanceNotFoundError when no instance exists', async () => {
     const prisma = makePrisma({ instanceFindFirst: vi.fn().mockResolvedValue(null) });
-    const svc = new InvoiceApprovalService(prisma, {} as any, fakeRuleService);
+    const svc = new InvoiceApprovalService(prisma, {} as any, fakeRuleService, makePostingEnginePort());
     await expect(svc.approveStep(TENANT_ID, INVOICE_ID, { version: 1 })).rejects.toBeInstanceOf(ApprovalInstanceNotFoundError);
   });
 
   it('throws ApprovalConflictError on a version mismatch', async () => {
     const prisma = makePrisma({ instanceFindFirst: vi.fn().mockResolvedValue(singleStepInstance) });
-    const svc = new InvoiceApprovalService(prisma, {} as any, fakeRuleService);
+    const svc = new InvoiceApprovalService(prisma, {} as any, fakeRuleService, makePostingEnginePort());
     await expect(svc.approveStep(TENANT_ID, INVOICE_ID, { version: 99 })).rejects.toBeInstanceOf(ApprovalConflictError);
   });
 
   it('throws WrongApproverRoleError when the actor role does not match the required tier role', async () => {
     const prisma = makePrisma({ instanceFindFirst: vi.fn().mockResolvedValue(twoStepInstance) });
-    const svc = new InvoiceApprovalService(prisma, {} as any, fakeRuleService);
+    const svc = new InvoiceApprovalService(prisma, {} as any, fakeRuleService, makePostingEnginePort());
     await expect(svc.approveStep(TENANT_ID, INVOICE_ID, { version: 1 }, 'user-1', 'CONTROLLER')).rejects.toBeInstanceOf(WrongApproverRoleError);
   });
 
   it('allows ANY_APPROVER tiers regardless of actor role', async () => {
     const prisma = makePrisma({ instanceFindFirst: vi.fn().mockResolvedValue(singleStepInstance) });
-    const svc = new InvoiceApprovalService(prisma, {} as any, fakeRuleService);
+    const svc = new InvoiceApprovalService(prisma, {} as any, fakeRuleService, makePostingEnginePort());
     const result = await svc.approveStep(TENANT_ID, INVOICE_ID, { version: 1 }, 'user-1', 'WHATEVER_ROLE');
     expect(prisma.vendorInvoice.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'APPROVED' }) }));
   });
 
-  it('finalizes on the last tier and posts the AP liability GL entry', async () => {
+  it('finalizes on the last tier and submits the AP liability event through the posting engine', async () => {
     const prisma = makePrisma({ instanceFindFirst: vi.fn().mockResolvedValue(singleStepInstance) });
-    const svc = new InvoiceApprovalService(prisma, {} as any, fakeRuleService);
+    const postingEnginePort = makePostingEnginePort();
+    const svc = new InvoiceApprovalService(prisma, {} as any, fakeRuleService, postingEnginePort);
     await svc.approveStep(TENANT_ID, INVOICE_ID, { version: 1 }, 'user-1', ANY_APPROVER_ROLE, 'fake-token');
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining('/api/v1/gl/journal-entries'),
-      expect.objectContaining({ method: 'POST' }),
+      expect.stringContaining('/api/v1/gl/accounts/'),
+      expect.anything(),
     );
+    expect(postingEnginePort.submit).toHaveBeenCalledWith(expect.objectContaining({ eventType: 'ap.invoice.accepted.v1', tenantId: TENANT_ID }));
     expect(prisma.vendorInvoice.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ approvalGlEntryId: 'je-123' }) }));
   });
 
   it('does not finalize (no GL posting) when more tiers remain', async () => {
     const prisma = makePrisma({ instanceFindFirst: vi.fn().mockResolvedValue(twoStepInstance) });
-    const svc = new InvoiceApprovalService(prisma, {} as any, fakeRuleService);
+    const svc = new InvoiceApprovalService(prisma, {} as any, fakeRuleService, makePostingEnginePort());
     await svc.approveStep(TENANT_ID, INVOICE_ID, { version: 1 }, 'user-1', 'ACCOUNTANT');
     expect(fetchMock).not.toHaveBeenCalled();
     expect(prisma.vendorInvoice.update).not.toHaveBeenCalled();
   });
 
-  it('does not fail the approval decision when GL posting fails — records a GL_POSTING_FAILED audit event instead', async () => {
+  it('does not fail the approval decision when account-code resolution fails — records a GL_POSTING_FAILED audit event instead', async () => {
     fetchMock.mockResolvedValue({ ok: false, status: 500, text: async () => 'gl-service down' });
     const prisma = makePrisma({ instanceFindFirst: vi.fn().mockResolvedValue(singleStepInstance) });
-    const svc = new InvoiceApprovalService(prisma, {} as any, fakeRuleService);
+    const svc = new InvoiceApprovalService(prisma, {} as any, fakeRuleService, makePostingEnginePort());
     const instance = await svc.approveStep(TENANT_ID, INVOICE_ID, { version: 1 }, 'user-1', ANY_APPROVER_ROLE);
     expect(instance).toBeDefined();
+    expect(prisma.auditOutboxEvent.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ action: 'GL_POSTING_FAILED' }),
+    }));
+  });
+
+  it('does not fail the approval decision when the posting engine rejects the submission — records a GL_POSTING_FAILED audit event instead', async () => {
+    const prisma = makePrisma({ instanceFindFirst: vi.fn().mockResolvedValue(singleStepInstance) });
+    const postingEnginePort = makePostingEnginePort({ submit: vi.fn().mockResolvedValue({ ok: false, failureReason: 'INVALID_ACCOUNT' }) });
+    const svc = new InvoiceApprovalService(prisma, {} as any, fakeRuleService, postingEnginePort);
+    const instance = await svc.approveStep(TENANT_ID, INVOICE_ID, { version: 1 }, 'user-1', ANY_APPROVER_ROLE);
+    expect(instance).toBeDefined();
+    expect(prisma.vendorInvoice.update).not.toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ approvalGlEntryId: expect.anything() }) }));
     expect(prisma.auditOutboxEvent.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ action: 'GL_POSTING_FAILED' }),
     }));
@@ -149,7 +185,7 @@ describe('InvoiceApprovalService.approveStep', () => {
       instanceFindFirst: vi.fn().mockResolvedValue(singleStepInstance),
       vendorFindFirst: vi.fn().mockResolvedValue({ id: VENDOR_ID, tenantId: TENANT_ID, defaultGlAccount: null }),
     });
-    const svc = new InvoiceApprovalService(prisma, {} as any, fakeRuleService);
+    const svc = new InvoiceApprovalService(prisma, {} as any, fakeRuleService, makePostingEnginePort());
     await svc.approveStep(TENANT_ID, INVOICE_ID, { version: 1 }, 'user-1', ANY_APPROVER_ROLE);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(prisma.auditOutboxEvent.create).toHaveBeenCalledWith(expect.objectContaining({
@@ -166,13 +202,13 @@ describe('InvoiceApprovalService.rejectStep', () => {
 
   it('requires a reason', async () => {
     const prisma = makePrisma({ instanceFindFirst: vi.fn().mockResolvedValue(singleStepInstance) });
-    const svc = new InvoiceApprovalService(prisma, {} as any, fakeRuleService);
+    const svc = new InvoiceApprovalService(prisma, {} as any, fakeRuleService, makePostingEnginePort());
     await expect(svc.rejectStep(TENANT_ID, INVOICE_ID, { version: 1, reason: '' })).rejects.toThrow();
   });
 
   it('rejects the instance and marks the invoice REJECTED', async () => {
     const prisma = makePrisma({ instanceFindFirst: vi.fn().mockResolvedValue(singleStepInstance) });
-    const svc = new InvoiceApprovalService(prisma, {} as any, fakeRuleService);
+    const svc = new InvoiceApprovalService(prisma, {} as any, fakeRuleService, makePostingEnginePort());
     await svc.rejectStep(TENANT_ID, INVOICE_ID, { version: 1, reason: 'Missing backup documentation' });
     expect(prisma.vendorInvoice.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'REJECTED' }) }));
     expect(prisma.apInvoiceApprovalStep.updateMany).toHaveBeenCalled();
@@ -180,7 +216,7 @@ describe('InvoiceApprovalService.rejectStep', () => {
 
   it('throws ApprovalAlreadyDecidedError when the instance is already decided', async () => {
     const prisma = makePrisma({ instanceFindFirst: vi.fn().mockResolvedValue({ ...singleStepInstance, status: 'APPROVED' }) });
-    const svc = new InvoiceApprovalService(prisma, {} as any, fakeRuleService);
+    const svc = new InvoiceApprovalService(prisma, {} as any, fakeRuleService, makePostingEnginePort());
     await expect(svc.rejectStep(TENANT_ID, INVOICE_ID, { version: 1, reason: 'x' })).rejects.toBeInstanceOf(ApprovalAlreadyDecidedError);
   });
 });

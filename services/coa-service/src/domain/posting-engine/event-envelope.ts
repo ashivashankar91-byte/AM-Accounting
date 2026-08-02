@@ -13,6 +13,16 @@ import { canonicalStringify } from './strict-json';
 export interface SourceEventEnvelope {
   eventId: string;
   tenantId: string;
+  // CE-07 legal-entity isolation defect (found live in CE-11 certification):
+  // candidate rule-pack selection in submitEvent/simulateEvent previously
+  // filtered by tenantId + eventType only, never by legal entity, so a
+  // second entity in the same tenant with an ACTIVE pack for the same event
+  // type could be silently selected for the wrong entity's event. The
+  // envelope must carry the authoritative legal entity itself — never
+  // inferred from the rule pack that happens to match. Matches the naming
+  // apar-service's own envelope builders (ap-invoice-envelope.ts,
+  // ap-payment-envelope.ts) already use.
+  legalEntityId: string;
   eventType: string;
   eventSchemaVersion: string;
   occurredAt: string; // ISO 8601 — set by the source system, not resolved here
@@ -28,7 +38,7 @@ export interface SourceEventEnvelope {
 }
 
 export const REQUIRED_ENVELOPE_FIELDS = [
-  'eventId', 'tenantId', 'eventType', 'eventSchemaVersion', 'occurredAt', 'publishedAt',
+  'eventId', 'tenantId', 'legalEntityId', 'eventType', 'eventSchemaVersion', 'occurredAt', 'publishedAt',
   'sourceSystem', 'sourceEntityType', 'sourceEntityId', 'correlationId', 'businessDate', 'payload',
 ] as const;
 
@@ -53,6 +63,7 @@ export function assertEnvelopeShape(candidate: unknown): SourceEventEnvelope {
   return {
     eventId: String(obj['eventId']),
     tenantId: String(obj['tenantId']),
+    legalEntityId: String(obj['legalEntityId']),
     eventType: String(obj['eventType']),
     eventSchemaVersion: String(obj['eventSchemaVersion']),
     occurredAt: String(obj['occurredAt']),
@@ -78,6 +89,7 @@ export function hashEnvelope(envelope: SourceEventEnvelope): string {
   const identityView = {
     eventId: envelope.eventId,
     tenantId: envelope.tenantId,
+    legalEntityId: envelope.legalEntityId,
     eventType: envelope.eventType,
     eventSchemaVersion: envelope.eventSchemaVersion,
     occurredAt: envelope.occurredAt,

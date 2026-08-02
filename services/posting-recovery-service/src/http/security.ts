@@ -18,6 +18,9 @@ export const POSTING_RECOVERY_PERMISSIONS = {
   /// R1 S021-completion slice — see
   /// services/auth-service/prisma/migrations/20260730020000_extend_authz_catalog_s021_posting_recovery_replay.
   REPLAY_EXECUTE: 'posting-recovery.replay.execute',
+  /// CE-07/S023 (D-S023-23) — real case intake from coa-service's posting
+  /// engine. See services/auth-service/prisma/migrations/20260801030000_extend_authz_catalog_s023_case_intake.
+  CASE_CREATE: 'posting-recovery.case.create',
 } as const;
 
 export function getTenantId(request: any, statusCode = 400): TenantId {

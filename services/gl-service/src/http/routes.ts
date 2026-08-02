@@ -85,6 +85,8 @@ const CreateJournalEntrySchema = z.object({
   sourceRef: z.string().max(8).optional(),
   priorPeriodAdjustment: z.boolean().optional(),
   adjustmentReason: z.string().optional(),
+  /** CE-07 — authoritative idempotency identity. See JournalEntry.idempotencyKey (journal-repository.ts). */
+  idempotencyKey: z.string().max(200).optional(),
   lines: z.array(
     z.object({
       glAccountId: z.string().uuid().optional(),
@@ -109,6 +111,7 @@ const CreateJournalEntrySchema = z.object({
       laborType: z.string().optional(),
       costType: z.string().optional(),
       applyCd: z.string().max(1).optional(),
+      applyNumber: z.string().max(20).optional(),
       controlNumber: z.string().max(20).optional(),
       // S2-05: new JournalLine fields
       companyCode: z.string().max(2).optional(),
@@ -451,8 +454,27 @@ export async function glRoutes(app: FastifyInstance) {
     // Resolve accountCode → glAccountId if needed
     const needsCodeResolution = body.lines.some((l: any) => !l.glAccountId && l.accountCode);
     if (needsCodeResolution) {
-      const accounts = await svc.getAccounts(tenantId);
-      const codeMap = new Map(accounts.map((a: any) => [a.code, a.id]));
+      const neededCodes = (body.lines as any[]).filter((l) => !l.glAccountId && l.accountCode).map((l) => l.accountCode);
+      // CE-07 — a short, bounded retry against the SAME documented,
+      // pre-existing RLS-under-connection-pooling limitation
+      // (packages/shared-kernel/src/tenancy/rls-middleware.ts's own
+      // doc-comment: "Prisma's connection pool does not give an ironclad
+      // guarantee" that a SET-before-query lands on the same physical
+      // connection under high concurrency). CE-07's own authoritative
+      // idempotency work is the first caller to legitimately issue truly
+      // concurrent HTTP requests directly against this route (previously
+      // every caller was already serialized upstream by coa-service's own
+      // claim) — under that load a request can transiently see zero/partial
+      // rows for a tenant that genuinely has the account configured. A
+      // GENUINELY missing account still fails every attempt; this only
+      // self-heals the transient case.
+      let codeMap = new Map<string, string>();
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const accounts = await svc.getAccounts(tenantId);
+        codeMap = new Map(accounts.map((a: any) => [a.code, a.id]));
+        if (neededCodes.every((code) => codeMap.has(code))) break;
+        if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 15 * (attempt + 1)));
+      }
       for (const line of body.lines as any[]) {
         if (!line.glAccountId && line.accountCode) {
           const resolved = codeMap.get(line.accountCode);

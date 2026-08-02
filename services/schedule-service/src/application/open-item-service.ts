@@ -105,6 +105,22 @@ export class OpenItemService {
       if (!schedule) return 'SKIPPED_SCHEDULE_NOT_FOUND';
 
       const amount = new Prisma.Decimal(event.amount);
+      // gl-service's outbox payload carries the RAW signed netAmount (debit
+      // - credit — see gl-schedule-outbox-live.test.ts's own assertion that
+      // a pure-credit control-account line is negative). The open-item
+      // ledger (originalAmount/remainingBalance/applyAmount below), by
+      // contrast, has always used a positive-magnitude convention — every
+      // pre-existing fixture in open-item-service.test.ts posts and applies
+      // positive amounts, and deriveStatus/applyAmount's over-application
+      // bounds are only correct for a non-negative originalAmount. Real
+      // end-to-end certification against a liability (credit-normal)
+      // control account is what first exercised this gap: a raw negative
+      // netAmount reaching applyAmount would move the balance the WRONG
+      // direction and always dead-end in OVER_APPLICATION. Normalize to the
+      // ledger's own magnitude convention here, at the one boundary where
+      // gl-service's signed convention meets it — ScheduleDetail (the
+      // legacy-parity audit trail) still stores the raw signed `amount`.
+      const ledgerAmount = amount.abs();
       const transactionDate = new Date(event.transactionDate);
 
       const detail = await tx.scheduleDetail.create({
@@ -145,9 +161,9 @@ export class OpenItemService {
             itemNumber,
             glAccountNumber: event.glAccountNumber,
             journalSource: event.journalSource,
-            originalAmount: amount,
+            originalAmount: ledgerAmount,
             appliedAmount: new Prisma.Decimal(0),
-            remainingBalance: amount,
+            remainingBalance: ledgerAmount,
             status: 'OPEN',
             transactionDate,
             description: event.description,
@@ -161,7 +177,7 @@ export class OpenItemService {
         // write below, and every REVERSED/MANUAL_APPLY write), so an open
         // item's full audit history can be queried by its one real id
         // rather than a composite string only 'CREATED' used.
-        await this._audit(tx, tenantId, 'SCHEDULE_OPEN_ITEM', created.id, 'CREATED', null, { originalAmount: event.amount }, 'JOURNAL_ENTRY_POSTED', sourceCorrelationId);
+        await this._audit(tx, tenantId, 'SCHEDULE_OPEN_ITEM', created.id, 'CREATED', null, { originalAmount: ledgerAmount.toFixed(2) }, 'JOURNAL_ENTRY_POSTED', sourceCorrelationId);
         return 'NEW_ITEM';
       }
 
@@ -194,7 +210,7 @@ export class OpenItemService {
       const target = candidates[0];
       let newRemaining: Prisma.Decimal;
       try {
-        newRemaining = applyAmount(target.originalAmount, target.remainingBalance, amount);
+        newRemaining = applyAmount(target.originalAmount, target.remainingBalance, ledgerAmount);
       } catch {
         console.warn(
           `[schedule-service] S026: posted application would over-apply open item ${target.id} — schedule=${event.scheduleNumber} control=${event.controlNumber} applyNumber=${event.applyNumber} amount=${event.amount} remaining=${target.remainingBalance} (tenant ${tenantId}). Not applied; ScheduleDetail line retained, discrepancy will surface at next tie-out.`,
@@ -210,7 +226,7 @@ export class OpenItemService {
           openItemId: target.id,
           scheduleNumber: event.scheduleNumber!,
           controlNumber: event.controlNumber,
-          amount,
+          amount: ledgerAmount,
           journalEntryId: event.journalEntryId,
           sourceCorrelationId,
           isManual: false,

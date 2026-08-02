@@ -18,6 +18,15 @@ export interface BlueprintLine {
   dr: number; // dollars
   cr: number; // dollars
   memo?: string | null;
+  /**
+   * Set only on a dynamic line item (debitLineItemsPath/creditLineItemsPath)
+   * whose event payload item carries an `applyNumber` — the schedule open-
+   * item business reference (ScheduleOpenItem.itemNumber) this line relieves
+   * via gl-service's applyCd='#' mechanism, instead of creating a new open
+   * item. Never set on a fixed rule-authored allocation (those have no
+   * per-occurrence relief target).
+   */
+  applyNumber?: string | null;
 }
 
 export interface RuleMatch {
@@ -69,34 +78,97 @@ function allocateCents(totalCents: number, bps: number[]): number[] {
   return out;
 }
 
-/** Generate the balanced blueprint lines for a matched rule against a resolved event. Stable order: groups, then debit allocations, then credit allocations, all in definition-array order. */
+interface RawDebitLineItem {
+  accountNumber: string;
+  storeId: string;
+  deptCode?: string | null;
+  amount: number | string;
+  /** Schedule open-item relief reference — see BlueprintLine's doc-comment. */
+  applyNumber?: string | null;
+}
+
+function isRawDebitLineItem(v: unknown): v is RawDebitLineItem {
+  if (typeof v !== 'object' || v === null) return false;
+  const o = v as Record<string, unknown>;
+  return typeof o['accountNumber'] === 'string' && o['accountNumber'].trim() !== ''
+    && typeof o['storeId'] === 'string' && o['storeId'].trim() !== ''
+    && (o['amount'] !== undefined && o['amount'] !== null)
+    && (o['deptCode'] === undefined || o['deptCode'] === null || typeof o['deptCode'] === 'string')
+    && (o['applyNumber'] === undefined || o['applyNumber'] === null || typeof o['applyNumber'] === 'string');
+}
+
+/** Resolve a `debitLineItemsPath`/`creditLineItemsPath` into one BlueprintLine per array item — see dsl.ts's PostingGroup doc comment. */
+function resolveLineItems(fieldName: string, path: string, envelope: SourceEventEnvelope, memo: string | null, side: 'dr' | 'cr'): { lines: BlueprintLine[]; totalCents: number } {
+  const raw = resolveEnvelopePath(envelope, path);
+  if (!Array.isArray(raw) || raw.length === 0) {
+    throw new BlueprintResolutionError('MISSING_LINE_ITEMS', `${fieldName} "${path}" did not resolve to a non-empty array.`);
+  }
+  const lines: BlueprintLine[] = [];
+  let totalCents = 0;
+  raw.forEach((item, i) => {
+    if (!isRawDebitLineItem(item)) {
+      throw new BlueprintResolutionError('INVALID_LINE_ITEM_SHAPE', `${fieldName} "${path}"[${i}] is missing accountNumber/storeId/amount.`);
+    }
+    const cents = toCents(item.amount);
+    if (Number.isNaN(cents) || cents <= 0) {
+      throw new BlueprintResolutionError('INVALID_AMOUNT', `${fieldName} "${path}"[${i}].amount did not resolve to a positive decimal amount.`);
+    }
+    totalCents += cents;
+    lines.push({
+      accountNumber: item.accountNumber, storeId: item.storeId, deptCode: item.deptCode ?? null,
+      dr: side === 'dr' ? centsToDollars(cents) : 0, cr: side === 'cr' ? centsToDollars(cents) : 0, memo,
+      applyNumber: item.applyNumber ?? null,
+    });
+  });
+  return { lines, totalCents };
+}
+
+/** Generate the balanced blueprint lines for a matched rule against a resolved event. Stable order: groups, then debit allocations/line items, then credit allocations, all in definition-array order. */
 export function generateBlueprint(rule: RuleDefinition, envelope: SourceEventEnvelope): BlueprintLine[] {
   const lines: BlueprintLine[] = [];
   for (const group of rule.blueprint.postingGroups) {
     const baseCents = resolveBaseAmountCents(group.baseAmountPath, envelope);
-    const drCents = allocateCents(baseCents, group.debitAllocations.map((a) => a.bp));
-    const crCents = allocateCents(baseCents, group.creditAllocations.map((a) => a.bp));
+    const memo = resolveMemoTemplate(rule.blueprint.memoTemplate, envelope);
 
-    group.debitAllocations.forEach((alloc, i) => {
-      lines.push({
-        accountNumber: alloc.accountNumber,
-        storeId: alloc.storeId,
-        deptCode: alloc.deptCode ?? null,
-        dr: centsToDollars(drCents[i]),
-        cr: 0,
-        memo: resolveMemoTemplate(rule.blueprint.memoTemplate, envelope),
+    if (group.debitLineItemsPath) {
+      const { lines: itemLines, totalCents } = resolveLineItems('debitLineItemsPath', group.debitLineItemsPath, envelope, memo, 'dr');
+      if (totalCents !== baseCents) {
+        throw new BlueprintResolutionError('LINE_ITEMS_TOTAL_MISMATCH', `debitLineItemsPath "${group.debitLineItemsPath}" items total ${centsToDollars(totalCents)} but baseAmountPath "${group.baseAmountPath}" resolved to ${centsToDollars(baseCents)}.`);
+      }
+      lines.push(...itemLines);
+    } else {
+      const drCents = allocateCents(baseCents, group.debitAllocations.map((a) => a.bp));
+      group.debitAllocations.forEach((alloc, i) => {
+        lines.push({
+          accountNumber: alloc.accountNumber,
+          storeId: alloc.storeId,
+          deptCode: alloc.deptCode ?? null,
+          dr: centsToDollars(drCents[i]),
+          cr: 0,
+          memo,
+        });
       });
-    });
-    group.creditAllocations.forEach((alloc, i) => {
-      lines.push({
-        accountNumber: alloc.accountNumber,
-        storeId: alloc.storeId,
-        deptCode: alloc.deptCode ?? null,
-        dr: 0,
-        cr: centsToDollars(crCents[i]),
-        memo: resolveMemoTemplate(rule.blueprint.memoTemplate, envelope),
+    }
+
+    if (group.creditLineItemsPath) {
+      const { lines: itemLines, totalCents } = resolveLineItems('creditLineItemsPath', group.creditLineItemsPath, envelope, memo, 'cr');
+      if (totalCents !== baseCents) {
+        throw new BlueprintResolutionError('LINE_ITEMS_TOTAL_MISMATCH', `creditLineItemsPath "${group.creditLineItemsPath}" items total ${centsToDollars(totalCents)} but baseAmountPath "${group.baseAmountPath}" resolved to ${centsToDollars(baseCents)}.`);
+      }
+      lines.push(...itemLines);
+    } else {
+      const crCents = allocateCents(baseCents, group.creditAllocations.map((a) => a.bp));
+      group.creditAllocations.forEach((alloc, i) => {
+        lines.push({
+          accountNumber: alloc.accountNumber,
+          storeId: alloc.storeId,
+          deptCode: alloc.deptCode ?? null,
+          dr: 0,
+          cr: centsToDollars(crCents[i]),
+          memo,
+        });
       });
-    });
+    }
   }
   return lines;
 }

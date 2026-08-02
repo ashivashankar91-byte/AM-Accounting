@@ -39,12 +39,17 @@ export function Drawer({
 
   return (
     <>
-      <div className="fixed inset-0 bg-slate-900/20 z-40" onClick={onClose} aria-hidden="true" />
+      {/* z-[60]/z-[61]: the app shell's global floating chat assistant (T1Sidebar)
+          renders its toggle button at a fixed bottom-right z-50, on every
+          authenticated page — the exact corner a drawer's own action-button
+          footer occupies. Any consumer passing `actions` (this is the first
+          one) would otherwise have its buttons silently unclickable there. */}
+      <div className="fixed inset-0 bg-slate-900/20 z-[60]" onClick={onClose} aria-hidden="true" />
       <div
         data-testid={testId}
         role="dialog"
         aria-label={title}
-        className="fixed right-0 top-0 h-screen w-[400px] max-w-full bg-white border-l border-slate-200 z-50 flex flex-col shadow-xl"
+        className="fixed right-0 top-0 h-screen w-[400px] max-w-full bg-white border-l border-slate-200 z-[61] flex flex-col shadow-xl"
       >
         <div className="flex items-start justify-between px-5 py-4 border-b border-slate-200 flex-shrink-0">
           <div>

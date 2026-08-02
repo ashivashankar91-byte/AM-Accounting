@@ -1,5 +1,5 @@
 import { inject, injectable } from 'tsyringe';
-import { IEventPublisher } from '@amacc/shared-kernel';
+import { IEventPublisher, setTenantContextOnConnection } from '@amacc/shared-kernel';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -302,6 +302,7 @@ export class VendorService {
     }
 
     const vendor = await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, dto.tenantId); // CE-07 discovery: interactive $transaction runs on its own connection, separate from the base client's RLS middleware — see rls-middleware.ts.
       const vendorNumber = dto.vendorNumber
         ? normalizeVendorNumber(dto.vendorNumber)
         : await this._nextVendorNumber(tx, dto.tenantId);
@@ -421,6 +422,7 @@ export class VendorService {
     // new plaintext tax-ID writes; banking edit is out of scope).
 
     const vendor = await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, tenantId); // CE-07 discovery: interactive $transaction runs on its own connection, separate from the base client's RLS middleware — see rls-middleware.ts.
       const v = await tx.vendor.update({ where: { id }, data });
       await this._audit(tenantId, 'Vendor', id, 'UPDATED', redactForAudit(current), redactForAudit(v), actor, tx, correlationId);
       return v;
@@ -441,6 +443,7 @@ export class VendorService {
     }
 
     const vendor = await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, tenantId); // CE-07 discovery: interactive $transaction runs on its own connection, separate from the base client's RLS middleware — see rls-middleware.ts.
       const v = await tx.vendor.update({
         where: { id },
         data: {
@@ -469,6 +472,7 @@ export class VendorService {
     }
 
     const vendor = await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, tenantId); // CE-07 discovery: interactive $transaction runs on its own connection, separate from the base client's RLS middleware — see rls-middleware.ts.
       const v = await tx.vendor.update({
         where: { id },
         data: {
@@ -517,6 +521,7 @@ export class VendorService {
     }
 
     const vendor = await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, tenantId); // CE-07 discovery: interactive $transaction runs on its own connection, separate from the base client's RLS middleware — see rls-middleware.ts.
       const v = await tx.vendor.update({
         where: { id },
         data: {

@@ -8,7 +8,9 @@ import type { AuthzClient } from './authz-client';
  * path param can supply it so scope-escalation (BR207-4) is enforced, not
  * just tenant membership.
  */
-export type AuthzScopeExtractor = (request: any) => { entityId?: string | null; storeId?: string | null };
+export type AuthzScopeExtractor = (request: any) =>
+  | { entityId?: string | null; storeId?: string | null }
+  | Promise<{ entityId?: string | null; storeId?: string | null }>;
 
 export interface AuthzGuardOptions {
   getTenantId: (request: any) => string;
@@ -43,7 +45,13 @@ export function createAuthzGuard(client: AuthzClient, options: AuthzGuardOptions
         return;
       }
       const tenantId = options.getTenantId(request);
-      const extra = options.scope?.(request) ?? {};
+      // CE-07 legal-entity isolation defect — scope may now need to resolve
+      // entityId from an already-persisted resource (e.g. a rule-pack
+      // version's own entityId), not just the request shape, so this
+      // extractor may be async. Awaiting a plain (non-Promise) return value
+      // is a no-op, so every pre-existing synchronous scope extractor is
+      // unaffected.
+      const extra = (await options.scope?.(request)) ?? {};
       const result = await client.check({
         userId,
         permissionKey: permission,

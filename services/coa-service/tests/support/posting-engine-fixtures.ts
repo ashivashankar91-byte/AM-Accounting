@@ -68,6 +68,14 @@ export function unbalancedRulePack(opts: RulePackFixtureOptions) {
 
 export interface CertificationEventOptions {
   tenantId: string;
+  // CE-07 legal-entity isolation defect — optional with a fallback so tests
+  // that don't care about entity-scoped candidate matching (e.g. pure hash
+  // equality) don't need to specify one, but any test asserting a rule pack
+  // actually gets selected MUST pass the SAME entityId the pack itself uses
+  // (see validRulePack's own entityId option) — a mismatch here is exactly
+  // the class of bug this fix closes, so getting it wrong fails loudly
+  // (NO_RULE_MATCH), not silently.
+  entityId?: string;
   eventId: string;
   amount: number;
   sourceEntityId?: string;
@@ -80,6 +88,7 @@ export function certificationEnvelope(opts: CertificationEventOptions) {
   return {
     eventId: opts.eventId,
     tenantId: opts.tenantId,
+    legalEntityId: opts.entityId ?? 'certification-default-entity',
     eventType: CERT_EVENT_TYPE,
     eventSchemaVersion: CERT_SCHEMA_VERSION,
     occurredAt: opts.occurredAt ?? '2026-06-15T10:00:00.000Z',

@@ -66,6 +66,11 @@ function makePrisma(overrides: Partial<{
     auditOutboxEvent: { create: vi.fn().mockResolvedValue({}) },
     outboxEvent: { create: vi.fn().mockResolvedValue({}) },
   };
+  // CE-07 — setTenantContextOnConnection() (first statement inside every
+  // interactive $transaction callback, see rls-middleware.ts) issues a raw
+  // SET on the transaction's own connection; the mock tx here is this same
+  // client object (see $transaction below), so it needs the method too.
+  client.$executeRawUnsafe = vi.fn().mockResolvedValue(undefined);
   client.$transaction = async (arg: any) => (typeof arg === 'function' ? arg(client) : Promise.all(arg));
   return client;
 }

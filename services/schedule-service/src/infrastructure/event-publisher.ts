@@ -66,9 +66,26 @@ export class RabbitMQEventPublisher implements IEventPublisher {
         try {
           const parsed: DomainEvent = JSON.parse(msg.content.toString());
           const hs = this.handlers.get(parsed.type) ?? [];
-          await Promise.allSettled(hs.map((h) => h(parsed)));
+          const results = await Promise.allSettled(hs.map((h) => h(parsed)));
+          const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+          if (failures.length > 0) {
+            // CE-07 — a handler rejection was previously silently ACKed
+            // (Promise.allSettled never rejects, and ack() ran
+            // unconditionally afterward), permanently discarding the
+            // message as if it had succeeded — with no log, no retry, no
+            // dead-letter evidence. Never fabricate success: log the real
+            // reason and nack to the already-configured dead-letter
+            // exchange (deadLetterExchange: 'amacc.events.dlx' on this
+            // queue, set up above but previously never actually reached).
+            for (const f of failures) {
+              console.error({ eventType: parsed.type, err: f.reason }, '[schedule-service] JOURNAL_ENTRY_POSTED handler failed — nacking to DLX, not silently discarding');
+            }
+            this.channel!.nack(msg, false, false);
+            return;
+          }
           this.channel!.ack(msg);
         } catch (err) {
+          console.error({ err }, '[schedule-service] failed to parse/dispatch JOURNAL_ENTRY_POSTED message — nacking to DLX');
           this.channel!.nack(msg, false, false);
         }
       });

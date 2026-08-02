@@ -1,5 +1,5 @@
 import { inject, injectable } from 'tsyringe';
-import { IEventPublisher } from '@amacc/shared-kernel';
+import { IEventPublisher, setTenantContextOnConnection } from '@amacc/shared-kernel';
 import { InvoiceMatchService } from './invoice-match-service';
 
 // ── DTOs ─────────────────────────────────────────────────────────────────────
@@ -229,6 +229,7 @@ export class InvoiceService {
     const totalAmount = Math.round((lineTotals.reduce((s, t) => s + t, 0) + freightAmount) * 100) / 100;
 
     const invoice = await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, dto.tenantId); // CE-07 discovery: interactive $transaction runs on its own connection, separate from the base client's RLS middleware — see rls-middleware.ts.
       const created = await tx.vendorInvoice.create({
         data: {
           tenantId: dto.tenantId,
@@ -295,6 +296,7 @@ export class InvoiceService {
     if (dto.lines) this.validateLines(dto.lines);
 
     const invoice = await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, tenantId); // CE-07 discovery: interactive $transaction runs on its own connection, separate from the base client's RLS middleware — see rls-middleware.ts.
       const data: any = { version: current.version + 1, updatedBy: actor };
       if (dto.dueDate !== undefined) data.dueDate = dto.dueDate;
       if (dto.notes !== undefined) data.notes = dto.notes;
@@ -351,6 +353,7 @@ export class InvoiceService {
     });
 
     const invoice = await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, tenantId); // CE-07 discovery: interactive $transaction runs on its own connection, separate from the base client's RLS middleware — see rls-middleware.ts.
       await tx.vendorInvoiceMatchResult.create({
         data: {
           tenantId, invoiceId: id, matchType: result.matchType, status: result.status,
@@ -385,6 +388,7 @@ export class InvoiceService {
     }
 
     const invoice = await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, tenantId); // CE-07 discovery: interactive $transaction runs on its own connection, separate from the base client's RLS middleware — see rls-middleware.ts.
       const isOverride = current.matchStatus === 'EXCEPTION' && !!dto.override;
       const updated = await tx.vendorInvoice.update({
         where: { id },
@@ -423,6 +427,7 @@ export class InvoiceService {
     if (!dto.reason?.trim()) throw new InvoiceValidationError('REASON_REQUIRED', 'A reason is required to void an invoice');
 
     const invoice = await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, tenantId); // CE-07 discovery: interactive $transaction runs on its own connection, separate from the base client's RLS middleware — see rls-middleware.ts.
       const updated = await tx.vendorInvoice.update({
         where: { id },
         data: { status: 'VOID', version: current.version + 1, voidedAt: new Date(), voidedBy: actor, voidReason: dto.reason },

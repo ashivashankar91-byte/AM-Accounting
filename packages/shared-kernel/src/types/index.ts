@@ -303,6 +303,7 @@ export interface JournalLine {
   departmentCode?: string;
   controlNumber?: string;
   applyCd?: string;
+  applyNumber?: string;
   companyCode?: string;
   applyToCost?: number;
   unitCount?: number;
@@ -344,6 +345,8 @@ export interface JournalEntry {
   adjustmentReason?: string;
   lines: JournalLine[];
   dealProductLines?: DealProductLine[];
+  /** CE-07 — authoritative idempotency identity for callers that must never create a second journal for the same canonical event on retry/crash-recovery. Null for callers that supplied none (most existing producers). */
+  idempotencyKey?: string | null;
 }
 
 export interface EOMClose {
@@ -553,6 +556,8 @@ export interface CreateJournalEntryDTO {
   priorPeriodAdjustment?: boolean;
   adjustmentReason?: string;
   lines: CreateJournalLineDTO[];
+  /** CE-07 — authoritative idempotency identity. See JournalEntry.idempotencyKey. */
+  idempotencyKey?: string;
 }
 
 export interface CreateJournalLineDTO {
@@ -564,6 +569,7 @@ export interface CreateJournalLineDTO {
   departmentCode?: string;
   controlNumber?: string;
   applyCd?: string;
+  applyNumber?: string;
   companyCode?: string;
   applyToCost?: number;
   unitCount?: number;

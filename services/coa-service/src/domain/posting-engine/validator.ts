@@ -273,9 +273,32 @@ export async function validateRulePackSource(
         err(findings, 'INVALID_EVENT_PATH', `${groupPath}.baseAmountPath`, 'baseAmountPath is missing or references a disallowed path.', ruleId);
       }
 
-      const sides: Array<['debitAllocations' | 'creditAllocations', string]> = [
-        ['debitAllocations', 'debit'], ['creditAllocations', 'credit'],
+      // {debit,credit}LineItemsPath is mutually exclusive with its matching
+      // *Allocations field — see dsl.ts's PostingGroup doc comment.
+      // Validated structurally here; per-item account existence can only be
+      // checked at posting time (the accounts are event-driven, not
+      // rule-authored).
+      const sideModes: Array<['debitAllocations' | 'creditAllocations', 'debitLineItemsPath' | 'creditLineItemsPath', string]> = [
+        ['debitAllocations', 'debitLineItemsPath', 'debit'], ['creditAllocations', 'creditLineItemsPath', 'credit'],
       ];
+      const lineItemsSides = new Set<'debitAllocations' | 'creditAllocations'>();
+      for (const [allocField, itemsField, label] of sideModes) {
+        const hasAllocations = Array.isArray(gobj[allocField]) && (gobj[allocField] as unknown[]).length > 0;
+        const itemsPath = gobj[itemsField];
+        const hasItemsPath = itemsPath !== undefined && itemsPath !== null;
+        if (hasAllocations && hasItemsPath) {
+          err(findings, `BOTH_${label.toUpperCase()}_MODES_SET`, `${groupPath}.${allocField}`, `A posting group may set ${allocField} OR ${itemsField}, never both.`, ruleId);
+        } else if (!hasAllocations && !hasItemsPath) {
+          err(findings, `MISSING_${label.toUpperCase()}_ALLOCATION`, `${groupPath}.${allocField}`, `At least one ${label} allocation, or ${itemsField}, is required.`, ruleId);
+        } else if (hasItemsPath && !isAllowedPath(itemsPath)) {
+          err(findings, 'INVALID_EVENT_PATH', `${groupPath}.${itemsField}`, `${itemsField} is missing or references a disallowed path.`, ruleId);
+        }
+        if (hasItemsPath) lineItemsSides.add(allocField);
+      }
+
+      const sides: Array<['debitAllocations' | 'creditAllocations', string]> = (['debitAllocations', 'creditAllocations'] as const)
+        .filter((f) => !lineItemsSides.has(f))
+        .map((f) => [f, f === 'debitAllocations' ? 'debit' : 'credit']);
       for (const [field, label] of sides) {
         const allocations = gobj[field];
         if (!Array.isArray(allocations) || allocations.length === 0) {

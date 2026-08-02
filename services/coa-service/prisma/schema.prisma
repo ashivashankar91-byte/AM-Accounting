@@ -685,14 +685,21 @@ model RecurringTemplateGeneration {
 model PostingRulePack {
   id        String   @id @default(uuid())
   tenantId  String   @map("tenant_id")
+  // CE-07 legal-entity isolation defect — a pack key is only stable identity
+  // WITHIN a legal entity. Two entities in the same tenant configuring the
+  // same packKey independently must get two separate parent rows, never one
+  // shared row whose versions/activation state bleed across entities. See
+  // migration 20260802010000_ce07_rule_pack_entity_isolation.
+  entityId  String   @map("entity_id")
   packKey   String   @map("pack_key")
   createdBy String   @map("created_by")
   createdAt DateTime @default(now()) @map("created_at")
 
   versions PostingRulePackVersion[]
 
-  @@unique([tenantId, packKey])
+  @@unique([tenantId, entityId, packKey])
   @@index([tenantId])
+  @@index([tenantId, entityId])
   @@map("posting_rule_pack")
 }
 
@@ -734,8 +741,18 @@ model PostingRulePackVersion {
   rulePack   PostingRulePack    @relation(fields: [rulePackId], references: [id])
   executions PostingExecution[]
 
-  @@unique([tenantId, packKey, semver])
+  // CE-07 legal-entity isolation defect — (tenantId, packKey, semver) alone
+  // forbids two entities in the same tenant from EVER using the same
+  // packKey+semver pair (e.g. both independently authoring their own
+  // "1.0.0"), which is an explicit certification requirement. entityId join
+  // makes the two entities' version histories fully independent.
+  // Explicit short `map` names — the default Prisma-generated names for
+  // these two exceed Postgres's 63-byte identifier limit and get silently
+  // truncated (confirmed via a live-db apply); pinning them keeps the DDL
+  // deterministic instead of relying on Postgres's own truncation.
+  @@unique([tenantId, entityId, packKey, semver], map: "posting_rule_pack_version_entity_pack_semver_key")
   @@index([tenantId, eventType, status])
+  @@index([tenantId, entityId, eventType, status], map: "posting_rule_pack_version_entity_event_status_idx")
   @@index([tenantId, rulePackId])
   @@map("posting_rule_pack_version")
 }
@@ -750,6 +767,14 @@ model PostingExecution {
   eventId            String    @map("event_id")
   eventType          String    @map("event_type")
   eventSchemaVersion String    @map("event_schema_version")
+  // CE-07 legal-entity isolation defect — denormalized from the envelope's
+  // own legalEntityId at claim time (see event-envelope.ts). Nullable
+  // because historical rows predate this column and because a terminal
+  // NO_RULE_MATCH/REJECTED outcome must still record the intended entity
+  // even when no rule-pack version was ultimately selected — never inferred
+  // from rulePackVersionId, which the entity/cross-entity certification
+  // proves can legitimately be null.
+  entityId           String?   @map("entity_id")
   sourceSystem       String    @map("source_system")
   sourceEntityType   String    @map("source_entity_type")
   sourceEntityId     String    @map("source_entity_id")
@@ -771,11 +796,13 @@ model PostingExecution {
   rulePackVersion PostingRulePackVersion? @relation(fields: [rulePackVersionId], references: [id])
   attempts        PostingExecutionAttempt[]
   exceptions      PostingException[]
+  replays         PostingExecutionReplay[]
 
   @@unique([tenantId, eventId])
   @@index([tenantId, eventType, status])
   @@index([tenantId, correlationId])
   @@index([tenantId, sourceEntityId])
+  @@index([tenantId, entityId])
   @@map("posting_execution")
 }
 
@@ -816,4 +843,33 @@ model PostingException {
   @@index([tenantId, reasonCode])
   @@index([tenantId, executionId])
   @@map("posting_exception")
+}
+
+/// CE-07/S023 (D-S023-25, D-S023-22 narrow scope) — dual-version replay
+/// evidence. One row per authorized replay attempt against an existing
+/// posting_execution row (never a second posting_execution row for the same
+/// (tenantId, eventId) — the execution row itself is updated in place,
+/// exactly like an ordinary posting attempt).
+model PostingExecutionReplay {
+  id                          String    @id @default(uuid())
+  tenantId                    String    @map("tenant_id")
+  executionId                 String    @map("execution_id")
+  originalRulePackVersionId   String?   @map("original_rule_pack_version_id")
+  replayRulePackVersionId     String?   @map("replay_rule_pack_version_id")
+  originalFailureReasonCode   String?   @map("original_failure_reason_code")
+  originalFailureReasonDetail String?   @map("original_failure_reason_detail")
+  replayActor                 String    @map("replay_actor")
+  replayReason                String    @map("replay_reason")
+  originalBusinessDate        DateTime  @map("original_business_date") @db.Date
+  originalAttemptedPeriodId   String?   @map("original_attempted_period_id")
+  currentPostingPeriodId      String?   @map("current_posting_period_id")
+  resultingStatus             String    @map("resulting_status")
+  resultingJournalEntryId     String?   @map("resulting_journal_entry_id")
+  resultingJournalNumber      String?   @map("resulting_journal_number")
+  createdAt                   DateTime  @default(now()) @map("created_at")
+
+  execution PostingExecution @relation(fields: [executionId], references: [id])
+
+  @@index([tenantId, executionId])
+  @@map("posting_execution_replay")
 }

@@ -87,6 +87,7 @@ describe.skipIf(!LIVE_DB_URL)('Live database + real HTTP routes — S052 drawer-
     container.registerInstance<AuthzClient>('AuthzClient', new FakeAuthzClient());
     container.register('DrawerService', { useClass: DrawerService });
     container.register('ReceiptSequenceService', { useClass: ReceiptSequenceService });
+    container.registerInstance('CashReceiptPostingPort', { submit: async () => {} } as any);
     container.register('ReceiptService', { useClass: ReceiptService });
     container.register('ToleranceService', { useClass: ToleranceService });
     container.register('BlindCloseService', { useClass: BlindCloseService });

@@ -19,6 +19,7 @@ import { GoodsReceiptService } from './application/goods-receipt-service';
 import { ApprovalRuleService } from './application/approval-rule-service';
 import { InvoiceApprovalService } from './application/invoice-approval-service';
 import { ManualPaymentService } from './application/manual-payment-service';
+import { PostingEnginePort, HttpPostingEnginePort } from './application/posting-engine-port';
 import {
   IEventPublisher, IAREntryRepository, IAPEntryRepository, OutboxProcessor,
   HttpAuthzClient, AuthzClient, HttpAuditClient, AuditOutboxDrainer, makePrismaAuditOutboxStore,
@@ -74,6 +75,19 @@ async function bootstrap() {
   // routes.ts string-resolve convention used throughout this file).
   container.register(ApprovalRuleService, { useClass: ApprovalRuleService });
   container.register('ApprovalRuleService', { useClass: ApprovalRuleService });
+
+  // CE-07 (single authoritative ledger decision): InvoiceApprovalService's
+  // (S039) outbound seam to coa-service's S019/S020 posting engine. No safe
+  // no-op fallback — posting is the whole point of this seam, so a missing
+  // AMACC_JWT_SECRET fails loudly at startup rather than silently accepting
+  // approvals it can never post (matches coa-service's own GlPostingBridge
+  // registration precedent).
+  const aparJwtSecret = process.env['AMACC_JWT_SECRET'];
+  if (!aparJwtSecret) {
+    throw new Error('FATAL: AMACC_JWT_SECRET environment variable is required for the AP invoice liability posting seam.');
+  }
+  container.registerInstance<PostingEnginePort>('PostingEnginePort', new HttpPostingEnginePort(aparJwtSecret));
+
   container.register('InvoiceApprovalService', { useClass: InvoiceApprovalService });
   container.register('ManualPaymentService', { useClass: ManualPaymentService });
   container.registerInstance<AuthzClient>('AuthzClient', new HttpAuthzClient({

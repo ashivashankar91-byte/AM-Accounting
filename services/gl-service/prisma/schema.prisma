@@ -169,6 +169,17 @@ model JournalEntry {
   isReconciled          Boolean @default(false) @map("is_reconciled")
   /// S7-04: Links to auto-created IC counterpart entry in the other company
   icCounterpartEntryId  String? @map("ic_counterpart_entry_id")
+  /// CE-07 — authoritative idempotency identity for callers (e.g. the
+  /// S019/S020 posting engine's GlPostingBridge) that must never create a
+  /// second journal for the same canonical event on retry/crash-recovery.
+  /// Immutable once set (enforced at the application layer — never updated
+  /// after creation); nullable because most existing callers (manual JE
+  /// entry, finance-charge-job, reversal, etc.) supply no idempotency
+  /// identity and remain unaffected. Uniqueness enforced by a PARTIAL unique
+  /// index (WHERE idempotency_key IS NOT NULL) — see migration
+  /// 20260803010000_add_journal_entry_idempotency_key_gl_svc — so any number
+  /// of legacy NULL rows coexist without conflict.
+  idempotencyKey        String?   @map("idempotency_key")
 
   lines            JournalLine[]
   dealProductLines DealProductLine[]
@@ -207,6 +218,13 @@ model JournalLine {
   costAmount      Decimal? @map("cost_amount") @db.Decimal(15, 2)
   /// @cobol-origin tran.fd TR-APPLY-CD — "#" = use apply number not cost
   applyCd         String?  @map("apply_cd")
+  /// @cobol-origin tran.fd TR-APPLYNO — the open-item business reference this
+  /// line relieves when applyCd = "#" (schedule-service's ScheduleOpenItem.
+  /// itemNumber match). Only meaningful when applyCd = "#"; a schedule-
+  /// relevant line with no applyNumber always creates a NEW open item
+  /// instead of relieving one — see gl-service.ts's JOURNAL_ENTRY_POSTED
+  /// outbox payload construction.
+  applyNumber     String?  @db.VarChar(20) @map("apply_number")
   /// @cobol-origin tran.fd TR-REV-ADJ — "R"=reversal, "A"=adjustment
   revAdjFlag      String?  @map("rev_adj_flag")
   /// S2-05: company code (2-char) for multi-company GL routing

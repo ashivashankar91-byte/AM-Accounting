@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { container } from 'tsyringe';
 import { authMiddleware } from '@amacc/shared-kernel';
 import { PostingRecoveryQueryService, parsePagination, parseSortDir, parseSortField } from '../application/posting-recovery-query-service';
+import { DeadLetterIntakeService } from '../application/dead-letter-intake-service';
 import { FixtureService } from '../application/fixture-service';
 import { ReplayService } from '../application/replay-service';
 import { ReplayReaperService } from '../application/replay-reaper-service';
@@ -42,6 +43,12 @@ function mapError(err: any, reply: any) {
 
 export function resolvePermission(method: string, url: string): string | null {
   if (url.startsWith('/_fixtures')) return null; // test/internal-only, gated separately by environment, not by these permissions
+  // CE-07/S023 (D-S023-23): case intake from coa-service's posting engine.
+  // Gated by its own real permission (posting-recovery.case.create), same as
+  // every other route — a genuine SERVICE-role JWT still passes via
+  // createAuthzGuard's existing signature-verified SERVICE-role bypass; an
+  // ordinary authenticated user without this permission is denied normally.
+  if (url === '/dead-letters' && method === 'POST') return POSTING_RECOVERY_PERMISSIONS.CASE_CREATE;
   if (url === '/dead-letters' && method === 'GET') return POSTING_RECOVERY_PERMISSIONS.QUEUE_READ;
   if (url === '/dead-letters/summary' && method === 'GET') return POSTING_RECOVERY_PERMISSIONS.QUEUE_READ;
   if (url === '/dead-letters/:deadLetterId/audit-timeline' && method === 'GET') return POSTING_RECOVERY_PERMISSIONS.AUDIT_READ;
@@ -97,6 +104,22 @@ export async function postingRecoveryRoutes(app: FastifyInstance) {
   attachRouteSecurity(app, prisma as any, resolvePermission, resolveAudit, 400);
 
   const svc = container.resolve(PostingRecoveryQueryService);
+  const intake = container.resolve(DeadLetterIntakeService);
+
+  // CE-07/S023 (D-S023-23) — real production case intake. Idempotent on
+  // (tenantId, event.eventId): see DeadLetterIntakeService.intake()'s
+  // doc-comment for the exact same-hash/different-hash contract.
+  const IntakeRequestSchema = z.object({ envelope: z.object({}).passthrough(), actor: z.string().optional() });
+  app.post('/dead-letters', async (request, reply) => {
+    try {
+      const body = IntakeRequestSchema.parse(request.body ?? {});
+      const actor = getActor(request) ?? body.actor ?? 'system';
+      const result = await intake.intake(body.envelope as any, actor);
+      return reply.status(result.created ? 201 : 200).send(result);
+    } catch (err) {
+      return mapError(err, reply);
+    }
+  });
 
   app.get('/dead-letters', async (request, reply) => {
     const tenantId = getTenantId(request);

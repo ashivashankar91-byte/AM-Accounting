@@ -34,6 +34,8 @@ import { GLInquiryService } from './application/gl-inquiry-service';
 import { GLSearchService } from './application/gl-search-service';
 import { AnalysisCodeService } from './application/analysis-code-service';
 import { PostingEngineService } from './application/posting-engine-service';
+import { PostingRecoveryPort, HttpPostingRecoveryPort, NoopPostingRecoveryPort } from './application/posting-recovery-port';
+import { GlPostingBridge, HttpGlPostingBridge } from './application/gl-posting-bridge';
 import { RabbitMQEventPublisher } from './infrastructure/event-publisher';
 import {
   IEventPublisher, HttpAuthzClient, AuthzClient,
@@ -114,9 +116,32 @@ async function bootstrap() {
   container.register('GLSearchService', { useClass: GLSearchService });
   container.register('AnalysisCodeService', { useClass: AnalysisCodeService });
 
+  // CE-07/S023 (D-S023-23): outbound seam to posting-recovery-service
+  // (S021). Falls back to a no-op when AMACC_JWT_SECRET isn't configured
+  // (e.g. local dev without posting-recovery-service running) — the
+  // posting_exception row remains the durable record either way.
+  const recoveryJwtSecret = process.env['AMACC_JWT_SECRET'];
+  container.registerInstance<PostingRecoveryPort>(
+    'PostingRecoveryPort',
+    recoveryJwtSecret ? new HttpPostingRecoveryPort(recoveryJwtSecret) : new NoopPostingRecoveryPort(),
+  );
+
+  // CE-07 (single authoritative ledger decision): the posting engine's
+  // outbound seam to gl-service's existing, certified posting door. Unlike
+  // PostingRecoveryPort, there is no safe no-op fallback here — posting is
+  // the engine's core function, so a missing AMACC_JWT_SECRET fails loudly
+  // at startup rather than silently accepting events it can never post.
+  if (!recoveryJwtSecret) {
+    throw new Error('FATAL: AMACC_JWT_SECRET environment variable is required for the posting engine\'s gl-service bridge.');
+  }
+  container.registerInstance<GlPostingBridge>('GlPostingBridge', new HttpGlPostingBridge(recoveryJwtSecret));
+
   // S019/S020: Posting Engine — DSL rule packs + idempotent event-driven
-  // posting orchestration. A client of PostingService.post(), never a second
-  // write path into the ledger.
+  // posting orchestration. SINGLE AUTHORITATIVE LEDGER: a client of
+  // GlPostingBridge (gl-service's existing posting door), never a second
+  // GL implementation. coa-service's own PostingService remains registered
+  // above for its other, unrelated callers (draft/reversal/recurring-template
+  // services) — the posting engine itself no longer depends on it.
   container.register('PostingEngineService', { useClass: PostingEngineService });
 
   // Cache invalidation on config.changed (belt-and-braces; put() also invalidates
