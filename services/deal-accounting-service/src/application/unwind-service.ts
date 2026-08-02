@@ -17,6 +17,8 @@ import { injectable, inject } from 'tsyringe';
 import type { PrismaClient } from '.prisma/deal-accounting-client';
 import { DealRecapPayload } from '../domain/recap';
 import { IJournalReversalClient } from '../infrastructure/journal-reversal-client';
+import { IScheduleServiceClient } from '../infrastructure/schedule-service-client';
+import { CIT_SCHEDULE_NUMBER } from './cit-funding-service';
 import { writePutrOutboxEvent, PUTR_EVENT_TYPES } from '../infrastructure/putr-outbox';
 import { setTenantContextOnConnection } from '@amacc/shared-kernel';
 import { appendAuditReference } from '../infrastructure/audit';
@@ -35,7 +37,26 @@ export class UnwindService {
   constructor(
     @inject('PrismaClient') private readonly prisma: PrismaClient,
     @inject('IJournalReversalClient') private readonly reversalClient: IJournalReversalClient,
+    // Optional — mirrors cit-funding-service.ts's withAuthoritativeBalance:
+    // real deployments register a real HttpScheduleServiceClient; tests that
+    // construct this service directly omit it and get the local DealOpenItem
+    // value only (unchanged from before this fix).
+    @inject('IScheduleServiceClient') private readonly scheduleClient?: IScheduleServiceClient,
   ) {}
+
+  /** Real schedule-service applied-amount for the deal's CIT item when
+   * reachable — authoritative, same as cit-funding-service.ts's inquiry
+   * endpoint — so this funded-unwind refusal gate can never diverge from the
+   * real open-item state once a GL account carries a real scheduleCode. The
+   * local DealOpenItem value is the fallback (never the source of truth) when
+   * schedule-service has no matching item or is unreachable. */
+  private async authoritativeAppliedAmount(tenantId: string, citItem: { originalAmount: any; appliedAmount: any; itemNumber: string }): Promise<number> {
+    if (!this.scheduleClient) return Number(citItem.appliedAmount);
+    const real = await this.scheduleClient.getOpenItems(tenantId, CIT_SCHEDULE_NUMBER, citItem.itemNumber);
+    if (!real || real.length === 0) return Number(citItem.appliedAmount);
+    const remainingBalance = real.reduce((sum, r) => sum + Number(r.remainingBalance), 0);
+    return Number(citItem.originalAmount) - remainingBalance;
+  }
 
   async unwind(input: UnwindDealInput) {
     const trimmedReason = (input.reason ?? '').trim();
@@ -55,10 +76,11 @@ export class UnwindService {
     const citItem = await this.prisma.dealOpenItem.findUnique({
       where: { tenantId_itemType_itemNumber: { tenantId: input.tenantId, itemType: 'CIT', itemNumber: input.dealNumber } },
     });
-    if (citItem && Number(citItem.appliedAmount) > 0) {
+    const appliedAmount = citItem ? await this.authoritativeAppliedAmount(input.tenantId, citItem) : 0;
+    if (citItem && appliedAmount > 0) {
       await appendAuditReference(this.prisma, {
         tenantId: input.tenantId, docType: 'DEAL', docId: deal.id, action: 'UNWIND_REFUSED_FUNDED',
-        after: { dealNumber: input.dealNumber, recapVersion, appliedAmount: citItem.appliedAmount.toString() },
+        after: { dealNumber: input.dealNumber, recapVersion, appliedAmount: appliedAmount.toFixed(2) },
         actor: input.actor,
       });
       const refusal = await this.prisma.dealUnwind.create({
@@ -66,7 +88,7 @@ export class UnwindService {
           id: randomUUID(), tenantId: input.tenantId, dealId: deal.id, recapVersion,
           status: 'REFUSED', reason: trimmedReason,
           refusalCode: 'FUNDED_UNWIND_REFUSED',
-          refusalDetail: `CIT item for deal ${input.dealNumber} has ${citItem.appliedAmount.toString()} already applied (funding received) — unwind refused. Use the S087 recontract path.`,
+          refusalDetail: `CIT item for deal ${input.dealNumber} has ${appliedAmount.toFixed(2)} already applied (funding received) — unwind refused. Use the S087 recontract path.`,
           idempotencyKey, executedBy: input.actor,
         },
       });

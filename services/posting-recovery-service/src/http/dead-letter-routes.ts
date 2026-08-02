@@ -7,7 +7,6 @@ import { DeadLetterIntakeService } from '../application/dead-letter-intake-servi
 import { FixtureService } from '../application/fixture-service';
 import { ReplayService } from '../application/replay-service';
 import { ReplayReaperService } from '../application/replay-reaper-service';
-import { DeadLetterIntakeService } from '../application/dead-letter-intake-service';
 import { PostingRecoveryConflictError, PostingRecoveryNotFoundError, PostingRecoveryValidationError } from '../domain/errors';
 import { attachRouteSecurity, getActor, getTenantId, hasPermission, POSTING_RECOVERY_PERMISSIONS, RouteAuditSpec } from './security';
 
@@ -44,12 +43,12 @@ function mapError(err: any, reply: any) {
 
 export function resolvePermission(method: string, url: string): string | null {
   if (url.startsWith('/_fixtures')) return null; // test/internal-only, gated separately by environment, not by these permissions
-  // CE-07/S023 (D-S023-23): case intake from coa-service's posting engine.
-  // Gated by its own real permission (posting-recovery.case.create), same as
-  // every other route — a genuine SERVICE-role JWT still passes via
-  // createAuthzGuard's existing signature-verified SERVICE-role bypass; an
-  // ordinary authenticated user without this permission is denied normally.
-  if (url === '/dead-letters' && method === 'POST') return POSTING_RECOVERY_PERMISSIONS.CASE_CREATE;
+  // CE-07/S023 (D-S023-23) merged with CE-12's stricter service-to-service
+  // producer boundary: POST /dead-letters is deliberately NOT gated by a
+  // human-RBAC permission here (falls through to null) — a permission grant
+  // must never let a human caller reach this route. The route handler's own
+  // SERVICE-role check is the sole, unconditional gate (see
+  // dead-letter-routes.ts's POST /dead-letters doc-comment).
   if (url === '/dead-letters' && method === 'GET') return POSTING_RECOVERY_PERMISSIONS.QUEUE_READ;
   if (url === '/dead-letters/summary' && method === 'GET') return POSTING_RECOVERY_PERMISSIONS.QUEUE_READ;
   if (url === '/dead-letters/:deadLetterId/audit-timeline' && method === 'GET') return POSTING_RECOVERY_PERMISSIONS.AUDIT_READ;
@@ -107,11 +106,20 @@ export async function postingRecoveryRoutes(app: FastifyInstance) {
   const svc = container.resolve(PostingRecoveryQueryService);
   const intake = container.resolve(DeadLetterIntakeService);
 
-  // CE-07/S023 (D-S023-23) — real production case intake. Idempotent on
-  // (tenantId, event.eventId): see DeadLetterIntakeService.intake()'s
-  // doc-comment for the exact same-hash/different-hash contract.
+  // CE-07/S023 (D-S023-23) case intake, merged with CE-12's stricter
+  // service-to-service producer boundary: this is the seam a source-of-
+  // truth service (coa-service's posting engine, or a CE-12 workstream
+  // service) calls when a posting attempt is REJECTED/FAILED. Restricted to
+  // trusted service-to-service callers (createServiceToken, role SERVICE) —
+  // never reachable from a browser/end user, even a fully-permissioned
+  // human ADMIN. Idempotent on (tenantId, event.eventId): see
+  // DeadLetterIntakeService.intake()'s doc-comment for the exact
+  // same-hash/different-hash contract.
   const IntakeRequestSchema = z.object({ envelope: z.object({}).passthrough(), actor: z.string().optional() });
   app.post('/dead-letters', async (request, reply) => {
+    if ((request as any).user?.role !== 'SERVICE') {
+      return reply.status(403).send({ error: 'SERVICE_CALLERS_ONLY', message: 'POST /dead-letters is a service-to-service producer endpoint.' });
+    }
     try {
       const body = IntakeRequestSchema.parse(request.body ?? {});
       const actor = getActor(request) ?? body.actor ?? 'system';
@@ -250,32 +258,6 @@ export async function postingRecoveryRoutes(app: FastifyInstance) {
         ? await reaperSvc.reapStaleReplays(tenantId, actor, staleAfterMs)
         : await reaperSvc.reapStaleReplays(tenantId, actor);
       return reply.status(200).send(result);
-    } catch (err) {
-      return mapError(err, reply);
-    }
-  });
-
-  // CE-12 (S024/S021 integration) — real, always-on producer-side intake.
-  // Unlike /_fixtures/dead-letters (test/demo-only, env-gated), this is the
-  // production seam a source-of-truth service (e.g. a CE-12 workstream
-  // service) calls when coa-service's posting engine returns REJECTED/
-  // FAILED (most commonly ACCOUNTING_MAPPING_UNRESOLVED — a rule pack row
-  // still pinned to ACCOUNT_MAPPING_VALUES_PENDING). Restricted to trusted
-  // service-to-service callers (createServiceToken, role SERVICE) — never
-  // reachable from a browser/end user, matching coa-service's own
-  // /posting-engine/events producer boundary. Deliberately not listed in
-  // resolvePermission() (falls through to `null` = no human-RBAC permission
-  // check applies to this route at all); the SERVICE-role check below is
-  // the actual gate.
-  app.post('/dead-letters', async (request, reply) => {
-    if ((request as any).user?.role !== 'SERVICE') {
-      return reply.status(403).send({ error: 'SERVICE_CALLERS_ONLY', message: 'POST /dead-letters is a service-to-service producer endpoint.' });
-    }
-    const intake = container.resolve(DeadLetterIntakeService);
-    try {
-      const body = request.body as any;
-      const result = await intake.intake(body?.envelope, getActor(request));
-      return reply.status(result.created ? 201 : 200).send(result);
     } catch (err) {
       return mapError(err, reply);
     }

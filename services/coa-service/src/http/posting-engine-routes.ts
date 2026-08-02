@@ -77,8 +77,6 @@ export const POSTING_ENGINE_PERMISSIONS = {
   SIMULATE_RULE_PACK: 'posting_engine.rule_pack.simulate',
   VIEW_EXECUTION: 'posting_engine.execution.view',
   VIEW_EXCEPTION: 'posting_engine.exception.view',
-  /** D-S023-33 — new capability, added under the existing posting_engine.<noun>.<verb> namespace (S023_PERMISSION_MATRIX.md). */
-  SIMULATE_RULE_PACK: 'posting_engine.rule_pack.simulate',
   /** D-S023-25/28 — replay reuses S021's own existing permission, not a new S023 string (S023_PERMISSION_MATRIX.md). */
   REPLAY_EXECUTE: 'posting-recovery.replay.execute',
 } as const;
