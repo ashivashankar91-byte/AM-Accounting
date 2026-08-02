@@ -4,6 +4,15 @@ import { container } from 'tsyringe';
 import { PayrollService } from '../application/payroll-service';
 import { asTenantId, authMiddleware } from '@amacc/shared-kernel';
 import { commissionRoutes } from './commission-routes';
+import { ce13Routes } from './ce13-routes';
+import { attachPayrollRouteSecurity } from './security';
+import {
+  DuplicatePayrollRunError,
+  SegregationOfDutiesError,
+  MissingGLMappingError,
+  PayrollSourceNotConfiguredError,
+  NonTestTenantRefusedError,
+} from '../domain/errors';
 
 function getTenantId(request: any) {
   const id = request.headers['x-tenant-id'] as string;
@@ -17,6 +26,11 @@ function getUserId(request: any): string {
 
 function handleError(reply: any, err: unknown) {
   const message = err instanceof Error ? err.message : 'Internal error';
+  if (err instanceof DuplicatePayrollRunError) return reply.status(409).send({ error: err.code, message });
+  if (err instanceof SegregationOfDutiesError) return reply.status(403).send({ error: err.code, message });
+  if (err instanceof MissingGLMappingError) return reply.status(422).send({ error: err.code, message });
+  if (err instanceof PayrollSourceNotConfiguredError) return reply.status(422).send({ error: err.code, message });
+  if (err instanceof NonTestTenantRefusedError) return reply.status(403).send({ error: 'NON_TEST_TENANT_REFUSED', message });
   const statusCode = (err as any)?.statusCode ?? 500;
   if (statusCode === 404 || message.includes('not found')) {
     return reply.status(404).send({ error: message });
@@ -70,6 +84,19 @@ const CreateBatchSchema = z.object({
   payPeriodEnd: z.string().transform((s) => new Date(s)),
   payDate: z.string().transform((s) => new Date(s)),
   payFrequency: z.enum(['WEEKLY', 'BI_WEEKLY', 'SEMI_MONTHLY', 'MONTHLY']),
+  /** Idempotency / duplicate-payroll-prevention key (S108 AC). */
+  providerRunId: z.string().min(1).optional(),
+});
+
+const AttestedWithholdingSchema = z.object({
+  federalTax: z.number().min(0).optional(),
+  stateTax: z.number().min(0).optional(),
+  socialSecurity: z.number().min(0).optional(),
+  medicare: z.number().min(0).optional(),
+  employerFICA: z.number().min(0).optional(),
+  employerMedicare: z.number().min(0).optional(),
+  employerFUTA: z.number().min(0).optional(),
+  employerSUTA: z.number().min(0).optional(),
 });
 
 const AddItemSchema = z.object({
@@ -85,6 +112,10 @@ const AddItemSchema = z.object({
   otherDeductions: z.number().min(0).optional(),
   glAccountCode: z.string().optional(),
   glDepartment: z.string().optional(),
+  /** CE-13 statutory boundary: entered evidence only, never computed here. */
+  attestedWithholding: AttestedWithholdingSchema.optional(),
+  attestedBy: z.string().optional(),
+  sourceDocumentRef: z.string().optional(),
 });
 
 const GLMappingSchema = z.object({
@@ -108,6 +139,10 @@ export async function payrollRoutes(app: FastifyInstance) {
   const JWT_SECRET = process.env['AMACC_JWT_SECRET'];
   if (!JWT_SECRET) throw new Error('AMACC_JWT_SECRET env var is required');
   app.addHook('preHandler', authMiddleware(JWT_SECRET));
+  // CE-13 RBAC gap-closure: server-side permission enforcement for every
+  // payroll route (this file plus the ce13-routes.ts/commission-routes.ts
+  // groups invoked below, which run on this same `app` instance).
+  attachPayrollRouteSecurity(app);
 
   const svc = container.resolve<PayrollService>('PayrollService');
 
@@ -224,11 +259,33 @@ export async function payrollRoutes(app: FastifyInstance) {
     } catch (err) { return handleError(reply, err); }
   });
 
+  // CE-13 / S110 — hold/release workflow: a DRAFT or VALIDATED batch may be
+  // held (e.g. pending a manual correction) and later released; a HOLD
+  // batch cannot be approved or posted until released.
+  app.post('/batches/:id/hold', async (request, reply) => {
+    try {
+      const tenantId = getTenantId(request);
+      const { id } = request.params as { id: string };
+      const { holdReason } = z.object({ holdReason: z.string().min(1) }).parse(request.body);
+      await svc.holdBatch(tenantId, id, holdReason, getUserId(request));
+      return reply.send(await svc.getBatch(tenantId, id));
+    } catch (err) { return handleError(reply, err); }
+  });
+
+  app.post('/batches/:id/release', async (request, reply) => {
+    try {
+      const tenantId = getTenantId(request);
+      const { id } = request.params as { id: string };
+      await svc.releaseBatch(tenantId, id);
+      return reply.send(await svc.getBatch(tenantId, id));
+    } catch (err) { return handleError(reply, err); }
+  });
+
   app.post('/batches/:id/post', async (request, reply) => {
     try {
       const tenantId = getTenantId(request);
       const { id } = request.params as { id: string };
-      const result = await svc.postBatch(tenantId, id);
+      const result = await svc.postBatch(tenantId, id, getUserId(request));
       return reply.send(result);
     } catch (err) { return handleError(reply, err); }
   });
@@ -238,7 +295,7 @@ export async function payrollRoutes(app: FastifyInstance) {
       const tenantId = getTenantId(request);
       const { id } = request.params as { id: string };
       const { voidReason } = z.object({ voidReason: z.string().min(1) }).parse(request.body);
-      const result = await svc.voidBatch(tenantId, id, voidReason);
+      const result = await svc.voidBatch(tenantId, id, voidReason, getUserId(request));
       return reply.send(result);
     } catch (err) { return handleError(reply, err); }
   });
@@ -338,6 +395,9 @@ export async function payrollRoutes(app: FastifyInstance) {
   // ===== Phase 1: Commission Tracking & Reporting (NEW FEATURE) =====
   const prisma = container.resolve('PrismaClient');
   await commissionRoutes(app, prisma);
+
+  // ===== CE-13: statutory-source config, S025 rule-packs, clawback, accrual, tech-bridge =====
+  await ce13Routes(app, prisma);
 
   // ── Payroll Runs (alias for batches, supporting frontend payroll/runs API) ──
 

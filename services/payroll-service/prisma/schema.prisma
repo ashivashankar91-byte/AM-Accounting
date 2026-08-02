@@ -61,13 +61,29 @@ model PayrollBatch {
   postedAt         DateTime? @map("posted_at")
   voidedAt         DateTime? @map("voided_at")
   voidReason       String?   @map("void_reason")
+  /// @net-new CE-13/S108: hold/release workflow (validated batches may be
+  /// held before approval — e.g. pending manual correction — and released
+  /// back to VALIDATED; a held batch cannot be approved or posted).
+  holdReason       String?   @map("hold_reason")
+  heldBy           String?   @map("held_by")
+  heldAt           DateTime? @map("held_at")
   createdBy        String    @map("created_by")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt      @map("updated_at")
 
+  /// @net-new CE-13/S108: statutory-boundary + governed-posting + duplicate-run additions.
+  payrollSourceMode  String    @default("NOT_CONFIGURED") @map("payroll_source_mode")
+  providerRunId      String?   @map("provider_run_id")
+  glDraftJournalId   String?   @map("gl_draft_journal_id")
+  rulePackVersionId  String?   @map("rule_pack_version_id")
+  reversalOfBatchId  String?   @map("reversal_of_batch_id")
+  reversedByBatchId  String?   @map("reversed_by_batch_id")
+  isAdjustmentRun    Boolean   @default(false) @map("is_adjustment_run")
+
   items PayrollItem[]
 
   @@unique([tenantId, batchNumber])
+  @@unique([tenantId, providerRunId, payPeriodStart, payPeriodEnd])
   @@map("payroll_batches")
   @@index([tenantId, status])
   @@index([tenantId, payDate])
@@ -108,11 +124,187 @@ model PayrollItem {
   glAccountCode    String?  @map("gl_account_code")
   glDepartment     String?  @map("gl_department")
 
+  /// @net-new CE-13/S025 statutory boundary — withholding lines are never
+  /// computed here; they only carry ATTESTED_MANUAL_ENTRY or TEST_FIXTURE
+  /// figures until resolved (see domain/payroll-adapter-contract.ts).
+  withholdingStatus   String    @default("NOT_CONFIGURED") @map("withholding_status")
+  withholdingSource   String?   @map("withholding_source")
+  attestedBy          String?   @map("attested_by")
+  attestedAt          DateTime? @map("attested_at")
+  sourceDocumentRef   String?   @map("source_document_ref")
+
   createdAt        DateTime @default(now()) @map("created_at")
 
   @@map("payroll_items")
   @@index([tenantId, batchId])
   @@index([tenantId, employeeId])
+}
+
+/// @net-new CE-13/S025 — per-tenant payroll statutory-source configuration.
+/// Truthful default is NOT_CONFIGURED (NullPayrollSource). Setting this to
+/// MANUAL_ATTESTED enables the attested-entry path; TEST_FIXTURE is
+/// restricted at the domain layer to the labeled certification tenant.
+model PayrollTenantConfig {
+  id                String   @id @default(cuid())
+  tenantId          String   @unique @map("tenant_id")
+  payrollSourceMode String   @default("NOT_CONFIGURED") @map("payroll_source_mode")
+  updatedBy         String?  @map("updated_by")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@map("payroll_tenant_config")
+}
+
+/// @net-new CE-13/S025 — Payroll+Close GL mapping rule pack, versioned under
+/// approved S023-style governance (author != activator, one ACTIVE version
+/// per packKey, simulate-before-activate). This is payroll's OWN mapping
+/// governance table — it does NOT duplicate coa-service's generic S019/S020
+/// posting-engine DSL; it governs which PayrollGLMapping rows are considered
+/// the pinned, audited configuration a given run/accrual/commission journal
+/// cites (rulePackVersionId on PayrollBatch / AccrualEntry / etc.).
+model PayrollRulePackVersion {
+  id            String    @id @default(cuid())
+  tenantId      String    @map("tenant_id")
+  packKey       String    @map("pack_key")
+  version       Int
+  status        String    @default("DRAFT") // DRAFT | VALIDATED | ACTIVE | SUPERSEDED
+  /// Blank rows are valid (ACCOUNT_MAPPING_VALUES_PENDING) — every row names
+  /// family/department/payComponent; glAccountCode may be null pending config.
+  rows          Json
+  author        String    @map("author")
+  activatedBy   String?   @map("activated_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  validatedAt   DateTime? @map("validated_at")
+  activatedAt   DateTime? @map("activated_at")
+  supersededAt  DateTime? @map("superseded_at")
+
+  @@unique([tenantId, packKey, version])
+  @@map("payroll_rule_pack_version")
+  @@index([tenantId, packKey, status])
+}
+
+/// @net-new CE-13/S110 — Chargeback/clawback consumption. sourceEventId is
+/// nullable: CE-12 (S086/S091/S093) event ingestion is
+/// PENDING_UPSTREAM_TECHNICAL_RECONCILIATION on this branch (CE-12 is not
+/// yet integrated into r1-integration); clawbacks can be entered via the
+/// fixture/manual trigger endpoint today, and the same domain logic will
+/// consume the real CE-12 event once that integration point lands.
+model ClawbackRecord {
+  id                       String    @id @default(cuid())
+  tenantId                 String    @map("tenant_id")
+  employeeId               String    @map("employee_id")
+  dealId                   String    @map("deal_id")
+  originalCommissionRecordId String? @map("original_commission_record_id")
+  method                   String    // FULL | PRO_RATA
+  clawbackAmount           Decimal   @db.Decimal(15, 2) @map("clawback_amount")
+  remainingPayable         Decimal   @default(0) @db.Decimal(15, 2) @map("remaining_payable")
+  receivableAmount         Decimal   @default(0) @db.Decimal(15, 2) @map("receivable_amount")
+  status                   String    @default("PENDING") // PENDING | NEXT_RUN_DEDUCTION | RECEIVABLE | RECOVERED | REPAID
+  journalEntryId            String?  @map("journal_entry_id")
+  sourceEventId              String? @map("source_event_id")
+  sourceEventType            String? @map("source_event_type")
+  createdBy                 String   @map("created_by")
+  createdAt                 DateTime @default(now()) @map("created_at")
+  resolvedAt                 DateTime? @map("resolved_at")
+
+  @@map("clawback_records")
+  @@index([tenantId, employeeId])
+  @@index([tenantId, status])
+  @@unique([tenantId, dealId, employeeId, method])
+}
+
+/// @net-new CE-13/S111 — Period-end compensation accruals, auto-reversing
+/// next period (S218-linked reversing entries).
+model AccrualEntry {
+  id                  String    @id @default(cuid())
+  tenantId            String    @map("tenant_id")
+  periodYear          Int       @map("period_year")
+  periodMonth         Int       @map("period_month")
+  accrualType         String    @map("accrual_type") // WAGES | COMMISSION | PTO | BONUS
+  basisDescription    String?   @map("basis_description")
+  amount              Decimal   @db.Decimal(15, 2)
+  department          String?
+  status              String    @default("PREVIEW") // PREVIEW | APPROVED | POSTED | REVERSED
+  previewedBy         String?   @map("previewed_by")
+  approvedBy          String?   @map("approved_by")
+  approvedAt          DateTime? @map("approved_at")
+  postedJournalEntryId    String? @map("posted_journal_entry_id")
+  reversalJournalEntryId  String? @map("reversal_journal_entry_id")
+  autoReverseDate     DateTime? @map("auto_reverse_date")
+  reversedAt          DateTime? @map("reversed_at")
+  createdBy           String    @map("created_by")
+  createdAt           DateTime  @default(now()) @map("created_at")
+
+  @@map("accrual_entries")
+  @@index([tenantId, periodYear, periodMonth])
+  @@index([tenantId, status])
+  @@unique([tenantId, periodYear, periodMonth, accrualType, department])
+}
+
+/// @net-new CE-13/S112 — Tech flag-hour earnings bridge. sourceEventId
+/// nullable: CE-11 S063 period-boundary event ingestion is
+/// PENDING_UPSTREAM_TECHNICAL_RECONCILIATION (CE-11 not yet integrated into
+/// r1-integration); entries can be created via the fixture/manual trigger
+/// endpoint today.
+model TechFlagBridgeEntry {
+  id                  String    @id @default(cuid())
+  tenantId            String    @map("tenant_id")
+  employeeId          String    @map("employee_id")
+  periodStart         DateTime  @map("period_start")
+  periodEnd           DateTime  @map("period_end")
+  flagHours           Decimal   @db.Decimal(8, 2) @map("flag_hours")
+  flagRate            Decimal?  @db.Decimal(15, 4) @map("flag_rate")
+  guaranteeShortfall  Decimal   @default(0) @db.Decimal(15, 2) @map("guarantee_shortfall")
+  earningsAmount      Decimal   @default(0) @db.Decimal(15, 2) @map("earnings_amount")
+  guaranteeTopUp      Decimal   @default(0) @db.Decimal(15, 2) @map("guarantee_top_up")
+  absorptionAmount    Decimal?  @db.Decimal(15, 2) @map("absorption_amount")
+  reconciliationStatus String   @default("PENDING") @map("reconciliation_status") // PENDING | TIED | VARIANCE
+  status              String    @default("RATE_GAP") // RATE_GAP | READY | APPLIED
+  sourceEventId       String?   @map("source_event_id")
+  sourceEventType     String?   @map("source_event_type")
+  payrollItemId       String?   @map("payroll_item_id")
+  createdBy           String    @map("created_by")
+  createdAt           DateTime  @default(now()) @map("created_at")
+
+  @@map("tech_flag_bridge_entries")
+  @@index([tenantId, employeeId])
+  @@index([tenantId, status])
+}
+
+/// @net-new CE-13/S109 — dispute/adjustment ceremony on a posted or accrued
+/// commission record. Every adjustment is audited with a reason and linked
+/// back to the original CommissionRecord.
+model CommissionDispute {
+  id                    String    @id @default(cuid())
+  tenantId              String    @map("tenant_id")
+  commissionRecordId    String    @map("commission_record_id")
+  reason                String
+  originalAmount        Decimal   @db.Decimal(15, 2) @map("original_amount")
+  adjustedAmount        Decimal   @db.Decimal(15, 2) @map("adjusted_amount")
+  status                String    @default("OPEN") // OPEN | RESOLVED
+  raisedBy              String    @map("raised_by")
+  resolvedBy            String?   @map("resolved_by")
+  resolvedAt            DateTime? @map("resolved_at")
+  createdAt             DateTime  @default(now()) @map("created_at")
+
+  @@map("commission_disputes")
+  @@index([tenantId, commissionRecordId])
+}
+
+/// @net-new CE-13/security — audit row for every read of an individual
+/// employee's compensation detail (masking standing rule).
+model PayrollSensitiveReadAudit {
+  id          String   @id @default(cuid())
+  tenantId    String   @map("tenant_id")
+  employeeId  String   @map("employee_id")
+  readByUserId String  @map("read_by_user_id")
+  readByRole  String?  @map("read_by_role")
+  surface     String   // e.g. 'employee-detail', 'payroll-register', 'ytd-inquiry'
+  readAt      DateTime @default(now()) @map("read_at")
+
+  @@map("payroll_sensitive_read_audit")
+  @@index([tenantId, employeeId])
+  @@index([tenantId, readAt])
 }
 
 model PayrollGLMapping {
@@ -193,6 +385,16 @@ model CommissionPlan {
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
+  /// @net-new CE-13/S109 — split rules across multiple employees on one
+  /// deal (e.g. [{employeeId, sharePct}]), draw configuration (advance
+  /// against future commission), and minimum-guarantee floor.
+  splitRules       Json?    @map("split_rules")
+  drawAmount       Decimal? @db.Decimal(15, 2) @map("draw_amount")
+  minimumGuarantee Decimal? @db.Decimal(15, 2) @map("minimum_guarantee")
+  chargebackTerms  Json?    @map("chargeback_terms") // { method: 'FULL'|'PRO_RATA', floor?: number }
+  supersededBy     String?  @map("superseded_by")
+  version          Int      @default(1)
+
   records          CommissionRecord[]
 
   @@map("commission_plans")
@@ -217,6 +419,12 @@ model CommissionRecord {
   periodMonth     Int?     @map("period_month")
   createdAt       DateTime @default(now()) @map("created_at")
   createdBy       String?  @map("created_by")
+
+  /// @net-new CE-13/S109 — deal-level trace evidence + draw/clawback linkage.
+  dealSnapshotRef String?  @map("deal_snapshot_ref") // CE-12 S084 snapshot reference (PUTR until CE-12 integrates)
+  appliedToDraw   Boolean  @default(false) @map("applied_to_draw")
+  splitEmployeeId String?  @map("split_employee_id") // when this row is one leg of a split
+  clawedBackAmount Decimal @default(0) @db.Decimal(15, 2) @map("clawed_back_amount")
 
   plan            CommissionPlan? @relation(fields: [planId], references: [id])
 

@@ -2,18 +2,23 @@
  * @file test-payroll-service.ts
  * @coverage
  *   - Employee CRUD: 5 tests
- *   - Batch lifecycle: 8 tests
- *   - Tax calculation: 9 tests
+ *   - Batch lifecycle (incl. duplicate-run prevention, hold/release): 14 tests
+ *   - Statutory boundary (CE-13 adapters): 9 tests
  *   - Duplicate detection: 4 tests
- *   - GL posting balance: 6 tests
+ *   - GL posting (governed client) + validation boundary: 9 tests
  *   - Reports: 5 tests
- * Total: 37 tests
+ * Total: 46 tests
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { calculateTaxes, DEFAULT_TAX_RATES_2024 } from '../domain/tax-calculator';
 import { detectExactDuplicate, detectSimilarGross } from '../domain/duplicate-detector';
 import { PayrollService, ValidationResult } from '../application/payroll-service';
+import { NullPayrollSource } from '../domain/engines/null-source';
+import { AttestedManualSource } from '../domain/engines/attested-manual-source';
+import { TestFixturePayrollSource } from '../domain/engines/test-fixture-source';
+import { PayrollSourceRegistry } from '../domain/engines/payroll-source-registry';
+import { TEST_TENANT_CE13_CERTIFICATION_ONLY } from '../domain/errors';
+import { PostingGatewayUnavailableError, PostingRefusedError } from '../infrastructure/posting-gateway';
 
 // ── Shared mocks ──────────────────────────────────────────────────────────────
 
@@ -92,6 +97,11 @@ const makeMockItem = (overrides?: Partial<any>) => ({
   totalEmployerTax: { toString: () => '219' },
   glAccountCode: null,
   glDepartment: null,
+  withholdingStatus: 'ATTESTED_MANUAL_ENTRY',
+  withholdingSource: 'MANUAL_ATTESTED_REGISTER',
+  attestedBy: 'preparer-1',
+  attestedAt: new Date('2024-01-15'),
+  sourceDocumentRef: 'provider-register-2024-01',
   employee: makeMockEmployee(),
   ...overrides,
 });
@@ -104,6 +114,9 @@ function makeService(overrides: Partial<{
   taxRateRepo: any;
   ytdRepo: any;
   prisma: any;
+  glClient: any;
+  postingGateway: any;
+  sourceRegistry: any;
 }> = {}) {
   const employeeRepo = overrides.employeeRepo ?? {
     findById: vi.fn().mockResolvedValue(makeMockEmployee()),
@@ -179,10 +192,50 @@ function makeService(overrides: Partial<{
     outboxEvent: {
       create: vi.fn().mockResolvedValue({}),
     },
+    payrollTenantConfig: {
+      findUnique: vi.fn().mockResolvedValue({ payrollSourceMode: 'MANUAL_ATTESTED' }),
+    },
+  };
+
+  // Default: an AttestedManualSource-equivalent stub that carries entered
+  // figures through unchanged with status ATTESTED_MANUAL_ENTRY — mirrors
+  // the real AttestedManualSource without needing attestation validation
+  // noise in unrelated tests.
+  const glClient = overrides.glClient ?? {
+    createDraft: vi.fn().mockResolvedValue({ journalEntryId: 'gl-draft-1', status: 'DRAFT' }),
+    approveAndPost: vi.fn().mockResolvedValue({ journalEntryId: 'je-abc123', status: 'POSTED' }),
+    reverse: vi.fn().mockResolvedValue({ journalEntryId: 'je-reversal-1', status: 'DRAFT' }),
+    resolveAccountId: vi.fn().mockResolvedValue('gl-acct-1'),
+  };
+
+  // Governed-posting gateway (CE-13 gap #2): submits a canonical event to
+  // CE-07 (coa-service posting engine) rather than writing GL directly.
+  // Default stub returns POSTED with a synthetic journalEntryId/executionId.
+  const postingGateway = overrides.postingGateway ?? {
+    submitPayrollEvent: vi.fn().mockResolvedValue({
+      executionId: 'exec-1', eventId: 'evt-1', status: 'POSTED', idempotent: false,
+      journalEntryId: 'je-abc123', journalNumber: 'JE-000123',
+    }),
+  };
+
+  const sourceRegistry = overrides.sourceRegistry ?? {
+    resolve: vi.fn().mockReturnValue({
+      sourceType: 'ATTESTED_MANUAL_ENTRY',
+      resolve: vi.fn().mockResolvedValue({
+        status: 'ATTESTED_MANUAL_ENTRY',
+        lines: { federalTax: 248, stateTax: 98, socialSecurity: 124, medicare: 29, employerFICA: 124, employerMedicare: 29, employerFUTA: 12, employerSUTA: 54 },
+        productionCertified: true,
+        source: 'MANUAL_ATTESTED_REGISTER',
+        attestedBy: 'preparer-1',
+        attestedAt: '2024-01-15T00:00:00.000Z',
+        sourceDocumentRef: 'provider-register-2024-01',
+      }),
+      getStatus: vi.fn().mockResolvedValue({ sourceType: 'ATTESTED_MANUAL_ENTRY', configured: true }),
+    }),
   };
 
   // @ts-ignore — DI constructor injection bypassed for testing
-  return new PayrollService(employeeRepo, batchRepo, itemRepo, glMappingRepo, taxRateRepo, ytdRepo, prisma);
+  return new PayrollService(employeeRepo, batchRepo, itemRepo, glMappingRepo, taxRateRepo, ytdRepo, prisma, postingGateway, sourceRegistry);
 }
 
 const TENANT = 'tenant-test' as any;
@@ -273,7 +326,23 @@ describe('Batch Lifecycle', () => {
     })).rejects.toThrow('must be before');
   });
 
-  it('addItemToBatch — calculates taxes and creates item', async () => {
+  it('createBatch — duplicate-payroll prevention: rejects a second batch for the same providerRunId + pay period', async () => {
+    const svc = makeService({
+      batchRepo: {
+        findByBatchNumber: vi.fn().mockResolvedValue(null),
+        findByProviderRunId: vi.fn().mockResolvedValue(makeMockBatch({ batchNumber: 'PR-2024-01', status: 'POSTED' })),
+        create: vi.fn(), findById: vi.fn(), listByTenant: vi.fn(), updateStatus: vi.fn(), updateTotals: vi.fn(), setJournalEntryId: vi.fn(), listNonVoidInWindow: vi.fn(),
+      },
+    });
+    await expect(svc.createBatch(TENANT, {
+      batchNumber: 'PR-2024-03',
+      payPeriodStart: new Date('2024-01-01'), payPeriodEnd: new Date('2024-01-14'),
+      payDate: new Date('2024-01-17'), payFrequency: 'BI_WEEKLY', createdBy: 'admin',
+      providerRunId: 'RUN-0001',
+    })).rejects.toThrow(/already exists/);
+  });
+
+  it('addItemToBatch — resolves withholding via the tenant-configured statutory-boundary adapter and creates item', async () => {
     const createItem = vi.fn().mockResolvedValue(makeMockItem());
     const svc = makeService({
       itemRepo: { create: createItem, findByBatch: vi.fn().mockResolvedValue([]), findById: vi.fn(), deleteById: vi.fn(), deleteByBatch: vi.fn(), sumByBatch: vi.fn().mockResolvedValue({ totalGrossPay: { toString: () => '2000' }, totalDeductions: { toString: () => '499' }, totalNetPay: { toString: () => '1501' }, totalEmployerTax: { toString: () => '219' }, employeeCount: 1 }) },
@@ -282,12 +351,29 @@ describe('Batch Lifecycle', () => {
       employeeId: 'emp-1',
       regularPay: 2000,
       regularHours: 80,
+      attestedBy: 'preparer-1',
+      sourceDocumentRef: 'provider-register-2024-01',
     });
     expect(createItem).toHaveBeenCalled();
     const callArg = createItem.mock.calls[0][1];
     expect(callArg.grossPay).toBe(2000);
+    expect(callArg.withholdingStatus).toBe('ATTESTED_MANUAL_ENTRY');
     expect(callArg.federalTax).toBeGreaterThan(0);
     expect(callArg.socialSecurity).toBeGreaterThan(0);
+  });
+
+  it('addItemToBatch — NOT_CONFIGURED source yields zero withholding, never an invented estimate', async () => {
+    const createItem = vi.fn().mockResolvedValue(makeMockItem());
+    const svc = makeService({
+      itemRepo: { create: createItem, findByBatch: vi.fn().mockResolvedValue([]), findById: vi.fn(), deleteById: vi.fn(), deleteByBatch: vi.fn(), sumByBatch: vi.fn().mockResolvedValue({ totalGrossPay: { toString: () => '2000' }, totalDeductions: { toString: () => '0' }, totalNetPay: { toString: () => '2000' }, totalEmployerTax: { toString: () => '0' }, employeeCount: 1 }) },
+      prisma: { outboxEvent: { create: vi.fn() }, payrollTenantConfig: { findUnique: vi.fn().mockResolvedValue(null) } },
+      sourceRegistry: { resolve: vi.fn().mockReturnValue(new NullPayrollSource()) },
+    });
+    await svc.addItemToBatch(TENANT, 'batch-1', { employeeId: 'emp-1', regularPay: 2000, regularHours: 80 });
+    const callArg = createItem.mock.calls[0][1];
+    expect(callArg.withholdingStatus).toBe('NOT_CONFIGURED');
+    expect(callArg.federalTax).toBe(0);
+    expect(callArg.socialSecurity).toBe(0);
   });
 
   it('addItemToBatch — throws if batch status is POSTED', async () => {
@@ -308,86 +394,123 @@ describe('Batch Lifecycle', () => {
 
   it('postBatch — throws if batch not APPROVED', async () => {
     const svc = makeService();
-    await expect(svc.postBatch(TENANT, 'batch-1')).rejects.toThrow('must be APPROVED');
+    await expect(svc.postBatch(TENANT, 'batch-1', 'poster-1')).rejects.toThrow('must be APPROVED');
   });
 
   it('voidBatch — throws if batch not POSTED', async () => {
     const svc = makeService();
-    await expect(svc.voidBatch(TENANT, 'batch-1', 'Duplicate')).rejects.toThrow('Only POSTED');
+    await expect(svc.voidBatch(TENANT, 'batch-1', 'Duplicate', 'voider-1')).rejects.toThrow('Only POSTED');
+  });
+
+  it('holdBatch — moves a DRAFT/VALIDATED batch to HOLD with reason and holder', async () => {
+    const updateStatus = vi.fn().mockResolvedValue(undefined);
+    const svc = makeService({
+      batchRepo: { findById: vi.fn().mockResolvedValue(makeMockBatch({ status: 'VALIDATED' })), findByBatchNumber: vi.fn(), findByProviderRunId: vi.fn(), create: vi.fn(), listByTenant: vi.fn(), updateStatus, updateTotals: vi.fn(), setJournalEntryId: vi.fn(), listNonVoidInWindow: vi.fn() },
+    });
+    await svc.holdBatch(TENANT, 'batch-1', 'Pending manual correction', 'reviewer-1');
+    expect(updateStatus).toHaveBeenCalledWith(TENANT, 'batch-1', 'HOLD', expect.objectContaining({ holdReason: 'Pending manual correction', heldBy: 'reviewer-1' }));
+  });
+
+  it('holdBatch — throws if batch is already POSTED', async () => {
+    const svc = makeService({
+      batchRepo: { findById: vi.fn().mockResolvedValue(makeMockBatch({ status: 'POSTED' })), findByBatchNumber: vi.fn(), findByProviderRunId: vi.fn(), create: vi.fn(), listByTenant: vi.fn(), updateStatus: vi.fn(), updateTotals: vi.fn(), setJournalEntryId: vi.fn(), listNonVoidInWindow: vi.fn() },
+    });
+    await expect(svc.holdBatch(TENANT, 'batch-1', 'reason', 'reviewer-1')).rejects.toThrow('Only DRAFT or VALIDATED');
+  });
+
+  it('releaseBatch — moves a HOLD batch back to DRAFT for re-validation', async () => {
+    const updateStatus = vi.fn().mockResolvedValue(undefined);
+    const svc = makeService({
+      batchRepo: { findById: vi.fn().mockResolvedValue(makeMockBatch({ status: 'HOLD' })), findByBatchNumber: vi.fn(), findByProviderRunId: vi.fn(), create: vi.fn(), listByTenant: vi.fn(), updateStatus, updateTotals: vi.fn(), setJournalEntryId: vi.fn(), listNonVoidInWindow: vi.fn() },
+    });
+    await svc.releaseBatch(TENANT, 'batch-1');
+    expect(updateStatus).toHaveBeenCalledWith(TENANT, 'batch-1', 'DRAFT', expect.objectContaining({ holdReason: null }));
+  });
+
+  it('releaseBatch — throws if batch is not on HOLD', async () => {
+    const svc = makeService({
+      batchRepo: { findById: vi.fn().mockResolvedValue(makeMockBatch({ status: 'DRAFT' })), findByBatchNumber: vi.fn(), findByProviderRunId: vi.fn(), create: vi.fn(), listByTenant: vi.fn(), updateStatus: vi.fn(), updateTotals: vi.fn(), setJournalEntryId: vi.fn(), listNonVoidInWindow: vi.fn() },
+    });
+    await expect(svc.releaseBatch(TENANT, 'batch-1')).rejects.toThrow('Only HOLD');
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tax Calculation — 9 tests
+// Statutory Boundary (CE-13) — 9 tests
+// The core safety fix: payroll-service never computes federal/state
+// withholding, FICA/Medicare/FUTA/SUTA. Every payroll item's withholding
+// resolves through exactly one of three adapters (domain/engines/*),
+// exercised here directly.
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('Tax Calculation', () => {
-  const baseInput = {
+describe('Statutory Boundary', () => {
+  const baseRequest = {
+    tenantId: 'tenant-test',
+    employeeId: 'emp-1',
     grossPay: 2000,
-    ytdGrossPay: 0,
-    ytdFicaWages: 0,
-    federalFilingStatus: 'SINGLE',
-    federalAllowances: 1,
     payFrequency: 'BI_WEEKLY',
-    rates: DEFAULT_TAX_RATES_2024,
+    businessDate: '2024-01-17',
   };
 
-  it('FICA: 6.2% of gross for single paycheck below wage base', () => {
-    const result = calculateTaxes(baseInput);
-    expect(result.socialSecurity).toBeCloseTo(2000 * 0.062, 1);
+  it('NullPayrollSource — always returns NOT_CONFIGURED with zero lines, never an estimate', async () => {
+    const result = await new NullPayrollSource().resolve(baseRequest);
+    expect(result.status).toBe('NOT_CONFIGURED');
+    expect(result.lines.federalTax).toBe(0);
+    expect(result.lines.socialSecurity).toBe(0);
+    expect(result.productionCertified).toBe(false);
+    expect(result.rejectReason).toContain('emp-1');
   });
 
-  it('FICA wage base cap: employee stops paying FICA at $168,600', () => {
-    const result = calculateTaxes({
-      ...baseInput,
-      grossPay: 5000,
-      ytdFicaWages: 167000, // $1,600 remaining under cap
+  it('NullPayrollSource — getStatus reports configured:false', async () => {
+    const status = await new NullPayrollSource().getStatus();
+    expect(status.configured).toBe(false);
+  });
+
+  it('AttestedManualSource — requires attestedBy and sourceDocumentRef', async () => {
+    const result = await new AttestedManualSource().resolve(baseRequest, {});
+    expect(result.status).toBe('NOT_CONFIGURED');
+    expect(result.rejectReason).toMatch(/attest/i);
+  });
+
+  it('AttestedManualSource — carries entered figures through unchanged (never computes)', async () => {
+    const entered = { federalTax: 248, stateTax: 98, socialSecurity: 124, medicare: 29 };
+    const result = await new AttestedManualSource().resolve(baseRequest, {
+      ...entered,
+      attestedBy: 'preparer-1',
+      sourceDocumentRef: 'provider-register-2024-01',
     });
-    // Only $1,600 should be FICA-taxable
-    expect(result.socialSecurity).toBeCloseTo(1600 * 0.062, 1);
+    expect(result.status).toBe('ATTESTED_MANUAL_ENTRY');
+    expect(result.lines.federalTax).toBe(248);
+    expect(result.lines.socialSecurity).toBe(124);
+    expect(result.productionCertified).toBe(true);
+    expect(result.attestedBy).toBe('preparer-1');
   });
 
-  it('FICA: no FICA when wage base already exceeded', () => {
-    const result = calculateTaxes({ ...baseInput, ytdFicaWages: 168600 });
-    expect(result.socialSecurity).toBe(0);
+  it('TestFixturePayrollSource — refuses any tenant other than the labeled certification tenant', async () => {
+    await expect(new TestFixturePayrollSource().resolve(baseRequest)).rejects.toThrow(/certification-only/i);
   });
 
-  it('Medicare: 1.45% with no cap', () => {
-    const result = calculateTaxes(baseInput);
-    expect(result.medicare).toBeCloseTo(2000 * 0.0145, 1);
+  it('TestFixturePayrollSource — resolves deterministic fixture math ONLY for the labeled test tenant, never production-certified', async () => {
+    const result = await new TestFixturePayrollSource().resolve({ ...baseRequest, tenantId: TEST_TENANT_CE13_CERTIFICATION_ONLY });
+    expect(result.status).toBe('TEST_FIXTURE');
+    expect(result.productionCertified).toBe(false);
+    expect(result.lines.socialSecurity).toBeGreaterThan(0);
   });
 
-  it('Additional Medicare: 0.9% on wages above $200k YTD', () => {
-    const result = calculateTaxes({
-      ...baseInput,
-      grossPay: 5000,
-      ytdGrossPay: 198000,
-    });
-    // $3,000 above threshold, additional = $3,000 × 0.009 = $27
-    const expectedAdditional = 3000 * 0.009;
-    const expectedBase = 5000 * 0.0145;
-    expect(result.medicare).toBeCloseTo(expectedBase + expectedAdditional, 1);
+  it('PayrollSourceRegistry — defaults unknown/absent mode to NullPayrollSource (truthful default)', () => {
+    const registry = new PayrollSourceRegistry();
+    expect(registry.resolve(undefined).sourceType).toBe(new NullPayrollSource().sourceType);
+    expect(registry.resolve('SOMETHING_UNKNOWN' as any).sourceType).toBe(new NullPayrollSource().sourceType);
   });
 
-  it('FUTA: net 0.6% on first $7,000 (after SUTA credit)', () => {
-    const result = calculateTaxes({ ...baseInput, grossPay: 1000, ytdFicaWages: 0, ytdGrossPay: 0 });
-    // Net FUTA = 0.06 - 0.027 = 0.033; 1000 × 0.033 = 33
-    expect(result.employerFUTA).toBeCloseTo(1000 * 0.033, 1);
+  it('PayrollSourceRegistry — resolves MANUAL_ATTESTED to AttestedManualSource', () => {
+    const registry = new PayrollSourceRegistry();
+    expect(registry.resolve('MANUAL_ATTESTED').sourceType).toBe(new AttestedManualSource().sourceType);
   });
 
-  it('FUTA: no FUTA when wages exceed $7,000 YTD', () => {
-    const result = calculateTaxes({ ...baseInput, ytdFutaWages: 7000 });
-    expect(result.employerFUTA).toBe(0);
-  });
-
-  it('Employer FICA matches employee FICA', () => {
-    const result = calculateTaxes(baseInput);
-    expect(result.employerFICA).toBe(result.socialSecurity);
-  });
-
-  it('Federal tax: SINGLE with 1 allowance on $2,000 biweekly is non-zero', () => {
-    const result = calculateTaxes(baseInput);
-    expect(result.federalTax).toBeGreaterThan(0);
+  it('PayrollSourceRegistry — resolves TEST_FIXTURE to TestFixturePayrollSource', () => {
+    const registry = new PayrollSourceRegistry();
+    expect(registry.resolve('TEST_FIXTURE').sourceType).toBe(new TestFixturePayrollSource().sourceType);
   });
 });
 
@@ -496,37 +619,17 @@ describe('GL Posting', () => {
     expect(result.errors.some((e: string) => e.includes('inactive'))).toBe(true);
   });
 
-  it('postBatch — calls GL service and updates YTD', async () => {
+  it('postBatch — creates a governed DRAFT, approves via distinct identity, and updates YTD', async () => {
     const accumulateDelta = vi.fn().mockResolvedValue({});
     const setJournalEntryId = vi.fn().mockResolvedValue({});
-
-    // postBatch calls fetch twice per journal line: first resolveAccountCode()
-    // (GET .../gl/accounts, expects a bare array) to map each glAccountCode to
-    // a glAccountId, then postGLJournal() (POST .../gl/journal-entries,
-    // expects { id }) once for the whole batch. Both calls share the same
-    // global fetch, so the mock must branch on method to return the right
-    // shape for each — a single fixed response previously caused
-    // resolveAccountCode's `accounts.find` to run against the journal-entry
-    // object instead of an account array.
-    const mockFetch = vi.fn().mockImplementation(async (_url: string, init?: { method?: string }) => {
-      if ((init?.method ?? 'GET') === 'GET') {
-        return {
-          ok: true,
-          json: vi.fn().mockResolvedValue([{ id: 'gl-acct-1', code: '9999-UNMAPPED' }]),
-          text: vi.fn().mockResolvedValue(''),
-        };
-      }
-      return {
-        ok: true,
-        json: vi.fn().mockResolvedValue({ id: 'je-abc123' }),
-        text: vi.fn().mockResolvedValue(''),
-      };
+    const submitPayrollEvent = vi.fn().mockResolvedValue({
+      executionId: 'exec-1', eventId: 'evt-1', status: 'POSTED', idempotent: false,
+      journalEntryId: 'je-abc123', journalNumber: 'JE-000123',
     });
-    vi.stubGlobal('fetch', mockFetch);
 
     const svc = makeService({
       batchRepo: {
-        findById: vi.fn().mockResolvedValue(makeMockBatch({ status: 'APPROVED', totalGrossPay: { toString: () => '2000' }, totalDeductions: { toString: () => '499' }, totalNetPay: { toString: () => '1501' }, payDate: new Date('2024-01-17'), payPeriodStart: new Date('2024-01-01'), payPeriodEnd: new Date('2024-01-14') })),
+        findById: vi.fn().mockResolvedValue(makeMockBatch({ status: 'APPROVED', approvedBy: 'approver-1', totalGrossPay: { toString: () => '2000' }, totalDeductions: { toString: () => '499' }, totalNetPay: { toString: () => '1501' }, payDate: new Date('2024-01-17'), payPeriodStart: new Date('2024-01-01'), payPeriodEnd: new Date('2024-01-14') })),
         findByBatchNumber: vi.fn(), listByTenant: vi.fn(), create: vi.fn(),
         updateStatus: vi.fn().mockResolvedValue({}),
         updateTotals: vi.fn(),
@@ -539,35 +642,75 @@ describe('GL Posting', () => {
         accumulateDelta,
         reverseDelta: vi.fn(),
       },
+      postingGateway: { submitPayrollEvent },
     });
 
-    const result = await svc.postBatch(TENANT, 'batch-1');
-    expect(mockFetch).toHaveBeenCalled();
+    const result = await svc.postBatch(TENANT, 'batch-1', 'poster-1');
+    expect(submitPayrollEvent).toHaveBeenCalled();
+    expect(submitPayrollEvent.mock.calls[0][0].actor).toBe('poster-1');
+    expect(submitPayrollEvent.mock.calls[0][0].eventType).toBe('PAYROLL_BATCH_POSTED');
     expect(accumulateDelta).toHaveBeenCalled();
     expect(setJournalEntryId).toHaveBeenCalledWith(TENANT, 'batch-1', 'je-abc123');
     expect(result.journalEntryId).toBe('je-abc123');
-
-    vi.unstubAllGlobals();
   });
 
-  it('postBatch — throws when GL service returns error', async () => {
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 500,
-      text: vi.fn().mockResolvedValue('Internal Server Error'),
-    });
-    vi.stubGlobal('fetch', mockFetch);
-
+  it('postBatch — denies self-approval: the batch approver cannot also execute the posting step', async () => {
     const svc = makeService({
       batchRepo: {
-        findById: vi.fn().mockResolvedValue(makeMockBatch({ status: 'APPROVED', totalGrossPay: { toString: () => '2000' }, totalDeductions: { toString: () => '499' }, totalNetPay: { toString: () => '1501' }, payDate: new Date('2024-01-17'), payPeriodStart: new Date('2024-01-01'), payPeriodEnd: new Date('2024-01-14') })),
-        findByBatchNumber: vi.fn(), listByTenant: vi.fn(), create: vi.fn(),
-        updateStatus: vi.fn(), updateTotals: vi.fn(), setJournalEntryId: vi.fn(), listNonVoidInWindow: vi.fn().mockResolvedValue([]),
+        findById: vi.fn().mockResolvedValue(makeMockBatch({ status: 'APPROVED', approvedBy: 'same-user' })),
+        findByBatchNumber: vi.fn(), listByTenant: vi.fn(), create: vi.fn(), updateStatus: vi.fn(), updateTotals: vi.fn(), setJournalEntryId: vi.fn(), listNonVoidInWindow: vi.fn().mockResolvedValue([]),
       },
     });
+    await expect(svc.postBatch(TENANT, 'batch-1', 'same-user')).rejects.toThrow('self-approval denial');
+  });
 
-    await expect(svc.postBatch(TENANT, 'batch-1')).rejects.toThrow('GL journal post failed');
-    vi.unstubAllGlobals();
+  it('postBatch — propagates PENDING_CE07_TECHNICAL_RECONCILIATION when the CE-07 posting gateway is unreachable (fail closed, no direct GL fallback)', async () => {
+    const svc = makeService({
+      batchRepo: {
+        findById: vi.fn().mockResolvedValue(makeMockBatch({ status: 'APPROVED', approvedBy: 'approver-1' })),
+        findByBatchNumber: vi.fn(), listByTenant: vi.fn(), create: vi.fn(), updateStatus: vi.fn(), updateTotals: vi.fn(), setJournalEntryId: vi.fn(), listNonVoidInWindow: vi.fn().mockResolvedValue([]),
+      },
+      postingGateway: {
+        submitPayrollEvent: vi.fn().mockRejectedValue(new PostingGatewayUnavailableError('CE-07 posting engine (coa-service) is unreachable: connect ECONNREFUSED. PENDING_CE07_TECHNICAL_RECONCILIATION — no direct GL write was attempted.')),
+      },
+    });
+    await expect(svc.postBatch(TENANT, 'batch-1', 'poster-1')).rejects.toThrow('PENDING_CE07_TECHNICAL_RECONCILIATION');
+  });
+
+  it('postBatch — a missing GL account mapping is a deterministic refusal (ACCOUNT_MAPPING_VALUES_PENDING), never a placeholder account', async () => {
+    const svc = makeService({
+      batchRepo: {
+        findById: vi.fn().mockResolvedValue(makeMockBatch({ status: 'APPROVED', approvedBy: 'approver-1' })),
+        findByBatchNumber: vi.fn(), listByTenant: vi.fn(), create: vi.fn(), updateStatus: vi.fn(), updateTotals: vi.fn(), setJournalEntryId: vi.fn(), listNonVoidInWindow: vi.fn().mockResolvedValue([]),
+      },
+      postingGateway: {
+        submitPayrollEvent: vi.fn().mockRejectedValue(new PostingRefusedError('CE-07 refused to post this payroll event: NO_RULE_MATCH', 'NO_RULE_MATCH')),
+      },
+    });
+    await expect(svc.postBatch(TENANT, 'batch-1', 'poster-1')).rejects.toThrow('CE-07 refused to post this payroll event');
+  });
+
+  it('voidBatch — reverses the posted journal via a canonical PAYROLL_BATCH_REVERSED event through the same governed posting gateway (original-to-reversal linkage)', async () => {
+    const submitPayrollEvent = vi.fn().mockResolvedValue({
+      executionId: 'exec-2', eventId: 'evt-2', status: 'POSTED', idempotent: false,
+      journalEntryId: 'je-reversal-1', journalNumber: 'JE-000124',
+    });
+    const reverseDelta = vi.fn().mockResolvedValue({});
+    const svc = makeService({
+      batchRepo: {
+        findById: vi.fn().mockResolvedValue(makeMockBatch({ status: 'POSTED', journalEntryId: 'je-abc123', totalNetPay: { toString: () => '1501' }, totalDeductions: { toString: () => '499' } })),
+        findByBatchNumber: vi.fn(), listByTenant: vi.fn(), create: vi.fn(),
+        updateStatus: vi.fn().mockResolvedValue({}), updateTotals: vi.fn(), setJournalEntryId: vi.fn(), listNonVoidInWindow: vi.fn().mockResolvedValue([]),
+      },
+      ytdRepo: { findByEmployeeAndYear: vi.fn(), findByTenantAndYear: vi.fn(), accumulateDelta: vi.fn(), reverseDelta },
+      postingGateway: { submitPayrollEvent },
+    });
+    const result = await svc.voidBatch(TENANT, 'batch-1', 'Duplicate entry', 'voider-1');
+    expect(submitPayrollEvent).toHaveBeenCalled();
+    expect(submitPayrollEvent.mock.calls[0][0].eventType).toBe('PAYROLL_BATCH_REVERSED');
+    expect(submitPayrollEvent.mock.calls[0][0].reversalOfEventId).toBeTruthy();
+    expect(reverseDelta).toHaveBeenCalled();
+    expect(result.journalEntryId).toBe('je-reversal-1');
   });
 });
 

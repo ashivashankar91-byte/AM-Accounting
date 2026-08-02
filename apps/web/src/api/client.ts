@@ -279,7 +279,7 @@ export const payrollApi = {
   submit: (data: any) => apiFetch<any>('/api/v1/payroll/batches', { method: 'POST', body: JSON.stringify(data) }),
   validate: (id: string) => apiFetch<any>(`/api/v1/payroll/batches/${id}/validate`, { method: 'POST' }),
   post: (id: string) => apiFetch<any>(`/api/v1/payroll/batches/${id}/post`, { method: 'POST' }),
-  hold: (id: string, reason: string) => apiFetch<any>(`/api/v1/payroll/batches/${id}/hold`, { method: 'POST', body: JSON.stringify({ reason }) }),
+  hold: (id: string, holdReason: string) => apiFetch<any>(`/api/v1/payroll/batches/${id}/hold`, { method: 'POST', body: JSON.stringify({ holdReason }) }),
   release: (id: string) => apiFetch<any>(`/api/v1/payroll/batches/${id}/release`, { method: 'POST' }),
   // PAY-001: Start new run — backend enforces single-active-run-per-tenant (409 if IN_PROGRESS exists)
   // PAY-002: check_date is immutable after creation
@@ -302,12 +302,54 @@ export const payrollApi = {
   getWageBases: (runId: string) => apiFetch<any[]>(`/api/v1/payroll/runs/${runId}/wage-bases`),
   exportReport: (runId: string, reportType: string) =>
     apiFetch<any>(`/api/v1/payroll/runs/${runId}/export?type=${encodeURIComponent(reportType)}`, { method: 'POST' }),
-  // Commission Tracking (Phase 1)
+  // Commission Tracking — S109 full lifecycle (plans/splits/draws/minimum-guarantee/disputes)
   listCommissionPlans: () => apiFetch<any[]>('/api/v1/payroll/commission-plans'),
   createCommissionPlan: (data: any) => apiFetch<any>('/api/v1/payroll/commission-plans', { method: 'POST', body: JSON.stringify(data) }),
+  supersedeCommissionPlan: (id: string, data: any) => apiFetch<any>(`/api/v1/payroll/commission-plans/${id}/supersede`, { method: 'POST', body: JSON.stringify(data) }),
+  issueCommissionDraw: (planId: string, data: { employeeId: string; amount: number }) =>
+    apiFetch<any>(`/api/v1/payroll/commission-plans/${planId}/draws`, { method: 'POST', body: JSON.stringify(data) }),
   calculateCommission: (data: any) => apiFetch<any>('/api/v1/payroll/commissions/calculate', { method: 'POST', body: JSON.stringify(data) }),
   listCommissions: (params?: string) => apiFetch<any[]>(`/api/v1/payroll/commissions${params ? `?${params}` : ''}`),
   getCommissionReport: (params?: string) => apiFetch<any>(`/api/v1/payroll/commissions/report${params ? `?${params}` : ''}`),
+  correctCommission: (id: string, data: { adjustedAmount: number; reason: string }) =>
+    apiFetch<any>(`/api/v1/payroll/commissions/${id}/correct`, { method: 'POST', body: JSON.stringify(data) }),
+  reverseCommission: (id: string, data: { reason: string }) =>
+    apiFetch<any>(`/api/v1/payroll/commissions/${id}/reverse`, { method: 'POST', body: JSON.stringify(data) }),
+  markCommissionPaid: (id: string) => apiFetch<any>(`/api/v1/payroll/commissions/${id}/mark-paid`, { method: 'POST' }),
+  chargebackCommission: (id: string, data: { clawbackRecordId: string; amount: number }) =>
+    apiFetch<any>(`/api/v1/payroll/commissions/${id}/chargeback`, { method: 'POST', body: JSON.stringify(data) }),
+  createCommissionDispute: (id: string, data: { reason: string; adjustedAmount?: number }) =>
+    apiFetch<any>(`/api/v1/payroll/commissions/${id}/disputes`, { method: 'POST', body: JSON.stringify(data) }),
+  listCommissionDisputes: (params?: string) => apiFetch<any[]>(`/api/v1/payroll/commission-disputes${params ? `?${params}` : ''}`),
+  resolveCommissionDispute: (id: string, data: { resolution: string }) =>
+    apiFetch<any>(`/api/v1/payroll/commission-disputes/${id}/resolve`, { method: 'POST', body: JSON.stringify(data) }),
+  // CE-13 — statutory-source boundary config (S108)
+  getSourceMode: () => apiFetch<{ payrollSourceMode: string; updatedBy: string | null; updatedAt: string | null }>('/api/v1/payroll/config/source-mode'),
+  setSourceMode: (payrollSourceMode: string) =>
+    apiFetch<any>('/api/v1/payroll/config/source-mode', { method: 'PUT', body: JSON.stringify({ payrollSourceMode }) }),
+  // CE-13 / S025 — rule-pack governance
+  createRulePack: (data: { packKey: string; rows: any[] }) => apiFetch<any>('/api/v1/payroll/rule-packs', { method: 'POST', body: JSON.stringify(data) }),
+  listRulePacks: (packKey?: string) => apiFetch<any[]>(`/api/v1/payroll/rule-packs${packKey ? `?packKey=${encodeURIComponent(packKey)}` : ''}`),
+  simulateRulePack: (id: string) => apiFetch<any>(`/api/v1/payroll/rule-packs/${id}/simulate`),
+  validateRulePack: (id: string) => apiFetch<any>(`/api/v1/payroll/rule-packs/${id}/validate`, { method: 'POST' }),
+  activateRulePack: (id: string) => apiFetch<any>(`/api/v1/payroll/rule-packs/${id}/activate`, { method: 'POST' }),
+  // CE-13 / S110 — clawback / chargeback
+  createClawback: (data: any) => apiFetch<any>('/api/v1/payroll/clawbacks', { method: 'POST', body: JSON.stringify(data) }),
+  listClawbacks: (params?: string) => apiFetch<any[]>(`/api/v1/payroll/clawbacks${params ? `?${params}` : ''}`),
+  resolveClawback: (id: string) => apiFetch<any>(`/api/v1/payroll/clawbacks/${id}/resolve`, { method: 'POST' }),
+  // CE-13 / S111 — accruals
+  createAccrual: (data: any) => apiFetch<any>('/api/v1/payroll/accruals', { method: 'POST', body: JSON.stringify(data) }),
+  listAccruals: (params?: string) => apiFetch<any[]>(`/api/v1/payroll/accruals${params ? `?${params}` : ''}`),
+  approveAccrual: (id: string) => apiFetch<any>(`/api/v1/payroll/accruals/${id}/approve`, { method: 'POST' }),
+  // CE-13 / S112 — tech flag-hour bridge
+  createTechBridge: (data: any) => apiFetch<any>('/api/v1/payroll/tech-bridge', { method: 'POST', body: JSON.stringify(data) }),
+  listTechBridge: (params?: string) => apiFetch<any[]>(`/api/v1/payroll/tech-bridge${params ? `?${params}` : ''}`),
+  // CE-13 — batch void/reversal + item add with attestation
+  addBatchItem: (batchId: string, data: any) => apiFetch<any>(`/api/v1/payroll/batches/${batchId}/items`, { method: 'POST', body: JSON.stringify(data) }),
+  approveBatch: (batchId: string) => apiFetch<any>(`/api/v1/payroll/batches/${batchId}/approve`, { method: 'POST' }),
+  voidBatch: (batchId: string, voidReason: string) => apiFetch<any>(`/api/v1/payroll/batches/${batchId}/void`, { method: 'POST', body: JSON.stringify({ voidReason }) }),
+  getRegister: (batchId: string) => apiFetch<any>(`/api/v1/payroll/batches/${batchId}/register`),
+  getEmployeeYTD: (employeeId: string, year: number) => apiFetch<any>(`/api/v1/payroll/employees/${employeeId}/ytd?year=${year}`),
 };
 
 // Payroll Reports API (Sprint B — NS-023 through NS-033)

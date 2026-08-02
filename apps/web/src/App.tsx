@@ -137,6 +137,10 @@ import APWorkflow from './pages/accounting/AccountsPayable';
 import ARWorkflow from './pages/accounting/AccountsReceivable';
 import BankReconWorkflow from './pages/accounting/BankReconciliation';
 import PayrollWorkflow from './pages/accounting/PayrollProcessing';
+import PayrollDashboard from './pages/accounting/payroll/PayrollDashboard';
+import PayrollBatchWorkbench from './pages/accounting/payroll/PayrollBatchWorkbench';
+import PayrollGovernance from './pages/accounting/payroll/PayrollGovernance';
+import PayrollCommissionWorkbench from './pages/accounting/payroll/PayrollCommissionWorkbench';
 import EOMWorkflow from './pages/accounting/EndOfMonthClose';
 import FSWorkflow from './pages/accounting/FinancialStatements';
 import POWorkflow from './pages/accounting/PurchaseOrders';
@@ -319,6 +323,9 @@ const MODULES: AppModule[] = [
     sections: [
       { title: 'Payroll', items: [
         { path: '/accounting/payroll', label: 'Process Payroll' },
+        { path: '/accounting/payroll/dashboard', label: 'Payroll Batches (CE-13)' },
+        { path: '/accounting/payroll/commissions', label: 'Commissions & Draws (CE-13)' },
+        { path: '/accounting/payroll/governance', label: 'Payroll Governance (CE-13)' },
       ]},
       { title: 'Payroll Reports', items: [
         { path: '/payroll/reports/workers-comp',        label: 'Workers Comp' },
@@ -944,6 +951,10 @@ export default function App() {
               <Route path="/accounting/bank-recon/sessions/:id" element={<BankReconSessionDetail />} />
               <Route path="/accounting/cash-position" element={<CashPosition />} />
               <Route path="/accounting/payroll" element={<PayrollWorkflow />} />
+              <Route path="/accounting/payroll/dashboard" element={<PayrollDashboard />} />
+              <Route path="/accounting/payroll/batches/:batchId" element={<PayrollBatchWorkbench />} />
+              <Route path="/accounting/payroll/governance" element={<PayrollGovernance />} />
+              <Route path="/accounting/payroll/commissions" element={<PayrollCommissionWorkbench />} />
               <Route path="/accounting/eom" element={<EOMWorkflow />} />
               <Route path="/accounting/admin/periods" element={<PeriodControl />} />
               <Route path="/accounting/financial-statements" element={<FSWorkflow />} />

@@ -1,0 +1,150 @@
+import type { FastifyInstance } from 'fastify';
+import { container } from 'tsyringe';
+import { AuthzClient, asTenantId, createAuthzGuard, TenantId } from '@amacc/shared-kernel';
+
+/**
+ * CE-13 RBAC gap-closure manifest — see
+ * services/auth-service/prisma/migrations/20260803000000_add_ce13_payroll_permissions/migration.sql
+ * for the additive permission-catalog migration these keys map to.
+ */
+export const PAYROLL_PERMISSIONS = {
+  CONFIG_VIEW: 'payroll.config.view',
+  CONFIG_MANAGE: 'payroll.config.manage',
+  SOURCE_MODE_MANAGE: 'payroll.source_mode.manage',
+  RULE_PACK_VIEW: 'payroll.rule_pack.view',
+  RULE_PACK_MANAGE: 'payroll.rule_pack.manage',
+  RULE_PACK_ACTIVATE: 'payroll.rule_pack.activate',
+  BATCH_VIEW: 'payroll.batch.view',
+  BATCH_CREATE: 'payroll.batch.create',
+  BATCH_EDIT: 'payroll.batch.edit',
+  BATCH_VALIDATE: 'payroll.batch.validate',
+  BATCH_APPROVE: 'payroll.batch.approve',
+  BATCH_HOLD_RELEASE: 'payroll.batch.hold_release',
+  BATCH_POST: 'payroll.batch.post',
+  BATCH_VOID_REVERSE: 'payroll.batch.void_reverse',
+  COMMISSION_VIEW: 'payroll.commission.view',
+  COMMISSION_MANAGE: 'payroll.commission.manage',
+  COMMISSION_DISPUTE_RESOLVE: 'payroll.commission_dispute.resolve',
+  CLAWBACK_VIEW: 'payroll.clawback.view',
+  CLAWBACK_MANAGE: 'payroll.clawback.manage',
+  ACCRUAL_VIEW: 'payroll.accrual.view',
+  ACCRUAL_MANAGE: 'payroll.accrual.manage',
+  ACCRUAL_APPROVE: 'payroll.accrual.approve',
+  TECH_BRIDGE_VIEW: 'payroll.tech_bridge.view',
+  TECH_BRIDGE_MANAGE: 'payroll.tech_bridge.manage',
+  REGISTER_YTD_VIEW: 'payroll.register_ytd.view',
+  AUDIT_VIEW: 'payroll.audit.view',
+} as const;
+
+export function getTenantId(request: any, statusCode = 400): TenantId {
+  const tenantId = request.headers['x-tenant-id'] as string | undefined;
+  if (!tenantId || tenantId.trim() === '') {
+    const err: any = new Error('Missing required header: x-tenant-id');
+    err.statusCode = statusCode;
+    throw err;
+  }
+  return asTenantId(tenantId);
+}
+
+export function getActor(request: any): string {
+  return (request as any).user?.sub ?? (request.headers['x-user-id'] as string) ?? 'system';
+}
+
+/**
+ * Maps every CE-13 payroll-service route (employees/batches/config/reports/
+ * runs from routes.ts, S025 rule-packs/S108 source-mode/S110 clawback/S111
+ * accrual/S112 tech-bridge from ce13-routes.ts, and S109 commission/draw/
+ * dispute from commission-routes.ts — all three route groups run on the
+ * same `app` instance, see routes.ts) to its minimum required permission
+ * key. Employee master-data setup is treated as payroll configuration
+ * (`payroll.config.*`) since the Fable package's enumerated permission list
+ * has no standalone "employee" family. `/runs/*` GET endpoints are read
+ * aliases over batches/summaries used by register/YTD-style dashboard
+ * screens, so they map to `payroll.register_ytd.view` rather than
+ * `payroll.batch.view` to match the dashboard-read intent.
+ */
+function resolvePayrollPermission(method: string, url: string): string | null {
+  const m = method.toUpperCase();
+
+  // ── Employees (treated as payroll configuration) ──────────────────────────
+  if (/^\/employees\/[^/]+\/ytd$/.test(url) && m === 'GET') return PAYROLL_PERMISSIONS.REGISTER_YTD_VIEW;
+  if (/^\/employees\/[^/]+\/terminate$/.test(url) && m === 'POST') return PAYROLL_PERMISSIONS.CONFIG_MANAGE;
+  if (/^\/employees(\/[^/]+)?$/.test(url)) {
+    return m === 'GET' ? PAYROLL_PERMISSIONS.CONFIG_VIEW : PAYROLL_PERMISSIONS.CONFIG_MANAGE;
+  }
+
+  // ── Batches ────────────────────────────────────────────────────────────────
+  if (/^\/batches\/[^/]+\/validate$/.test(url) && m === 'POST') return PAYROLL_PERMISSIONS.BATCH_VALIDATE;
+  if (/^\/batches\/[^/]+\/approve$/.test(url) && m === 'POST') return PAYROLL_PERMISSIONS.BATCH_APPROVE;
+  if (/^\/batches\/[^/]+\/(hold|release)$/.test(url) && m === 'POST') return PAYROLL_PERMISSIONS.BATCH_HOLD_RELEASE;
+  if (/^\/batches\/[^/]+\/post$/.test(url) && m === 'POST') return PAYROLL_PERMISSIONS.BATCH_POST;
+  if (/^\/batches\/[^/]+\/void$/.test(url) && m === 'POST') return PAYROLL_PERMISSIONS.BATCH_VOID_REVERSE;
+  if (/^\/batches\/[^/]+\/(register|summary|departmental-summary)$/.test(url) && m === 'GET') return PAYROLL_PERMISSIONS.REGISTER_YTD_VIEW;
+  if (/^\/batches\/[^/]+\/items(\/[^/]+)?$/.test(url)) return PAYROLL_PERMISSIONS.BATCH_EDIT;
+  if (/^\/batches\/[^/]+$/.test(url) && m === 'GET') return PAYROLL_PERMISSIONS.BATCH_VIEW;
+  if (/^\/batches$/.test(url)) return m === 'GET' ? PAYROLL_PERMISSIONS.BATCH_VIEW : PAYROLL_PERMISSIONS.BATCH_CREATE;
+
+  // ── Reports / runs (register + YTD dashboards) ────────────────────────────
+  if (/^\/reports\/tax-liability$/.test(url) && m === 'GET') return PAYROLL_PERMISSIONS.REGISTER_YTD_VIEW;
+  if (/^\/runs(\/.*)?$/.test(url) && m === 'GET') return PAYROLL_PERMISSIONS.REGISTER_YTD_VIEW;
+
+  // ── GL mapping / tax-rate configuration ───────────────────────────────────
+  if (/^\/config\/(gl-mappings|tax-rates)$/.test(url)) {
+    return m === 'GET' ? PAYROLL_PERMISSIONS.CONFIG_VIEW : PAYROLL_PERMISSIONS.CONFIG_MANAGE;
+  }
+
+  // ── S108 statutory-source configuration ───────────────────────────────────
+  if (/^\/config\/source-mode$/.test(url)) {
+    return m === 'GET' ? PAYROLL_PERMISSIONS.CONFIG_VIEW : PAYROLL_PERMISSIONS.SOURCE_MODE_MANAGE;
+  }
+
+  // ── S025 rule-pack governance ──────────────────────────────────────────────
+  if (/^\/rule-packs\/[^/]+\/activate$/.test(url) && m === 'POST') return PAYROLL_PERMISSIONS.RULE_PACK_ACTIVATE;
+  if (/^\/rule-packs\/[^/]+\/(validate|simulate)$/.test(url)) return PAYROLL_PERMISSIONS.RULE_PACK_VIEW;
+  if (/^\/rule-packs$/.test(url)) return m === 'GET' ? PAYROLL_PERMISSIONS.RULE_PACK_VIEW : PAYROLL_PERMISSIONS.RULE_PACK_MANAGE;
+
+  // ── S110 clawback / chargeback ─────────────────────────────────────────────
+  if (/^\/clawbacks\/[^/]+\/resolve$/.test(url) && m === 'POST') return PAYROLL_PERMISSIONS.CLAWBACK_MANAGE;
+  if (/^\/clawbacks$/.test(url)) return m === 'GET' ? PAYROLL_PERMISSIONS.CLAWBACK_VIEW : PAYROLL_PERMISSIONS.CLAWBACK_MANAGE;
+
+  // ── S111 accruals ──────────────────────────────────────────────────────────
+  if (/^\/accruals\/[^/]+\/approve$/.test(url) && m === 'POST') return PAYROLL_PERMISSIONS.ACCRUAL_APPROVE;
+  if (/^\/accruals$/.test(url)) return m === 'GET' ? PAYROLL_PERMISSIONS.ACCRUAL_VIEW : PAYROLL_PERMISSIONS.ACCRUAL_MANAGE;
+
+  // ── S112 tech flag-hour bridge ─────────────────────────────────────────────
+  if (/^\/tech-bridge$/.test(url)) return m === 'GET' ? PAYROLL_PERMISSIONS.TECH_BRIDGE_VIEW : PAYROLL_PERMISSIONS.TECH_BRIDGE_MANAGE;
+
+  // ── S109 commission / draw / dispute ───────────────────────────────────────
+  if (/^\/commission-disputes\/[^/]+\/resolve$/.test(url) && m === 'POST') return PAYROLL_PERMISSIONS.COMMISSION_DISPUTE_RESOLVE;
+  if (/^\/commission-disputes$/.test(url) && m === 'GET') return PAYROLL_PERMISSIONS.COMMISSION_VIEW;
+  if (/^\/commissions\/[^/]+\/disputes$/.test(url) && m === 'POST') return PAYROLL_PERMISSIONS.COMMISSION_MANAGE;
+  if (/^\/commissions\/report$/.test(url) && m === 'GET') return PAYROLL_PERMISSIONS.COMMISSION_VIEW;
+  if (/^\/commissions\/calculate$/.test(url) && m === 'POST') return PAYROLL_PERMISSIONS.COMMISSION_MANAGE;
+  if (/^\/commissions\/[^/]+\/(correct|reverse|mark-paid|chargeback)$/.test(url) && m === 'POST') return PAYROLL_PERMISSIONS.COMMISSION_MANAGE;
+  if (/^\/commissions$/.test(url) && m === 'GET') return PAYROLL_PERMISSIONS.COMMISSION_VIEW;
+  if (/^\/commission-plans\/[^/]+\/(supersede|draws)$/.test(url) && m === 'POST') return PAYROLL_PERMISSIONS.COMMISSION_MANAGE;
+  if (/^\/commission-plans$/.test(url)) return m === 'GET' ? PAYROLL_PERMISSIONS.COMMISSION_VIEW : PAYROLL_PERMISSIONS.COMMISSION_MANAGE;
+
+  return null;
+}
+
+/** Wires per-route permission enforcement for every CE-13 payroll-service
+ * route — mirrors tax-service's src/http/security.ts attachRouteSecurity,
+ * the established repo pattern for adding RBAC without disturbing the
+ * pre-existing JWT/tenant/SoD hooks (authMiddleware, tenantContextHook, and
+ * the actor-comparison checks in rule-pack-service.ts / ce13-routes.ts
+ * remain unchanged and still run). */
+export function attachPayrollRouteSecurity(app: FastifyInstance): void {
+  const requirePermission = createAuthzGuard(
+    container.resolve<AuthzClient>('AuthzClient'),
+    { getTenantId: (request: any) => getTenantId(request) },
+  );
+
+  app.addHook('preHandler', async (request: any, reply: any) => {
+    const rawRouteUrl = request.routeOptions?.url ?? request.routerPath ?? request.url?.split('?')[0] ?? '';
+    const routeUrl = String(rawRouteUrl).replace(/^\/api\/v1\/payroll/, '') || '/';
+    const permission = resolvePayrollPermission(String(request.method), routeUrl);
+    if (!permission) return;
+    return requirePermission(permission)(request, reply);
+  });
+}

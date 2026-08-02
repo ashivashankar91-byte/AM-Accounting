@@ -1,15 +1,30 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { TenantId } from '@amacc/shared-kernel';
-import { PrismaClient } from '@prisma/client';
-import { Decimal } from '@prisma/client/runtime/library';
+import { PrismaClient } from '../node_modules/.prisma/payroll-client';
+import { Decimal } from '../node_modules/.prisma/payroll-client/runtime/library';
+import { randomUUID } from 'crypto';
 
-describe('Commission Tracking API', () => {
+// Pre-existing legacy Phase-1 commission-plan/record persistence test.
+// Requires a real database connection (DATABASE_URL) -- skipped
+// automatically otherwise so it never runs as part of the normal unit-test
+// pass. Superseded functionally by the S109 CommissionService unit tests
+// (src/tests/test-commission-service.ts) and HTTP tests
+// (src/tests/test-commission-routes.ts), kept here as an additional
+// direct-persistence proof against the real commission_plans /
+// commission_records tables and their NUMERIC(15,2) column precision.
+const DATABASE_URL = process.env['DATABASE_URL'];
+
+describe.skipIf(!DATABASE_URL)('Commission Tracking API', () => {
   let prisma: PrismaClient;
   let tenantId: TenantId;
 
   beforeEach(async () => {
     prisma = new PrismaClient();
-    tenantId = 'test-tenant-commission' as TenantId;
+    // Randomized per-test tenantId gives each test (and each nested
+    // beforeEach block that seeds fixture rows under this tenantId) its own
+    // isolated slice of commission_plans/commission_records, so tests never
+    // bleed rows into one another's counts/aggregates.
+    tenantId = `test-tenant-commission-${randomUUID()}` as TenantId;
   });
 
   describe('POST /api/v1/payroll/commission-plans', () => {
@@ -28,7 +43,7 @@ describe('Commission Tracking API', () => {
 
       expect(plan).toBeDefined();
       expect(plan.planType).toBe('FLAT');
-      expect(plan.flatAmount).toBe('500.00');
+      expect(plan.flatAmount.toFixed(2)).toBe('500.00');
     });
 
     it('should create a percentage commission plan', async () => {
@@ -45,7 +60,7 @@ describe('Commission Tracking API', () => {
       });
 
       expect(plan.planType).toBe('PERCENTAGE');
-      expect(plan.percentageRate).toBe('2.50');
+      expect(plan.percentageRate.toFixed(2)).toBe('2.50');
     });
 
     it('should create a tiered commission plan', async () => {
@@ -98,7 +113,7 @@ describe('Commission Tracking API', () => {
 
       expect(sales.department).toBe('SALES');
       expect(fi.department).toBe('F&I');
-      expect(fi.percentageRate).toBeGreaterThan(sales.percentageRate);
+      expect(fi.percentageRate.toNumber()).toBeGreaterThan(sales.percentageRate.toNumber());
     });
 
     it('should enforce effective_date for plan activation', async () => {
@@ -478,7 +493,7 @@ describe('Commission Tracking API', () => {
       });
 
       expect(adjusted.status).toBe('ADJUSTED');
-      expect(adjusted.commissionAmount).toBe('80.00');
+      expect(adjusted.commissionAmount.toFixed(2)).toBe('80.00');
     });
 
     it('should support CHARGED_BACK for chargebacks', async () => {
@@ -501,7 +516,7 @@ describe('Commission Tracking API', () => {
       });
 
       expect(chargedBack.status).toBe('CHARGED_BACK');
-      expect(chargedBack.commissionAmount).toBe('-100.00');
+      expect(chargedBack.commissionAmount.toFixed(2)).toBe('-100.00');
     });
   });
 

@@ -12,6 +12,7 @@
  */
 
 import { inject, injectable } from 'tsyringe';
+import crypto from 'crypto';
 import { TenantId } from '@amacc/shared-kernel';
 import { PrismaClient, Prisma } from '.prisma/payroll-client';
 import pino from 'pino';
@@ -26,20 +27,25 @@ import { IGLMappingRepository, GLMappingDto } from '../infrastructure/gl-mapping
 import { ITaxRateRepository, TaxRateDto } from '../infrastructure/tax-rate-repository';
 import { IEmployeeYTDRepository, YTDAccumulatorDelta } from '../infrastructure/employee-ytd-repository';
 import {
-  calculateTaxes,
-  DEFAULT_TAX_RATES_2024,
-  TaxRateConfig,
-} from '../domain/tax-calculator';
-import {
   detectExactDuplicate,
   detectSimilarGross,
   BatchSummary,
   ItemSummary,
 } from '../domain/duplicate-detector';
+import { IPostingGateway, PostingGatewayUnavailableError, PostingRefusedError, PayrollDistributionLine } from '../infrastructure/posting-gateway';
+import { PayrollSourceRegistry } from '../domain/engines/payroll-source-registry';
+import {
+  PayrollWithholdingLines,
+  WITHHOLDING_STATUSES_ALLOWING_PROCEED,
+  ZERO_WITHHOLDING,
+} from '../domain/payroll-adapter-contract';
+import {
+  DuplicatePayrollRunError,
+  SegregationOfDutiesError,
+  MissingGLMappingError,
+} from '../domain/errors';
 
 const logger = pino({ name: 'payroll-service' });
-const GL_SERVICE_URL = process.env['GL_SERVICE_URL'] ?? 'http://gl-service:3010';
-const INTERNAL_TOKEN = process.env['AMACC_INTERNAL_TOKEN'] ?? 'amacc-internal-dev';
 
 // ── DTOs ─────────────────────────────────────────────────────────────────────
 
@@ -59,6 +65,8 @@ export interface CreateBatchRequest {
   payDate: Date;
   payFrequency: string;
   createdBy: string;
+  /** Idempotency / duplicate-payroll-prevention key from the upstream provider or manual run identifier (S108 AC). */
+  providerRunId?: string;
 }
 
 export interface AddItemRequest {
@@ -74,6 +82,16 @@ export interface AddItemRequest {
   otherDeductions?: number;
   glAccountCode?: string;
   glDepartment?: string;
+  /**
+   * Statutory withholding boundary (never computed by payroll-service — see
+   * domain/payroll-adapter-contract.ts). Required to move an item out of
+   * NOT_CONFIGURED when the tenant's payrollSourceMode is MANUAL_ATTESTED:
+   * these are figures a human copied from the certified provider's own
+   * register, with attestation.
+   */
+  attestedWithholding?: Partial<PayrollWithholdingLines>;
+  attestedBy?: string;
+  sourceDocumentRef?: string;
 }
 
 export interface ValidationResult {
@@ -107,40 +125,6 @@ function isoYear(d: Date): number {
   return d.getFullYear();
 }
 
-async function postGLJournal(tenantId: string, payload: object): Promise<string> {
-  const url = `${GL_SERVICE_URL}/api/v1/gl/journal-entries`;
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-tenant-id': tenantId,
-      Authorization: `Bearer ${INTERNAL_TOKEN}`,
-    },
-    body: JSON.stringify(payload),
-  });
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => '');
-    throw new Error(`GL journal post failed ${resp.status}: ${text}`);
-  }
-  const data = (await resp.json()) as { id?: string; journalEntryId?: string; status?: string };
-  return data.id ?? data.journalEntryId ?? 'unknown';
-}
-
-async function resolveAccountCode(tenantId: string, accountCode: string): Promise<string | null> {
-  const url = `${GL_SERVICE_URL}/api/v1/gl/accounts`;
-  const resp = await fetch(url, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-tenant-id': tenantId,
-      Authorization: `Bearer ${INTERNAL_TOKEN}`,
-    },
-  });
-  if (!resp.ok) return null;
-  const accounts = (await resp.json()) as Array<{ id: string; code: string }>;
-  const account = accounts.find((a: any) => a.code === accountCode);
-  return account?.id ?? null;
-}
 
 // ── Service ──────────────────────────────────────────────────────────────────
 
@@ -154,6 +138,8 @@ export class PayrollService {
     @inject('ITaxRateRepository') private readonly taxRateRepo: ITaxRateRepository,
     @inject('IEmployeeYTDRepository') private readonly ytdRepo: IEmployeeYTDRepository,
     @inject('PrismaClient') private readonly prisma: PrismaClient,
+    @inject('IPostingGateway') private readonly postingGateway: IPostingGateway,
+    @inject('PayrollSourceRegistry') private readonly sourceRegistry: PayrollSourceRegistry,
   ) {}
 
   // ── Employee CRUD ──────────────────────────────────────────────────────────
@@ -192,7 +178,29 @@ export class PayrollService {
     if (dto.payPeriodStart >= dto.payPeriodEnd) {
       throw new Error('payPeriodStart must be before payPeriodEnd');
     }
-    return this.batchRepo.create(tenantId, dto);
+    // Duplicate-payroll-run prevention (S108 AC): the same providerRunId for
+    // the same pay period, for the same tenant, can never create a second
+    // batch — this is the idempotency boundary for retried/duplicated
+    // upstream imports, enforced both here and by the DB unique constraint
+    // (tenantId, providerRunId, payPeriodStart, payPeriodEnd) as a
+    // concurrency backstop.
+    if (dto.providerRunId) {
+      const dup = await this.batchRepo.findByProviderRunId(tenantId, dto.providerRunId, dto.payPeriodStart, dto.payPeriodEnd);
+      if (dup) {
+        throw new DuplicatePayrollRunError(
+          `A payroll batch already exists for providerRunId=${dto.providerRunId} in this pay period (batch ${dup.batchNumber}, status ${dup.status})`,
+        );
+      }
+    }
+    try {
+      return await this.batchRepo.create(tenantId, dto);
+    } catch (err: any) {
+      // DB-level race backstop: unique constraint violation (P2002) surfaces as the same duplicate error.
+      if (err?.code === 'P2002') {
+        throw new DuplicatePayrollRunError(`A payroll batch already exists for providerRunId=${dto.providerRunId} in this pay period`);
+      }
+      throw err;
+    }
   }
 
   async getBatch(tenantId: TenantId, id: string) {
@@ -214,13 +222,6 @@ export class PayrollService {
     const employee = await this.employeeRepo.findById(tenantId, req.employeeId);
     if (!employee) throw new Error(`Employee ${req.employeeId} not found`);
 
-    const year = isoYear(batch.payDate);
-    const ytd = await this.ytdRepo.findByEmployeeAndYear(tenantId, req.employeeId, year);
-    const ytdGross = ytd ? toNum(ytd.grossPay) : 0;
-    const ytdFica = ytd ? toNum(ytd.ficaWages) : 0;
-
-    const rates = await this.buildTaxRateConfig(tenantId, year);
-
     const grossPay =
       req.regularPay +
       (req.overtimePay ?? 0) +
@@ -228,17 +229,31 @@ export class PayrollService {
       (req.bonusPay ?? 0) +
       (req.otherPay ?? 0);
 
-    const taxes = calculateTaxes({
-      grossPay,
-      ytdGrossPay: ytdGross,
-      ytdFicaWages: ytdFica,
-      federalFilingStatus: employee.federalFilingStatus,
-      federalAllowances: employee.federalAllowances,
-      stateCode: employee.stateCode ?? undefined,
-      stateAllowances: employee.stateAllowances,
-      payFrequency: employee.payFrequency,
-      rates,
-    });
+    // ── CE-13 statutory boundary ────────────────────────────────────────────
+    // Withholding is NEVER computed here. The tenant's configured
+    // payrollSourceMode resolves to exactly one of:
+    //   NullPayrollSource       -> NOT_CONFIGURED (blocks validate/post, names employee)
+    //   AttestedManualSource    -> requires req.attestedBy + sourceDocumentRef,
+    //                              carries entered figures through unchanged
+    //   TestFixturePayrollSource-> deterministic labeled fixture math, hard-
+    //                              restricted to TEST-TENANT-CE13-CERTIFICATION-ONLY,
+    //                              always productionCertified:false
+    const tenantConfig = await (this.prisma as any).payrollTenantConfig.findUnique({ where: { tenantId } });
+    const adapter = this.sourceRegistry.resolve(tenantConfig?.payrollSourceMode);
+    const withholdingResult = await adapter.resolve(
+      {
+        tenantId,
+        employeeId: req.employeeId,
+        grossPay,
+        payFrequency: employee.payFrequency,
+        businessDate: (batch.payDate as Date).toISOString().slice(0, 10),
+      },
+      { ...req.attestedWithholding, attestedBy: req.attestedBy, sourceDocumentRef: req.sourceDocumentRef },
+    );
+
+    const taxes: PayrollWithholdingLines = WITHHOLDING_STATUSES_ALLOWING_PROCEED.has(withholdingResult.status)
+      ? withholdingResult.lines
+      : ZERO_WITHHOLDING;
 
     const totalDeductions =
       taxes.federalTax + taxes.stateTax + taxes.socialSecurity + taxes.medicare + (req.otherDeductions ?? 0);
@@ -272,10 +287,15 @@ export class PayrollService {
       totalEmployerTax,
       glAccountCode: req.glAccountCode ?? null,
       glDepartment: req.glDepartment ?? null,
+      withholdingStatus: withholdingResult.status,
+      withholdingSource: withholdingResult.source,
+      attestedBy: withholdingResult.attestedBy ?? null,
+      attestedAt: withholdingResult.attestedAt ? new Date(withholdingResult.attestedAt) : null,
+      sourceDocumentRef: withholdingResult.sourceDocumentRef ?? null,
     });
 
     await this.recomputeBatchTotals(tenantId, batchId);
-    return item;
+    return { ...item, withholdingRejectReason: withholdingResult.rejectReason ?? null };
   }
 
   async removeItemFromBatch(tenantId: TenantId, batchId: string, itemId: string) {
@@ -379,6 +399,19 @@ export class PayrollService {
       );
     }
 
+    // Rule 10 (CE-13 statutory boundary, S108 AC): every item's withholding
+    // must have progressed past NOT_CONFIGURED (attested or a labeled test
+    // fixture) — never silently estimated. Names the affected employees
+    // rather than a generic failure.
+    const unresolved = items.filter((i: any) => !WITHHOLDING_STATUSES_ALLOWING_PROCEED.has(i.withholdingStatus));
+    if (unresolved.length > 0) {
+      errors.push(
+        `PAYROLL_SOURCE_NOT_CONFIGURED: withholding is not resolved for employee(s): ${unresolved
+          .map((i: any) => i.employeeId as string)
+          .join(', ')}. Attest each item's withholding or configure a certified payroll source before validating.`,
+      );
+    }
+
     if (errors.length === 0) {
       await this.batchRepo.updateStatus(tenantId, batchId, 'VALIDATED');
     }
@@ -386,10 +419,33 @@ export class PayrollService {
     return { valid: errors.length === 0, errors };
   }
 
+  async holdBatch(tenantId: TenantId, batchId: string, holdReason: string, heldBy: string): Promise<void> {
+    const batch = await this.getBatch(tenantId, batchId);
+    if (!['DRAFT', 'VALIDATED'].includes(batch.status)) {
+      throw new Error(`Only DRAFT or VALIDATED batches can be held; current status: ${batch.status}`);
+    }
+    await this.batchRepo.updateStatus(tenantId, batchId, 'HOLD', { holdReason, heldBy, heldAt: new Date() });
+  }
+
+  async releaseBatch(tenantId: TenantId, batchId: string): Promise<void> {
+    const batch = await this.getBatch(tenantId, batchId);
+    if (batch.status !== 'HOLD') {
+      throw new Error(`Only HOLD batches can be released; current status: ${batch.status}`);
+    }
+    // Releases back to DRAFT so validation (Rule 10, duplicate checks, etc.)
+    // must re-run before approval — a released batch is never trusted as
+    // still-valid without re-validation.
+    await this.batchRepo.updateStatus(tenantId, batchId, 'DRAFT', { holdReason: null, heldBy: null, heldAt: null });
+  }
+
   async approveBatch(tenantId: TenantId, batchId: string, approvedBy: string): Promise<ValidationResult> {
     const batch = await this.getBatch(tenantId, batchId);
     if (batch.status !== 'VALIDATED') {
       throw new Error(`Batch must be VALIDATED before approval; current status: ${batch.status}`);
+    }
+    // Segregation of duties: the batch preparer cannot also approve it.
+    if (batch.createdBy === approvedBy) {
+      throw new SegregationOfDutiesError('The same user who created this payroll batch cannot approve it (self-approval denial).');
     }
 
     const errors: string[] = [];
@@ -450,10 +506,17 @@ export class PayrollService {
     return { valid: errors.length === 0, errors };
   }
 
-  async postBatch(tenantId: TenantId, batchId: string): Promise<PostingResult> {
+  async postBatch(tenantId: TenantId, batchId: string, postedByUserId: string): Promise<PostingResult> {
     const batch = await this.getBatch(tenantId, batchId);
     if (batch.status !== 'APPROVED') {
       throw new Error(`Batch must be APPROVED before posting; current status: ${batch.status}`);
+    }
+    // Segregation of duties, second gate: the identity executing the post
+    // step must differ from the batch's approver. gl-service enforces the
+    // same rule again independently (createdByUserId vs approverUserId on
+    // the journal entry itself) as a defense-in-depth backstop.
+    if (postedByUserId === batch.approvedBy) {
+      throw new SegregationOfDutiesError('The batch approver cannot also execute the posting step (self-approval denial).');
     }
 
     const items = await this.itemRepo.findByBatch(tenantId, batchId);
@@ -534,38 +597,51 @@ export class PayrollService {
       );
     }
 
-    // Resolve account codes to glAccountIds
-    const glLines: Array<{ glAccountId: string; debit: number; credit: number; memo: string }> = [];
-    for (const line of journalLines) {
-      const glAccountId = await resolveAccountCode(tenantId, line.glAccountCode);
-      if (!glAccountId) {
-        logger.warn({ accountCode: line.glAccountCode }, `GL account code not found`);
-        glLines.push({
-          glAccountId: '00000000-0000-0000-0000-000000000000', // Placeholder for unmapped accounts
-          debit: line.debit,
-          credit: line.credit,
-          memo: line.description,
-        });
-      } else {
-        glLines.push({
-          glAccountId,
-          debit: line.debit,
-          credit: line.credit,
-          memo: line.description,
-        });
-      }
-    }
+    // Governed posting (CE-13 gap #2): payroll-service no longer resolves GL
+    // account codes or constructs a journal entry itself — the departmental
+    // pay-component amounts above are business FACTS (distributions), not GL
+    // write instructions. They are submitted as one canonical
+    // PAYROLL_BATCH_POSTED event to CE-07's posting engine
+    // (coa-service /posting-engine/events); CE-07's own rule pack resolves
+    // the account mapping and performs the actual authoritative journal
+    // write. A missing/blank mapping surfaces as CE-07's own deterministic
+    // NO_RULE_MATCH/REJECTED refusal (PostingRefusedError below), never a
+    // silently-estimated or partially-posted journal. If CE-07 itself is
+    // unreachable, this fails closed with PostingGatewayUnavailableError
+    // (PENDING_CE07_TECHNICAL_RECONCILIATION) — there is no fallback path
+    // to a direct gl-service write.
+    const distributions: PayrollDistributionLine[] = journalLines.map((line) => ({
+      payComponent: line.glAccountCode,
+      department: (line.description.split(' ')[0]) ?? 'UNKNOWN',
+      amount: line.debit > 0 ? line.debit : line.credit,
+      direction: line.debit > 0 ? 'DEBIT' : 'CREDIT',
+    }));
 
-    const journalEntryId = await postGLJournal(tenantId, {
-      entryDate: batch.payDate,
-      description: `Payroll batch ${batch.batchNumber as string} — ${(batch.payPeriodStart as Date).toISOString().slice(0, 10)} to ${(batch.payPeriodEnd as Date).toISOString().slice(0, 10)}`,
-      source: 'PR',
-      sourceRef: batch.batchNumber as string,
-      lines: glLines,
-    });
+    let posted;
+    try {
+      posted = await this.postingGateway.submitPayrollEvent({
+        tenantId,
+        batchId,
+        batchNumber: batch.batchNumber as string,
+        businessDate: (batch.payDate as Date).toISOString().slice(0, 10),
+        payPeriodStart: (batch.payPeriodStart as Date).toISOString().slice(0, 10),
+        payPeriodEnd: (batch.payPeriodEnd as Date).toISOString().slice(0, 10),
+        distributions,
+        idempotencyKey: `payroll-batch-posted:${tenantId}:${batchId}`,
+        correlationId: batchId,
+        rulePackVersionId: (batch.rulePackVersionId as string) ?? null,
+        actor: postedByUserId,
+        eventType: 'PAYROLL_BATCH_POSTED',
+      });
+    } catch (err) {
+      if (err instanceof PostingRefusedError) throw new MissingGLMappingError(err.message);
+      throw err;
+    }
+    const journalEntryId = posted.journalEntryId ?? posted.executionId;
 
     await this.batchRepo.updateStatus(tenantId, batchId, 'POSTED', { postedAt: new Date() });
-    await this.batchRepo.setJournalEntryId(tenantId, batchId, journalEntryId);
+    await this.batchRepo.setJournalEntryId(tenantId, batchId, journalEntryId as string);
+
 
     const year = isoYear(batch.payDate as Date);
     for (const item of items) {
@@ -594,77 +670,50 @@ export class PayrollService {
     return { batchId, journalEntryId, totalDebits: round2(totalDebits), totalCredits: round2(totalCredits), linesPosted: journalLines.length };
   }
 
-  async voidBatch(tenantId: TenantId, batchId: string, voidReason: string): Promise<PostingResult> {
+  async voidBatch(tenantId: TenantId, batchId: string, voidReason: string, voidedByUserId: string): Promise<PostingResult> {
     const batch = await this.getBatch(tenantId, batchId);
     if (batch.status !== 'POSTED') {
       throw new Error(`Only POSTED batches can be voided; current status: ${batch.status}`);
     }
     if (!voidReason?.trim()) throw new Error('voidReason is required');
+    if (!batch.journalEntryId) throw new Error('Batch has no linked journal entry to reverse');
 
     const items = await this.itemRepo.findByBatch(tenantId, batchId);
-    const journalLines: Array<{ glAccountCode: string; debit: number; credit: number; description: string }> = [];
-    const deptTotals = new Map<string, { grossPay: number; netPay: number; federalTax: number; stateTax: number; fica: number; medicare: number; employerFICA: number; employerMedicare: number; employerFUTA: number; employerSUTA: number; otherDeductions: number }>();
 
-    for (const item of items) {
-      const dept = item.department as string;
-      const cur = deptTotals.get(dept) ?? { grossPay: 0, netPay: 0, federalTax: 0, stateTax: 0, fica: 0, medicare: 0, employerFICA: 0, employerMedicare: 0, employerFUTA: 0, employerSUTA: 0, otherDeductions: 0 };
-      cur.grossPay += toNum(item.grossPay); cur.netPay += toNum(item.netPay);
-      cur.federalTax += toNum(item.federalTax); cur.stateTax += toNum(item.stateTax);
-      cur.fica += toNum(item.socialSecurity); cur.medicare += toNum(item.medicare);
-      cur.employerFICA += toNum(item.employerFICA); cur.employerMedicare += toNum(item.employerMedicare);
-      cur.employerFUTA += toNum(item.employerFUTA); cur.employerSUTA += toNum(item.employerSUTA);
-      cur.otherDeductions += toNum(item.otherDeductions);
-      deptTotals.set(dept, cur);
+    // Original-to-reversal linkage (S218): submit a PAYROLL_BATCH_REVERSED
+    // canonical event through the same CE-07 governed posting boundary
+    // (never a direct gl-service call) — reversalOfEventId links back to
+    // the original PAYROLL_BATCH_POSTED event's deterministic id so CE-07's
+    // rule pack can construct the symmetric reversing journal with
+    // reversalOfId/reversedById linkage. Fails closed exactly like postBatch.
+    const originalIdempotencyKey = `payroll-batch-posted:${tenantId}:${batchId}`;
+    const originalEventId = crypto.createHash('sha256').update(originalIdempotencyKey).digest('hex');
+    let reversal;
+    try {
+      reversal = await this.postingGateway.submitPayrollEvent({
+        tenantId,
+        batchId,
+        batchNumber: batch.batchNumber as string,
+        businessDate: new Date().toISOString().slice(0, 10),
+        payPeriodStart: (batch.payPeriodStart as Date).toISOString().slice(0, 10),
+        payPeriodEnd: (batch.payPeriodEnd as Date).toISOString().slice(0, 10),
+        distributions: [],
+        idempotencyKey: `payroll-batch-reversed:${tenantId}:${batchId}:${voidReason}`,
+        correlationId: batchId,
+        actor: voidedByUserId,
+        eventType: 'PAYROLL_BATCH_REVERSED',
+        reversalOfEventId: originalEventId,
+      });
+    } catch (err) {
+      if (err instanceof PostingRefusedError) throw new MissingGLMappingError(err.message);
+      throw err;
     }
-
-    let totalDebits = 0; let totalCredits = 0;
-
-    for (const [dept, totals] of deptTotals) {
-      const mappings = await this.glMappingRepo.findByDepartment(tenantId, dept);
-      const getMapping = (component: string) =>
-        (mappings.find((m: any) => m.payComponent === component)?.glAccountCode as string | undefined) ?? '9999-UNMAPPED';
-
-      // Reversing entry: original debits become credits, credits become debits
-      journalLines.push({ glAccountCode: getMapping('REGULAR_PAY'), debit: 0, credit: round2(totals.grossPay), description: `VOID ${dept} gross wages` });
-      totalCredits += totals.grossPay;
-      journalLines.push({ glAccountCode: getMapping('EMPLOYER_FICA_EXPENSE'), debit: 0, credit: round2(totals.employerFICA), description: `VOID ${dept} employer FICA` });
-      totalCredits += totals.employerFICA;
-      journalLines.push({ glAccountCode: getMapping('EMPLOYER_MEDICARE_EXPENSE'), debit: 0, credit: round2(totals.employerMedicare), description: `VOID ${dept} employer Medicare` });
-      totalCredits += totals.employerMedicare;
-      journalLines.push({ glAccountCode: getMapping('EMPLOYER_FUTA_EXPENSE'), debit: 0, credit: round2(totals.employerFUTA), description: `VOID ${dept} employer FUTA` });
-      totalCredits += totals.employerFUTA;
-      journalLines.push({ glAccountCode: getMapping('EMPLOYER_SUTA_EXPENSE'), debit: 0, credit: round2(totals.employerSUTA), description: `VOID ${dept} employer SUTA` });
-      totalCredits += totals.employerSUTA;
-
-      journalLines.push({ glAccountCode: getMapping('NET_PAY'), debit: round2(totals.netPay), credit: 0, description: `VOID ${dept} net payroll disbursement` });
-      totalDebits += totals.netPay;
-      journalLines.push({ glAccountCode: getMapping('FED_TAX'), debit: round2(totals.federalTax), credit: 0, description: `VOID ${dept} federal tax withheld` });
-      totalDebits += totals.federalTax;
-      journalLines.push({ glAccountCode: getMapping('STATE_TAX'), debit: round2(totals.stateTax), credit: 0, description: `VOID ${dept} state tax withheld` });
-      totalDebits += totals.stateTax;
-      journalLines.push({ glAccountCode: getMapping('FICA_TAX'), debit: round2(totals.fica + totals.employerFICA), credit: 0, description: `VOID ${dept} FICA payable` });
-      totalDebits += totals.fica + totals.employerFICA;
-      journalLines.push({ glAccountCode: getMapping('MEDICARE_TAX'), debit: round2(totals.medicare + totals.employerMedicare), credit: 0, description: `VOID ${dept} Medicare payable` });
-      totalDebits += totals.medicare + totals.employerMedicare;
-      journalLines.push({ glAccountCode: getMapping('FUTA_TAX'), debit: round2(totals.employerFUTA), credit: 0, description: `VOID ${dept} FUTA payable` });
-      totalDebits += totals.employerFUTA;
-      journalLines.push({ glAccountCode: getMapping('SUTA_TAX'), debit: round2(totals.employerSUTA), credit: 0, description: `VOID ${dept} SUTA payable` });
-      totalDebits += totals.employerSUTA;
-      if (totals.otherDeductions > 0) {
-        journalLines.push({ glAccountCode: getMapping('OTHER_DEDUCTIONS'), debit: round2(totals.otherDeductions), credit: 0, description: `VOID ${dept} other deductions payable` });
-        totalDebits += totals.otherDeductions;
-      }
-    }
-
-    const journalEntryId = await postGLJournal(tenantId, {
-      description: `VOID payroll batch ${batch.batchNumber as string} — reason: ${voidReason}`,
-      postingDate: new Date(),
-      sourceType: 'PAYROLL_VOID',
-      sourceId: batchId,
-      lines: journalLines,
-    });
+    const journalEntryId = reversal.journalEntryId ?? reversal.executionId;
 
     await this.batchRepo.updateStatus(tenantId, batchId, 'VOID', { voidedAt: new Date(), voidReason });
+
+    const totalDebits = toNum(batch.totalNetPay) + toNum(batch.totalDeductions);
+    const totalCredits = totalDebits; // symmetric reversal — CE-07 enforces balance
 
     const year = isoYear(batch.payDate as Date);
     for (const item of items) {
@@ -677,7 +726,17 @@ export class PayrollService {
       await this.ytdRepo.reverseDelta(tenantId, item.employeeId as string, year, delta);
     }
 
-    return { batchId, journalEntryId, totalDebits: round2(totalDebits), totalCredits: round2(totalCredits), linesPosted: journalLines.length };
+
+    await this.prisma.outboxEvent.create({
+      data: {
+        eventType: 'PAYROLL_BATCH_VOIDED',
+        tenantId,
+        payload: { batchId, batchNumber: batch.batchNumber, journalEntryId, voidReason } as any,
+      },
+    });
+
+    logger.info({ batchId, journalEntryId }, 'Payroll batch voided (S218 reversal)');
+    return { batchId, journalEntryId, totalDebits: round2(totalDebits), totalCredits: round2(totalCredits), linesPosted: items.length };
   }
 
   // ── Reports ────────────────────────────────────────────────────────────────
@@ -759,31 +818,12 @@ export class PayrollService {
   }
 
   // ── Tax Rate Management ────────────────────────────────────────────────────
+  // Retained as tenant-reference/statutory-audit-trail storage only — these
+  // values are NEVER read into a calculation path in this service (see
+  // domain/payroll-adapter-contract.ts). Useful for reconciling an attested
+  // register against what a tenant believes its statutory rates to be.
 
   async listTaxRates(tenantId: TenantId, effectiveYear?: number) { return this.taxRateRepo.findAll(tenantId, effectiveYear); }
   async upsertTaxRate(tenantId: TenantId, dto: TaxRateDto) { return this.taxRateRepo.upsert(tenantId, dto); }
-
-  // ── Private Helpers ────────────────────────────────────────────────────────
-
-  private async buildTaxRateConfig(tenantId: TenantId, year: number): Promise<TaxRateConfig> {
-    const rates = await this.taxRateRepo.findAll(tenantId, year);
-    if (rates.length === 0) return DEFAULT_TAX_RATES_2024;
-    const find = (taxType: string, isEmployer: boolean) =>
-      rates.find((r: any) => r.taxType === taxType && r.isEmployer === isEmployer);
-    const ficaEmp = find('FICA', false);
-    const medEmp = find('MEDICARE', false);
-    const futa = find('FUTA', true);
-    const suta = find('SUTA', true);
-    return {
-      ficaRate: ficaEmp ? Number(ficaEmp.rate) : DEFAULT_TAX_RATES_2024.ficaRate,
-      ficaWageBase: ficaEmp?.wageBase ? Number(ficaEmp.wageBase) : DEFAULT_TAX_RATES_2024.ficaWageBase,
-      medicareRate: medEmp ? Number(medEmp.rate) : DEFAULT_TAX_RATES_2024.medicareRate,
-      additionalMedicareRate: DEFAULT_TAX_RATES_2024.additionalMedicareRate,
-      additionalMedicareThreshold: DEFAULT_TAX_RATES_2024.additionalMedicareThreshold,
-      futaRate: futa ? Number(futa.rate) : DEFAULT_TAX_RATES_2024.futaRate,
-      futaWageBase: futa?.wageBase ? Number(futa.wageBase) : DEFAULT_TAX_RATES_2024.futaWageBase,
-      sutaRate: suta ? Number(suta.rate) : DEFAULT_TAX_RATES_2024.sutaRate,
-      sutaWageBase: suta?.wageBase ? Number(suta.wageBase) : DEFAULT_TAX_RATES_2024.sutaWageBase,
-    };
-  }
 }
+

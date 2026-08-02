@@ -10,11 +10,13 @@ export interface CreateBatchDto {
   payDate: Date;
   payFrequency: string;
   createdBy: string;
+  providerRunId?: string;
 }
 
 export interface IBatchRepository {
   findById(tenantId: TenantId, id: string): Promise<any | null>;
   findByBatchNumber(tenantId: TenantId, batchNumber: string): Promise<any | null>;
+  findByProviderRunId(tenantId: TenantId, providerRunId: string, payPeriodStart: Date, payPeriodEnd: Date): Promise<any | null>;
   listByTenant(tenantId: TenantId, filters?: { status?: string; payFrequency?: string }): Promise<any[]>;
   create(tenantId: TenantId, dto: CreateBatchDto): Promise<any>;
   updateStatus(tenantId: TenantId, id: string, status: string, extra?: Record<string, unknown>): Promise<any>;
@@ -46,6 +48,19 @@ export class PrismaBatchRepository implements IBatchRepository {
     });
   }
 
+  findByProviderRunId(tenantId: TenantId, providerRunId: string, payPeriodStart: Date, payPeriodEnd: Date) {
+    return (this.prisma.payrollBatch as any).findUnique({
+      where: {
+        tenantId_providerRunId_payPeriodStart_payPeriodEnd: {
+          tenantId,
+          providerRunId,
+          payPeriodStart,
+          payPeriodEnd,
+        },
+      },
+    });
+  }
+
   listByTenant(tenantId: TenantId, filters?: { status?: string; payFrequency?: string }) {
     return this.prisma.payrollBatch.findMany({
       where: {
@@ -68,7 +83,8 @@ export class PrismaBatchRepository implements IBatchRepository {
         payFrequency: dto.payFrequency,
         status: 'DRAFT',
         createdBy: dto.createdBy,
-      },
+        providerRunId: dto.providerRunId ?? null,
+      } as any,
     });
   }
 

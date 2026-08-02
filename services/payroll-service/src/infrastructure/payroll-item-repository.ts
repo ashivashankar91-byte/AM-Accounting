@@ -32,6 +32,13 @@ export interface CreatePayrollItemDto {
 
   glAccountCode?: string | null;
   glDepartment?: string | null;
+
+  /** CE-13 statutory boundary metadata — see domain/payroll-adapter-contract.ts. */
+  withholdingStatus: string;
+  withholdingSource?: string | null;
+  attestedBy?: string | null;
+  attestedAt?: Date | null;
+  sourceDocumentRef?: string | null;
 }
 
 export interface IPayrollItemRepository {
@@ -94,6 +101,11 @@ export class PrismaPayrollItemRepository implements IPayrollItemRepository {
         totalEmployerTax: dto.totalEmployerTax,
         glAccountCode: dto.glAccountCode ?? null,
         glDepartment: dto.glDepartment ?? null,
+        withholdingStatus: dto.withholdingStatus,
+        withholdingSource: dto.withholdingSource ?? null,
+        attestedBy: dto.attestedBy ?? null,
+        attestedAt: dto.attestedAt ?? null,
+        sourceDocumentRef: dto.sourceDocumentRef ?? null,
       },
     });
   }
