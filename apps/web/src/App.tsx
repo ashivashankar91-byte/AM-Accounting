@@ -194,6 +194,20 @@ import DetailedGLPL from './pages/accounting/reports/DetailedGLPL';
 import MonthlyTransJournals from './pages/accounting/reports/MonthlyTransJournals';
 import AutopostReport from './pages/accounting/reports/AutopostReport';
 import CrossPostReport from './pages/accounting/reports/CrossPostReport';
+// CE-15 Close & Statutory
+import CloseCommandCenter from './pages/accounting/close/index';
+import CloseCalendar from './pages/accounting/close/calendar';
+import CloseReconciliations from './pages/accounting/close/reconciliations';
+import CloseScrub from './pages/accounting/close/scrub';
+import CloseYearEnd from './pages/accounting/close/year-end';
+import CloseTaxPack from './pages/accounting/close/tax-pack';
+import DocReport from './pages/accounting/reports/doc';
+import StatementPackages from './pages/accounting/reports/packages';
+import CompliancePack from './pages/accounting/reports/compliance';
+import FixedOpsKpi from './pages/accounting/reports/kpi/fixed-ops';
+import VariableOpsKpi from './pages/accounting/reports/kpi/variable-ops';
+import ArchiveAdmin from './pages/accounting/admin/archive';
+import CurrencyAdmin from './pages/accounting/admin/currency';
 import WorkersCompReport from './pages/payroll/reports/WorkersCompReport';
 import EmployeeHistoryReport from './pages/payroll/reports/EmployeeHistoryReport';
 import EarningsDeductionsReport from './pages/payroll/reports/EarningsDeductionsReport';
@@ -1018,6 +1032,20 @@ export default function App() {
               <Route path="/accounting/reports/monthly-trans-journals" element={<MonthlyTransJournals />} />
               <Route path="/accounting/reports/autopost" element={<AutopostReport />} />
               <Route path="/accounting/reports/cross-post" element={<CrossPostReport />} />
+              {/* CE-15 Close & Statutory */}
+              <Route path="/accounting/close" element={<GoldenPathProtectedRoute><CloseCommandCenter /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/close/calendar" element={<GoldenPathProtectedRoute><CloseCalendar /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/close/reconciliations" element={<GoldenPathProtectedRoute><CloseReconciliations /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/close/scrub" element={<GoldenPathProtectedRoute><CloseScrub /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/close/year-end" element={<GoldenPathProtectedRoute><CloseYearEnd /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/close/tax-pack" element={<GoldenPathProtectedRoute><CloseTaxPack /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/reports/doc" element={<GoldenPathProtectedRoute><DocReport /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/reports/packages" element={<GoldenPathProtectedRoute><StatementPackages /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/reports/compliance" element={<GoldenPathProtectedRoute><CompliancePack /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/reports/kpi/fixed-ops" element={<GoldenPathProtectedRoute><FixedOpsKpi /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/reports/kpi/variable-ops" element={<GoldenPathProtectedRoute><VariableOpsKpi /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/admin/archive" element={<GoldenPathProtectedRoute><ArchiveAdmin /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/admin/currency" element={<GoldenPathProtectedRoute><CurrencyAdmin /></GoldenPathProtectedRoute>} />
 
               {/* Sprint B — Payroll Reports */}
               <Route path="/payroll/reports/workers-comp" element={<WorkersCompReport />} />

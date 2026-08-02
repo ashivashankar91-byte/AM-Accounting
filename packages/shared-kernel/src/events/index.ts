@@ -81,7 +81,13 @@ export type EventType =
   // S224 BR224-3: emitted by audit-service's document-history endpoint when
   // a rendered field diff contains a PII field — "views audit itself" is
   // itself an auditable, security-monitorable event.
-  | 'audit.viewed';
+  | 'audit.viewed'
+  // CE-15 Close & Statutory events
+  | 'CE15_YEAR_END_RETAINED_EARNINGS_INITIATED'
+  | 'CE15_CURRENCY_TRANSLATION_INITIATED'
+  | 'CE15_CLOSE_PERIOD_TRANSITIONED'
+  | 'CE15_SNAPSHOT_SIGNED'
+  | 'CE15_SNAPSHOT_INTEGRITY_ALERT';
 
 export function createEvent(
   type: EventType,
@@ -167,4 +173,10 @@ export const EVENT_ROUTING: Record<EventType, string[]> = {
   THIRTEENTH_MONTH_FINALIZED:     ['fs-service', 'audit-service', 'notification-service'],
   'audit.chain.alert':            ['notification-service'],
   'audit.viewed':                 ['notification-service'],
+  // CE-15 Close & Statutory
+  'CE15_YEAR_END_RETAINED_EARNINGS_INITIATED': ['posting-recovery-service'],
+  'CE15_CURRENCY_TRANSLATION_INITIATED':       ['posting-recovery-service'],
+  'CE15_CLOSE_PERIOD_TRANSITIONED':            ['notification-service', 'audit-service'],
+  'CE15_SNAPSHOT_SIGNED':                      ['audit-service'],
+  'CE15_SNAPSHOT_INTEGRITY_ALERT':             ['notification-service', 'audit-service'],
 };

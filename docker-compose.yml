@@ -737,5 +737,19 @@ services:
       - ./apps/web/src:/app/src
     command: npx vite --host
 
+  close-service:
+    build:
+      context: .
+      dockerfile: services/close-service/Dockerfile
+    ports:
+      - "3052:3052"
+    environment:
+      <<: *service-env
+      PORT: 3052
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
+
 volumes:
   pgdata:

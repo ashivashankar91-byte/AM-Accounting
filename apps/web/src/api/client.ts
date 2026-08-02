@@ -2208,4 +2208,57 @@ export const oemApi = {
   previewCoopAccrual: (storeId: string, programId: string, period: string, periodQualifyingSalesAmount: string) =>
     apiFetch<any>('/api/v1/oem/coop/accrual/preview', { method: 'POST', body: JSON.stringify({ storeId, programId, period, periodQualifyingSalesAmount }) }),
   approveCoopAccrual: (id: string) => apiFetch<any>(`/api/v1/oem/coop/accrual/previews/${id}/approve`, { method: 'POST' }),
+
+// ─── close-service (CE-15 Close & Statutory) ────────────────────────────
+export const closeApi = {
+  // State
+  getState: (legalEntityId: string, periodYear: number, periodMonth: number) =>
+    apiFetch<any>(`/api/v1/close/state?legalEntityId=${legalEntityId}&periodYear=${periodYear}&periodMonth=${periodMonth}`),
+  transition: (data: any) => apiFetch<any>('/api/v1/close/transition', { method: 'POST', body: JSON.stringify(data) }),
+  getReadiness: (legalEntityId: string, periodYear: number, periodMonth: number) =>
+    apiFetch<any>(`/api/v1/close/readiness?legalEntityId=${legalEntityId}&periodYear=${periodYear}&periodMonth=${periodMonth}`),
+  // Reconciliation
+  listRegister: (params?: string) => apiFetch<any[]>(`/api/v1/close/register${params ? `?${params}` : ''}`),
+  createRegister: (data: any) => apiFetch<any>('/api/v1/close/register', { method: 'POST', body: JSON.stringify(data) }),
+  signOffRegister: (id: string, data: any) => apiFetch<any>(`/api/v1/close/register/${id}/sign-off`, { method: 'POST', body: JSON.stringify(data) }),
+  exportPbc: (data: any) => apiFetch<any>('/api/v1/close/pbc-export', { method: 'POST', body: JSON.stringify(data) }),
+  // Scrub
+  runScrub: (data: any) => apiFetch<any>('/api/v1/close/runs', { method: 'POST', body: JSON.stringify(data) }),
+  listScrubRuns: () => apiFetch<any[]>('/api/v1/close/runs'),
+  getScrubFindings: (id: string) => apiFetch<any[]>(`/api/v1/close/runs/${id}/findings`),
+  disposeFinding: (id: string, data: any) => apiFetch<any>(`/api/v1/close/findings/${id}/dispose`, { method: 'POST', body: JSON.stringify(data) }),
+  // Year-end
+  previewYearEnd: (data: any) => apiFetch<any>('/api/v1/close/year-end/preview', { method: 'POST', body: JSON.stringify(data) }),
+  approveYearEnd: (id: string, data: any) => apiFetch<any>(`/api/v1/close/year-end/${id}/approve`, { method: 'POST', body: JSON.stringify(data) }),
+  postYearEnd: (id: string, data: any) => apiFetch<any>(`/api/v1/close/year-end/${id}/post`, { method: 'POST', body: JSON.stringify(data) }),
+  // KPI
+  listFormulas: () => apiFetch<any[]>('/api/v1/close/kpi/formulas'),
+  createFormula: (data: any) => apiFetch<any>('/api/v1/close/kpi/formulas', { method: 'POST', body: JSON.stringify(data) }),
+  computeKpi: (data: any) => apiFetch<any>('/api/v1/close/kpi/compute', { method: 'POST', body: JSON.stringify(data) }),
+  // Snapshots
+  captureSnapshot: (data: any) => apiFetch<any>('/api/v1/close/snapshots', { method: 'POST', body: JSON.stringify(data) }),
+  primarySign: (id: string, data: any) => apiFetch<any>(`/api/v1/close/snapshots/${id}/primary-sign`, { method: 'POST', body: JSON.stringify(data) }),
+  secondarySign: (id: string, data: any) => apiFetch<any>(`/api/v1/close/snapshots/${id}/secondary-sign`, { method: 'POST', body: JSON.stringify(data) }),
+  verifySnapshot: (id: string, data: any) => apiFetch<any>(`/api/v1/close/snapshots/${id}/verify`, { method: 'POST', body: JSON.stringify(data) }),
+  // Archive
+  createArchiveObject: (data: any) => apiFetch<any>('/api/v1/close/archive', { method: 'POST', body: JSON.stringify(data) }),
+  listArchiveObjects: () => apiFetch<any[]>('/api/v1/close/archive'),
+  getArchiveObject: (id: string) => apiFetch<any>(`/api/v1/close/archive/${id}`),
+  deleteArchiveObject: (id: string) => apiFetch<any>(`/api/v1/close/archive/${id}`, { method: 'DELETE' }),
+  createRetentionSchedule: (data: any) => apiFetch<any>('/api/v1/close/archive/retention-schedules', { method: 'POST', body: JSON.stringify(data) }),
+  // Currency
+  getCurrencyConfig: (legalEntityId: string) => apiFetch<any>(`/api/v1/close/currency/config/${legalEntityId}`),
+  setCurrencyConfig: (data: any) => apiFetch<any>('/api/v1/close/currency/config', { method: 'POST', body: JSON.stringify(data) }),
+  addRate: (data: any) => apiFetch<any>('/api/v1/close/currency/rates', { method: 'POST', body: JSON.stringify(data) }),
+  listRates: (params?: string) => apiFetch<any[]>(`/api/v1/close/currency/rates${params ? `?${params}` : ''}`),
+  previewTranslation: (data: any) => apiFetch<any>('/api/v1/close/currency/translation-preview', { method: 'POST', body: JSON.stringify(data) }),
+  approveTranslation: (id: string, data: any) => apiFetch<any>(`/api/v1/close/currency/translation/${id}/approve`, { method: 'POST', body: JSON.stringify(data) }),
+  postTranslation: (id: string, data: any) => apiFetch<any>(`/api/v1/close/currency/translation/${id}/post`, { method: 'POST', body: JSON.stringify(data) }),
+  // DOC
+  getDoc: (legalEntityId: string, asOfDate: string) => apiFetch<any>(`/api/v1/close/doc?legalEntityId=${legalEntityId}&asOfDate=${asOfDate}`),
+  // Compliance
+  generateCompliancePack: (data: any) => apiFetch<any>('/api/v1/close/compliance/generate', { method: 'POST', body: JSON.stringify(data) }),
+  listCompliancePacks: () => apiFetch<any[]>('/api/v1/close/compliance'),
+  // Tax pack
+  generateTaxPack: (data: any) => apiFetch<any>('/api/v1/close/tax-pack/generate', { method: 'POST', body: JSON.stringify(data) }),
 };
