@@ -23,7 +23,7 @@ function clearStaleGoldenPathSessionAndRedirect(): void {
   window.location.href = loginPath;
 }
 
-async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   // FINAL-R0 Step 4: prefer the real Golden Path session (real JWT + real
   // tenantId from a completed login) over the legacy demo 'tenant-kunes'
   // fallback used by the pre-existing prototype pages. This is additive only

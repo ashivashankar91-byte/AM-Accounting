@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation, useNavigate, useParams } from 're
 import {
   LayoutDashboard, BookOpen, CreditCard, Users, Calendar,
   Wrench, Settings as SettingsIcon, Terminal, Search, Bell, Landmark,
+  ClipboardList, PackageSearch,
 } from 'lucide-react';
 import ErrorBoundary from './components/ErrorBoundary';
 import { useAuth } from './auth/AuthContext';
@@ -78,6 +79,20 @@ import TaxResultInquiry from './pages/accounting/tax/TaxResultInquiry';
 import TaxExceptionQueue from './pages/accounting/tax/TaxExceptionQueue';
 import TaxReconciliation from './pages/accounting/tax/TaxReconciliation';
 import TaxFeeAdmin from './pages/accounting/tax/TaxFeeAdmin';
+// CE-11 — Fixed Ops Integrations (S059-S072).
+import FixedOpsPostingInquiry from './pages/accounting/fixedops/FixedOpsPostingInquiry';
+import RoAccountingDetail from './pages/accounting/fixedops/RoAccountingDetail';
+import WipOpenRoReport from './pages/accounting/fixedops/WipOpenRoReport';
+import WarrantyReceivableAging from './pages/accounting/fixedops/WarrantyReceivableAging';
+import InsuranceReceivableInquiry from './pages/accounting/fixedops/InsuranceReceivableInquiry';
+import FixedOpsExceptionQueue from './pages/accounting/fixedops/FixedOpsExceptionQueue';
+import LaborRateConfig from './pages/accounting/fixedops/LaborRateConfig';
+import TechTimeAbsorption from './pages/accounting/fixedops/TechTimeAbsorption';
+import PartsMovements from './pages/accounting/parts/PartsMovements';
+import PartsReconciliation from './pages/accounting/parts/PartsReconciliation';
+import PartsPhysicalInventory from './pages/accounting/parts/PartsPhysicalInventory';
+import PartsDeposits from './pages/accounting/parts/PartsDeposits';
+import PartsValuation from './pages/accounting/parts/PartsValuation';
 import GoldenPathPostingRules from './pages/goldenpath/PostingRules';
 import GoldenPathPostingExecutions from './pages/goldenpath/PostingExecutions';
 import GoldenPathPostingRecoveryQueue from './pages/goldenpath/PostingRecoveryQueue';
@@ -366,6 +381,45 @@ const MODULES: AppModule[] = [
         { path: '/accounting/tax/results',       label: 'Calculation / Result Inquiry' },
         { path: '/accounting/tax/exceptions',    label: 'Exception & Outage Queue' },
         { path: '/accounting/tax/reconciliation', label: 'Tax Liability Reconciliation' },
+      ]},
+    ],
+  },
+  {
+    // CE-11 — Fixed Ops Integrations (S059-S065, Workstream A/B). New
+    // top-level nav module, same pattern as 'tax' — Fixed Ops accounting
+    // inquiry/reconciliation/exception/audit surfaces live in the unified
+    // Accounting app regardless of what the owning Service module shows.
+    key: 'fixedops',
+    Icon: ClipboardList,
+    label: 'Fixed Ops',
+    defaultPath: '/accounting/fixedops/postings',
+    matchPrefixes: ['/accounting/fixedops'],
+    sections: [
+      { title: 'Accounting', items: [
+        { path: '/accounting/fixedops/postings',   label: 'Fixed Ops Posting Inquiry' },
+        { path: '/accounting/fixedops/wip',        label: 'WIP / Open-RO Report' },
+        { path: '/accounting/fixedops/warranty',   label: 'Warranty Receivable & Claim Aging' },
+        { path: '/accounting/fixedops/insurance',  label: 'Insurance Receivable Inquiry' },
+        { path: '/accounting/fixedops/exceptions', label: 'Exception & Recovery Queue' },
+        { path: '/accounting/fixedops/labor-rate', label: 'Labor Rate Configuration' },
+        { path: '/accounting/fixedops/tech-time',  label: 'Unapplied Time Absorption' },
+      ]},
+    ],
+  },
+  {
+    // CE-11 — Parts accounting (S066-S072, Workstream C/D).
+    key: 'parts-accounting',
+    Icon: PackageSearch,
+    label: 'Parts Accounting',
+    defaultPath: '/accounting/parts/movements',
+    matchPrefixes: ['/accounting/parts'],
+    sections: [
+      { title: 'Accounting', items: [
+        { path: '/accounting/parts/movements',     label: 'Parts Movement Accounting Inquiry' },
+        { path: '/accounting/parts/reconciliation', label: 'Perpetual-to-GL Reconciliation' },
+        { path: '/accounting/parts/physical',      label: 'Physical Inventory Adjustment Review' },
+        { path: '/accounting/parts/deposits',      label: 'Special-Order Deposit Inquiry' },
+        { path: '/accounting/parts/valuation',     label: 'Price-Tape / Revaluation & Obsolescence' },
       ]},
     ],
   },
@@ -725,6 +779,20 @@ export default function App() {
               <Route path="/accounting/tax/exceptions" element={<GoldenPathProtectedRoute><TaxExceptionQueue /></GoldenPathProtectedRoute>} />
               <Route path="/accounting/tax/reconciliation" element={<GoldenPathProtectedRoute><TaxReconciliation /></GoldenPathProtectedRoute>} />
               <Route path="/accounting/tax/fees" element={<GoldenPathProtectedRoute><TaxFeeAdmin /></GoldenPathProtectedRoute>} />
+              {/* CE-11 — Fixed Ops Integrations (S059-S072). */}
+              <Route path="/accounting/fixedops/postings" element={<GoldenPathProtectedRoute><FixedOpsPostingInquiry /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/fixedops/ro/:roNumber" element={<GoldenPathProtectedRoute><RoAccountingDetail /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/fixedops/wip" element={<GoldenPathProtectedRoute><WipOpenRoReport /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/fixedops/warranty" element={<GoldenPathProtectedRoute><WarrantyReceivableAging /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/fixedops/insurance" element={<GoldenPathProtectedRoute><InsuranceReceivableInquiry /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/fixedops/exceptions" element={<GoldenPathProtectedRoute><FixedOpsExceptionQueue /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/fixedops/labor-rate" element={<GoldenPathProtectedRoute><LaborRateConfig /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/fixedops/tech-time" element={<GoldenPathProtectedRoute><TechTimeAbsorption /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/parts/movements" element={<GoldenPathProtectedRoute><PartsMovements /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/parts/reconciliation" element={<GoldenPathProtectedRoute><PartsReconciliation /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/parts/physical" element={<GoldenPathProtectedRoute><PartsPhysicalInventory /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/parts/deposits" element={<GoldenPathProtectedRoute><PartsDeposits /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/parts/valuation" element={<GoldenPathProtectedRoute><PartsValuation /></GoldenPathProtectedRoute>} />
               {/* Posting Rules / Posting Executions moved into the normal
                   Accounting sidebar (General Ledger > Posting Engine). Old
                   URLs redirect. */}

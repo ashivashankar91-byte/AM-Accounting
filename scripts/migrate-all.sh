@@ -54,6 +54,8 @@ SERVICES=(
   fs-service
   recon-service
   cashflow-service
+  fixedops-service
+  parts-accounting-service
 )
 
 echo "==> Applying migrations to ${DATABASE_URL%%@*}@... (amacc superuser)"

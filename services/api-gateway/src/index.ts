@@ -32,7 +32,8 @@ const PORT = parseInt(process.env['PORT'] ?? '3000', 10);
 //   onboarding-service:3035, webhook-service:3036, cashflow-service:3037
 //   document-service:3038, group-service:3039, user-service:3040
 //   compliance-service:3043, query-service:3045, analytics-service:3046
-//   orchestrator-service:3048, cash-service:3050
+//   orchestrator-service:3048, cash-service:3050, tax-service:3051,
+//   fixedops-service:3060, parts-accounting-service:3061
 
 const SERVICES: Array<{ prefix: string; upstream: string; rateLimit?: number; rewritePrefix?: string }> = [
   { prefix: '/api/v1/auth',           upstream: process.env['AUTH_SERVICE_URL']           ?? 'http://auth-service:3001' },
@@ -97,6 +98,15 @@ const SERVICES: Array<{ prefix: string; upstream: string; rateLimit?: number; re
   // tax-service has zero direct GL writes; results only travel inside a
   // consuming transaction's own envelope (owned by CE-07/CE-09/CE-11).
   { prefix: '/api/v1/tax',            upstream: process.env['TAX_SERVICE_URL']            ?? 'http://tax-service:3051' },
+  // CE-11 S059-S065 — Fixed Ops (Service) accounting: RO close posting,
+  // reopen/void reversal, WIP, sublet, unapplied time, deferred maintenance,
+  // warranty claim receivables. Zero direct GL writes — posts exclusively
+  // through coa-service's posting-engine (see fixedops-service/src/infrastructure/posting-client.ts).
+  { prefix: '/api/v1/fixedops',       upstream: process.env['FIXEDOPS_SERVICE_URL']        ?? 'http://fixedops-service:3060' },
+  // CE-11 S066-S072 — Parts accounting: movement posting & tie-out, price-tape
+  // revaluation, obsolescence/scrap, physical inventory, special-order
+  // deposits, OEM returns, valuation config. Zero direct GL writes.
+  { prefix: '/api/v1/parts-accounting', upstream: process.env['PARTS_ACCOUNTING_SERVICE_URL'] ?? 'http://parts-accounting-service:3061' },
 ];
 
 // ── Request logging hook ──────────────────────────────────────────────────────

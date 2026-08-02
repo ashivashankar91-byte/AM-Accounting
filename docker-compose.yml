@@ -393,6 +393,42 @@ services:
       rabbitmq: { condition: service_healthy }
       migrator: { condition: service_completed_successfully }
 
+  # CE-11 S059-S065 — Fixed Ops (Service) accounting.
+  fixedops-service:
+    build:
+      context: .
+      dockerfile: services/fixedops-service/Dockerfile
+    ports:
+      - "3060:3060"
+    environment:
+      <<: *service-env
+      PORT: 3060
+      COA_SERVICE_URL: http://coa-service:3016
+      TAX_SERVICE_URL: http://tax-service:3051
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
+      coa-service: { condition: service_started }
+      tax-service: { condition: service_started }
+
+  # CE-11 S066-S072 — Parts accounting.
+  parts-accounting-service:
+    build:
+      context: .
+      dockerfile: services/parts-accounting-service/Dockerfile
+    ports:
+      - "3061:3061"
+    environment:
+      <<: *service-env
+      PORT: 3061
+      COA_SERVICE_URL: http://coa-service:3016
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
+      coa-service: { condition: service_started }
+
   fs-service:
     build:
       context: .
