@@ -81,6 +81,7 @@ export class MovementService {
     const envelope: SourceEventEnvelope = {
       eventId,
       tenantId: dto.tenantId,
+      legalEntityId: dto.legalEntityId,
       // Rule-pack eventType MUST match /^[a-z0-9]+(\.[a-z0-9-]+)*\.v[0-9]+$/ —
       // hyphens only, no underscores — so movementFamily segments like
       // "RO_ISSUE" must be hyphenated, not merely lowercased.

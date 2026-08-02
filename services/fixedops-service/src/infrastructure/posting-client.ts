@@ -8,6 +8,9 @@
 export interface SourceEventEnvelope {
   eventId: string;
   tenantId: string;
+  // CE-07 integration boundary: top-level legalEntityId required by coa-service
+  // assertEnvelopeShape for rule-pack selection (see event-envelope.ts).
+  legalEntityId: string;
   eventType: string;
   eventSchemaVersion: string;
   occurredAt: string;

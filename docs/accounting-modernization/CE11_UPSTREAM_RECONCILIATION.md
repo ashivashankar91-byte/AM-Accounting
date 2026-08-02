@@ -67,21 +67,47 @@ ratify exact bands at certification alongside D-CE08-03.
 
 ## PENDING_UPSTREAM_TECHNICAL_RECONCILIATION — CE-09 S049 insurance-claim API
 
-`apps/web/src/pages/accounting/fixedops/InsuranceReceivableInquiry.tsx`
-is a real, wired, consume-only surface for CE-09's S049 body-shop
-insurance-claim items — it never redefines insurance-claim accounting.
-Repository-wide search confirms no CE-09 S049 implementation exists in
-this baseline; the screen renders an honest, explicit unavailable banner
-rather than fabricating or estimating claim data. Will populate the
-moment CE-09's S049 API lands — no CE-11-side change required then beyond
-removing the banner.
+**RESOLVED in this integration pass.** `insuranceClaimApi` from CE-09 is now
+wired directly in `InsuranceReceivableInquiry.tsx`. The PUTR banner is removed;
+the screen fetches live claims from `/api/v1/apar/insurance-claims`, shows a
+truthful empty state when no claims exist, and supports RO-reference client-side
+filtering. Test updated to cover loading, empty, populated, filter, error, and
+GL-error states using a mocked `insuranceClaimApi`.
+
+## D-CE08-02 / D-CE08-03 configuration alignment (integration-only fix)
+
+**RESOLVED in this integration pass.** Two new server-side config tables added:
+`ScrapThresholdConfig` and `ObsolescenceAgingBandConfig` — both tenant/
+legal-entity-scoped and effective-dated.
+
+- Scrap disposal (`POST /parts/scrap`) now resolves the threshold from
+  `ScrapThresholdConfig` before executing. When no row is active it returns
+  `SCRAP_THRESHOLD_NOT_CONFIGURED` (422) and records a refused `ScrapDisposal`
+  row — never defaults, never skips the check.
+- Obsolescence preview (`POST /parts/obsolescence/preview`) now resolves aging
+  bands from `ObsolescenceAgingBandConfig`. When no row is active it returns
+  `AGING_BAND_CONFIG_NOT_CONFIGURED` (422) — never invents a default band set.
+- Config management endpoints added:
+  `PUT/GET /parts/scrap-threshold-config`
+  `PUT/GET /parts/obsolescence-aging-config`
+- New permissions: `parts.scrap.config.manage` and
+  `parts.obsolescence.config.manage` (Controller-tier; ADMIN/CONTROLLER roles
+  only). Auth migration `20260802030000_add_ce11_ce08_config_permissions` added.
 
 ## Confirmation
 
 No CE-11-owned code modifies, works around silently, or duplicates any of
-the above upstream surfaces. Every item above is either (a) a real,
-already-implemented interim projection explicitly marked for removal once
-the upstream contract lands, or (b) a real, honest "not yet available"
-consume-only surface. None was invented or expanded in scope for this
-gap-closure pass — the rule-pack entity-scoping item is a new *finding*,
-not a new *workaround*; CE-11 does not touch coa-service source to fix it.
+the upstream surfaces above.
+
+**Resolved in this integration pass:**
+- PENDING_UPSTREAM_TECHNICAL_RECONCILIATION — CE-09 S049: wired via insuranceClaimApi.
+- D-CE08-02 scrap threshold: ScrapThresholdConfig table + SCRAP_THRESHOLD_NOT_CONFIGURED refusal.
+- D-CE08-03 aging bands: ObsolescenceAgingBandConfig table + AGING_BAND_CONFIG_NOT_CONFIGURED refusal.
+- Phase 3 CE-07 legalEntityId: top-level legalEntityId added to all 19 SourceEventEnvelope
+  constructions in fixedops-service and parts-accounting-service, matching coa-service's
+  assertEnvelopeShape requirement for rule-pack selection.
+
+**Remaining open (upstream-owned):**
+- PENDING_CE07_TECHNICAL_RECONCILIATION — posted-event schedule shape (CE-07 to resolve).
+- PENDING_CE07_TECHNICAL_RECONCILIATION — rule-pack activation/event-selection entity-scoping
+  defect in coa-service (CE-07 to resolve).

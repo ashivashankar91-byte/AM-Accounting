@@ -137,6 +137,7 @@ export class RoReversalService {
     const envelope: SourceEventEnvelope = {
       eventId,
       tenantId: input.tenantId,
+      legalEntityId: input.legalEntityId,
       eventType: 'fixedops.ro.reversed.v1',
       eventSchemaVersion: '1',
       occurredAt: now,

@@ -40,7 +40,7 @@ export class DeferredMaintenanceService {
     const eventId = crypto.randomUUID();
     const now = new Date().toISOString();
     const envelope: SourceEventEnvelope = {
-      eventId, tenantId: input.tenantId, eventType: 'fixedops.deferredcontract.sold.v1', eventSchemaVersion: '1',
+      eventId, tenantId: input.tenantId, legalEntityId: input.legalEntityId, eventType: 'fixedops.deferredcontract.sold.v1', eventSchemaVersion: '1',
       occurredAt: now, publishedAt: now, sourceSystem: 'fixedops-service',
       sourceEntityType: 'DEFERRED_MAINTENANCE_CONTRACT', sourceEntityId: input.contractNumber,
       correlationId: input.correlationId, businessDate: now.slice(0, 10),
@@ -91,7 +91,7 @@ export class DeferredMaintenanceService {
     const eventId = crypto.randomUUID();
     const now = new Date().toISOString();
     const envelope: SourceEventEnvelope = {
-      eventId, tenantId: input.tenantId, eventType: 'fixedops.deferredcontract.redeemed.v1', eventSchemaVersion: '1',
+      eventId, tenantId: input.tenantId, legalEntityId: contract.legalEntityId, eventType: 'fixedops.deferredcontract.redeemed.v1', eventSchemaVersion: '1',
       occurredAt: now, publishedAt: now, sourceSystem: 'fixedops-service',
       sourceEntityType: 'DEFERRED_MAINTENANCE_CONTRACT', sourceEntityId: input.contractNumber,
       correlationId: input.correlationId, businessDate: now.slice(0, 10),

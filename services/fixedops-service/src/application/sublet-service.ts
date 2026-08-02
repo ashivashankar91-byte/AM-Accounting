@@ -54,7 +54,7 @@ export class SubletService {
       const eventId = crypto.randomUUID();
       const now = new Date().toISOString();
       const envelope: SourceEventEnvelope = {
-        eventId, tenantId, eventType: 'fixedops.sublet.accrued.v1', eventSchemaVersion: '1',
+        eventId, tenantId, legalEntityId, eventType: 'fixedops.sublet.accrued.v1', eventSchemaVersion: '1',
         occurredAt: now, publishedAt: now, sourceSystem: 'fixedops-service',
         sourceEntityType: 'SUBLET_PURCHASE_ORDER', sourceEntityId: po.poNumber,
         correlationId, businessDate: now.slice(0, 10),
@@ -101,7 +101,7 @@ export class SubletService {
     const eventId = crypto.randomUUID();
     const now = new Date().toISOString();
     const envelope: SourceEventEnvelope = {
-      eventId, tenantId: input.tenantId, eventType: 'fixedops.sublet.invoice-matched.v1', eventSchemaVersion: '1',
+      eventId, tenantId: input.tenantId, legalEntityId: po.legalEntityId, eventType: 'fixedops.sublet.invoice-matched.v1', eventSchemaVersion: '1',
       occurredAt: now, publishedAt: now, sourceSystem: 'fixedops-service',
       sourceEntityType: 'SUBLET_PURCHASE_ORDER', sourceEntityId: po.poNumber,
       correlationId: input.correlationId, businessDate: now.slice(0, 10),

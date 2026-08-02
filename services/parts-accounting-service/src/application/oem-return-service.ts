@@ -76,7 +76,7 @@ export class OemReturnService {
 
     const eventId = crypto.randomUUID();
     const envelope: SourceEventEnvelope = {
-      eventId, tenantId: input.tenantId, eventType: 'parts.oemreturn.shipped.v1', eventSchemaVersion: '1.0',
+      eventId, tenantId: input.tenantId, legalEntityId: auth.legalEntityId, eventType: 'parts.oemreturn.shipped.v1', eventSchemaVersion: '1.0',
       occurredAt: new Date().toISOString(), publishedAt: new Date().toISOString(),
       sourceSystem: 'parts-accounting-service', sourceEntityType: 'OEM_RETURN_AUTHORIZATION', sourceEntityId: input.returnAuthNumber,
       correlationId: input.correlationId, causationId: null, businessDate: input.businessDate,
@@ -109,7 +109,7 @@ export class OemReturnService {
 
     const eventId = crypto.randomUUID();
     const envelope: SourceEventEnvelope = {
-      eventId, tenantId: input.tenantId, eventType: 'parts.oemreturn.credit-applied.v1', eventSchemaVersion: '1.0',
+      eventId, tenantId: input.tenantId, legalEntityId: auth.legalEntityId, eventType: 'parts.oemreturn.credit-applied.v1', eventSchemaVersion: '1.0',
       occurredAt: new Date().toISOString(), publishedAt: new Date().toISOString(),
       sourceSystem: 'parts-accounting-service', sourceEntityType: 'OEM_RETURN_AUTHORIZATION', sourceEntityId: input.returnAuthNumber,
       correlationId: input.correlationId, causationId: auth.shipSourceEventId, businessDate: input.businessDate,

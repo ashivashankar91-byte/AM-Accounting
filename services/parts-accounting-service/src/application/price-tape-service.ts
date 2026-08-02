@@ -79,7 +79,7 @@ export class PriceTapeService {
 
     const eventId = crypto.randomUUID();
     const envelope: SourceEventEnvelope = {
-      eventId, tenantId, eventType: 'parts.pricetape.approved.v1', eventSchemaVersion: '1.0',
+      eventId, tenantId, legalEntityId, eventType: 'parts.pricetape.approved.v1', eventSchemaVersion: '1.0',
       occurredAt: new Date().toISOString(), publishedAt: new Date().toISOString(),
       sourceSystem: 'parts-accounting-service', sourceEntityType: 'PRICE_TAPE_LOAD', sourceEntityId: loadBatchId,
       correlationId, causationId: null, businessDate,

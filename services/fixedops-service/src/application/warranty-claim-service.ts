@@ -102,7 +102,7 @@ export class WarrantyClaimService {
     const eventId = crypto.randomUUID();
     const now = new Date().toISOString();
     const envelope: SourceEventEnvelope = {
-      eventId, tenantId: input.tenantId, eventType: 'fixedops.warrantyclaim.dispositioned.v1', eventSchemaVersion: '1',
+      eventId, tenantId: input.tenantId, legalEntityId: claim.legalEntityId, eventType: 'fixedops.warrantyclaim.dispositioned.v1', eventSchemaVersion: '1',
       occurredAt: now, publishedAt: now, sourceSystem: 'fixedops-service',
       sourceEntityType: 'WARRANTY_CLAIM_ITEM', sourceEntityId: input.claimNumber,
       correlationId: input.correlationId, businessDate: now.slice(0, 10),

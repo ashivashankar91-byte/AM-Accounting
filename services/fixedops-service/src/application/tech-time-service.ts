@@ -126,7 +126,7 @@ export class TechTimeService {
     const eventId = crypto.randomUUID();
     const now = new Date().toISOString();
     const envelope: SourceEventEnvelope = {
-      eventId, tenantId: input.tenantId, eventType: 'fixedops.techtime.absorbed.v1', eventSchemaVersion: '1',
+      eventId, tenantId: input.tenantId, legalEntityId: input.legalEntityId, eventType: 'fixedops.techtime.absorbed.v1', eventSchemaVersion: '1',
       occurredAt: now, publishedAt: now, sourceSystem: 'fixedops-service',
       sourceEntityType: 'PAYROLL_PERIOD', sourceEntityId: `${input.techId}:${input.payrollPeriodId}`,
       correlationId: input.correlationId, businessDate: input.businessDate,
@@ -185,7 +185,7 @@ export class TechTimeService {
     const eventId = crypto.randomUUID();
     const now = new Date().toISOString();
     const envelope: SourceEventEnvelope = {
-      eventId, tenantId: input.tenantId, eventType: 'fixedops.techtime.absorption-reversed.v1', eventSchemaVersion: '1',
+      eventId, tenantId: input.tenantId, legalEntityId: original.legalEntityId, eventType: 'fixedops.techtime.absorption-reversed.v1', eventSchemaVersion: '1',
       occurredAt: now, publishedAt: now, sourceSystem: 'fixedops-service',
       sourceEntityType: 'PAYROLL_PERIOD', sourceEntityId: `${input.techId}:${input.payrollPeriodId}`,
       correlationId: input.correlationId, causationId: original.sourceEventId,

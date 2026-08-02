@@ -94,7 +94,7 @@ export class PhysicalInventoryService {
 
     const eventId = crypto.randomUUID();
     const envelope: SourceEventEnvelope = {
-      eventId, tenantId: input.tenantId, eventType: 'parts.physical.adjustment-approved.v1', eventSchemaVersion: '1.0',
+      eventId, tenantId: input.tenantId, legalEntityId: session.legalEntityId, eventType: 'parts.physical.adjustment-approved.v1', eventSchemaVersion: '1.0',
       occurredAt: new Date().toISOString(), publishedAt: new Date().toISOString(),
       sourceSystem: 'parts-accounting-service', sourceEntityType: 'PHYSICAL_INVENTORY_SESSION', sourceEntityId: input.sessionId,
       correlationId: input.correlationId, causationId: null, businessDate: input.businessDate,

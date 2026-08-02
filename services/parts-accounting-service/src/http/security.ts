@@ -40,6 +40,10 @@ export const PARTS_PERMISSIONS = {
   OBSOLESCENCE_APPROVE: 'parts.obsolescence.approve',
   SCRAP_EXECUTE: 'parts.scrap.execute',
   SCRAP_VIEW: 'parts.scrap.view',
+  // D-CE08-02 integration fix: separate config-manage permission for scrap threshold
+  SCRAP_CONFIG_MANAGE: 'parts.scrap.config.manage',
+  // D-CE08-03 integration fix: separate config-manage permission for aging bands
+  OBSOLESCENCE_CONFIG_MANAGE: 'parts.obsolescence.config.manage',
   PHYSICAL_VIEW: 'parts.physical.view',
   PHYSICAL_COUNT: 'parts.physical.count',
   PHYSICAL_APPROVE: 'parts.physical.approve',

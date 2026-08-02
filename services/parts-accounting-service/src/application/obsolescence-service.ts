@@ -53,7 +53,7 @@ export class ObsolescenceService {
 
     const eventId = crypto.randomUUID();
     const envelope: SourceEventEnvelope = {
-      eventId, tenantId, eventType: 'parts.obsolescence.provision-approved.v1', eventSchemaVersion: '1.0',
+      eventId, tenantId, legalEntityId, eventType: 'parts.obsolescence.provision-approved.v1', eventSchemaVersion: '1.0',
       occurredAt: new Date().toISOString(), publishedAt: new Date().toISOString(),
       sourceSystem: 'parts-accounting-service', sourceEntityType: 'OBSOLESCENCE_PROVISION_RUN', sourceEntityId: runId,
       correlationId, causationId: null, businessDate,
@@ -116,7 +116,7 @@ export class ObsolescenceService {
 
     const eventId = crypto.randomUUID();
     const envelope: SourceEventEnvelope = {
-      eventId, tenantId: input.tenantId, eventType: 'parts.scrap.disposed.v1', eventSchemaVersion: '1.0',
+      eventId, tenantId: input.tenantId, legalEntityId: input.legalEntityId, eventType: 'parts.scrap.disposed.v1', eventSchemaVersion: '1.0',
       occurredAt: new Date().toISOString(), publishedAt: new Date().toISOString(),
       sourceSystem: 'parts-accounting-service', sourceEntityType: 'SCRAP_DISPOSAL', sourceEntityId: `${input.partNumber}-${eventId}`,
       correlationId: input.correlationId, causationId: null, businessDate: input.businessDate,

@@ -441,3 +441,40 @@ model AuditOutboxEvent {
   @@index([tenantId, publishedAt])
   @@map("parts_audit_outbox_event")
 }
+
+// ── D-CE08-02 Integration fix — Scrap threshold config ───────────────────────
+// Tenant/legal-entity-scoped, effective-dated scrap-disposal threshold.
+// When no active row exists the scrap endpoint refuses with
+// SCRAP_THRESHOLD_NOT_CONFIGURED. Never invented/defaulted server-side.
+model ScrapThresholdConfig {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  legalEntityId  String   @map("legal_entity_id")
+  thresholdAmount Decimal @map("threshold_amount") @db.Decimal(15, 2)
+  effectiveFrom  DateTime @map("effective_from") @db.Date
+  createdBy      String   @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, legalEntityId, effectiveFrom])
+  @@index([tenantId, legalEntityId, effectiveFrom(sort: Desc)])
+  @@map("scrap_threshold_config")
+}
+
+// ── D-CE08-03 Integration fix — Obsolescence aging band config ───────────────
+// Tenant/legal-entity-scoped, effective-dated aging band configuration.
+// bandConfig stores [{ label, minDays, maxDays, provisionPct }].
+// When no active row exists the obsolescence preview refuses with
+// AGING_BAND_CONFIG_NOT_CONFIGURED. Never invented/defaulted server-side.
+model ObsolescenceAgingBandConfig {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  legalEntityId  String   @map("legal_entity_id")
+  bandConfig     Json     @map("band_config")
+  effectiveFrom  DateTime @map("effective_from") @db.Date
+  createdBy      String   @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, legalEntityId, effectiveFrom])
+  @@index([tenantId, legalEntityId, effectiveFrom(sort: Desc)])
+  @@map("obsolescence_aging_band_config")
+}

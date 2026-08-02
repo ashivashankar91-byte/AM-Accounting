@@ -109,11 +109,108 @@ export async function partsAccountingRoutes(app: FastifyInstance) {
     catch (e) { return handleError(e, reply); }
   });
 
+  // ── D-CE08-02 Scrap threshold config ────────────────────────────────────
+  // Tenant/legal-entity-scoped, effective-dated. When no active row exists,
+  // scrap disposal refuses with SCRAP_THRESHOLD_NOT_CONFIGURED.
+  app.put('/scrap-threshold-config', { preHandler: requirePartsPermission(P.SCRAP_CONFIG_MANAGE) }, async (req, reply) => {
+    try {
+      const tenantId = getTenantId(req); const b = req.body as any;
+      const legalEntityId = requireLegalEntityId(b);
+      if (!b.thresholdAmount || Number(b.thresholdAmount) <= 0) {
+        return reply.status(400).send({ error: 'VALIDATION_ERROR', message: 'thresholdAmount must be a positive number' });
+      }
+      if (!b.effectiveFrom) {
+        return reply.status(400).send({ error: 'VALIDATION_ERROR', message: 'effectiveFrom (YYYY-MM-DD) is required' });
+      }
+      const row = await prisma.scrapThresholdConfig.upsert({
+        where: { tenantId_legalEntityId_effectiveFrom: { tenantId, legalEntityId, effectiveFrom: new Date(b.effectiveFrom) } },
+        create: { tenantId, legalEntityId, thresholdAmount: b.thresholdAmount, effectiveFrom: new Date(b.effectiveFrom), createdBy: actorOf(req) },
+        update: { thresholdAmount: b.thresholdAmount },
+      });
+      return reply.send(row);
+    } catch (e) { return handleError(e, reply); }
+  });
+  app.get('/scrap-threshold-config/active', { preHandler: requirePartsPermission(P.SCRAP_VIEW) }, async (req, reply) => {
+    try {
+      const tenantId = getTenantId(req); const q = req.query as any;
+      const legalEntityId = requireLegalEntityId(q);
+      const asOf = q.asOfDate ? new Date(q.asOfDate) : new Date();
+      const row = await prisma.scrapThresholdConfig.findFirst({
+        where: { tenantId, legalEntityId, effectiveFrom: { lte: asOf } },
+        orderBy: { effectiveFrom: 'desc' },
+      });
+      if (!row) return reply.status(404).send({ error: 'NOT_CONFIGURED', message: 'No scrap threshold configured for this legal entity. Set one via PUT /parts/scrap-threshold-config.' });
+      return reply.send(row);
+    } catch (e) { return handleError(e, reply); }
+  });
+  app.get('/scrap-threshold-config/history', { preHandler: requirePartsPermission(P.SCRAP_VIEW) }, async (req, reply) => {
+    try {
+      const tenantId = getTenantId(req); const q = req.query as any;
+      const legalEntityId = requireLegalEntityId(q);
+      return reply.send({ items: await prisma.scrapThresholdConfig.findMany({ where: { tenantId, legalEntityId }, orderBy: { effectiveFrom: 'desc' } }) });
+    } catch (e) { return handleError(e, reply); }
+  });
+
+  // ── D-CE08-03 Obsolescence aging band config ─────────────────────────────
+  app.put('/obsolescence-aging-config', { preHandler: requirePartsPermission(P.OBSOLESCENCE_CONFIG_MANAGE) }, async (req, reply) => {
+    try {
+      const tenantId = getTenantId(req); const b = req.body as any;
+      const legalEntityId = requireLegalEntityId(b);
+      if (!Array.isArray(b.bandConfig) || b.bandConfig.length === 0) {
+        return reply.status(400).send({ error: 'VALIDATION_ERROR', message: 'bandConfig must be a non-empty array of band definitions' });
+      }
+      if (!b.effectiveFrom) {
+        return reply.status(400).send({ error: 'VALIDATION_ERROR', message: 'effectiveFrom (YYYY-MM-DD) is required' });
+      }
+      const row = await prisma.obsolescenceAgingBandConfig.upsert({
+        where: { tenantId_legalEntityId_effectiveFrom: { tenantId, legalEntityId, effectiveFrom: new Date(b.effectiveFrom) } },
+        create: { tenantId, legalEntityId, bandConfig: b.bandConfig, effectiveFrom: new Date(b.effectiveFrom), createdBy: actorOf(req) },
+        update: { bandConfig: b.bandConfig },
+      });
+      return reply.send(row);
+    } catch (e) { return handleError(e, reply); }
+  });
+  app.get('/obsolescence-aging-config/active', { preHandler: requirePartsPermission(P.OBSOLESCENCE_VIEW) }, async (req, reply) => {
+    try {
+      const tenantId = getTenantId(req); const q = req.query as any;
+      const legalEntityId = requireLegalEntityId(q);
+      const asOf = q.asOfDate ? new Date(q.asOfDate) : new Date();
+      const row = await prisma.obsolescenceAgingBandConfig.findFirst({
+        where: { tenantId, legalEntityId, effectiveFrom: { lte: asOf } },
+        orderBy: { effectiveFrom: 'desc' },
+      });
+      if (!row) return reply.status(404).send({ error: 'NOT_CONFIGURED', message: 'No obsolescence aging-band config set for this legal entity. Set one via PUT /parts/obsolescence-aging-config.' });
+      return reply.send(row);
+    } catch (e) { return handleError(e, reply); }
+  });
+  app.get('/obsolescence-aging-config/history', { preHandler: requirePartsPermission(P.OBSOLESCENCE_VIEW) }, async (req, reply) => {
+    try {
+      const tenantId = getTenantId(req); const q = req.query as any;
+      const legalEntityId = requireLegalEntityId(q);
+      return reply.send({ items: await prisma.obsolescenceAgingBandConfig.findMany({ where: { tenantId, legalEntityId }, orderBy: { effectiveFrom: 'desc' } }) });
+    } catch (e) { return handleError(e, reply); }
+  });
+
   // ── S068 Obsolescence & scrap ────────────────────────────────────────────
   app.post('/obsolescence/preview', { preHandler: requirePartsPermission(P.OBSOLESCENCE_APPROVE) }, async (req, reply) => {
     try {
       const tenantId = getTenantId(req); const b = req.body as any;
-      return reply.status(201).send(await obsolescence.preview(tenantId, b.legalEntityId, b.asOfDate, b.bandConfig, b.lines));
+      const legalEntityId = requireLegalEntityId(b);
+      // D-CE08-03 integration fix: resolve aging bands from server-side config.
+      // When no config is set, refuse with NOT_CONFIGURED — never invent defaults.
+      const asOf = b.asOfDate ? new Date(b.asOfDate) : new Date();
+      const bandConfigRow = await prisma.obsolescenceAgingBandConfig.findFirst({
+        where: { tenantId, legalEntityId, effectiveFrom: { lte: asOf } },
+        orderBy: { effectiveFrom: 'desc' },
+      });
+      if (!bandConfigRow) {
+        return reply.status(422).send({
+          error: 'AGING_BAND_CONFIG_NOT_CONFIGURED',
+          message: 'No obsolescence aging-band configuration is active for this legal entity. Set one via PUT /parts/obsolescence-aging-config before running a provision preview.',
+        });
+      }
+      // bandConfig from DB takes precedence; caller-supplied b.bandConfig is ignored when config is present.
+      return reply.status(201).send(await obsolescence.preview(tenantId, legalEntityId, b.asOfDate, bandConfigRow.bandConfig, b.lines));
     } catch (e) { return handleError(e, reply); }
   });
   app.post('/obsolescence/:runId/approve', { preHandler: requirePartsPermission(P.OBSOLESCENCE_APPROVE) }, async (req, reply) => {
@@ -129,7 +226,26 @@ export async function partsAccountingRoutes(app: FastifyInstance) {
   app.post('/scrap', { preHandler: requirePartsPermission(P.SCRAP_EXECUTE) }, async (req, reply) => {
     try {
       const tenantId = getTenantId(req); const b = req.body as any;
-      const result = await obsolescence.scrap({ tenantId, actor: actorOf(req), hasScrapPermission: true, ...b });
+      const legalEntityId = requireLegalEntityId(b);
+      // D-CE08-02 integration fix: resolve scrap threshold from server-side config.
+      // When no config is set, refuse with SCRAP_THRESHOLD_NOT_CONFIGURED.
+      const asOf = b.businessDate ? new Date(b.businessDate) : new Date();
+      const thresholdRow = await prisma.scrapThresholdConfig.findFirst({
+        where: { tenantId, legalEntityId, effectiveFrom: { lte: asOf } },
+        orderBy: { effectiveFrom: 'desc' },
+      });
+      if (!thresholdRow) {
+        return reply.status(422).send({
+          error: 'SCRAP_THRESHOLD_NOT_CONFIGURED',
+          message: 'No scrap-disposal threshold is configured for this legal entity. A Controller must set one via PUT /parts/scrap-threshold-config before scrap disposals can proceed.',
+        });
+      }
+      const result = await obsolescence.scrap({
+        tenantId, actor: actorOf(req), hasScrapPermission: true,
+        thresholdAmount: Number(thresholdRow.thresholdAmount),
+        ...b,
+        legalEntityId,  // ensure legalEntityId is always from the resolved path
+      });
       return reply.status(201).send(result);
     } catch (e) { return handleError(e, reply); }
   });

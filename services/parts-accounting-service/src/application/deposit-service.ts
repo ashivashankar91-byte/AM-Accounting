@@ -33,7 +33,7 @@ export class DepositService {
 
     const eventId = crypto.randomUUID();
     const envelope: SourceEventEnvelope = {
-      eventId, tenantId: input.tenantId, eventType: 'parts.deposit.received.v1', eventSchemaVersion: '1.0',
+      eventId, tenantId: input.tenantId, legalEntityId: input.legalEntityId, eventType: 'parts.deposit.received.v1', eventSchemaVersion: '1.0',
       occurredAt: new Date().toISOString(), publishedAt: new Date().toISOString(),
       sourceSystem: 'parts-accounting-service', sourceEntityType: 'SPECIAL_ORDER_DEPOSIT', sourceEntityId: input.orderNumber,
       correlationId: input.correlationId, causationId: null, businessDate: input.businessDate,
@@ -71,7 +71,7 @@ export class DepositService {
 
       const eventId = crypto.randomUUID();
       const envelope: SourceEventEnvelope = {
-        eventId, tenantId: input.tenantId, eventType: 'parts.deposit.applied.v1', eventSchemaVersion: '1.0',
+        eventId, tenantId: input.tenantId, legalEntityId: deposit.legalEntityId, eventType: 'parts.deposit.applied.v1', eventSchemaVersion: '1.0',
         occurredAt: new Date().toISOString(), publishedAt: new Date().toISOString(),
         sourceSystem: 'parts-accounting-service', sourceEntityType: 'SPECIAL_ORDER_DEPOSIT', sourceEntityId: input.orderNumber,
         correlationId: input.correlationId, causationId: deposit.depositSourceEventId, businessDate: input.businessDate,
@@ -105,7 +105,7 @@ export class DepositService {
 
       const eventId = crypto.randomUUID();
       const envelope: SourceEventEnvelope = {
-        eventId, tenantId: input.tenantId, eventType: 'parts.deposit.refunded.v1', eventSchemaVersion: '1.0',
+        eventId, tenantId: input.tenantId, legalEntityId: deposit.legalEntityId, eventType: 'parts.deposit.refunded.v1', eventSchemaVersion: '1.0',
         occurredAt: new Date().toISOString(), publishedAt: new Date().toISOString(),
         sourceSystem: 'parts-accounting-service', sourceEntityType: 'SPECIAL_ORDER_DEPOSIT', sourceEntityId: input.orderNumber,
         correlationId: input.correlationId, causationId: deposit.depositSourceEventId, businessDate: input.businessDate,
