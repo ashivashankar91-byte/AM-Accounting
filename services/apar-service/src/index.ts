@@ -30,7 +30,8 @@ import { PaymentRunService } from './application/payment-run-service';
 import { TradePayoffService } from './application/trade-payoff-service';
 import { FleetBillingService } from './application/fleet-billing-service';
 import { InsuranceArService } from './application/insurance-ar-service';
-import { Vendor1099Service } from './application/vendor-1099-service';import {
+import { Vendor1099Service } from './application/vendor-1099-service';
+import {
   IEventPublisher, IAREntryRepository, IAPEntryRepository, OutboxProcessor,
   HttpAuthzClient, AuthzClient, HttpAuditClient, AuditOutboxDrainer, makePrismaAuditOutboxStore,
   createTenantRlsMiddleware, tenantContextHook,

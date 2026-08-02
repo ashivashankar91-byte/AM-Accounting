@@ -22,7 +22,8 @@ import { SweepService } from './application/sweep-service';
 import { FpOffsetService } from './application/fp-offset-service';
 import { CashPositionService } from './application/cash-position-service';
 import { UnconfiguredBankFeedAdapter } from './infrastructure/bank-feed-adapter';
-import { UnconfiguredSettlementAdapter } from './infrastructure/settlement-adapter';import { RabbitMQEventPublisher } from './infrastructure/event-publisher';
+import { UnconfiguredSettlementAdapter } from './infrastructure/settlement-adapter';
+import { RabbitMQEventPublisher } from './infrastructure/event-publisher';
 import {
   IEventPublisher, HttpAuthzClient, AuthzClient,
   HttpAuditClient, AuditOutboxDrainer, makePrismaAuditOutboxStore,
