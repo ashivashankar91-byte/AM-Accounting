@@ -59,7 +59,10 @@ describe('HttpPostingGateway', () => {
     const result = await gw.submitPayrollEvent(baseInput);
 
     expect(capturedBody.tenantId).toBe('tenant-test');
-    expect(capturedBody.eventType).toBe('PAYROLL_BATCH_POSTED');
+    // CE-07's rule-pack DSL requires the lowercase.dotted.vN convention
+    // (validator.ts EVENT_TYPE_PATTERN) — PAYROLL_BATCH_POSTED remains the
+    // payroll-service-internal label; the wire envelope translates it.
+    expect(capturedBody.eventType).toBe('payroll.batch.posted.v1');
     expect(capturedBody.sourceSystem).toBe('payroll-service');
     expect(capturedBody.sourceEntityType).toBe('PayrollBatch');
     expect(capturedBody.sourceEntityId).toBe('batch-1');
@@ -69,6 +72,21 @@ describe('HttpPostingGateway', () => {
     expect(typeof capturedBody.eventId).toBe('string');
     expect(result.status).toBe('POSTED');
     expect(result.journalEntryId).toBe('je-1');
+  });
+
+  it('integration reconciliation: envelope always carries a non-empty top-level legalEntityId (CE-07 REQUIRED_ENVELOPE_FIELDS) — defaults to tenantId when the caller does not resolve a real legal entity', async () => {
+    let capturedBody: any = null;
+    global.fetch = vi.fn().mockImplementation(async (_url: string, opts: any) => {
+      capturedBody = JSON.parse(opts.body);
+      return { ok: true, status: 200, json: async () => ({ executionId: 'exec-1', eventId: capturedBody.eventId, status: 'POSTED', idempotent: false }) };
+    }) as any;
+
+    const gw = new HttpPostingGateway('test-secret', 'http://coa-service:3016');
+    await gw.submitPayrollEvent(baseInput);
+    expect(capturedBody.legalEntityId).toBe('tenant-test');
+
+    await gw.submitPayrollEvent({ ...baseInput, legalEntityId: 'entity-42' });
+    expect(capturedBody.legalEntityId).toBe('entity-42');
   });
 
   it('the same idempotencyKey always produces the same eventId (deterministic identity, safe retry)', async () => {

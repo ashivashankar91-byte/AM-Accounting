@@ -506,22 +506,14 @@ export class PayrollService {
     return { valid: errors.length === 0, errors };
   }
 
-  async postBatch(tenantId: TenantId, batchId: string, postedByUserId: string): Promise<PostingResult> {
-    const batch = await this.getBatch(tenantId, batchId);
-    if (batch.status !== 'APPROVED') {
-      throw new Error(`Batch must be APPROVED before posting; current status: ${batch.status}`);
-    }
-    // Segregation of duties, second gate: the identity executing the post
-    // step must differ from the batch's approver. gl-service enforces the
-    // same rule again independently (createdByUserId vs approverUserId on
-    // the journal entry itself) as a defense-in-depth backstop.
-    if (postedByUserId === batch.approvedBy) {
-      throw new SegregationOfDutiesError('The batch approver cannot also execute the posting step (self-approval denial).');
-    }
-
-    const items = await this.itemRepo.findByBatch(tenantId, batchId);
-    if (items.length === 0) throw new Error('No items to post');
-
+  /**
+   * fix(integration): extracted so voidBatch can rebuild the identical
+   * per-department journal lines (mirrored to a symmetric reversal) instead
+   * of submitting an empty distributions array — CE-07's blueprint resolver
+   * (debitLineItemsPath/creditLineItemsPath) requires a non-empty line-item
+   * array on every posting/reversal event, never just on the original post.
+   */
+  private async buildJournalLines(tenantId: TenantId, items: Awaited<ReturnType<IPayrollItemRepository['findByBatch']>>) {
     const journalLines: Array<{ glAccountCode: string; debit: number; credit: number; description: string }> = [];
     const deptTotals = new Map<string, {
       grossPay: number; netPay: number; federalTax: number; stateTax: number;
@@ -589,6 +581,27 @@ export class PayrollService {
       }
     }
 
+    return { journalLines, totalDebits, totalCredits };
+  }
+
+  async postBatch(tenantId: TenantId, batchId: string, postedByUserId: string): Promise<PostingResult> {
+    const batch = await this.getBatch(tenantId, batchId);
+    if (batch.status !== 'APPROVED') {
+      throw new Error(`Batch must be APPROVED before posting; current status: ${batch.status}`);
+    }
+    // Segregation of duties, second gate: the identity executing the post
+    // step must differ from the batch's approver. gl-service enforces the
+    // same rule again independently (createdByUserId vs approverUserId on
+    // the journal entry itself) as a defense-in-depth backstop.
+    if (postedByUserId === batch.approvedBy) {
+      throw new SegregationOfDutiesError('The batch approver cannot also execute the posting step (self-approval denial).');
+    }
+
+    const items = await this.itemRepo.findByBatch(tenantId, batchId);
+    if (items.length === 0) throw new Error('No items to post');
+
+    const { journalLines, totalDebits, totalCredits } = await this.buildJournalLines(tenantId, items);
+
     // Double-entry balance enforcement
     const imbalance = Math.abs(totalDebits - totalCredits);
     if (imbalance > 0.02) {
@@ -621,6 +634,7 @@ export class PayrollService {
     try {
       posted = await this.postingGateway.submitPayrollEvent({
         tenantId,
+        legalEntityId: tenantId, // see posting-gateway.ts's doc-comment — single-entity-per-tenant default
         batchId,
         batchNumber: batch.batchNumber as string,
         businessDate: (batch.payDate as Date).toISOString().slice(0, 10),
@@ -680,6 +694,22 @@ export class PayrollService {
 
     const items = await this.itemRepo.findByBatch(tenantId, batchId);
 
+    // fix(integration): CE-07's blueprint resolver requires a non-empty
+    // debitLineItemsPath/creditLineItemsPath array on every event it posts,
+    // including reversals — rebuild the SAME per-department lines postBatch
+    // used, with debit/credit swapped, so the reversal is the true
+    // symmetric mirror of the original journal rather than an empty event
+    // that CE-07 would refuse (MISSING_LINE_ITEMS).
+    const { journalLines: originalLines } = await this.buildJournalLines(tenantId, items);
+    const reversingDistributions: PayrollDistributionLine[] = originalLines.map((line) => ({
+      payComponent: line.glAccountCode,
+      department: (line.description.split(' ')[0]) ?? 'UNKNOWN',
+      amount: line.debit > 0 ? line.debit : line.credit,
+      // Mirrored: what was a debit on the original journal is a credit on
+      // the reversal, and vice versa (symmetric reversing entry).
+      direction: line.debit > 0 ? 'CREDIT' : 'DEBIT',
+    }));
+
     // Original-to-reversal linkage (S218): submit a PAYROLL_BATCH_REVERSED
     // canonical event through the same CE-07 governed posting boundary
     // (never a direct gl-service call) — reversalOfEventId links back to
@@ -692,12 +722,13 @@ export class PayrollService {
     try {
       reversal = await this.postingGateway.submitPayrollEvent({
         tenantId,
+        legalEntityId: tenantId, // see posting-gateway.ts's doc-comment — single-entity-per-tenant default
         batchId,
         batchNumber: batch.batchNumber as string,
         businessDate: new Date().toISOString().slice(0, 10),
         payPeriodStart: (batch.payPeriodStart as Date).toISOString().slice(0, 10),
         payPeriodEnd: (batch.payPeriodEnd as Date).toISOString().slice(0, 10),
-        distributions: [],
+        distributions: reversingDistributions,
         idempotencyKey: `payroll-batch-reversed:${tenantId}:${batchId}:${voidReason}`,
         correlationId: batchId,
         actor: voidedByUserId,

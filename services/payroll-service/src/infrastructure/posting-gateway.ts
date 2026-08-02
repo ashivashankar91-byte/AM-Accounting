@@ -22,6 +22,15 @@
 // constructing/posting a journal entry directly against gl-service.
 import crypto from 'crypto';
 
+// fix(integration): payroll-service has no per-transaction physical-store
+// concept, mirroring apar-service's own AP_DEFAULT_STORE_ID precedent
+// (services/apar-service/src/application/invoice-approval-service.ts) for a
+// service in the same position. A single labeled default lets CE-07's
+// debitLineItemsPath/creditLineItemsPath line items carry a non-null
+// storeId without inventing a per-department store dimension payroll data
+// has no source for.
+export const PAYROLL_DEFAULT_STORE_ID = 'PAYROLL-CENTRAL';
+
 export class PostingRefusedError extends Error {
   readonly status = 422;
   readonly code = 'POSTING_REFUSED';
@@ -51,12 +60,57 @@ export class PostingIdentityConflictError extends Error {
 }
 
 export interface PayrollDistributionLine {
-  /** Tenant-configured pay component key (e.g. REGULAR_PAY, EMPLOYER_FICA_EXPENSE, NET_PAY, FED_TAX). CE-07's own rule pack maps this to a GL account — payroll-service does not resolve account codes itself anymore. */
+  /**
+   * fix(integration): despite this field's original name, payroll-service's
+   * own S025-governed PayrollGLMapping already resolves each pay component
+   * to a real chart-of-accounts NUMBER before this gateway is called (see
+   * payroll-service.ts's postBatch — journalLines[].glAccountCode). CE-07's
+   * rule pack for PAYROLL_BATCH_POSTED is therefore a pass-through
+   * (debitLineItemsPath/creditLineItemsPath), never a second component->
+   * account mapping layer — one authoritative mapping (payroll's own),
+   * never two competing ones.
+   */
   payComponent: string;
   department: string;
   amount: number;
   direction: 'DEBIT' | 'CREDIT';
 }
+
+/** Raw shape CE-07's posting-engine blueprint resolver requires for `debitLineItemsPath`/`creditLineItemsPath` line items (services/coa-service/.../blueprint.ts's RawDebitLineItem). */
+interface ResolvedGlLine {
+  accountNumber: string;
+  storeId: string;
+  deptCode: string | null;
+  amount: number;
+}
+
+function toResolvedLines(distributions: PayrollDistributionLine[], direction: 'DEBIT' | 'CREDIT'): ResolvedGlLine[] {
+  return distributions
+    .filter((d) => d.direction === direction)
+    .map((d) => ({ accountNumber: d.payComponent, storeId: PAYROLL_DEFAULT_STORE_ID, deptCode: d.department || null, amount: d.amount }));
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/**
+ * fix(integration): CE-07's rule-pack validator requires eventType to match
+ * `^[a-z0-9]+(\.[a-z0-9-]+)*\.v[0-9]+$` (services/coa-service/.../validator.ts
+ * EVENT_TYPE_PATTERN) — the same lowercase.dotted.vN convention every other
+ * integrated service's envelope already uses (ap.invoice.accepted.v1,
+ * ap.payment.posted.v1, cash.receipt.applied.v1). PAYROLL_BATCH_POSTED never
+ * matched that pattern, so no rule pack could ever validly be authored to
+ * match it — confirmed live via coa-service's own INVALID_EVENT_TYPE
+ * validation finding. PAYROLL_BATCH_POSTED/PAYROLL_BATCH_REVERSED remain the
+ * canonical payroll-service-internal labels (outbox events, this file's own
+ * PayrollPostingEventInput union); only the wire-level envelope sent to
+ * CE-07 is translated to its required convention.
+ */
+const WIRE_EVENT_TYPE: Record<PayrollPostingEventInput['eventType'], string> = {
+  PAYROLL_BATCH_POSTED: 'payroll.batch.posted.v1',
+  PAYROLL_BATCH_REVERSED: 'payroll.batch.reversed.v1',
+};
 
 export interface PayrollPostingEventInput {
   tenantId: string;
@@ -133,7 +187,14 @@ export class HttpPostingGateway implements IPostingGateway {
     const envelope = {
       eventId,
       tenantId: input.tenantId,
-      eventType: input.eventType,
+      // CE-07 requires legalEntityId as a top-level, non-empty envelope
+      // field (services/coa-service/.../event-envelope.ts REQUIRED_ENVELOPE_FIELDS)
+      // — payroll-service has no legal-entity dimension of its own, so this
+      // follows the same single-entity-per-tenant default apar-service's
+      // ap-invoice-envelope.ts already establishes (legalEntityId = tenantId
+      // unless the caller resolved a real one).
+      legalEntityId: input.legalEntityId ?? input.tenantId,
+      eventType: WIRE_EVENT_TYPE[input.eventType],
       eventSchemaVersion: '1.0',
       occurredAt: nowIso,
       publishedAt: nowIso,
@@ -149,7 +210,21 @@ export class HttpPostingGateway implements IPostingGateway {
         legalEntityId: input.legalEntityId ?? null,
         payPeriodStart: input.payPeriodStart,
         payPeriodEnd: input.payPeriodEnd,
+        // Raw business facts (payComponent/department/direction) — kept for
+        // lineage/audit even though CE-07's rule pack consumes the resolved
+        // debitLines/creditLines below, not this array directly.
         distributions: input.distributions,
+        // fix(integration): shaped to match CE-07's blueprint resolver
+        // (debitLineItemsPath/creditLineItemsPath — RawDebitLineItem needs
+        // accountNumber/storeId/amount per line, see
+        // services/coa-service/.../blueprint.ts). payroll-service's own
+        // S025-governed PayrollGLMapping already resolved each distribution's
+        // `payComponent` to a real account NUMBER before this gateway runs,
+        // so this is a reshape of already-resolved facts, never a second
+        // account-mapping decision.
+        debitLines: toResolvedLines(input.distributions, 'DEBIT'),
+        creditLines: toResolvedLines(input.distributions, 'CREDIT'),
+        totalAmount: round2(input.distributions.filter((d) => d.direction === 'DEBIT').reduce((sum, d) => sum + d.amount, 0)),
         rulePackVersionId: input.rulePackVersionId ?? null,
         reversalOfEventId: input.reversalOfEventId ?? null,
         actor: input.actor,
