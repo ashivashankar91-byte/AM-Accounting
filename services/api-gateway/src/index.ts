@@ -128,10 +128,14 @@ async function bootstrap() {
   const app = Fastify({ logger: true, disableRequestLogging: true });
   await app.register(cors, { origin: true });
 
-  // Global rate limit: 300/min per tenant, override per-service as needed
+  // Global rate limit: 300/min per tenant, override per-service as needed.
+  // fix(integration): GATEWAY_RATE_LIMIT_MAX/_WINDOW let an isolated
+  // non-production certification run (e.g. CE-13's own gateway instance)
+  // raise this limit for its own process only — unset in every production
+  // deployment, so the 300/1-minute production default is unchanged.
   await app.register(rateLimit, {
-    max: 300,
-    timeWindow: '1 minute',
+    max: process.env['GATEWAY_RATE_LIMIT_MAX'] ? parseInt(process.env['GATEWAY_RATE_LIMIT_MAX'], 10) : 300,
+    timeWindow: process.env['GATEWAY_RATE_LIMIT_WINDOW'] ?? '1 minute',
     keyGenerator: tenantKeyGenerator,
     errorResponseBuilder: (_req, context) => ({
       statusCode: 429,

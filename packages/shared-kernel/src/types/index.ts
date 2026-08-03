@@ -347,6 +347,15 @@ export interface JournalEntry {
   dealProductLines?: DealProductLine[];
   /** CE-07 — authoritative idempotency identity for callers that must never create a second journal for the same canonical event on retry/crash-recovery. Null for callers that supplied none (most existing producers). */
   idempotencyKey?: string | null;
+  /** fix(integration): CE-07/CE-09 posting-engine context, persisted at
+   * creation time (see journal-repository.ts's create()/toDomain()) so the
+   * real legalEntityId/postingExecutionId/sourceEventId flow through to the
+   * JOURNAL_ENTRY_POSTED outbox event instead of always being null. */
+  legalEntityId?: string | null;
+  postingExecutionId?: string | null;
+  sourceEventId?: string | null;
+  rulePackKey?: string | null;
+  rulePackVersion?: string | null;
 }
 
 export interface EOMClose {
@@ -558,6 +567,12 @@ export interface CreateJournalEntryDTO {
   lines: CreateJournalLineDTO[];
   /** CE-07 — authoritative idempotency identity. See JournalEntry.idempotencyKey. */
   idempotencyKey?: string;
+  /** CE-07/CE-09 posting-engine context — see JournalEntry's identical fields below. */
+  legalEntityId?: string | null;
+  postingExecutionId?: string | null;
+  sourceEventId?: string | null;
+  rulePackKey?: string | null;
+  rulePackVersion?: string | null;
 }
 
 export interface CreateJournalLineDTO {

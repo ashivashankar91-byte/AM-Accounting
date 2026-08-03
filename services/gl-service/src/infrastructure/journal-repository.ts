@@ -109,6 +109,15 @@ export class PrismaJournalRepository implements IJournalRepository {
           priorPeriodAdjustment: dto.priorPeriodAdjustment ?? false,
           adjustmentReason: dto.adjustmentReason ?? null,
           idempotencyKey: dto.idempotencyKey ?? null,
+          // fix(integration): these columns existed but were never wired
+          // through from the DTO — every journal's legalEntityId/
+          // postingExecutionId/sourceEventId was silently persisted as
+          // null, found while certifying JOURNAL_ENTRY_POSTED evidence.
+          legalEntityId: dto.legalEntityId ?? null,
+          postingExecutionId: dto.postingExecutionId ?? null,
+          sourceEventId: dto.sourceEventId ?? null,
+          rulePackKey: dto.rulePackKey ?? null,
+          rulePackVersion: dto.rulePackVersion ?? null,
           status: 'DRAFT',
           lines: {
             create: dto.lines.map((l) => ({
@@ -228,6 +237,11 @@ export class PrismaJournalRepository implements IJournalRepository {
       priorPeriodAdjustment: row.priorPeriodAdjustment ?? false,
       adjustmentReason: row.adjustmentReason ?? undefined,
       idempotencyKey: (row as any).idempotencyKey ?? null,
+      legalEntityId: (row as any).legalEntityId ?? null,
+      postingExecutionId: (row as any).postingExecutionId ?? null,
+      sourceEventId: (row as any).sourceEventId ?? null,
+      rulePackKey: (row as any).rulePackKey ?? null,
+      rulePackVersion: (row as any).rulePackVersion ?? null,
       lines: (row.lines ?? []).map((l): JournalLine => ({
         id: l.id,
         journalEntryId: l.journalEntryId,
