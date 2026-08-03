@@ -130,6 +130,10 @@ const SERVICES: Array<{ prefix: string; upstream: string; rateLimit?: number; re
   // only to its own controlled staging; every financial effect leaves staging
   // through CE-07 governed posting, never through this proxy.
   { prefix: '/api/v1/migration',      upstream: process.env['MIGRATION_SERVICE_URL']      ?? 'http://migration-service:3062' },
+  // CE-17 — accounting automation. Every capability starts at OBSERVE_ONLY and
+  // automation-service never writes the GL itself: approved effects are handed
+  // to CE-07 governed posting, so nothing behind this prefix can post directly.
+  { prefix: '/api/v1/automation',     upstream: process.env['AUTOMATION_SERVICE_URL']     ?? 'http://automation-service:3056' },
 ];
 
 // ── Request logging hook ──────────────────────────────────────────────────────
@@ -223,4 +227,3 @@ bootstrap().catch((err) => {
   logger.error(err, 'Failed to start api-gateway');
   process.exit(1);
 });
-

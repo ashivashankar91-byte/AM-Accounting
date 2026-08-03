@@ -2389,3 +2389,225 @@ export const migrationApi = {
   updateRunbookStep: (id: string, stepCode: string, data: any) =>
     apiFetch<any>(`${MIGRATION_BASE}/runbooks/${id}/steps/${stepCode}`, { method: 'PATCH', body: JSON.stringify(data) }),
 };
+
+// ── CE-17 Accounting Automation ──────────────────────────────────────────────
+// S022, S040, S058, S073, S091B, S095, S096, S101B, S103B, S107, S118, S126,
+// S127, S128. Every capability answers at OBSERVE_ONLY until a two-person
+// ceremony says otherwise, so these calls report authority rather than assume
+// it.
+
+const AUTOMATION_BASE = '/api/v1/automation';
+
+export const automationApi = {
+  // Command centre
+  getOverview: (params: { legalEntityId?: string } = {}) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/overview${qs(params)}`),
+  emergencyStop: (data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/emergency-stop`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // Capabilities and the authority ladder
+  listCapabilities: (params: { legalEntityId?: string } = {}) =>
+    apiFetch<{ items: any[]; total: number }>(`${AUTOMATION_BASE}/capabilities${qs(params)}`),
+  getCapability: (id: string) => apiFetch<any>(`${AUTOMATION_BASE}/capabilities/${id}`),
+  configureCapability: (data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/capabilities`, { method: 'POST', body: JSON.stringify(data) }),
+  grantAuthority: (id: string, data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/capabilities/${id}/grants`, { method: 'POST', body: JSON.stringify(data) }),
+  activateAuthority: (id: string, data: any = {}) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/capabilities/${id}/activate`, { method: 'POST', body: JSON.stringify(data) }),
+  suspendCapability: (id: string, data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/capabilities/${id}/suspend`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // Policy gates
+  listPolicies: (params: { legalEntityId?: string; capabilityCode?: string } = {}) =>
+    apiFetch<{ items: any[]; total: number }>(`${AUTOMATION_BASE}/policies${qs(params)}`),
+  getEffectivePolicy: (params: { legalEntityId?: string; capabilityCode?: string }) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/policies/effective${qs(params)}`),
+  savePolicy: (data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/policies`, { method: 'POST', body: JSON.stringify(data) }),
+  activatePolicy: (id: string, data: any = {}) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/policies/${id}/activate`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // Automation queue
+  listItems: (params: { legalEntityId?: string; capabilityCode?: string; state?: string; limit?: number; offset?: number } = {}) =>
+    apiFetch<{ items: any[]; total: number }>(`${AUTOMATION_BASE}/items${qs(params)}`),
+  getItem: (id: string) => apiFetch<any>(`${AUTOMATION_BASE}/items/${id}`),
+  getItemLineage: (id: string) => apiFetch<any>(`${AUTOMATION_BASE}/items/${id}/lineage`),
+  evaluateItem: (id: string, data: any = {}) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/items/${id}/evaluate`, { method: 'POST', body: JSON.stringify(data) }),
+  claimItem: (id: string, data: any = {}) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/items/${id}/claim`, { method: 'POST', body: JSON.stringify(data) }),
+  approveItem: (id: string, data: any = {}) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/items/${id}/approve`, { method: 'POST', body: JSON.stringify(data) }),
+  rejectItem: (id: string, data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/items/${id}/reject`, { method: 'POST', body: JSON.stringify(data) }),
+  executeItem: (id: string, data: any = {}) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/items/${id}/execute`, { method: 'POST', body: JSON.stringify(data) }),
+  retryItem: (id: string, data: any = {}) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/items/${id}/retry`, { method: 'POST', body: JSON.stringify(data) }),
+  reverseItem: (id: string, data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/items/${id}/reverse`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // Health, rule and model versions
+  getHealthMetrics: (params: { legalEntityId?: string; capabilityCode?: string; days?: number } = {}) =>
+    apiFetch<{ items: any[]; total: number }>(`${AUTOMATION_BASE}/health-metrics${qs(params)}`),
+  listVersions: (params: { capabilityCode?: string } = {}) =>
+    apiFetch<{ items: any[]; total: number }>(`${AUTOMATION_BASE}/versions${qs(params)}`),
+  getVersion: (id: string) => apiFetch<any>(`${AUTOMATION_BASE}/versions/${id}`),
+  recordVersion: (data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/versions`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // S022 — rule simulation sandbox (never posts, never mutates)
+  listSandboxes: (params: { legalEntityId?: string; state?: string } = {}) =>
+    apiFetch<{ items: any[]; total: number }>(`${AUTOMATION_BASE}/sandbox${qs(params)}`),
+  getSandbox: (id: string) => apiFetch<any>(`${AUTOMATION_BASE}/sandbox/${id}`),
+  getSandboxDiff: (id: string) => apiFetch<any>(`${AUTOMATION_BASE}/sandbox/${id}/diff`),
+  runSandbox: (data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/sandbox/run`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // S040 — OCR/EDI invoice ingestion
+  listIngestionDrafts: (params: { legalEntityId?: string; state?: string; channel?: string } = {}) =>
+    apiFetch<{ items: any[]; total: number }>(`${AUTOMATION_BASE}/ingestion/drafts${qs(params)}`),
+  getIngestionDraft: (id: string) => apiFetch<any>(`${AUTOMATION_BASE}/ingestion/drafts/${id}`),
+  createIngestionDraft: (data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/ingestion/drafts`, { method: 'POST', body: JSON.stringify(data) }),
+  acceptIngestionDraft: (id: string, data: any = {}) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/ingestion/drafts/${id}/accept`, { method: 'POST', body: JSON.stringify(data) }),
+  rejectIngestionDraft: (id: string, data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/ingestion/drafts/${id}/reject`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // S058 — lockbox remittance matching
+  listLockboxFiles: (params: { legalEntityId?: string; state?: string } = {}) =>
+    apiFetch<{ items: any[]; total: number }>(`${AUTOMATION_BASE}/lockbox/files${qs(params)}`),
+  listLockboxLines: (fileId: string, params: { state?: string; matchType?: string } = {}) =>
+    apiFetch<{ items: any[]; total: number; summary?: any }>(`${AUTOMATION_BASE}/lockbox/files/${fileId}/lines${qs(params)}`),
+  ingestLockboxFile: (data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/lockbox/files`, { method: 'POST', body: JSON.stringify(data) }),
+  reviewLockboxLine: (id: string, data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/lockbox/lines/${id}/review`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // S073 — LIFO overlay
+  listLifoPools: (params: { legalEntityId?: string } = {}) =>
+    apiFetch<{ items: any[]; total: number }>(`${AUTOMATION_BASE}/lifo/pools${qs(params)}`),
+  createLifoPool: (data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/lifo/pools`, { method: 'POST', body: JSON.stringify(data) }),
+  computeLifoLayer: (poolId: string, data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/lifo/pools/${poolId}/compute`, { method: 'POST', body: JSON.stringify(data) }),
+  approveLifoLayer: (id: string, data: any = {}) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/lifo/layers/${id}/approve`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // S091B — experience-rated chargeback model (RECOMMEND ceiling)
+  listChargebackModels: (params: { legalEntityId?: string; state?: string } = {}) =>
+    apiFetch<{ items: any[]; total: number }>(`${AUTOMATION_BASE}/chargeback/models${qs(params)}`),
+  getChargebackModel: (id: string) => apiFetch<any>(`${AUTOMATION_BASE}/chargeback/models/${id}`),
+  runChargebackModel: (data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/chargeback/models`, { method: 'POST', body: JSON.stringify(data) }),
+  adoptChargebackModel: (id: string, data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/chargeback/models/${id}/adopt`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // S095 — retro / portfolio reserve accrual
+  listPortfolioStatements: (params: { legalEntityId?: string; state?: string } = {}) =>
+    apiFetch<{ items: any[]; total: number }>(`${AUTOMATION_BASE}/portfolio/statements${qs(params)}`),
+  getPortfolioStatement: (id: string) => apiFetch<any>(`${AUTOMATION_BASE}/portfolio/statements/${id}`),
+  enterPortfolioStatement: (data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/portfolio/statements`, { method: 'POST', body: JSON.stringify(data) }),
+  allocatePortfolioStatement: (id: string, data: any = {}) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/portfolio/statements/${id}/allocate`, { method: 'POST', body: JSON.stringify(data) }),
+  approvePortfolioStatement: (id: string, data: any = {}) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/portfolio/statements/${id}/approve`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // S096 — reinsurance / DOWC cession
+  listCessionStatements: (params: { legalEntityId?: string; state?: string } = {}) =>
+    apiFetch<{ items: any[]; total: number }>(`${AUTOMATION_BASE}/cession/statements${qs(params)}`),
+  getCessionStatement: (id: string) => apiFetch<any>(`${AUTOMATION_BASE}/cession/statements/${id}`),
+  getCessionPosition: (params: { legalEntityId?: string; treatyCode?: string } = {}) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/cession/position${qs(params)}`),
+  enterCessionStatement: (data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/cession/statements`, { method: 'POST', body: JSON.stringify(data) }),
+  approveCessionStatement: (id: string, data: any = {}) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/cession/statements/${id}/approve`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // S101B — OEM statement auto-matcher
+  listOemSuggestions: (params: { legalEntityId?: string; state?: string; sessionId?: string } = {}) =>
+    apiFetch<{ items: any[]; total: number; summary?: any }>(`${AUTOMATION_BASE}/oem/suggestions${qs(params)}`),
+  generateOemSuggestions: (data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/oem/suggestions`, { method: 'POST', body: JSON.stringify(data) }),
+  disposeOemSuggestion: (id: string, data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/oem/suggestions/${id}/dispose`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // S103B — probability-weighted incentive accruals
+  listIncentiveRecommendations: (params: { legalEntityId?: string; periodYear?: number; periodMonth?: number } = {}) =>
+    apiFetch<{ items: any[]; total: number }>(`${AUTOMATION_BASE}/incentives/recommendations${qs(params)}`),
+  getIncentiveRecommendation: (id: string) => apiFetch<any>(`${AUTOMATION_BASE}/incentives/recommendations/${id}`),
+  computeIncentiveRecommendation: (data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/incentives/recommendations`, { method: 'POST', body: JSON.stringify(data) }),
+  approveIncentiveRecommendation: (id: string, data: any = {}) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/incentives/recommendations/${id}/approve`, { method: 'POST', body: JSON.stringify(data) }),
+  rejectIncentiveRecommendation: (id: string, data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/incentives/recommendations/${id}/reject`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // S107 — NCM / NADA composite export
+  listExports: (params: { legalEntityId?: string; exportType?: string; state?: string } = {}) =>
+    apiFetch<{ items: any[]; total: number }>(`${AUTOMATION_BASE}/exports${qs(params)}`),
+  getExport: (id: string) => apiFetch<any>(`${AUTOMATION_BASE}/exports/${id}`),
+  getExportBaselineStatus: (params: { legalEntityId?: string } = {}) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/exports/baseline-status${qs(params)}`),
+  generateExport: (data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/exports`, { method: 'POST', body: JSON.stringify(data) }),
+  approveExport: (id: string, data: any = {}) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/exports/${id}/approve`, { method: 'POST', body: JSON.stringify(data) }),
+  recordExportResponse: (id: string, data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/exports/${id}/response`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // S118 — GAAP bridge memo generator (PREPARE_DRAFT ceiling)
+  listMemos: (params: { legalEntityId?: string; state?: string; periodYear?: number; periodMonth?: number } = {}) =>
+    apiFetch<{ items: any[]; total: number }>(`${AUTOMATION_BASE}/memos${qs(params)}`),
+  getMemo: (id: string) => apiFetch<any>(`${AUTOMATION_BASE}/memos/${id}`),
+  draftMemo: (data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/memos`, { method: 'POST', body: JSON.stringify(data) }),
+  editMemo: (id: string, data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/memos/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  finalizeMemo: (id: string, data: any = {}) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/memos/${id}/finalize`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // S126 — DSAR automation (irreversible; dual authorization)
+  listDsarCases: (params: { state?: string; requestType?: string } = {}) =>
+    apiFetch<{ items: any[]; total: number }>(`${AUTOMATION_BASE}/dsar/cases${qs(params)}`),
+  getDsarCase: (id: string) => apiFetch<any>(`${AUTOMATION_BASE}/dsar/cases/${id}`),
+  createDsarCase: (data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/dsar/cases`, { method: 'POST', body: JSON.stringify(data) }),
+  scanDsarCase: (id: string, data: any = {}) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/dsar/cases/${id}/scan`, { method: 'POST', body: JSON.stringify(data) }),
+  produceDsarDisclosure: (id: string, data: any = {}) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/dsar/cases/${id}/disclosure`, { method: 'POST', body: JSON.stringify(data) }),
+  authorizeDsarErasure: (id: string, data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/dsar/cases/${id}/authorize-erasure`, { method: 'POST', body: JSON.stringify(data) }),
+  executeDsarErasure: (id: string, data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/dsar/cases/${id}/erase`, { method: 'POST', body: JSON.stringify(data) }),
+  closeDsarCase: (id: string, data: any = {}) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/dsar/cases/${id}/close`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // S127 — unclaimed property
+  listUnclaimedProperty: (params: { legalEntityId?: string; state?: string; jurisdiction?: string } = {}) =>
+    apiFetch<{ items: any[]; total: number; summary?: any }>(`${AUTOMATION_BASE}/unclaimed-property${qs(params)}`),
+  getUnclaimedPropertyItem: (id: string) => apiFetch<any>(`${AUTOMATION_BASE}/unclaimed-property/${id}`),
+  identifyUnclaimedProperty: (data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/unclaimed-property/identify`, { method: 'POST', body: JSON.stringify(data) }),
+  recordDueDiligence: (id: string, data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/unclaimed-property/${id}/due-diligence`, { method: 'POST', body: JSON.stringify(data) }),
+  prepareRemittance: (id: string, data: any = {}) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/unclaimed-property/${id}/remittance`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // S128 — SOX evidence automation
+  listControls: (params: { legalEntityId?: string; controlType?: string } = {}) =>
+    apiFetch<{ items: any[]; total: number }>(`${AUTOMATION_BASE}/sox/controls${qs(params)}`),
+  registerControl: (data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/sox/controls`, { method: 'POST', body: JSON.stringify(data) }),
+  listBinders: (params: { legalEntityId?: string; state?: string; periodYear?: number; periodMonth?: number } = {}) =>
+    apiFetch<{ items: any[]; total: number }>(`${AUTOMATION_BASE}/sox/binders${qs(params)}`),
+  getBinder: (id: string) => apiFetch<any>(`${AUTOMATION_BASE}/sox/binders/${id}`),
+  harvestBinder: (data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/sox/binders`, { method: 'POST', body: JSON.stringify(data) }),
+  attestBinder: (id: string, data: any) =>
+    apiFetch<any>(`${AUTOMATION_BASE}/sox/binders/${id}/attest`, { method: 'POST', body: JSON.stringify(data) }),
+};

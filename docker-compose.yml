@@ -192,6 +192,31 @@ services:
       rabbitmq: { condition: service_healthy }
       migrator: { condition: service_completed_successfully }
 
+
+  # CE-17 Accounting Automation. Every capability boots at OBSERVE_ONLY; the
+  # service holds recommendations, drafts and evidence but never writes the
+  # ledger itself, so the posting/schedule/close/COA URLs below are the only
+  # routes an approved effect can take out of it.
+  automation-service:
+    build:
+      context: .
+      dockerfile: services/automation-service/Dockerfile
+    ports:
+      - "3056:3056"
+    environment:
+      <<: *service-env
+      PORT: 3056
+      POSTING_SERVICE_URL: http://posting-recovery-service:3049
+      SCHEDULE_SERVICE_URL: http://schedule-service:3018
+      CLOSE_SERVICE_URL: http://close-service:3095
+      COA_SERVICE_URL: http://coa-service:3002
+      APAR_SERVICE_URL: http://apar-service:3013
+      MIGRATION_SERVICE_URL: http://migration-service:3062
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
+
   schedule-service:
     build:
       context: .

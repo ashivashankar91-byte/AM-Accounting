@@ -63,6 +63,7 @@ SERVICES=(
   oem-service
   close-service
   migration-service
+  automation-service
 )
 
 echo "==> Applying migrations to ${DATABASE_URL%%@*}@... (amacc superuser)"

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   LayoutDashboard, BookOpen, CreditCard, Users, Calendar,
-  Wrench, Settings as SettingsIcon, Terminal, Search, Bell, Landmark,
+  Wrench, Settings as SettingsIcon, Terminal, Search, Bell, Landmark, Bot,
   ClipboardList, PackageSearch, Car, Factory,
 } from 'lucide-react';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -212,6 +212,25 @@ import MigrationParallel from './pages/accounting/migration/parallel';
 import MigrationCutover from './pages/accounting/migration/cutover';
 import MigrationArchive from './pages/accounting/migration/archive';
 import MigrationRunbooks from './pages/accounting/migration/runbooks';
+import AutomationCommandCenter from './pages/accounting/automation/index';
+import AutomationCapabilities from './pages/accounting/automation/capabilities';
+import AutomationPolicies from './pages/accounting/automation/policies';
+import AutomationQueue from './pages/accounting/automation/queue';
+import AutomationHealth from './pages/accounting/automation/health';
+import AutomationSandbox from './pages/accounting/automation/sandbox';
+import AutomationIngestion from './pages/accounting/automation/ingestion';
+import AutomationLockbox from './pages/accounting/automation/lockbox';
+import AutomationLifo from './pages/accounting/automation/lifo';
+import AutomationChargeback from './pages/accounting/automation/chargeback';
+import AutomationPortfolio from './pages/accounting/automation/portfolio';
+import AutomationCession from './pages/accounting/automation/cession';
+import AutomationOemMatcher from './pages/accounting/automation/oem-matcher';
+import AutomationIncentives from './pages/accounting/automation/incentives';
+import AutomationExports from './pages/accounting/automation/exports';
+import AutomationMemos from './pages/accounting/automation/memos';
+import AutomationDsar from './pages/accounting/automation/dsar';
+import AutomationUnclaimedProperty from './pages/accounting/automation/unclaimed-property';
+import AutomationSox from './pages/accounting/automation/sox';
 import DocReport from './pages/accounting/reports/doc';
 import StatementPackages from './pages/accounting/reports/packages';
 import CompliancePack from './pages/accounting/reports/compliance';
@@ -554,6 +573,42 @@ const MODULES: AppModule[] = [
         { path: '/system-settings', label: 'System Settings' },
         { path: '/approvals',      label: 'Approvals' },
         { path: '/settings',       label: 'User Settings' },
+      ]},
+    ],
+  },
+  {
+    key: 'automation',
+    Icon: Bot,
+    label: 'Automation',
+    defaultPath: '/accounting/automation',
+    matchPrefixes: ['/accounting/automation'],
+    sections: [
+      { title: 'Governance', items: [
+        { path: '/accounting/automation',              label: 'Command Center' },
+        { path: '/accounting/automation/capabilities', label: 'Capabilities' },
+        { path: '/accounting/automation/policies',     label: 'Policy Gates' },
+        { path: '/accounting/automation/queue',        label: 'Queue' },
+        { path: '/accounting/automation/health',       label: 'Health' },
+        { path: '/accounting/automation/sandbox',      label: 'Rule Sandbox' },
+      ]},
+      { title: 'Transaction Automation', items: [
+        { path: '/accounting/automation/ingestion',    label: 'Invoice Ingestion' },
+        { path: '/accounting/automation/lockbox',      label: 'Lockbox Matching' },
+        { path: '/accounting/automation/oem-matcher',  label: 'OEM Matcher' },
+      ]},
+      { title: 'Valuation & Accrual', items: [
+        { path: '/accounting/automation/lifo',         label: 'LIFO Overlay' },
+        { path: '/accounting/automation/chargeback',   label: 'Chargeback Model' },
+        { path: '/accounting/automation/portfolio',    label: 'Portfolio Reserve' },
+        { path: '/accounting/automation/cession',      label: 'Cession' },
+        { path: '/accounting/automation/incentives',   label: 'Incentive Accruals' },
+      ]},
+      { title: 'Reporting & Compliance', items: [
+        { path: '/accounting/automation/exports',            label: 'Composite Export' },
+        { path: '/accounting/automation/memos',              label: 'GAAP Bridge Memos' },
+        { path: '/accounting/automation/sox',                label: 'SOX Evidence' },
+        { path: '/accounting/automation/dsar',               label: 'DSAR' },
+        { path: '/accounting/automation/unclaimed-property', label: 'Unclaimed Property' },
       ]},
     ],
   },
@@ -1061,6 +1116,28 @@ export default function App() {
               <Route path="/accounting/migration/cutover" element={<GoldenPathProtectedRoute><MigrationCutover /></GoldenPathProtectedRoute>} />
               <Route path="/accounting/migration/archive" element={<GoldenPathProtectedRoute><MigrationArchive /></GoldenPathProtectedRoute>} />
               <Route path="/accounting/migration/runbooks" element={<GoldenPathProtectedRoute><MigrationRunbooks /></GoldenPathProtectedRoute>} />
+
+              {/* CE-17 — Accounting Automation */}
+              <Route path="/accounting/automation" element={<GoldenPathProtectedRoute><AutomationCommandCenter /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/automation/capabilities" element={<GoldenPathProtectedRoute><AutomationCapabilities /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/automation/policies" element={<GoldenPathProtectedRoute><AutomationPolicies /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/automation/queue" element={<GoldenPathProtectedRoute><AutomationQueue /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/automation/queue/:itemId" element={<GoldenPathProtectedRoute><AutomationQueue /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/automation/health" element={<GoldenPathProtectedRoute><AutomationHealth /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/automation/sandbox" element={<GoldenPathProtectedRoute><AutomationSandbox /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/automation/ingestion" element={<GoldenPathProtectedRoute><AutomationIngestion /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/automation/lockbox" element={<GoldenPathProtectedRoute><AutomationLockbox /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/automation/lifo" element={<GoldenPathProtectedRoute><AutomationLifo /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/automation/chargeback" element={<GoldenPathProtectedRoute><AutomationChargeback /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/automation/portfolio" element={<GoldenPathProtectedRoute><AutomationPortfolio /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/automation/cession" element={<GoldenPathProtectedRoute><AutomationCession /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/automation/oem-matcher" element={<GoldenPathProtectedRoute><AutomationOemMatcher /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/automation/incentives" element={<GoldenPathProtectedRoute><AutomationIncentives /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/automation/exports" element={<GoldenPathProtectedRoute><AutomationExports /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/automation/memos" element={<GoldenPathProtectedRoute><AutomationMemos /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/automation/dsar" element={<GoldenPathProtectedRoute><AutomationDsar /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/automation/unclaimed-property" element={<GoldenPathProtectedRoute><AutomationUnclaimedProperty /></GoldenPathProtectedRoute>} />
+              <Route path="/accounting/automation/sox" element={<GoldenPathProtectedRoute><AutomationSox /></GoldenPathProtectedRoute>} />
               <Route path="/accounting/reports/doc" element={<GoldenPathProtectedRoute><DocReport /></GoldenPathProtectedRoute>} />
               <Route path="/accounting/reports/packages" element={<GoldenPathProtectedRoute><StatementPackages /></GoldenPathProtectedRoute>} />
               <Route path="/accounting/reports/compliance" element={<GoldenPathProtectedRoute><CompliancePack /></GoldenPathProtectedRoute>} />
