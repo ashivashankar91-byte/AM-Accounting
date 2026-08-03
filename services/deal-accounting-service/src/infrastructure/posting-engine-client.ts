@@ -55,6 +55,15 @@ function envelopeBody(envelope: SourceEventEnvelope) {
   return {
     eventId: envelope.eventId,
     tenantId: envelope.tenantId,
+    // CE-12 hardening: legalEntityId is a REQUIRED top-level field on
+    // coa-service's SourceEventEnvelope (assertEnvelopeShape enforces it).
+    // Omitting it caused every submitEvent/simulate call to be rejected with
+    // EnvelopeShapeError (400), silently blocking all deal posting. The field
+    // must never be substituted with tenantId — it carries the authoritative
+    // legal-entity identity used for rule-pack selection, GL journal scoping,
+    // and JOURNAL_ENTRY_POSTED lineage (legalEntityId propagates through the
+    // posting execution → gl-service bridge → outbox event chain).
+    legalEntityId: envelope.legalEntityId,
     eventType: envelope.eventType,
     eventSchemaVersion: envelope.eventSchemaVersion,
     occurredAt: envelope.occurredAt,

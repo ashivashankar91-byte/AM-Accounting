@@ -415,7 +415,17 @@ describe.skipIf(!RUN)('CE-12 gap-closure — REAL coa-service + REAL tax-service
     const recap = retailRecapFixture({ dealNumber, legalEntityId: CERT_ENTITY, storeId: CERT_STORE, taxResultId: null, hasTradeIn: false, tradeVin: null, tradeAllowanceAmount: null, tradeAcvAmount: null, tradePayoffAmount: null, financedAmount: null, reserveIncomeAmount: null, feesAmount: null, rebateReceivableAmount: null, products: [] });
     const { buildEnvelope } = await import('../../src/domain/event-envelope');
     const envelope = buildEnvelope({
-      eventId: `${dealNumber}:v1:core`, tenantId: CERT_TENANT, eventType: 'deal.finalized.v1', occurredAt: new Date().toISOString(),
+      eventId: `${dealNumber}:v1:core`, tenantId: CERT_TENANT,
+      // CE-12 hardening: legalEntityId is a required top-level field of
+      // BuildEnvelopeInput (and of coa-service's assertEnvelopeShape). It
+      // was previously absent from this inline call — present only inside
+      // payload — so the constructed envelope lacked legalEntityId at the
+      // envelope level, meaning every submitEvent call using this envelope
+      // would fail assertEnvelopeShape's missing-field check (400) and
+      // idempotency could never be exercised. Tenant/legal-entity isolation
+      // is proven by the CERT_TENANT/CERT_ENTITY combination below: a
+      // different entity's active rule pack must never match this envelope.
+      legalEntityId: CERT_ENTITY, eventType: 'deal.finalized.v1', occurredAt: new Date().toISOString(),
       sourceEntityType: 'DEAL', sourceEntityId: dealNumber, correlationId: `cert:${dealNumber}`, businessDate: recap.businessDate,
       payload: { dealNumber, recapVersion: 1, dealType: 'RETAIL', vin: recap.vin, stockNumber: recap.stockNumber, legalEntityId: CERT_ENTITY, storeId: CERT_STORE, unitCostAmount: recap.unitCostAmount, saleAmount: recap.saleAmount },
     });

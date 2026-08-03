@@ -7,6 +7,10 @@ describe('event envelope construction', () => {
     const env = buildEnvelope({
       eventId: 'evt-1',
       tenantId: 'tenant-1',
+      // CE-12 hardening: legalEntityId is a required top-level field —
+      // must be present in BuildEnvelopeInput and preserved on the returned
+      // envelope so it flows through envelopeBody() to coa-service.
+      legalEntityId: 'entity-test-1',
       eventType: 'deal.finalized.v1',
       occurredAt: '2026-08-01T00:00:00.000Z',
       sourceEntityType: 'DEAL',
@@ -20,6 +24,10 @@ describe('event envelope construction', () => {
     expect(env.causationId).toBeNull();
     expect(env.metadata).toBeNull();
     expect(typeof env.publishedAt).toBe('string');
+    // Confirms legalEntityId is preserved end-to-end from BuildEnvelopeInput
+    // through the SourceEventEnvelope returned to callers and ultimately to
+    // envelopeBody() which serializes it into the coa-service HTTP body.
+    expect(env.legalEntityId).toBe('entity-test-1');
   });
 
   it('accepts valid eventType patterns', () => {
