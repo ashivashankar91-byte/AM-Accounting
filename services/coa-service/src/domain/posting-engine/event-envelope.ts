@@ -84,6 +84,21 @@ export function assertEnvelopeShape(candidate: unknown): SourceEventEnvelope {
  * business-fact IDENTITY. `publishedAt` is deliberately excluded — the same
  * logical event re-published (e.g. after a broker redelivery) must hash
  * identically, not look like a content change.
+ *
+ * fix(integration): `occurredAt` is excluded for the identical reason.
+ * Confirmed live: every current producer (apar-service's
+ * posting-engine-port.ts, payroll-service's posting-gateway.ts, at minimum)
+ * sets `occurredAt: new Date().toISOString()` at HTTP-call time, not a
+ * value derived from the underlying business fact — so a legitimate retry
+ * after a transport failure (timeout, connection reset) always carried a
+ * new `occurredAt`, and this hash treated that as a *different* event under
+ * the same eventId, permanently deadlocking the retry with
+ * EVENT_IDENTITY_CONFLICT instead of returning the original execution as a
+ * safe duplicate. `businessDate` (the source system's own document/business
+ * date, D-S023-13: "never the system clock" — see
+ * ap-invoice-envelope.ts's doc-comment) remains in the identity view and
+ * still distinguishes two genuinely different events; only the wall-clock
+ * submission timestamp is excluded, exactly like `publishedAt` already is.
  */
 export function hashEnvelope(envelope: SourceEventEnvelope): string {
   const identityView = {
@@ -92,7 +107,6 @@ export function hashEnvelope(envelope: SourceEventEnvelope): string {
     legalEntityId: envelope.legalEntityId,
     eventType: envelope.eventType,
     eventSchemaVersion: envelope.eventSchemaVersion,
-    occurredAt: envelope.occurredAt,
     sourceSystem: envelope.sourceSystem,
     sourceEntityType: envelope.sourceEntityType,
     sourceEntityId: envelope.sourceEntityId,

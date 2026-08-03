@@ -38,7 +38,7 @@ function makeSvc(overrides: Partial<any> = {}) {
 describe('PayrollRulePackService — draft', () => {
   it('creates version 1 when no prior version exists', async () => {
     const { svc, prisma } = makeSvc({ payrollRulePackVersion: { findFirst: vi.fn().mockResolvedValue(null) } });
-    const version = await svc.createDraft(TENANT, 'payroll-gl-mapping', [
+    const version = await svc.createDraft(TENANT, 'entity-test', 'payroll-gl-mapping', [
       { family: 'EARNINGS', department: 'sales', payComponent: 'REGULAR_PAY', glAccountCode: null, isDebit: true },
     ], 'author-1');
     expect(version.version).toBe(1);
@@ -48,13 +48,13 @@ describe('PayrollRulePackService — draft', () => {
 
   it('increments version when a prior version exists for the same packKey', async () => {
     const { svc } = makeSvc({ payrollRulePackVersion: { findFirst: vi.fn().mockResolvedValue({ version: 3 }) } });
-    const version = await svc.createDraft(TENANT, 'payroll-gl-mapping', [], 'author-1');
+    const version = await svc.createDraft(TENANT, 'entity-test', 'payroll-gl-mapping', [], 'author-1');
     expect(version.version).toBe(4);
   });
 
   it('tolerates blank glAccountCode rows (ACCOUNT_MAPPING_VALUES_PENDING is a valid draft state)', async () => {
     const { svc } = makeSvc({ payrollRulePackVersion: { findFirst: vi.fn().mockResolvedValue(null) } });
-    const version = await svc.createDraft(TENANT, 'k', [
+    const version = await svc.createDraft(TENANT, 'entity-test', 'k', [
       { family: 'EARNINGS', department: 'sales', payComponent: 'REGULAR_PAY', glAccountCode: null, isDebit: true },
     ], 'author-1');
     expect(version.rows[0].glAccountCode).toBeNull();
@@ -119,21 +119,21 @@ describe('PayrollRulePackService — validate', () => {
 describe('PayrollRulePackService — activate (S025 SoD)', () => {
   it('denies activation when author === activator (self-activation denial)', async () => {
     const { svc } = makeSvc({
-      payrollRulePackVersion: { findFirst: vi.fn().mockResolvedValue({ id: 'version-1', packKey: 'k', status: 'VALIDATED', author: 'same-user' }) },
+      payrollRulePackVersion: { findFirst: vi.fn().mockResolvedValue({ id: 'version-1', legalEntityId: 'entity-test', packKey: 'k', status: 'VALIDATED', author: 'same-user' }) },
     });
     await expect(svc.activate(TENANT, 'version-1', 'same-user')).rejects.toThrow(RulePackAuthorEqualsActivatorError);
   });
 
   it('requires VALIDATED status before activation', async () => {
     const { svc } = makeSvc({
-      payrollRulePackVersion: { findFirst: vi.fn().mockResolvedValue({ id: 'version-1', packKey: 'k', status: 'DRAFT', author: 'author-1' }) },
+      payrollRulePackVersion: { findFirst: vi.fn().mockResolvedValue({ id: 'version-1', legalEntityId: 'entity-test', packKey: 'k', status: 'DRAFT', author: 'author-1' }) },
     });
     await expect(svc.activate(TENANT, 'version-1', 'activator-1')).rejects.toThrow(RulePackActivationError);
   });
 
   it('activates via a distinct eligible user and supersedes the prior ACTIVE version', async () => {
     const { svc } = makeSvc({
-      payrollRulePackVersion: { findFirst: vi.fn().mockResolvedValue({ id: 'version-1', packKey: 'k', status: 'VALIDATED', author: 'author-1' }) },
+      payrollRulePackVersion: { findFirst: vi.fn().mockResolvedValue({ id: 'version-1', legalEntityId: 'entity-test', packKey: 'k', status: 'VALIDATED', author: 'author-1' }) },
     });
     const activated = await svc.activate(TENANT, 'version-1', 'activator-1');
     expect(activated.status).toBe('ACTIVE');
@@ -150,8 +150,8 @@ describe('PayrollRulePackService — getActiveVersion / listVersions', () => {
   it('getActiveVersion queries for ACTIVE status only', async () => {
     const findFirst = vi.fn().mockResolvedValue({ id: 'version-1', status: 'ACTIVE' });
     const { svc } = makeSvc({ payrollRulePackVersion: { findFirst } });
-    await svc.getActiveVersion(TENANT, 'k');
-    expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { tenantId: TENANT, packKey: 'k', status: 'ACTIVE' } }));
+    await svc.getActiveVersion(TENANT, 'entity-test', 'k');
+    expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { tenantId: TENANT, legalEntityId: 'entity-test', packKey: 'k', status: 'ACTIVE' } }));
   });
 
   it('listVersions filters by packKey when provided', async () => {

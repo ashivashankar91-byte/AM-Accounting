@@ -14,6 +14,8 @@ import { asTenantId, TenantId } from '@amacc/shared-kernel';
 import { container } from 'tsyringe';
 import { PayrollRulePackService, RulePackActivationError, RulePackAuthorEqualsActivatorError } from '../application/rule-pack-service';
 import { NonTestTenantRefusedError } from '../domain/errors';
+import { PaymentHandoffService, PaymentHandoffNotFoundError, PaymentHandoffStateError, SettlementVerificationFailedError } from '../application/payment-handoff-service';
+import { PayrollAuditService } from '../application/audit-service';
 
 function getTenantId(request: any): TenantId {
   const tenantId = request.headers['x-tenant-id'] as string | undefined;
@@ -34,31 +36,52 @@ function handleErr(reply: any, err: unknown) {
   if (err instanceof RulePackAuthorEqualsActivatorError) return reply.status(403).send({ error: 'RULE_PACK_SOD_VIOLATION', message });
   if (err instanceof RulePackActivationError) return reply.status(422).send({ error: 'RULE_PACK_ACTIVATION_NOT_ELIGIBLE', message });
   if (err instanceof NonTestTenantRefusedError) return reply.status(403).send({ error: 'NON_TEST_TENANT_REFUSED', message });
+  if (err instanceof PaymentHandoffNotFoundError) return reply.status(404).send({ error: err.code, message });
+  if (err instanceof PaymentHandoffStateError) return reply.status(422).send({ error: err.code, message });
+  if (err instanceof SettlementVerificationFailedError) return reply.status(422).send({ error: err.code, message });
   const statusCode = (err as any)?.statusCode ?? (message.includes('not found') ? 404 : 500);
   return reply.status(statusCode).send({ error: message });
 }
 
 export async function ce13Routes(app: FastifyInstance, prisma: any) {
   const rulePackSvc = container.resolve<PayrollRulePackService>(PayrollRulePackService as any);
+  const paymentHandoffSvc = container.resolve<PaymentHandoffService>('PaymentHandoffService');
+  const auditSvc = container.resolve<PayrollAuditService>('PayrollAuditService');
 
   // ── Tenant statutory-source configuration (S108) ──────────────────────────
+  // fix(integration): entity-scoped, with fallback to the legacy tenant-wide
+  // (legalEntityId null) row — mirrors PayrollService.findTenantConfig's
+  // same convention. findFirst/manual upsert, not the native compound-key
+  // helpers, since legalEntityId is nullable (see gl-mapping-repository.ts).
   app.get('/config/source-mode', async (request, reply) => {
     try {
       const tenantId = getTenantId(request);
-      const config = await (prisma as any).payrollTenantConfig.findUnique({ where: { tenantId } });
-      return reply.send({ payrollSourceMode: config?.payrollSourceMode ?? 'NOT_CONFIGURED', updatedBy: config?.updatedBy ?? null, updatedAt: config?.updatedAt ?? null });
+      const { legalEntityId } = request.query as { legalEntityId?: string };
+      const config = legalEntityId
+        ? (await (prisma as any).payrollTenantConfig.findFirst({ where: { tenantId, legalEntityId } })) ??
+          (await (prisma as any).payrollTenantConfig.findFirst({ where: { tenantId, legalEntityId: null } }))
+        : await (prisma as any).payrollTenantConfig.findFirst({ where: { tenantId, legalEntityId: null } });
+      return reply.send({ payrollSourceMode: config?.payrollSourceMode ?? 'NOT_CONFIGURED', paymentHandoffMode: config?.paymentHandoffMode ?? 'NOT_CONFIGURED', updatedBy: config?.updatedBy ?? null, updatedAt: config?.updatedAt ?? null });
     } catch (err) { return handleErr(reply, err); }
   });
 
   app.put('/config/source-mode', async (request, reply) => {
     try {
       const tenantId = getTenantId(request);
-      const body = z.object({ payrollSourceMode: z.enum(['NOT_CONFIGURED', 'MANUAL_ATTESTED', 'TEST_FIXTURE']) }).parse(request.body);
-      const config = await (prisma as any).payrollTenantConfig.upsert({
-        where: { tenantId },
-        update: { payrollSourceMode: body.payrollSourceMode, updatedBy: getUserId(request), updatedAt: new Date() },
-        create: { tenantId, payrollSourceMode: body.payrollSourceMode, updatedBy: getUserId(request), updatedAt: new Date() },
-      });
+      const body = z.object({
+        legalEntityId: z.string().min(1).nullable().optional(),
+        payrollSourceMode: z.enum(['NOT_CONFIGURED', 'MANUAL_ATTESTED', 'TEST_FIXTURE']),
+      }).parse(request.body);
+      const legalEntityId = body.legalEntityId ?? null;
+      const existing = await (prisma as any).payrollTenantConfig.findFirst({ where: { tenantId, legalEntityId } });
+      const config = existing
+        ? await (prisma as any).payrollTenantConfig.update({
+            where: { id: existing.id },
+            data: { payrollSourceMode: body.payrollSourceMode, updatedBy: getUserId(request) },
+          })
+        : await (prisma as any).payrollTenantConfig.create({
+            data: { tenantId, legalEntityId, payrollSourceMode: body.payrollSourceMode, updatedBy: getUserId(request) },
+          });
       return reply.send(config);
     } catch (err) { return handleErr(reply, err); }
   });
@@ -75,8 +98,8 @@ export async function ce13Routes(app: FastifyInstance, prisma: any) {
   app.post('/rule-packs', async (request, reply) => {
     try {
       const tenantId = getTenantId(request);
-      const body = z.object({ packKey: z.string().min(1), rows: z.array(RulePackRowSchema) }).parse(request.body);
-      const version = await rulePackSvc.createDraft(tenantId, body.packKey, body.rows, getUserId(request));
+      const body = z.object({ legalEntityId: z.string().min(1), packKey: z.string().min(1), rows: z.array(RulePackRowSchema) }).parse(request.body);
+      const version = await rulePackSvc.createDraft(tenantId, body.legalEntityId, body.packKey, body.rows, getUserId(request));
       return reply.status(201).send(version);
     } catch (err) { return handleErr(reply, err); }
   });
@@ -84,8 +107,8 @@ export async function ce13Routes(app: FastifyInstance, prisma: any) {
   app.get('/rule-packs', async (request, reply) => {
     try {
       const tenantId = getTenantId(request);
-      const { packKey } = request.query as { packKey?: string };
-      return reply.send(await rulePackSvc.listVersions(tenantId, packKey));
+      const { packKey, legalEntityId } = request.query as { packKey?: string; legalEntityId?: string };
+      return reply.send(await rulePackSvc.listVersions(tenantId, packKey, legalEntityId));
     } catch (err) { return handleErr(reply, err); }
   });
 
@@ -115,6 +138,7 @@ export async function ce13Routes(app: FastifyInstance, prisma: any) {
 
   // ── S110 clawback / chargeback ────────────────────────────────────────────
   const CreateClawbackSchema = z.object({
+    legalEntityId: z.string().min(1),
     employeeId: z.string().min(1),
     dealId: z.string().min(1),
     originalCommissionRecordId: z.string().optional(),
@@ -132,6 +156,7 @@ export async function ce13Routes(app: FastifyInstance, prisma: any) {
       const record = await (prisma as any).clawbackRecord.create({
         data: {
           tenantId,
+          legalEntityId: body.legalEntityId,
           employeeId: body.employeeId,
           dealId: body.dealId,
           originalCommissionRecordId: body.originalCommissionRecordId ?? null,
@@ -180,6 +205,7 @@ export async function ce13Routes(app: FastifyInstance, prisma: any) {
 
   // ── S111 accruals ──────────────────────────────────────────────────────────
   const CreateAccrualSchema = z.object({
+    legalEntityId: z.string().min(1),
     periodYear: z.number().int(),
     periodMonth: z.number().int().min(1).max(12),
     accrualType: z.string().min(1),
@@ -241,6 +267,7 @@ export async function ce13Routes(app: FastifyInstance, prisma: any) {
 
   // ── S112 tech flag-hour bridge ─────────────────────────────────────────────
   const CreateTechBridgeSchema = z.object({
+    legalEntityId: z.string().min(1),
     employeeId: z.string().min(1),
     periodStart: z.string().transform((s) => new Date(s)),
     periodEnd: z.string().transform((s) => new Date(s)),
@@ -261,6 +288,7 @@ export async function ce13Routes(app: FastifyInstance, prisma: any) {
       const entry = await (prisma as any).techFlagBridgeEntry.create({
         data: {
           tenantId,
+          legalEntityId: body.legalEntityId,
           employeeId: body.employeeId,
           periodStart: body.periodStart,
           periodEnd: body.periodEnd,
@@ -292,6 +320,69 @@ export async function ce13Routes(app: FastifyInstance, prisma: any) {
           orderBy: { createdAt: 'desc' },
         }),
       );
+    } catch (err) { return handleErr(reply, err); }
+  });
+
+  // ── fix(integration) Gap 2 — CE-09 payroll payment handoff ─────────────────
+  app.get('/payment-handoffs', async (request, reply) => {
+    try {
+      const tenantId = getTenantId(request);
+      const { legalEntityId, status } = request.query as { legalEntityId?: string; status?: string };
+      return reply.send(await paymentHandoffSvc.list(tenantId, { legalEntityId, status }));
+    } catch (err) { return handleErr(reply, err); }
+  });
+
+  app.get('/payment-handoffs/:id', async (request, reply) => {
+    try {
+      const tenantId = getTenantId(request);
+      const { id } = request.params as { id: string };
+      return reply.send(await paymentHandoffSvc.get(tenantId, id));
+    } catch (err) { return handleErr(reply, err); }
+  });
+
+  app.get('/batches/:batchId/payment-handoff', async (request, reply) => {
+    try {
+      const tenantId = getTenantId(request);
+      const { batchId } = request.params as { batchId: string };
+      const handoff = await paymentHandoffSvc.getByBatch(tenantId, batchId);
+      if (!handoff) return reply.send({ status: 'NOT_CONFIGURED', payrollBatchId: batchId });
+      return reply.send(handoff);
+    } catch (err) { return handleErr(reply, err); }
+  });
+
+  app.post('/payment-handoffs/:id/transmit', async (request, reply) => {
+    try {
+      const tenantId = getTenantId(request);
+      const { id } = request.params as { id: string };
+      return reply.send(await paymentHandoffSvc.markTransmissionPending(tenantId, id, getUserId(request)));
+    } catch (err) { return handleErr(reply, err); }
+  });
+
+  app.post('/payment-handoffs/:id/settle', async (request, reply) => {
+    try {
+      const tenantId = getTenantId(request);
+      const { id } = request.params as { id: string };
+      const body = z.object({ settlementReference: z.string().min(1) }).parse(request.body);
+      return reply.send(await paymentHandoffSvc.recordSettlement(tenantId, id, body.settlementReference, getUserId(request)));
+    } catch (err) { return handleErr(reply, err); }
+  });
+
+  // ── fix(integration) Gap 4 — payroll.audit.view real enforcement point ─────
+  app.get('/audit', async (request, reply) => {
+    try {
+      const tenantId = getTenantId(request);
+      const query = request.query as Record<string, string | undefined>;
+      const results = await auditSvc.query(tenantId, {
+        legalEntityId: query.legalEntityId,
+        batchId: query.batchId,
+        employeeId: query.employeeId,
+        action: query.action,
+        actor: query.actor,
+        fromDate: query.fromDate,
+        toDate: query.toDate,
+        limit: query.limit ? Number(query.limit) : undefined,
+      });
+      return reply.send({ items: results });
     } catch (err) { return handleErr(reply, err); }
   });
 }

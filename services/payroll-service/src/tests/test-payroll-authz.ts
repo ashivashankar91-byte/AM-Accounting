@@ -101,6 +101,8 @@ describe('payroll-service route-level authorization (CE-13 RBAC gap-closure)', (
     container.registerInstance('PayrollService', permissiveFakeService());
     container.registerInstance(CommissionService as any, permissiveFakeService());
     container.registerInstance(PayrollRulePackService as any, permissiveFakeService());
+    container.registerInstance('PaymentHandoffService', permissiveFakeService());
+    container.registerInstance('PayrollAuditService', permissiveFakeService());
   });
 
   afterEach(() => {

@@ -14,6 +14,12 @@ datasource db {
 model Employee {
   id                  String        @id @default(cuid())
   tenantId            String        @map("tenant_id")
+  /// @net-new fix(integration): real legal-entity ownership (tenant-service's
+  /// LegalEntity.id — cross-service, no DB-level FK). Nullable because
+  /// existing rows predate this dimension and cannot be unambiguously
+  /// backfilled; a null value blocks the employee from being added to any
+  /// NEW payroll batch item until reconciled (LEGAL_ENTITY_RECONCILIATION_REQUIRED).
+  legalEntityId       String?       @map("legal_entity_id")
   employeeCode        String        @map("employee_code")
   firstName           String        @map("first_name")
   lastName            String        @map("last_name")
@@ -39,11 +45,21 @@ model Employee {
   @@unique([tenantId, employeeCode])
   @@map("employees")
   @@index([tenantId, department, isActive])
+  @@index([tenantId, legalEntityId])
 }
 
 model PayrollBatch {
   id               String    @id @default(cuid())
   tenantId         String    @map("tenant_id")
+  /// @net-new fix(integration): real legal-entity ownership — replaces the
+  /// temporary legalEntityId=tenantId substitution used before this fix.
+  /// Persisted at batch-creation time from the authorized request context
+  /// (never client-trusted in isolation — see security.ts's entity scope
+  /// extractor) and is the SOLE source of the legalEntityId every
+  /// PAYROLL_BATCH_POSTED/REVERSED event now carries. Null only for rows
+  /// that predate this dimension (LEGAL_ENTITY_RECONCILIATION_REQUIRED —
+  /// blocked from validate/approve/post/void until backfilled).
+  legalEntityId    String?   @map("legal_entity_id")
   batchNumber      String    @map("batch_number")
   payPeriodStart   DateTime  @map("pay_period_start")
   payPeriodEnd     DateTime  @map("pay_period_end")
@@ -83,15 +99,22 @@ model PayrollBatch {
   items PayrollItem[]
 
   @@unique([tenantId, batchNumber])
-  @@unique([tenantId, providerRunId, payPeriodStart, payPeriodEnd])
+  @@unique([tenantId, legalEntityId, providerRunId, payPeriodStart, payPeriodEnd])
   @@map("payroll_batches")
   @@index([tenantId, status])
   @@index([tenantId, payDate])
+  @@index([tenantId, legalEntityId])
 }
 
 model PayrollItem {
   id               String   @id @default(cuid())
   tenantId         String   @map("tenant_id")
+  /// @net-new fix(integration): denormalized copy of the parent batch's
+  /// legalEntityId (set once, at item-creation time, from the batch —
+  /// never independently client-supplied) so items can be indexed/queried
+  /// by entity without a join, and so "cannot mix legal entities" is
+  /// enforced by comparing this to the employee's own legalEntityId.
+  legalEntityId    String?  @map("legal_entity_id")
   batchId          String   @map("batch_id")
   batch            PayrollBatch @relation(fields: [batchId], references: [id])
   employeeId       String   @map("employee_id")
@@ -138,21 +161,73 @@ model PayrollItem {
   @@map("payroll_items")
   @@index([tenantId, batchId])
   @@index([tenantId, employeeId])
+  @@index([tenantId, legalEntityId])
 }
 
 /// @net-new CE-13/S025 — per-tenant payroll statutory-source configuration.
 /// Truthful default is NOT_CONFIGURED (NullPayrollSource). Setting this to
 /// MANUAL_ATTESTED enables the attested-entry path; TEST_FIXTURE is
 /// restricted at the domain layer to the labeled certification tenant.
+/// fix(integration): entity-scoped config rows (legalEntityId set) are now
+/// the write path going forward; the original tenant-wide row
+/// (legalEntityId null) is preserved as a legacy default/fallback only —
+/// never silently reinterpreted as belonging to a specific entity.
 model PayrollTenantConfig {
   id                String   @id @default(cuid())
-  tenantId          String   @unique @map("tenant_id")
+  tenantId          String   @map("tenant_id")
+  legalEntityId     String?  @map("legal_entity_id")
   payrollSourceMode String   @default("NOT_CONFIGURED") @map("payroll_source_mode")
+  /// @net-new fix(integration) CE-09 handoff — NOT_CONFIGURED (truthful
+  /// default: no payment method decided) | MANUAL_EXPORT (payroll marks the
+  /// posted liability export-ready for a real external/manual disbursement
+  /// process; never claims transmission or settlement itself).
+  paymentHandoffMode String  @default("NOT_CONFIGURED") @map("payment_handoff_mode")
   updatedBy         String?  @map("updated_by")
   updatedAt         DateTime @updatedAt @map("updated_at")
   createdAt         DateTime @default(now()) @map("created_at")
 
+  @@unique([tenantId, legalEntityId])
   @@map("payroll_tenant_config")
+}
+
+/// @net-new fix(integration) — CE-09 payroll payment handoff. Narrow: this
+/// table records the STATE of handing a posted payroll liability off to a
+/// real external/CE-09 disbursement and settlement process. It never
+/// constructs a payment rail file, never claims ACH transmission, and never
+/// fabricates a bank acknowledgment — SETTLED is only reachable by
+/// attaching a real cash-service reconciliation/settlement reference that
+/// payroll-service verifies exists (see payment-handoff-service.ts).
+model PayrollPaymentHandoff {
+  id                String    @id @default(cuid())
+  tenantId          String    @map("tenant_id")
+  legalEntityId     String?   @map("legal_entity_id")
+  payrollBatchId    String    @map("payroll_batch_id")
+  journalEntryId    String    @map("journal_entry_id")
+  clearingGlAccountCode String @map("clearing_gl_account_code")
+  totalAmount       Decimal   @db.Decimal(15, 2) @map("total_amount")
+  /// NOT_CONFIGURED | PAYMENT_EXPORT_READY | EXTERNAL_TRANSMISSION_PENDING |
+  /// CERTIFICATION_PENDING | PAYMENT_IN_PROCESS | SETTLED | FAILED | VOIDED
+  status            String    @default("NOT_CONFIGURED")
+  /// Deterministic, derived from (tenantId, payrollBatchId) — a retry of the
+  /// same batch's handoff creation is a safe no-op, never a duplicate record.
+  idempotencyKey    String    @map("idempotency_key")
+  /// Real cash-service reconciliation/settlement record id — populated only
+  /// after payroll-service verifies it via a live lookup; never accepted
+  /// as an unverified client-supplied claim of settlement.
+  settlementReference String? @map("settlement_reference")
+  failureReason     String?   @map("failure_reason")
+  voidedAt          DateTime? @map("voided_at")
+  voidReason        String?   @map("void_reason")
+  createdBy         String    @map("created_by")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  settledAt         DateTime? @map("settled_at")
+
+  @@unique([tenantId, idempotencyKey])
+  @@unique([tenantId, payrollBatchId])
+  @@map("payroll_payment_handoffs")
+  @@index([tenantId, legalEntityId])
+  @@index([tenantId, status])
 }
 
 /// @net-new CE-13/S025 — Payroll+Close GL mapping rule pack, versioned under
@@ -165,6 +240,10 @@ model PayrollTenantConfig {
 model PayrollRulePackVersion {
   id            String    @id @default(cuid())
   tenantId      String    @map("tenant_id")
+  /// @net-new fix(integration): rule-pack activation/selection is now
+  /// legal-entity scoped — null only for pre-existing rows awaiting
+  /// reconciliation (they may not be activated until backfilled).
+  legalEntityId String?   @map("legal_entity_id")
   packKey       String    @map("pack_key")
   version       Int
   status        String    @default("DRAFT") // DRAFT | VALIDATED | ACTIVE | SUPERSEDED
@@ -178,9 +257,10 @@ model PayrollRulePackVersion {
   activatedAt   DateTime? @map("activated_at")
   supersededAt  DateTime? @map("superseded_at")
 
-  @@unique([tenantId, packKey, version])
+  @@unique([tenantId, legalEntityId, packKey, version])
   @@map("payroll_rule_pack_version")
   @@index([tenantId, packKey, status])
+  @@index([tenantId, legalEntityId, status])
 }
 
 /// @net-new CE-13/S110 — Chargeback/clawback consumption. sourceEventId is
@@ -192,6 +272,7 @@ model PayrollRulePackVersion {
 model ClawbackRecord {
   id                       String    @id @default(cuid())
   tenantId                 String    @map("tenant_id")
+  legalEntityId            String?   @map("legal_entity_id")
   employeeId               String    @map("employee_id")
   dealId                   String    @map("deal_id")
   originalCommissionRecordId String? @map("original_commission_record_id")
@@ -210,7 +291,8 @@ model ClawbackRecord {
   @@map("clawback_records")
   @@index([tenantId, employeeId])
   @@index([tenantId, status])
-  @@unique([tenantId, dealId, employeeId, method])
+  @@index([tenantId, legalEntityId])
+  @@unique([tenantId, legalEntityId, dealId, employeeId, method])
 }
 
 /// @net-new CE-13/S111 — Period-end compensation accruals, auto-reversing
@@ -218,6 +300,7 @@ model ClawbackRecord {
 model AccrualEntry {
   id                  String    @id @default(cuid())
   tenantId            String    @map("tenant_id")
+  legalEntityId       String?   @map("legal_entity_id")
   periodYear          Int       @map("period_year")
   periodMonth         Int       @map("period_month")
   accrualType         String    @map("accrual_type") // WAGES | COMMISSION | PTO | BONUS
@@ -238,7 +321,8 @@ model AccrualEntry {
   @@map("accrual_entries")
   @@index([tenantId, periodYear, periodMonth])
   @@index([tenantId, status])
-  @@unique([tenantId, periodYear, periodMonth, accrualType, department])
+  @@index([tenantId, legalEntityId])
+  @@unique([tenantId, legalEntityId, periodYear, periodMonth, accrualType, department])
 }
 
 /// @net-new CE-13/S112 — Tech flag-hour earnings bridge. sourceEventId
@@ -249,6 +333,7 @@ model AccrualEntry {
 model TechFlagBridgeEntry {
   id                  String    @id @default(cuid())
   tenantId            String    @map("tenant_id")
+  legalEntityId       String?   @map("legal_entity_id")
   employeeId          String    @map("employee_id")
   periodStart         DateTime  @map("period_start")
   periodEnd           DateTime  @map("period_end")
@@ -269,6 +354,7 @@ model TechFlagBridgeEntry {
   @@map("tech_flag_bridge_entries")
   @@index([tenantId, employeeId])
   @@index([tenantId, status])
+  @@index([tenantId, legalEntityId])
 }
 
 /// @net-new CE-13/S109 — dispute/adjustment ceremony on a posted or accrued
@@ -277,6 +363,7 @@ model TechFlagBridgeEntry {
 model CommissionDispute {
   id                    String    @id @default(cuid())
   tenantId              String    @map("tenant_id")
+  legalEntityId         String?   @map("legal_entity_id")
   commissionRecordId    String    @map("commission_record_id")
   reason                String
   originalAmount        Decimal   @db.Decimal(15, 2) @map("original_amount")
@@ -289,6 +376,7 @@ model CommissionDispute {
 
   @@map("commission_disputes")
   @@index([tenantId, commissionRecordId])
+  @@index([tenantId, legalEntityId])
 }
 
 /// @net-new CE-13/security — audit row for every read of an individual
@@ -296,6 +384,7 @@ model CommissionDispute {
 model PayrollSensitiveReadAudit {
   id          String   @id @default(cuid())
   tenantId    String   @map("tenant_id")
+  legalEntityId String? @map("legal_entity_id")
   employeeId  String   @map("employee_id")
   readByUserId String  @map("read_by_user_id")
   readByRole  String?  @map("read_by_role")
@@ -310,14 +399,16 @@ model PayrollSensitiveReadAudit {
 model PayrollGLMapping {
   id            String  @id @default(cuid())
   tenantId      String  @map("tenant_id")
+  legalEntityId String? @map("legal_entity_id")
   department    String
   payComponent  String  @map("pay_component")
   glAccountCode String  @map("gl_account_code")
   isDebit       Boolean @map("is_debit")
 
-  @@unique([tenantId, department, payComponent])
+  @@unique([tenantId, legalEntityId, department, payComponent])
   @@map("payroll_gl_mappings")
   @@index([tenantId])
+  @@index([tenantId, legalEntityId])
 }
 
 model PayrollTaxRate {
@@ -337,6 +428,7 @@ model PayrollTaxRate {
 model EmployeeYTD {
   id              String   @id @default(cuid())
   tenantId        String   @map("tenant_id")
+  legalEntityId   String?  @map("legal_entity_id")
   employeeId      String   @map("employee_id")
   employee        Employee @relation(fields: [employeeId], references: [id])
   year            Int
@@ -352,6 +444,7 @@ model EmployeeYTD {
   @@unique([tenantId, employeeId, year])
   @@map("employee_ytd")
   @@index([tenantId, year])
+  @@index([tenantId, legalEntityId])
 }
 
 model OutboxEvent {
@@ -374,6 +467,7 @@ model OutboxEvent {
 model CommissionPlan {
   id               String   @id @default(cuid())
   tenantId         String   @map("tenant_id")
+  legalEntityId    String?  @map("legal_entity_id")
   employeeId       String   @map("employee_id")
   planType         String   @db.VarChar(20) @map("plan_type")
   department       String?
@@ -401,12 +495,14 @@ model CommissionPlan {
   @@index([tenantId])
   @@index([tenantId, employeeId])
   @@index([tenantId, isActive])
+  @@index([tenantId, legalEntityId])
 }
 
 /// @net-new Phase 1: Commission records per deal
 model CommissionRecord {
   id              String   @id @default(cuid())
   tenantId        String   @map("tenant_id")
+  legalEntityId   String?  @map("legal_entity_id")
   employeeId      String   @map("employee_id")
   dealId          String?  @map("deal_id")
   dealType        String?  @db.VarChar(20) @map("deal_type")
@@ -415,6 +511,17 @@ model CommissionRecord {
   planId          String?  @map("plan_id")
   status          String   @default("ACCRUED")
   journalEntryId  String?  @map("journal_entry_id")
+  /// @net-new fix(integration): the payroll batch this commission record was
+  /// paid through — set when the record is attached to a batch item, never
+  /// user-supplied. journalEntryId above is populated automatically from
+  /// this batch's own PAYROLL_BATCH_POSTED posting result once POSTED
+  /// (commission-service.ts's linkPostedBatch), replacing the old
+  /// disconnected manual markPaid(journalEntryId) call.
+  payrollBatchId  String?  @map("payroll_batch_id")
+  /// Reversing journal id when the source batch is voided — set alongside
+  /// status=REVERSED, never overwrites journalEntryId (the original
+  /// journal's identity is preserved for audit).
+  reversalJournalEntryId String? @map("reversal_journal_entry_id")
   periodYear      Int?     @map("period_year")
   periodMonth     Int?     @map("period_month")
   createdAt       DateTime @default(now()) @map("created_at")
@@ -433,4 +540,6 @@ model CommissionRecord {
   @@index([tenantId, employeeId])
   @@index([tenantId, periodYear, periodMonth])
   @@index([tenantId, status])
+  @@index([tenantId, legalEntityId])
+  @@index([tenantId, payrollBatchId])
 }

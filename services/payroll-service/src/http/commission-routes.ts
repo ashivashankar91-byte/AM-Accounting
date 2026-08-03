@@ -47,6 +47,7 @@ function handleErr(reply: any, err: unknown) {
 const SplitRuleSchema = z.object({ employeeId: z.string().min(1), sharePct: z.number().gt(0).lte(100) });
 
 const CreateCommissionPlanSchema = z.object({
+  legal_entity_id: z.string().min(1),
   employee_id: z.string().min(1),
   plan_type: z.enum(['FLAT', 'PERCENTAGE', 'TIERED']),
   department: z.string().min(1).optional(),
@@ -79,6 +80,7 @@ export async function commissionRoutes(app: FastifyInstance, prisma: PrismaClien
       const tenantId = getTenantId(request);
       const body = CreateCommissionPlanSchema.parse(request.body);
       const plan = await svc.createPlan(tenantId, {
+        legalEntityId: body.legal_entity_id,
         employeeId: body.employee_id,
         planType: body.plan_type,
         department: body.department ?? null,
@@ -102,6 +104,7 @@ export async function commissionRoutes(app: FastifyInstance, prisma: PrismaClien
       const { id } = request.params as { id: string };
       const body = CreateCommissionPlanSchema.parse(request.body);
       const plan = await svc.supersedePlan(tenantId, id, {
+        legalEntityId: body.legal_entity_id,
         employeeId: body.employee_id,
         planType: body.plan_type,
         department: body.department ?? null,

@@ -4,6 +4,8 @@ import { TenantId } from '@amacc/shared-kernel';
 
 export interface CreatePayrollItemDto {
   batchId: string;
+  /** fix(integration): denormalized from the parent batch, never independently client-supplied. */
+  legalEntityId: string | null;
   employeeId: string;
   department: string;
 
@@ -77,6 +79,7 @@ export class PrismaPayrollItemRepository implements IPayrollItemRepository {
       data: {
         tenantId,
         batchId: dto.batchId,
+        legalEntityId: dto.legalEntityId,
         employeeId: dto.employeeId,
         department: dto.department,
         regularHours: dto.regularHours != null ? dto.regularHours : null,

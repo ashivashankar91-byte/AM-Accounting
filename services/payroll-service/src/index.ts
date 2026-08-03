@@ -17,6 +17,8 @@ import { HttpPostingGateway } from './infrastructure/posting-gateway';
 import { PayrollSourceRegistry } from './domain/engines/payroll-source-registry';
 import { PayrollRulePackService } from './application/rule-pack-service';
 import { CommissionService } from './application/commission-service';
+import { PaymentHandoffService, HttpCashSettlementVerifier } from './application/payment-handoff-service';
+import { PayrollAuditService } from './application/audit-service';
 import pino from 'pino';
 
 const logger = pino({ name: 'payroll-service' });
@@ -68,6 +70,9 @@ async function bootstrap() {
   container.register('PayrollService', { useClass: PayrollService });
   container.register('PayrollRulePackService', { useClass: PayrollRulePackService });
   container.register('CommissionService', { useClass: CommissionService });
+  container.register('ICashSettlementVerifier', { useClass: HttpCashSettlementVerifier });
+  container.register('PaymentHandoffService', { useClass: PaymentHandoffService });
+  container.register('PayrollAuditService', { useClass: PayrollAuditService });
 
   // Start outbox processor
   const outboxProcessor = new OutboxProcessor(

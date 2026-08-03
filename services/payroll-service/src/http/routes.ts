@@ -47,6 +47,8 @@ function handleError(reply: any, err: unknown) {
 // ── Zod schemas ───────────────────────────────────────────────────────────────
 
 const CreateEmployeeSchema = z.object({
+  /** fix(integration): required — replaces the temporary legalEntityId=tenantId substitution. */
+  legalEntityId: z.string().min(1),
   employeeCode: z.string().min(1),
   firstName: z.string().min(1),
   lastName: z.string().min(1),
@@ -79,6 +81,8 @@ const UpdateEmployeeSchema = z.object({
 });
 
 const CreateBatchSchema = z.object({
+  /** fix(integration): required — replaces the temporary legalEntityId=tenantId substitution. */
+  legalEntityId: z.string().min(1),
   batchNumber: z.string().min(1),
   payPeriodStart: z.string().transform((s) => new Date(s)),
   payPeriodEnd: z.string().transform((s) => new Date(s)),
@@ -119,6 +123,7 @@ const AddItemSchema = z.object({
 });
 
 const GLMappingSchema = z.object({
+  legalEntityId: z.string().min(1).nullable(),
   department: z.string().min(1),
   payComponent: z.string().min(1),
   glAccountCode: z.string().min(1),
@@ -350,7 +355,8 @@ export async function payrollRoutes(app: FastifyInstance) {
   app.get('/config/gl-mappings', async (request, reply) => {
     try {
       const tenantId = getTenantId(request);
-      return reply.send(await svc.listGLMappings(tenantId));
+      const { legalEntityId } = request.query as { legalEntityId?: string };
+      return reply.send(await svc.listGLMappings(tenantId, legalEntityId ?? undefined));
     } catch (err) { return handleError(reply, err); }
   });
 
@@ -365,10 +371,11 @@ export async function payrollRoutes(app: FastifyInstance) {
   app.delete('/config/gl-mappings', async (request, reply) => {
     try {
       const tenantId = getTenantId(request);
-      const { department, payComponent } = z.object({
+      const { legalEntityId, department, payComponent } = z.object({
+        legalEntityId: z.string().min(1).nullable().optional(),
         department: z.string().min(1), payComponent: z.string().min(1),
       }).parse(request.query);
-      await svc.deleteGLMapping(tenantId, department, payComponent);
+      await svc.deleteGLMapping(tenantId, legalEntityId ?? null, department, payComponent);
       return reply.status(204).send();
     } catch (err) { return handleError(reply, err); }
   });

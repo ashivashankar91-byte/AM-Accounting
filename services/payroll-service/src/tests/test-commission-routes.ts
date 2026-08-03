@@ -111,7 +111,7 @@ describe('commission-routes — plans', () => {
     const res = await app.inject({
       method: 'POST', url: '/commission-plans', headers: { 'x-tenant-id': 't1', 'x-user-id': 'admin-1' },
       payload: {
-        employee_id: 'emp-1', plan_type: 'PERCENTAGE', percentage_rate: 5, department: 'sales',
+        legal_entity_id: 'entity-test', employee_id: 'emp-1', plan_type: 'PERCENTAGE', percentage_rate: 5, department: 'sales',
         split_rules: [{ employeeId: 'emp-1', sharePct: 60 }, { employeeId: 'emp-2', sharePct: 40 }],
         draw_amount: 300, minimum_guarantee: 500, effective_date: '2024-01-01',
       },
@@ -126,7 +126,7 @@ describe('commission-routes — plans', () => {
     const res = await app.inject({
       method: 'POST', url: '/commission-plans', headers: { 'x-tenant-id': 't1', 'x-user-id': 'admin-1' },
       payload: {
-        employee_id: 'emp-1', plan_type: 'PERCENTAGE', percentage_rate: 5,
+        legal_entity_id: 'entity-test', employee_id: 'emp-1', plan_type: 'PERCENTAGE', percentage_rate: 5,
         split_rules: [{ employeeId: 'emp-1', sharePct: 70 }, { employeeId: 'emp-2', sharePct: 70 }],
         effective_date: '2024-01-01',
       },
@@ -142,7 +142,7 @@ describe('commission-routes — calculate with splits + draws + minimum guarante
     await app.inject({
       method: 'POST', url: '/commission-plans', headers: { 'x-tenant-id': 't1', 'x-user-id': 'admin-1' },
       payload: {
-        employee_id: 'emp-1', plan_type: 'PERCENTAGE', percentage_rate: 10,
+        legal_entity_id: 'entity-test', employee_id: 'emp-1', plan_type: 'PERCENTAGE', percentage_rate: 10,
         split_rules: [{ employeeId: 'emp-1', sharePct: 60 }, { employeeId: 'emp-2', sharePct: 40 }],
         effective_date: '2024-01-01',
       },
@@ -170,7 +170,7 @@ describe('commission-routes — calculate with splits + draws + minimum guarante
     const app = await buildApp(makePrisma());
     const planRes = await app.inject({
       method: 'POST', url: '/commission-plans', headers: { 'x-tenant-id': 't1', 'x-user-id': 'admin-1' },
-      payload: { employee_id: 'emp-1', plan_type: 'FLAT', flat_amount: 50, effective_date: '2024-01-01' },
+      payload: { legal_entity_id: 'entity-test', employee_id: 'emp-1', plan_type: 'FLAT', flat_amount: 50, effective_date: '2024-01-01' },
     });
     const planId = planRes.json().id;
     const drawRes = await app.inject({
@@ -188,7 +188,7 @@ describe('commission-routes — correction, reversal, chargeback', () => {
     const app = await buildApp(makePrisma());
     await app.inject({
       method: 'POST', url: '/commission-plans', headers: { 'x-tenant-id': 't1', 'x-user-id': 'admin-1' },
-      payload: { employee_id: 'emp-1', plan_type: 'FLAT', flat_amount: 50, effective_date: '2024-01-01' },
+      payload: { legal_entity_id: 'entity-test', employee_id: 'emp-1', plan_type: 'FLAT', flat_amount: 50, effective_date: '2024-01-01' },
     });
     const calcRes = await app.inject({
       method: 'POST', url: '/commissions/calculate', headers: { 'x-tenant-id': 't1', 'x-user-id': 'user-1' },
@@ -214,7 +214,7 @@ describe('commission-routes — correction, reversal, chargeback', () => {
     const app = await buildApp(makePrisma());
     await app.inject({
       method: 'POST', url: '/commission-plans', headers: { 'x-tenant-id': 't1', 'x-user-id': 'admin-1' },
-      payload: { employee_id: 'emp-1', plan_type: 'FLAT', flat_amount: 50, effective_date: '2024-01-01' },
+      payload: { legal_entity_id: 'entity-test', employee_id: 'emp-1', plan_type: 'FLAT', flat_amount: 50, effective_date: '2024-01-01' },
     });
     const calcRes = await app.inject({
       method: 'POST', url: '/commissions/calculate', headers: { 'x-tenant-id': 't1', 'x-user-id': 'user-1' },
@@ -235,7 +235,7 @@ describe('commission-routes — disputes (SoD)', () => {
     const app = await buildApp(makePrisma());
     await app.inject({
       method: 'POST', url: '/commission-plans', headers: { 'x-tenant-id': 't1', 'x-user-id': 'admin-1' },
-      payload: { employee_id: 'emp-1', plan_type: 'FLAT', flat_amount: 50, effective_date: '2024-01-01' },
+      payload: { legal_entity_id: 'entity-test', employee_id: 'emp-1', plan_type: 'FLAT', flat_amount: 50, effective_date: '2024-01-01' },
     });
     const calcRes = await app.inject({
       method: 'POST', url: '/commissions/calculate', headers: { 'x-tenant-id': 't1', 'x-user-id': 'user-1' },

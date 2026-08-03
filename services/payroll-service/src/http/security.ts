@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
 import { AuthzClient, asTenantId, createAuthzGuard, TenantId } from '@amacc/shared-kernel';
+import type { PrismaClient } from '.prisma/payroll-client';
 
 /**
  * CE-13 RBAC gap-closure manifest — see
@@ -114,6 +115,19 @@ function resolvePayrollPermission(method: string, url: string): string | null {
   // ── S112 tech flag-hour bridge ─────────────────────────────────────────────
   if (/^\/tech-bridge$/.test(url)) return m === 'GET' ? PAYROLL_PERMISSIONS.TECH_BRIDGE_VIEW : PAYROLL_PERMISSIONS.TECH_BRIDGE_MANAGE;
 
+  // ── fix(integration) Gap 4 — payroll audit inquiry. Closes the previously
+  // dead `payroll.audit.view` permission key with a real enforcement point.
+  if (/^\/audit$/.test(url) && m === 'GET') return PAYROLL_PERMISSIONS.AUDIT_VIEW;
+
+  // ── fix(integration) Gap 2 — CE-09 payment handoff. Reuses the existing
+  // payroll.batch.* keys (no new permission-catalog migration) — a payment
+  // handoff is evidence attached to a specific posted batch, the same
+  // financial-consequence tier as posting/voiding it. ─────────────────────
+  if (/^\/batches\/[^/]+\/payment-handoff$/.test(url) && m === 'GET') return PAYROLL_PERMISSIONS.BATCH_VIEW;
+  if (/^\/payment-handoffs\/[^/]+\/(transmit|settle)$/.test(url) && m === 'POST') return PAYROLL_PERMISSIONS.BATCH_VOID_REVERSE;
+  if (/^\/payment-handoffs$/.test(url) && m === 'GET') return PAYROLL_PERMISSIONS.BATCH_VIEW;
+  if (/^\/payment-handoffs\/[^/]+$/.test(url) && m === 'GET') return PAYROLL_PERMISSIONS.BATCH_VIEW;
+
   // ── S109 commission / draw / dispute ───────────────────────────────────────
   if (/^\/commission-disputes\/[^/]+\/resolve$/.test(url) && m === 'POST') return PAYROLL_PERMISSIONS.COMMISSION_DISPUTE_RESOLVE;
   if (/^\/commission-disputes$/.test(url) && m === 'GET') return PAYROLL_PERMISSIONS.COMMISSION_VIEW;
@@ -128,16 +142,61 @@ function resolvePayrollPermission(method: string, url: string): string | null {
   return null;
 }
 
+/**
+ * fix(integration): resolves the legal entity a route's permission check
+ * should be scoped against — for a create route (no persisted resource
+ * yet), the client-supplied body/query legalEntityId IS the authorized
+ * context being requested (the authz engine still denies it if the actor's
+ * own role assignment isn't scoped to that entity — see authz-service.ts's
+ * `a.entityId == null || a.entityId === scope.entityId` check, mirrors
+ * CE-07's identical convention). For an action on an EXISTING resource
+ * (batch approve/post/void, rule-pack activate), the entity is loaded from
+ * the PERSISTED row — a client can never claim a different entity than the
+ * resource actually belongs to.
+ */
+function resolveEntityScope(prisma: PrismaClient) {
+  return async (request: any): Promise<{ entityId?: string | null }> => {
+    const tenantId = getTenantId(request);
+    const rawRouteUrl = request.routeOptions?.url ?? request.routerPath ?? request.url?.split('?')[0] ?? '';
+    const routeUrl = String(rawRouteUrl).replace(/^\/api\/v1\/payroll/, '') || '/';
+    const params = (request.params ?? {}) as Record<string, string>;
+
+    let m: RegExpMatchArray | null;
+    if ((m = routeUrl.match(/^\/batches\/([^/]+)/)) || params.id) {
+      const batchId = m ? m[1] : (params.id as string);
+      if (routeUrl.startsWith('/batches/')) {
+        const batch = await (prisma as any).payrollBatch.findFirst({ where: { id: batchId, tenantId }, select: { legalEntityId: true } });
+        return { entityId: batch?.legalEntityId ?? null };
+      }
+    }
+    if (routeUrl.match(/^\/rule-packs\/([^/]+)/) && params.id) {
+      const version = await (prisma as any).payrollRulePackVersion.findFirst({ where: { id: params.id, tenantId }, select: { legalEntityId: true } });
+      return { entityId: version?.legalEntityId ?? null };
+    }
+    // Create/list routes: the body/query legalEntityId IS the requested
+    // scope — the authz engine (not this extractor) is what denies an
+    // actor whose role assignment isn't scoped to it.
+    const body = (request.body ?? {}) as Record<string, unknown>;
+    const query = (request.query ?? {}) as Record<string, unknown>;
+    const entityId = (body['legalEntityId'] as string | undefined) ?? (query['legalEntityId'] as string | undefined);
+    return { entityId: entityId ?? undefined };
+  };
+}
+
 /** Wires per-route permission enforcement for every CE-13 payroll-service
  * route — mirrors tax-service's src/http/security.ts attachRouteSecurity,
  * the established repo pattern for adding RBAC without disturbing the
  * pre-existing JWT/tenant/SoD hooks (authMiddleware, tenantContextHook, and
  * the actor-comparison checks in rule-pack-service.ts / ce13-routes.ts
- * remain unchanged and still run). */
+ * remain unchanged and still run). fix(integration): now also legal-entity
+ * scoped via `scope`, mirroring CE-07's own posting-engine-routes.ts
+ * `requirePostingEnginePermission` convention rather than inventing a
+ * second one. */
 export function attachPayrollRouteSecurity(app: FastifyInstance): void {
+  const prisma = container.resolve<PrismaClient>('PrismaClient');
   const requirePermission = createAuthzGuard(
     container.resolve<AuthzClient>('AuthzClient'),
-    { getTenantId: (request: any) => getTenantId(request) },
+    { getTenantId: (request: any) => getTenantId(request), scope: resolveEntityScope(prisma) },
   );
 
   app.addHook('preHandler', async (request: any, reply: any) => {

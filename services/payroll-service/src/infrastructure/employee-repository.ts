@@ -3,6 +3,8 @@ import { inject, injectable } from 'tsyringe';
 import { TenantId } from '@amacc/shared-kernel';
 
 export interface CreateEmployeeDto {
+  /** fix(integration): required — the legal entity this employee is on the payroll of. */
+  legalEntityId: string;
   employeeCode: string;
   firstName: string;
   lastName: string;
@@ -38,7 +40,7 @@ export interface UpdateEmployeeDto {
 export interface IEmployeeRepository {
   findById(tenantId: TenantId, id: string): Promise<any | null>;
   findByCode(tenantId: TenantId, code: string): Promise<any | null>;
-  findAll(tenantId: TenantId, filters?: { department?: string; isActive?: boolean }): Promise<any[]>;
+  findAll(tenantId: TenantId, filters?: { department?: string; isActive?: boolean; legalEntityId?: string | null }): Promise<any[]>;
   create(tenantId: TenantId, dto: CreateEmployeeDto): Promise<any>;
   update(tenantId: TenantId, id: string, dto: UpdateEmployeeDto): Promise<any>;
   terminate(tenantId: TenantId, id: string, terminationDate: Date): Promise<any>;
@@ -56,9 +58,14 @@ export class PrismaEmployeeRepository implements IEmployeeRepository {
     return this.prisma.employee.findUnique({ where: { tenantId_employeeCode: { tenantId, employeeCode: code } } });
   }
 
-  findAll(tenantId: TenantId, filters?: { department?: string; isActive?: boolean }) {
+  findAll(tenantId: TenantId, filters?: { department?: string; isActive?: boolean; legalEntityId?: string | null }) {
     return this.prisma.employee.findMany({
-      where: { tenantId, ...(filters?.department && { department: filters.department }), ...(filters?.isActive !== undefined && { isActive: filters.isActive }) },
+      where: {
+        tenantId,
+        ...(filters?.department && { department: filters.department }),
+        ...(filters?.isActive !== undefined && { isActive: filters.isActive }),
+        ...(filters?.legalEntityId !== undefined && { legalEntityId: filters.legalEntityId }),
+      },
       orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
     });
   }
@@ -67,6 +74,7 @@ export class PrismaEmployeeRepository implements IEmployeeRepository {
     return this.prisma.employee.create({
       data: {
         tenantId,
+        legalEntityId: dto.legalEntityId,
         employeeCode: dto.employeeCode,
         firstName: dto.firstName,
         lastName: dto.lastName,

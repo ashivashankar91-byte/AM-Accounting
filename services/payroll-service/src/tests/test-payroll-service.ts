@@ -25,6 +25,7 @@ import { PostingGatewayUnavailableError, PostingRefusedError } from '../infrastr
 const makeMockEmployee = (overrides?: Partial<any>) => ({
   id: 'emp-1',
   tenantId: 'tenant-test',
+  legalEntityId: 'entity-test',
   employeeCode: 'EMP001',
   firstName: 'Alice',
   lastName: 'Smith',
@@ -47,6 +48,7 @@ const makeMockEmployee = (overrides?: Partial<any>) => ({
 const makeMockBatch = (overrides?: Partial<any>) => ({
   id: 'batch-1',
   tenantId: 'tenant-test',
+  legalEntityId: 'entity-test',
   batchNumber: 'PR-2024-01',
   payPeriodStart: new Date('2024-01-01'),
   payPeriodEnd: new Date('2024-01-14'),
@@ -72,6 +74,7 @@ const makeMockBatch = (overrides?: Partial<any>) => ({
 const makeMockItem = (overrides?: Partial<any>) => ({
   id: 'item-1',
   tenantId: 'tenant-test',
+  legalEntityId: 'entity-test',
   batchId: 'batch-1',
   employeeId: 'emp-1',
   department: 'SERVICE',
@@ -117,6 +120,8 @@ function makeService(overrides: Partial<{
   glClient: any;
   postingGateway: any;
   sourceRegistry: any;
+  commissionService: any;
+  paymentHandoffService: any;
 }> = {}) {
   const employeeRepo = overrides.employeeRepo ?? {
     findById: vi.fn().mockResolvedValue(makeMockEmployee()),
@@ -193,7 +198,7 @@ function makeService(overrides: Partial<{
       create: vi.fn().mockResolvedValue({}),
     },
     payrollTenantConfig: {
-      findUnique: vi.fn().mockResolvedValue({ payrollSourceMode: 'MANUAL_ATTESTED' }),
+      findFirst: vi.fn().mockResolvedValue({ payrollSourceMode: 'MANUAL_ATTESTED' }),
     },
   };
 
@@ -235,7 +240,18 @@ function makeService(overrides: Partial<{
   };
 
   // @ts-ignore — DI constructor injection bypassed for testing
-  return new PayrollService(employeeRepo, batchRepo, itemRepo, glMappingRepo, taxRateRepo, ytdRepo, prisma, postingGateway, sourceRegistry);
+  const commissionService = overrides.commissionService ?? {
+    attachRecordsToBatch: vi.fn().mockResolvedValue({ attached: 0 }),
+    linkPostedBatch: vi.fn().mockResolvedValue({ count: 0 }),
+    linkReversedBatch: vi.fn().mockResolvedValue({ count: 0 }),
+  };
+
+  const paymentHandoffService = overrides.paymentHandoffService ?? {
+    createHandoff: vi.fn().mockResolvedValue({ id: 'handoff-1', status: 'NOT_CONFIGURED' }),
+    voidForBatch: vi.fn().mockResolvedValue(null),
+  };
+
+  return new PayrollService(employeeRepo, batchRepo, itemRepo, glMappingRepo, taxRateRepo, ytdRepo, prisma, postingGateway, sourceRegistry, commissionService, paymentHandoffService);
 }
 
 const TENANT = 'tenant-test' as any;
@@ -248,7 +264,7 @@ describe('Employee CRUD', () => {
   it('createEmployee — creates and returns new employee', async () => {
     const svc = makeService();
     const result = await svc.createEmployee(TENANT, {
-      employeeCode: 'EMP001', firstName: 'Alice', lastName: 'Smith',
+      legalEntityId: 'entity-test', employeeCode: 'EMP001', firstName: 'Alice', lastName: 'Smith',
       department: 'SERVICE', payType: 'HOURLY', hireDate: new Date('2020-01-01'),
     });
     expect(result.firstName).toBe('Alice');
@@ -259,7 +275,7 @@ describe('Employee CRUD', () => {
       employeeRepo: { findByCode: vi.fn().mockResolvedValue(makeMockEmployee()), create: vi.fn(), findById: vi.fn(), findAll: vi.fn(), update: vi.fn(), terminate: vi.fn() },
     });
     await expect(svc.createEmployee(TENANT, {
-      employeeCode: 'EMP001', firstName: 'Alice', lastName: 'Smith',
+      legalEntityId: 'entity-test', employeeCode: 'EMP001', firstName: 'Alice', lastName: 'Smith',
       department: 'SERVICE', payType: 'HOURLY', hireDate: new Date('2020-01-01'),
     })).rejects.toThrow('already exists');
   });
@@ -299,6 +315,7 @@ describe('Batch Lifecycle', () => {
   it('createBatch — creates DRAFT batch', async () => {
     const svc = makeService();
     const result = await svc.createBatch(TENANT, {
+      legalEntityId: 'entity-test',
       batchNumber: 'PR-2024-01',
       payPeriodStart: new Date('2024-01-01'), payPeriodEnd: new Date('2024-01-14'),
       payDate: new Date('2024-01-17'), payFrequency: 'BI_WEEKLY', createdBy: 'admin',
@@ -311,6 +328,7 @@ describe('Batch Lifecycle', () => {
       batchRepo: { findByBatchNumber: vi.fn().mockResolvedValue(makeMockBatch()), create: vi.fn(), findById: vi.fn(), listByTenant: vi.fn(), updateStatus: vi.fn(), updateTotals: vi.fn(), setJournalEntryId: vi.fn(), listNonVoidInWindow: vi.fn() },
     });
     await expect(svc.createBatch(TENANT, {
+      legalEntityId: 'entity-test',
       batchNumber: 'PR-2024-01',
       payPeriodStart: new Date('2024-01-01'), payPeriodEnd: new Date('2024-01-14'),
       payDate: new Date('2024-01-17'), payFrequency: 'BI_WEEKLY', createdBy: 'admin',
@@ -320,6 +338,7 @@ describe('Batch Lifecycle', () => {
   it('createBatch — throws if periodStart >= periodEnd', async () => {
     const svc = makeService();
     await expect(svc.createBatch(TENANT, {
+      legalEntityId: 'entity-test',
       batchNumber: 'PR-2024-02',
       payPeriodStart: new Date('2024-01-14'), payPeriodEnd: new Date('2024-01-01'),
       payDate: new Date('2024-01-17'), payFrequency: 'BI_WEEKLY', createdBy: 'admin',
@@ -335,6 +354,7 @@ describe('Batch Lifecycle', () => {
       },
     });
     await expect(svc.createBatch(TENANT, {
+      legalEntityId: 'entity-test',
       batchNumber: 'PR-2024-03',
       payPeriodStart: new Date('2024-01-01'), payPeriodEnd: new Date('2024-01-14'),
       payDate: new Date('2024-01-17'), payFrequency: 'BI_WEEKLY', createdBy: 'admin',
@@ -366,7 +386,7 @@ describe('Batch Lifecycle', () => {
     const createItem = vi.fn().mockResolvedValue(makeMockItem());
     const svc = makeService({
       itemRepo: { create: createItem, findByBatch: vi.fn().mockResolvedValue([]), findById: vi.fn(), deleteById: vi.fn(), deleteByBatch: vi.fn(), sumByBatch: vi.fn().mockResolvedValue({ totalGrossPay: { toString: () => '2000' }, totalDeductions: { toString: () => '0' }, totalNetPay: { toString: () => '2000' }, totalEmployerTax: { toString: () => '0' }, employeeCount: 1 }) },
-      prisma: { outboxEvent: { create: vi.fn() }, payrollTenantConfig: { findUnique: vi.fn().mockResolvedValue(null) } },
+      prisma: { outboxEvent: { create: vi.fn() }, payrollTenantConfig: { findFirst: vi.fn().mockResolvedValue(null) } },
       sourceRegistry: { resolve: vi.fn().mockReturnValue(new NullPayrollSource()) },
     });
     await svc.addItemToBatch(TENANT, 'batch-1', { employeeId: 'emp-1', regularPay: 2000, regularHours: 80 });

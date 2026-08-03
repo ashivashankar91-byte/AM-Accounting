@@ -20,8 +20,9 @@ function makePrisma() {
   let versionSeq = 0;
   return {
     payrollTenantConfig: {
-      findUnique: vi.fn().mockResolvedValue(null),
-      upsert: vi.fn().mockImplementation(({ create }: any) => Promise.resolve({ id: 'cfg-1', ...create })),
+      findFirst: vi.fn().mockResolvedValue(null),
+      create: vi.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: 'cfg-1', ...data })),
+      update: vi.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: 'cfg-1', ...data })),
     },
     payrollRulePackVersion: {
       findFirst: vi.fn().mockImplementation(({ where }: any) => {
@@ -88,6 +89,8 @@ async function buildApp(prisma: any) {
   container.reset();
   container.registerInstance('PrismaClient', prisma);
   container.register('PayrollRulePackService', { useClass: PayrollRulePackService });
+  container.registerInstance('PaymentHandoffService', new Proxy({}, { get: () => async () => ({}) }));
+  container.registerInstance('PayrollAuditService', new Proxy({}, { get: () => async () => ({ items: [] }) }));
   const app = Fastify();
   await app.register(async (instance) => ce13Routes(instance, prisma));
   return app;
@@ -120,7 +123,7 @@ describe('ce13-routes — S025 rule-pack governance (author cannot activate own 
     const app = await buildApp(makePrisma());
     const draftRes = await app.inject({
       method: 'POST', url: '/rule-packs', headers: { 'x-tenant-id': 't1', 'x-user-id': 'author-1' },
-      payload: { packKey: 'payroll-gl-mapping', rows: [{ family: 'EARNINGS', department: 'sales', payComponent: 'REGULAR_PAY', glAccountCode: '5000', isDebit: true }] },
+      payload: { legalEntityId: 'entity-test', packKey: 'payroll-gl-mapping', rows: [{ family: 'EARNINGS', department: 'sales', payComponent: 'REGULAR_PAY', glAccountCode: '5000', isDebit: true }] },
     });
     expect(draftRes.statusCode).toBe(201);
     const versionId = draftRes.json().id;
@@ -137,7 +140,7 @@ describe('ce13-routes — S025 rule-pack governance (author cannot activate own 
     const app = await buildApp(makePrisma());
     const draftRes = await app.inject({
       method: 'POST', url: '/rule-packs', headers: { 'x-tenant-id': 't1', 'x-user-id': 'same-user' },
-      payload: { packKey: 'payroll-gl-mapping', rows: [{ family: 'EARNINGS', department: 'sales', payComponent: 'REGULAR_PAY', glAccountCode: '5000', isDebit: true }] },
+      payload: { legalEntityId: 'entity-test', packKey: 'payroll-gl-mapping', rows: [{ family: 'EARNINGS', department: 'sales', payComponent: 'REGULAR_PAY', glAccountCode: '5000', isDebit: true }] },
     });
     const versionId = draftRes.json().id;
     await app.inject({ method: 'POST', url: `/rule-packs/${versionId}/validate`, headers: { 'x-tenant-id': 't1' } });
@@ -150,7 +153,7 @@ describe('ce13-routes — S025 rule-pack governance (author cannot activate own 
     const app = await buildApp(makePrisma());
     const draftRes = await app.inject({
       method: 'POST', url: '/rule-packs', headers: { 'x-tenant-id': 't1', 'x-user-id': 'author-1' },
-      payload: { packKey: 'k', rows: [{ family: 'EARNINGS', department: 'sales', payComponent: 'X', glAccountCode: null, isDebit: true }] },
+      payload: { legalEntityId: 'entity-test', packKey: 'k', rows: [{ family: 'EARNINGS', department: 'sales', payComponent: 'X', glAccountCode: null, isDebit: true }] },
     });
     const versionId = draftRes.json().id;
     const simRes = await app.inject({ method: 'GET', url: `/rule-packs/${versionId}/simulate`, headers: { 'x-tenant-id': 't1' } });
@@ -163,7 +166,7 @@ describe('ce13-routes — S110 clawback lifecycle', () => {
     const app = await buildApp(makePrisma());
     const createRes = await app.inject({
       method: 'POST', url: '/clawbacks', headers: { 'x-tenant-id': 't1', 'x-user-id': 'user-1' },
-      payload: { employeeId: 'emp-1', dealId: 'deal-1', method: 'RECEIVABLE', clawbackAmount: 100 },
+      payload: { legalEntityId: 'entity-test', employeeId: 'emp-1', dealId: 'deal-1', method: 'RECEIVABLE', clawbackAmount: 100 },
     });
     expect(createRes.statusCode).toBe(201);
     const id = createRes.json().id;
@@ -187,7 +190,7 @@ describe('ce13-routes — S111 accrual lifecycle (self-approval denial)', () => 
     const app = await buildApp(prisma);
     const createRes = await app.inject({
       method: 'POST', url: '/accruals', headers: { 'x-tenant-id': 't1', 'x-user-id': 'preparer-1' },
-      payload: { periodYear: 2024, periodMonth: 1, accrualType: 'BONUS_ACCRUAL', amount: 500 },
+      payload: { legalEntityId: 'entity-test', periodYear: 2024, periodMonth: 1, accrualType: 'BONUS_ACCRUAL', amount: 500 },
     });
     expect(createRes.statusCode).toBe(201);
     const id = createRes.json().id;
@@ -212,7 +215,7 @@ describe('ce13-routes — S112 tech flag-hour bridge (RATE_GAP refusal)', () => 
     const app = await buildApp(makePrisma());
     const res = await app.inject({
       method: 'POST', url: '/tech-bridge', headers: { 'x-tenant-id': 't1', 'x-user-id': 'user-1' },
-      payload: { employeeId: 'emp-1', periodStart: '2024-01-01', periodEnd: '2024-01-14', flagHours: 40, flagRate: 25 },
+      payload: { legalEntityId: 'entity-test', employeeId: 'emp-1', periodStart: '2024-01-01', periodEnd: '2024-01-14', flagHours: 40, flagRate: 25 },
     });
     expect(res.statusCode).toBe(201);
     expect(res.json().status).toBe('RATE_RESOLVED');
@@ -223,7 +226,7 @@ describe('ce13-routes — S112 tech flag-hour bridge (RATE_GAP refusal)', () => 
     const app = await buildApp(makePrisma());
     const res = await app.inject({
       method: 'POST', url: '/tech-bridge', headers: { 'x-tenant-id': 't1', 'x-user-id': 'user-1' },
-      payload: { employeeId: 'emp-1', periodStart: '2024-01-01', periodEnd: '2024-01-14', flagHours: 40 },
+      payload: { legalEntityId: 'entity-test', employeeId: 'emp-1', periodStart: '2024-01-01', periodEnd: '2024-01-14', flagHours: 40 },
     });
     expect(res.statusCode).toBe(201);
     expect(res.json().status).toBe('RATE_GAP');

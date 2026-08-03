@@ -36,6 +36,31 @@ export class DuplicatePayrollRunError extends Error {
   }
 }
 
+/**
+ * fix(integration): thrown for any row whose legalEntityId is null (predates
+ * the legal-entity dimension and was never backfilled — no ambiguous row is
+ * ever silently assigned tenantId as its legal entity) or whenever an
+ * action's inputs would mix two different legal entities on one batch.
+ * Blocks validate/approve/post/void/activate until reconciled.
+ */
+export class LegalEntityReconciliationRequiredError extends Error {
+  readonly status = 422;
+  readonly code = 'LEGAL_ENTITY_RECONCILIATION_REQUIRED';
+  constructor(message: string) {
+    super(message);
+    this.name = 'LegalEntityReconciliationRequiredError';
+  }
+}
+
+export class LegalEntityMismatchError extends Error {
+  readonly status = 422;
+  readonly code = 'LEGAL_ENTITY_MISMATCH';
+  constructor(message: string) {
+    super(message);
+    this.name = 'LegalEntityMismatchError';
+  }
+}
+
 export class SegregationOfDutiesError extends Error {
   readonly status = 403;
   readonly code = 'SEGREGATION_OF_DUTIES_VIOLATION';

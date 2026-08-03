@@ -34,6 +34,8 @@ import {
 } from '../domain/duplicate-detector';
 import { IPostingGateway, PostingGatewayUnavailableError, PostingRefusedError, PayrollDistributionLine } from '../infrastructure/posting-gateway';
 import { PayrollSourceRegistry } from '../domain/engines/payroll-source-registry';
+import { CommissionService } from './commission-service';
+import { PaymentHandoffService } from './payment-handoff-service';
 import {
   PayrollWithholdingLines,
   WITHHOLDING_STATUSES_ALLOWING_PROCEED,
@@ -43,6 +45,8 @@ import {
   DuplicatePayrollRunError,
   SegregationOfDutiesError,
   MissingGLMappingError,
+  LegalEntityReconciliationRequiredError,
+  LegalEntityMismatchError,
 } from '../domain/errors';
 
 const logger = pino({ name: 'payroll-service' });
@@ -60,6 +64,8 @@ export interface SubmitBatchDTO {
 
 export interface CreateBatchRequest {
   batchNumber: string;
+  /** fix(integration): required — replaces the temporary legalEntityId=tenantId substitution. Validated against the authorized (RBAC-scoped) context in security.ts, not trusted in isolation. */
+  legalEntityId: string;
   payPeriodStart: Date;
   payPeriodEnd: Date;
   payDate: Date;
@@ -82,6 +88,8 @@ export interface AddItemRequest {
   otherDeductions?: number;
   glAccountCode?: string;
   glDepartment?: string;
+  /** fix(integration) Gap 3 — commission records (S109) being paid through this item; attached to the batch now (still ACCRUED), auto-linked to the real journal when the batch posts. */
+  commissionRecordIds?: string[];
   /**
    * Statutory withholding boundary (never computed by payroll-service — see
    * domain/payroll-adapter-contract.ts). Required to move an item out of
@@ -140,6 +148,8 @@ export class PayrollService {
     @inject('PrismaClient') private readonly prisma: PrismaClient,
     @inject('IPostingGateway') private readonly postingGateway: IPostingGateway,
     @inject('PayrollSourceRegistry') private readonly sourceRegistry: PayrollSourceRegistry,
+    @inject('CommissionService') private readonly commissionService: CommissionService,
+    @inject('PaymentHandoffService') private readonly paymentHandoffService: PaymentHandoffService,
   ) {}
 
   // ── Employee CRUD ──────────────────────────────────────────────────────────
@@ -173,19 +183,22 @@ export class PayrollService {
   // ── Batch Lifecycle ────────────────────────────────────────────────────────
 
   async createBatch(tenantId: TenantId, dto: CreateBatchRequest) {
+    if (!dto.legalEntityId?.trim()) {
+      throw new LegalEntityReconciliationRequiredError('legalEntityId is required to create a payroll batch.');
+    }
     const existing = await this.batchRepo.findByBatchNumber(tenantId, dto.batchNumber);
     if (existing) throw new Error(`Batch number ${dto.batchNumber} already exists`);
     if (dto.payPeriodStart >= dto.payPeriodEnd) {
       throw new Error('payPeriodStart must be before payPeriodEnd');
     }
     // Duplicate-payroll-run prevention (S108 AC): the same providerRunId for
-    // the same pay period, for the same tenant, can never create a second
-    // batch — this is the idempotency boundary for retried/duplicated
-    // upstream imports, enforced both here and by the DB unique constraint
-    // (tenantId, providerRunId, payPeriodStart, payPeriodEnd) as a
-    // concurrency backstop.
+    // the same pay period, for the same tenant AND legal entity, can never
+    // create a second batch — this is the idempotency boundary for
+    // retried/duplicated upstream imports, enforced both here and by the DB
+    // unique constraint (tenantId, legalEntityId, providerRunId,
+    // payPeriodStart, payPeriodEnd) as a concurrency backstop.
     if (dto.providerRunId) {
-      const dup = await this.batchRepo.findByProviderRunId(tenantId, dto.providerRunId, dto.payPeriodStart, dto.payPeriodEnd);
+      const dup = await this.batchRepo.findByProviderRunId(tenantId, dto.legalEntityId, dto.providerRunId, dto.payPeriodStart, dto.payPeriodEnd);
       if (dup) {
         throw new DuplicatePayrollRunError(
           `A payroll batch already exists for providerRunId=${dto.providerRunId} in this pay period (batch ${dup.batchNumber}, status ${dup.status})`,
@@ -218,9 +231,30 @@ export class PayrollService {
     if (!['DRAFT', 'VALIDATED'].includes(batch.status)) {
       throw new Error(`Cannot add items to batch in status ${batch.status}`);
     }
+    // fix(integration): a batch that predates the legal-entity dimension
+    // (legalEntityId null) cannot accept new items until reconciled — never
+    // silently treated as belonging to whichever entity happens to be
+    // convenient.
+    if (!batch.legalEntityId) {
+      throw new LegalEntityReconciliationRequiredError(
+        `Batch ${batchId} has no legal entity on record and must be reconciled before items can be added.`,
+      );
+    }
 
     const employee = await this.employeeRepo.findById(tenantId, req.employeeId);
     if (!employee) throw new Error(`Employee ${req.employeeId} not found`);
+    if (!employee.legalEntityId) {
+      throw new LegalEntityReconciliationRequiredError(
+        `Employee ${req.employeeId} has no legal entity on record and must be reconciled before being added to a payroll batch.`,
+      );
+    }
+    // "Payroll batches cannot mix legal entities" — every item's employee
+    // must belong to the same legal entity as the batch itself.
+    if (employee.legalEntityId !== batch.legalEntityId) {
+      throw new LegalEntityMismatchError(
+        `Employee ${req.employeeId} belongs to legal entity ${employee.legalEntityId as string}, but batch ${batchId} is scoped to ${batch.legalEntityId as string} — a payroll batch cannot mix legal entities.`,
+      );
+    }
 
     const grossPay =
       req.regularPay +
@@ -238,7 +272,7 @@ export class PayrollService {
     //   TestFixturePayrollSource-> deterministic labeled fixture math, hard-
     //                              restricted to TEST-TENANT-CE13-CERTIFICATION-ONLY,
     //                              always productionCertified:false
-    const tenantConfig = await (this.prisma as any).payrollTenantConfig.findUnique({ where: { tenantId } });
+    const tenantConfig = await this.findTenantConfig(tenantId, batch.legalEntityId as string);
     const adapter = this.sourceRegistry.resolve(tenantConfig?.payrollSourceMode);
     const withholdingResult = await adapter.resolve(
       {
@@ -263,6 +297,7 @@ export class PayrollService {
 
     const item = await this.itemRepo.create(tenantId, {
       batchId,
+      legalEntityId: batch.legalEntityId as string,
       employeeId: req.employeeId,
       department: req.department ?? employee.department,
       regularHours: req.regularHours ?? null,
@@ -294,6 +329,10 @@ export class PayrollService {
       sourceDocumentRef: withholdingResult.sourceDocumentRef ?? null,
     });
 
+    if (req.commissionRecordIds && req.commissionRecordIds.length > 0) {
+      await this.commissionService.attachRecordsToBatch(tenantId, batch.legalEntityId as string, req.commissionRecordIds, batchId);
+    }
+
     await this.recomputeBatchTotals(tenantId, batchId);
     return { ...item, withholdingRejectReason: withholdingResult.rejectReason ?? null };
   }
@@ -320,6 +359,14 @@ export class PayrollService {
     const batch = await this.getBatch(tenantId, batchId);
     const errors: string[] = [];
 
+    // Rule 0: legal entity must be resolved, and every item must share it
+    // (fix(integration) — "payroll batches cannot mix legal entities").
+    // addItemToBatch already refuses a mismatched employee at add-time, so
+    // this only fires for legacy pre-reconciliation data.
+    if (!batch.legalEntityId) {
+      errors.push('Batch has no legal entity on record (LEGAL_ENTITY_RECONCILIATION_REQUIRED)');
+    }
+
     // Rule 1: batch must be in DRAFT
     if (batch.status !== 'DRAFT') {
       errors.push(`Batch status is ${batch.status}; only DRAFT batches can be validated`);
@@ -329,6 +376,12 @@ export class PayrollService {
     const items = await this.itemRepo.findByBatch(tenantId, batchId);
     if (items.length === 0) {
       errors.push('Batch has no payroll items');
+    }
+    if (batch.legalEntityId) {
+      const mixedEntityItems = items.filter((i: any) => i.legalEntityId !== batch.legalEntityId);
+      if (mixedEntityItems.length > 0) {
+        errors.push(`Batch contains ${mixedEntityItems.length} item(s) belonging to a different legal entity than the batch`);
+      }
     }
 
     // Rule 3: no duplicate employees
@@ -364,7 +417,10 @@ export class PayrollService {
     const requiredComponents = ['REGULAR_PAY', 'FICA_TAX', 'MEDICARE_TAX', 'FED_TAX', 'NET_PAY'];
     for (const dept of depts) {
       for (const comp of requiredComponents) {
-        const mapping = await this.glMappingRepo.findByDeptAndComponent(tenantId, dept, comp);
+        const mapping = batch.legalEntityId
+          ? (await this.glMappingRepo.findByDeptAndComponent(tenantId, batch.legalEntityId as string, dept, comp)) ??
+            (await this.glMappingRepo.findByDeptAndComponent(tenantId, null, dept, comp))
+          : null;
         if (!mapping) {
           errors.push(`Missing GL mapping for department=${dept} component=${comp}`);
         }
@@ -513,7 +569,20 @@ export class PayrollService {
    * (debitLineItemsPath/creditLineItemsPath) requires a non-empty line-item
    * array on every posting/reversal event, never just on the original post.
    */
-  private async buildJournalLines(tenantId: TenantId, items: Awaited<ReturnType<IPayrollItemRepository['findByBatch']>>) {
+  /**
+   * fix(integration): entity-scoped config lookup with a fallback to the
+   * legacy tenant-wide row (legalEntityId null) — never silently reinterprets
+   * that legacy row as belonging to the requested entity; it is only used
+   * when no entity-specific row exists yet, exactly the "legacy default"
+   * behavior documented on PayrollTenantConfig in schema.prisma.
+   */
+  private async findTenantConfig(tenantId: TenantId, legalEntityId: string) {
+    const scoped = await (this.prisma as any).payrollTenantConfig.findFirst({ where: { tenantId, legalEntityId } });
+    if (scoped) return scoped;
+    return (this.prisma as any).payrollTenantConfig.findFirst({ where: { tenantId, legalEntityId: null } });
+  }
+
+  private async buildJournalLines(tenantId: TenantId, legalEntityId: string, items: Awaited<ReturnType<IPayrollItemRepository['findByBatch']>>) {
     const journalLines: Array<{ glAccountCode: string; debit: number; credit: number; description: string }> = [];
     const deptTotals = new Map<string, {
       grossPay: number; netPay: number; federalTax: number; stateTax: number;
@@ -546,9 +615,18 @@ export class PayrollService {
     let totalCredits = 0;
 
     for (const [dept, totals] of deptTotals) {
-      const mappings = await this.glMappingRepo.findByDepartment(tenantId, dept);
+      // Entity-scoped mappings take precedence; the legacy tenant-wide
+      // (legalEntityId null) rows are a fallback for components an entity
+      // hasn't configured its own account for yet — mirrors findTenantConfig's
+      // same legacy-default convention.
+      const [entityMappings, legacyMappings] = await Promise.all([
+        this.glMappingRepo.findByDepartment(tenantId, legalEntityId, dept),
+        this.glMappingRepo.findByDepartment(tenantId, null, dept),
+      ]);
       const getMapping = (component: string) =>
-        (mappings.find((m: any) => m.payComponent === component)?.glAccountCode as string | undefined) ?? '9999-UNMAPPED';
+        (entityMappings.find((m: any) => m.payComponent === component)?.glAccountCode as string | undefined) ??
+        (legacyMappings.find((m: any) => m.payComponent === component)?.glAccountCode as string | undefined) ??
+        '9999-UNMAPPED';
 
       journalLines.push({ glAccountCode: getMapping('REGULAR_PAY'), debit: round2(totals.grossPay), credit: 0, description: `${dept} gross wages` });
       totalDebits += totals.grossPay;
@@ -589,6 +667,14 @@ export class PayrollService {
     if (batch.status !== 'APPROVED') {
       throw new Error(`Batch must be APPROVED before posting; current status: ${batch.status}`);
     }
+    // fix(integration): fail closed rather than post an event with no real
+    // legal entity — this is the field CE-07's envelope now requires
+    // top-level and the ONLY source of truth for it (no tenantId substitution).
+    if (!batch.legalEntityId) {
+      throw new LegalEntityReconciliationRequiredError(
+        `Batch ${batchId} has no legal entity on record and must be reconciled before it can be posted.`,
+      );
+    }
     // Segregation of duties, second gate: the identity executing the post
     // step must differ from the batch's approver. gl-service enforces the
     // same rule again independently (createdByUserId vs approverUserId on
@@ -600,7 +686,7 @@ export class PayrollService {
     const items = await this.itemRepo.findByBatch(tenantId, batchId);
     if (items.length === 0) throw new Error('No items to post');
 
-    const { journalLines, totalDebits, totalCredits } = await this.buildJournalLines(tenantId, items);
+    const { journalLines, totalDebits, totalCredits } = await this.buildJournalLines(tenantId, batch.legalEntityId as string, items);
 
     // Double-entry balance enforcement
     const imbalance = Math.abs(totalDebits - totalCredits);
@@ -634,7 +720,7 @@ export class PayrollService {
     try {
       posted = await this.postingGateway.submitPayrollEvent({
         tenantId,
-        legalEntityId: tenantId, // see posting-gateway.ts's doc-comment — single-entity-per-tenant default
+        legalEntityId: batch.legalEntityId as string, // fix(integration): real, persisted batch legalEntityId — no tenantId substitution
         batchId,
         batchNumber: batch.batchNumber as string,
         businessDate: (batch.payDate as Date).toISOString().slice(0, 10),
@@ -656,6 +742,28 @@ export class PayrollService {
     await this.batchRepo.updateStatus(tenantId, batchId, 'POSTED', { postedAt: new Date() });
     await this.batchRepo.setJournalEntryId(tenantId, batchId, journalEntryId as string);
 
+    // fix(integration) Gap 3 — automatic commission-to-journal lineage: every
+    // commission record attached to this batch is now linked to the real
+    // posted journal, no manual markPaid(journalEntryId) call required.
+    await this.commissionService.linkPostedBatch(tenantId, batchId, journalEntryId as string);
+
+    // fix(integration) Gap 2 — CE-09 payment handoff: records the posted
+    // liability's truthful export/payment state against the tenant's real
+    // configured payment-handoff mode (NOT_CONFIGURED by default — never
+    // fabricated). Never blocks/fails the posting itself; a handoff
+    // recording problem is evidence-layer, not a posting failure.
+    const netPayLine = journalLines.find((l) => l.description.includes('net payroll disbursement'));
+    if (netPayLine) {
+      await this.paymentHandoffService.createHandoff({
+        tenantId,
+        legalEntityId: batch.legalEntityId as string,
+        payrollBatchId: batchId,
+        journalEntryId: journalEntryId as string,
+        clearingGlAccountCode: netPayLine.glAccountCode,
+        totalAmount: totalCredits,
+        actor: postedByUserId,
+      });
+    }
 
     const year = isoYear(batch.payDate as Date);
     for (const item of items) {
@@ -676,7 +784,7 @@ export class PayrollService {
       data: {
         eventType: 'PAYROLL_BATCH_POSTED',
         tenantId,
-        payload: { batchId, batchNumber: batch.batchNumber, journalEntryId, totalGross: toNum(batch.totalGrossPay) } as any,
+        payload: { batchId, legalEntityId: batch.legalEntityId, batchNumber: batch.batchNumber, journalEntryId, totalGross: toNum(batch.totalGrossPay), actor: postedByUserId } as any,
       },
     });
 
@@ -691,6 +799,11 @@ export class PayrollService {
     }
     if (!voidReason?.trim()) throw new Error('voidReason is required');
     if (!batch.journalEntryId) throw new Error('Batch has no linked journal entry to reverse');
+    if (!batch.legalEntityId) {
+      throw new LegalEntityReconciliationRequiredError(
+        `Batch ${batchId} has no legal entity on record and must be reconciled before it can be voided.`,
+      );
+    }
 
     const items = await this.itemRepo.findByBatch(tenantId, batchId);
 
@@ -700,7 +813,7 @@ export class PayrollService {
     // used, with debit/credit swapped, so the reversal is the true
     // symmetric mirror of the original journal rather than an empty event
     // that CE-07 would refuse (MISSING_LINE_ITEMS).
-    const { journalLines: originalLines } = await this.buildJournalLines(tenantId, items);
+    const { journalLines: originalLines } = await this.buildJournalLines(tenantId, batch.legalEntityId as string, items);
     const reversingDistributions: PayrollDistributionLine[] = originalLines.map((line) => ({
       payComponent: line.glAccountCode,
       department: (line.description.split(' ')[0]) ?? 'UNKNOWN',
@@ -722,7 +835,7 @@ export class PayrollService {
     try {
       reversal = await this.postingGateway.submitPayrollEvent({
         tenantId,
-        legalEntityId: tenantId, // see posting-gateway.ts's doc-comment — single-entity-per-tenant default
+        legalEntityId: batch.legalEntityId as string, // fix(integration): real, persisted batch legalEntityId — no tenantId substitution
         batchId,
         batchNumber: batch.batchNumber as string,
         businessDate: new Date().toISOString().slice(0, 10),
@@ -743,6 +856,15 @@ export class PayrollService {
 
     await this.batchRepo.updateStatus(tenantId, batchId, 'VOID', { voidedAt: new Date(), voidReason });
 
+    // fix(integration) Gap 3 — links the reversing journal without
+    // overwriting each commission record's original journalEntryId.
+    await this.commissionService.linkReversedBatch(tenantId, batchId, journalEntryId as string);
+
+    // fix(integration) Gap 2 — cancellation behavior: void the payment
+    // handoff alongside the batch (idempotent; a SETTLED handoff refuses
+    // instead, per PaymentHandoffService.voidForBatch's own rule).
+    await this.paymentHandoffService.voidForBatch(tenantId, batchId, voidReason, voidedByUserId);
+
     const totalDebits = toNum(batch.totalNetPay) + toNum(batch.totalDeductions);
     const totalCredits = totalDebits; // symmetric reversal — CE-07 enforces balance
 
@@ -762,7 +884,7 @@ export class PayrollService {
       data: {
         eventType: 'PAYROLL_BATCH_VOIDED',
         tenantId,
-        payload: { batchId, batchNumber: batch.batchNumber, journalEntryId, voidReason } as any,
+        payload: { batchId, legalEntityId: batch.legalEntityId, reversalOfBatchId: batchId, batchNumber: batch.batchNumber, journalEntryId, voidReason, actor: voidedByUserId } as any,
       },
     });
 
@@ -842,10 +964,10 @@ export class PayrollService {
 
   // ── GL Mapping Management ──────────────────────────────────────────────────
 
-  async listGLMappings(tenantId: TenantId) { return this.glMappingRepo.findAll(tenantId); }
+  async listGLMappings(tenantId: TenantId, legalEntityId?: string | null) { return this.glMappingRepo.findAll(tenantId, legalEntityId); }
   async upsertGLMapping(tenantId: TenantId, dto: GLMappingDto) { return this.glMappingRepo.upsert(tenantId, dto); }
-  async deleteGLMapping(tenantId: TenantId, department: string, payComponent: string) {
-    await this.glMappingRepo.delete(tenantId, department, payComponent);
+  async deleteGLMapping(tenantId: TenantId, legalEntityId: string | null, department: string, payComponent: string) {
+    await this.glMappingRepo.delete(tenantId, legalEntityId, department, payComponent);
   }
 
   // ── Tax Rate Management ────────────────────────────────────────────────────

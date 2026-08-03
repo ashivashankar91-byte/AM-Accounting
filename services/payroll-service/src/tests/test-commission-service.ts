@@ -70,7 +70,7 @@ describe('CommissionService — plans', () => {
   it('createPlan persists tenant-configured fields (no hardcoded percentage)', async () => {
     const { svc, prisma } = makeSvc();
     const plan = await svc.createPlan(TENANT, {
-      employeeId: 'emp-1', planType: 'PERCENTAGE', percentageRate: 3.5, effectiveDate: '2024-01-01',
+      legalEntityId: 'entity-test', employeeId: 'emp-1', planType: 'PERCENTAGE', percentageRate: 3.5, effectiveDate: '2024-01-01',
     }, 'author-1');
     expect(prisma.commissionPlan.create).toHaveBeenCalled();
     expect(plan.employeeId).toBe('emp-1');
@@ -80,7 +80,7 @@ describe('CommissionService — plans', () => {
   it('createPlan rejects split rules summing over 100%', async () => {
     const { svc } = makeSvc();
     await expect(svc.createPlan(TENANT, {
-      employeeId: 'emp-1', planType: 'PERCENTAGE', percentageRate: 3,
+      legalEntityId: 'entity-test', employeeId: 'emp-1', planType: 'PERCENTAGE', percentageRate: 3,
       splitRules: [{ employeeId: 'emp-1', sharePct: 60 }, { employeeId: 'emp-2', sharePct: 60 }],
       effectiveDate: '2024-01-01',
     }, 'author-1')).rejects.toThrow(InvalidSplitRulesError);
@@ -93,7 +93,7 @@ describe('CommissionService — plans', () => {
       },
     });
     const newPlan = await svc.supersedePlan(TENANT, 'plan-1', {
-      employeeId: 'emp-1', planType: 'PERCENTAGE', percentageRate: 4, effectiveDate: '2024-06-01',
+      legalEntityId: 'entity-test', employeeId: 'emp-1', planType: 'PERCENTAGE', percentageRate: 4, effectiveDate: '2024-06-01',
     }, 'author-1');
     expect(newPlan.version).toBe(2);
     expect(prisma.commissionPlan.update).toHaveBeenCalledWith(expect.objectContaining({

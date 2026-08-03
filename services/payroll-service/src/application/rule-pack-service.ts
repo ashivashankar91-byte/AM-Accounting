@@ -14,6 +14,7 @@
 import { PrismaClient } from '.prisma/payroll-client';
 import { inject, injectable } from 'tsyringe';
 import { TenantId } from '@amacc/shared-kernel';
+import { LegalEntityReconciliationRequiredError } from '../domain/errors';
 
 export interface RulePackRow {
   family: string; // 'EARNINGS' | 'EMPLOYER_LIABILITY' | 'WITHHOLDING_LIABILITY' | 'CLEARING' | 'ACCRUAL' | 'COMMISSION_EXPENSE' | 'COMMISSION_PAYABLE' | 'CLAWBACK' | 'FLAG_ABSORPTION'
@@ -42,20 +43,21 @@ export class RulePackAuthorEqualsActivatorError extends Error {
 export class PayrollRulePackService {
   constructor(@inject('PrismaClient') private readonly prisma: PrismaClient) {}
 
-  async createDraft(tenantId: TenantId, packKey: string, rows: RulePackRow[], author: string) {
+  async createDraft(tenantId: TenantId, legalEntityId: string, packKey: string, rows: RulePackRow[], author: string) {
+    if (!legalEntityId?.trim()) throw new LegalEntityReconciliationRequiredError('legalEntityId is required to draft a payroll rule pack.');
     const latest = await (this.prisma as any).payrollRulePackVersion.findFirst({
-      where: { tenantId, packKey },
+      where: { tenantId, legalEntityId, packKey },
       orderBy: { version: 'desc' },
     });
     const version = (latest?.version ?? 0) + 1;
     return (this.prisma as any).payrollRulePackVersion.create({
-      data: { tenantId, packKey, version, rows: rows as any, author, status: 'DRAFT' },
+      data: { tenantId, legalEntityId, packKey, version, rows: rows as any, author, status: 'DRAFT' },
     });
   }
 
-  async listVersions(tenantId: TenantId, packKey?: string) {
+  async listVersions(tenantId: TenantId, packKey?: string, legalEntityId?: string | null) {
     return (this.prisma as any).payrollRulePackVersion.findMany({
-      where: { tenantId, ...(packKey && { packKey }) },
+      where: { tenantId, ...(packKey && { packKey }), ...(legalEntityId !== undefined && { legalEntityId }) },
       orderBy: [{ packKey: 'asc' }, { version: 'desc' }],
     });
   }
@@ -94,10 +96,22 @@ export class PayrollRulePackService {
     return { valid, errors };
   }
 
-  /** author != activator enforced (S023 SoD discipline). Activating supersedes the prior ACTIVE version for the same packKey. */
+  /**
+   * author != activator enforced (S023 SoD discipline). Activating
+   * supersedes the prior ACTIVE version for the same packKey WITHIN THE
+   * SAME LEGAL ENTITY only — fix(integration): activating entity A's rule
+   * pack must never supersede entity B's active version of the same
+   * packKey (the same class of legal-entity isolation defect CE-07 fixed
+   * for its own posting-engine rule packs).
+   */
   async activate(tenantId: TenantId, versionId: string, activatedBy: string) {
     const version = await (this.prisma as any).payrollRulePackVersion.findFirst({ where: { id: versionId, tenantId } });
     if (!version) throw new Error(`Rule pack version ${versionId} not found`);
+    if (!version.legalEntityId) {
+      throw new LegalEntityReconciliationRequiredError(
+        `Rule pack version ${versionId} has no legal entity on record and must be reconciled before it can be activated.`,
+      );
+    }
     if (version.status !== 'VALIDATED') {
       throw new RulePackActivationError(`Version must be VALIDATED before activation; current status: ${version.status}`);
     }
@@ -107,7 +121,7 @@ export class PayrollRulePackService {
     const now = new Date();
     return (this.prisma as any).$transaction(async (tx: any) => {
       await tx.payrollRulePackVersion.updateMany({
-        where: { tenantId, packKey: version.packKey, status: 'ACTIVE' },
+        where: { tenantId, legalEntityId: version.legalEntityId, packKey: version.packKey, status: 'ACTIVE' },
         data: { status: 'SUPERSEDED', supersededAt: now },
       });
       return tx.payrollRulePackVersion.update({
@@ -117,7 +131,7 @@ export class PayrollRulePackService {
     });
   }
 
-  async getActiveVersion(tenantId: TenantId, packKey: string) {
-    return (this.prisma as any).payrollRulePackVersion.findFirst({ where: { tenantId, packKey, status: 'ACTIVE' } });
+  async getActiveVersion(tenantId: TenantId, legalEntityId: string, packKey: string) {
+    return (this.prisma as any).payrollRulePackVersion.findFirst({ where: { tenantId, legalEntityId, packKey, status: 'ACTIVE' } });
   }
 }

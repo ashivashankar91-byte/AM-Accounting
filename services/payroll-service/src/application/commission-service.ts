@@ -18,7 +18,7 @@ import { injectable, inject } from 'tsyringe';
 import { PrismaClient } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { TenantId } from '@amacc/shared-kernel';
-import { SegregationOfDutiesError } from '../domain/errors';
+import { SegregationOfDutiesError, LegalEntityMismatchError } from '../domain/errors';
 
 export class CommissionPlanNotFoundError extends Error {
   readonly status = 404;
@@ -56,6 +56,7 @@ export interface SplitRule {
 }
 
 export interface CreateCommissionPlanInput {
+  legalEntityId: string;
   employeeId: string;
   planType: 'FLAT' | 'PERCENTAGE' | 'TIERED';
   department?: string | null;
@@ -123,6 +124,7 @@ export class CommissionService {
 
     const createData: any = {
       tenantId,
+      legalEntityId: input.legalEntityId,
       employeeId: input.employeeId,
       planType: input.planType,
       department: input.department ?? null,
@@ -155,6 +157,7 @@ export class CommissionService {
     const newPlan = await (this.prisma as any).commissionPlan.create({
       data: {
         tenantId,
+        legalEntityId: input.legalEntityId ?? existing.legalEntityId,
         employeeId: input.employeeId,
         planType: input.planType,
         department: input.department ?? existing.department,
@@ -289,6 +292,7 @@ export class CommissionService {
     const record = await (this.prisma as any).commissionRecord.create({
       data: {
         tenantId,
+        legalEntityId: plan.legalEntityId,
         employeeId: args.employeeId,
         splitEmployeeId: args.splitEmployeeId,
         dealId: args.dealId,
@@ -319,6 +323,7 @@ export class CommissionService {
         await (this.prisma as any).commissionRecord.create({
           data: {
             tenantId,
+            legalEntityId: plan.legalEntityId,
             employeeId: args.employeeId,
             splitEmployeeId: args.splitEmployeeId,
             dealId: args.dealId,
@@ -388,6 +393,46 @@ export class CommissionService {
     });
     await this.audit(tenantId, 'COMMISSION_MARKED_PAID', actor, { commissionRecordId });
     return updated;
+  }
+
+  // ── fix(integration) — automatic commission-to-journal lineage ─────────
+  // Replaces the old disconnected manual markPaid(journalEntryId) call with
+  // a real chain: commission record -> payroll batch/item -> governed
+  // PAYROLL_BATCH_POSTED posting -> journal, driven entirely by
+  // payroll-service.ts's addItemToBatch/postBatch/voidBatch (never by a
+  // human supplying a journalEntryId by hand).
+
+  /** Marks these commission records as included in a payroll batch (still ACCRUED — not PAID until the batch actually posts). Tenant+entity scoped; refuses a record that doesn't belong to this batch's legal entity. */
+  async attachRecordsToBatch(tenantId: TenantId, legalEntityId: string, commissionRecordIds: string[], payrollBatchId: string) {
+    if (commissionRecordIds.length === 0) return { attached: 0 };
+    const records = await (this.prisma as any).commissionRecord.findMany({ where: { id: { in: commissionRecordIds }, tenantId } });
+    const mismatched = records.filter((r: any) => r.legalEntityId !== legalEntityId);
+    if (mismatched.length > 0) {
+      throw new LegalEntityMismatchError(
+        `Commission record(s) ${mismatched.map((r: any) => r.id).join(', ')} belong to a different legal entity than payroll batch ${payrollBatchId} — a payroll batch cannot mix legal entities.`,
+      );
+    }
+    const result = await (this.prisma as any).commissionRecord.updateMany({
+      where: { id: { in: commissionRecordIds }, tenantId },
+      data: { payrollBatchId },
+    });
+    return { attached: result.count };
+  }
+
+  /** Called by payroll-service.ts's postBatch() immediately after CE-07 confirms POSTED — every commission record attached to this batch is now authoritatively linked to the real journal, no manual step required. */
+  async linkPostedBatch(tenantId: TenantId, payrollBatchId: string, journalEntryId: string) {
+    return (this.prisma as any).commissionRecord.updateMany({
+      where: { tenantId, payrollBatchId, status: { not: 'REVERSED' } },
+      data: { status: 'PAID', journalEntryId },
+    });
+  }
+
+  /** Called by payroll-service.ts's voidBatch() — links the reversing journal without overwriting the original journalEntryId's identity. */
+  async linkReversedBatch(tenantId: TenantId, payrollBatchId: string, reversalJournalEntryId: string) {
+    return (this.prisma as any).commissionRecord.updateMany({
+      where: { tenantId, payrollBatchId },
+      data: { status: 'REVERSED', reversalJournalEntryId },
+    });
   }
 
   // ── Correction / reversal ──────────────────────────────────────────────

@@ -95,10 +95,16 @@ describe.skipIf(!DATABASE_URL)('CE-13 payroll-service — RLS tenant isolation +
     const dupPeriodStart = new Date('2024-03-01');
     const dupPeriodEnd = new Date('2024-03-14');
     const providerRunId = `dup-run-${randomUUID()}`;
+    // fix(integration): the unique constraint is now (tenantId,
+    // legalEntityId, providerRunId, payPeriodStart, payPeriodEnd) — a real,
+    // shared legalEntityId is required here, since Postgres treats NULL as
+    // distinct-from-itself in a unique index (two null-entity rows would
+    // never conflict, silently defeating this proof).
+    const dupEntity = `entity-dup-${randomUUID()}`;
 
     const attempt = () => superPrisma.payrollBatch.create({
       data: {
-        id: randomUUID(), tenantId: tenantA, batchNumber: `DUP-${randomUUID()}`,
+        id: randomUUID(), tenantId: tenantA, legalEntityId: dupEntity, batchNumber: `DUP-${randomUUID()}`,
         payPeriodStart: dupPeriodStart, payPeriodEnd: dupPeriodEnd, payDate: new Date('2024-03-19'),
         payFrequency: 'BI_WEEKLY', createdBy: 'tester', providerRunId,
       },
