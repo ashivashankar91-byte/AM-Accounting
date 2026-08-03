@@ -30,7 +30,7 @@ const CE17_TABLES = [
   'automation_capabilities', 'automation_grants', 'policy_gates', 'automation_items',
   'automation_executions', 'rule_model_versions', 'automation_health_metrics',
   'simulation_sandboxes', 'sandbox_results', 'ingestion_drafts', 'lockbox_files', 'lockbox_lines',
-  'lifo_pool_definitions', 'lifo_layers', 'chargeback_model_outputs', 'portfolio_statements',
+  'automt_lifo_pool_definitions', 'automt_lifo_layers', 'chargeback_model_outputs', 'portfolio_statements',
   'cession_statements', 'oem_match_suggestions', 'incentive_accrual_recommendations',
   'composite_exports', 'gaap_bridge_memos', 'dsar_cases', 'unclaimed_property_items',
   'control_registries', 'evidence_binders', 'automation_outbox',
@@ -100,7 +100,7 @@ describe.skipIf(!DB_URL)('CE-17 automation service (live-db)', () => {
       `SELECT table_name, column_name, numeric_precision, numeric_scale
        FROM information_schema.columns
        WHERE table_schema = 'public'
-         AND table_name IN ('automation_items', 'policy_gates', 'lockbox_lines', 'lifo_layers',
+         AND table_name IN ('automation_items', 'policy_gates', 'lockbox_lines', 'automt_lifo_layers',
                             'portfolio_statements', 'cession_statements', 'oem_match_suggestions',
                             'incentive_accrual_recommendations', 'unclaimed_property_items')
          AND data_type = 'numeric'

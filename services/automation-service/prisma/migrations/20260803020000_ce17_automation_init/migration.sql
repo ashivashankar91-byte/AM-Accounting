@@ -382,7 +382,7 @@ DO $$ BEGIN
   END IF;
 END $$;
 
-CREATE TABLE IF NOT EXISTS "lifo_pool_definitions" (
+CREATE TABLE IF NOT EXISTS "automt_lifo_pool_definitions" (
   "id"                TEXT         NOT NULL DEFAULT gen_random_uuid()::text PRIMARY KEY,
   "tenant_id"         TEXT         NOT NULL,
   "legal_entity_id"   TEXT         NOT NULL,
@@ -397,17 +397,17 @@ CREATE TABLE IF NOT EXISTS "lifo_pool_definitions" (
   "updated_at"        TIMESTAMPTZ  NOT NULL DEFAULT now(),
   CONSTRAINT "lifo_pool_definitions_tenant_entity_pool_key" UNIQUE ("tenant_id", "legal_entity_id", "pool_code")
 );
-CREATE INDEX IF NOT EXISTS "lifo_pool_definitions_tenant_entity_idx" ON "lifo_pool_definitions" ("tenant_id", "legal_entity_id");
+CREATE INDEX IF NOT EXISTS "lifo_pool_definitions_tenant_entity_idx" ON "automt_lifo_pool_definitions" ("tenant_id", "legal_entity_id");
 
-ALTER TABLE "lifo_pool_definitions" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "automt_lifo_pool_definitions" ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'lifo_pool_definitions' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY tenant_isolation ON "lifo_pool_definitions"
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'automt_lifo_pool_definitions' AND policyname = 'tenant_isolation') THEN
+    CREATE POLICY tenant_isolation ON "automt_lifo_pool_definitions"
       USING ("tenant_id" = current_setting('app.current_tenant_id', true));
   END IF;
 END $$;
 
-CREATE TABLE IF NOT EXISTS "lifo_layers" (
+CREATE TABLE IF NOT EXISTS "automt_lifo_layers" (
   "id"                 TEXT           NOT NULL DEFAULT gen_random_uuid()::text PRIMARY KEY,
   "tenant_id"          TEXT           NOT NULL,
   "pool_id"            TEXT           NOT NULL,
@@ -426,12 +426,12 @@ CREATE TABLE IF NOT EXISTS "lifo_layers" (
   "updated_at"         TIMESTAMPTZ    NOT NULL DEFAULT now(),
   CONSTRAINT "lifo_layers_tenant_pool_year_month_key" UNIQUE ("tenant_id", "pool_id", "layer_year", "layer_month")
 );
-CREATE INDEX IF NOT EXISTS "lifo_layers_tenant_pool_idx" ON "lifo_layers" ("tenant_id", "pool_id");
+CREATE INDEX IF NOT EXISTS "lifo_layers_tenant_pool_idx" ON "automt_lifo_layers" ("tenant_id", "pool_id");
 
-ALTER TABLE "lifo_layers" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "automt_lifo_layers" ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'lifo_layers' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY tenant_isolation ON "lifo_layers"
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'automt_lifo_layers' AND policyname = 'tenant_isolation') THEN
+    CREATE POLICY tenant_isolation ON "automt_lifo_layers"
       USING ("tenant_id" = current_setting('app.current_tenant_id', true));
   END IF;
 END $$;

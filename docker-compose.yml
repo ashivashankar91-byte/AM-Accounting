@@ -212,6 +212,11 @@ services:
       COA_SERVICE_URL: http://coa-service:3002
       APAR_SERVICE_URL: http://apar-service:3013
       MIGRATION_SERVICE_URL: http://migration-service:3062
+      FIXEDOPS_SERVICE_URL: http://fixedops-service:3060
+      DEAL_ACCOUNTING_SERVICE_URL: http://deal-accounting-service:3092
+      VEHICLE_ACCOUNTING_SERVICE_URL: http://vehicle-accounting-service:3090
+      PAYROLL_SERVICE_URL: http://payroll-service:3012
+      OEM_SERVICE_URL: http://oem-service:3052
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }

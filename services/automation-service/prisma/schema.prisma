@@ -348,7 +348,7 @@ model LifoPoolDefinition {
 
   @@unique([tenantId, legalEntityId, poolCode])
   @@index([tenantId, legalEntityId])
-  @@map("lifo_pool_definitions")
+  @@map("automt_lifo_pool_definitions")
 }
 
 model LifoLayer {
@@ -373,7 +373,7 @@ model LifoLayer {
 
   @@unique([tenantId, poolId, layerYear, layerMonth])
   @@index([tenantId, poolId])
-  @@map("lifo_layers")
+  @@map("automt_lifo_layers")
 }
 
 // S091B Experience-Rated Chargeback Model
