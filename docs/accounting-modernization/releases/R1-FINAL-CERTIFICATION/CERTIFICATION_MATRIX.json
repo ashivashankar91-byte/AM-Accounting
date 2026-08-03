@@ -1,0 +1,1443 @@
+{
+  "certification_run": "2026-08-04",
+  "source_sha": "d8fc51b7",
+  "branch": "r1-final-certification",
+  "totals": {
+    "CERTIFIED": 45,
+    "PACKAGE_AUTHORIZED_DEFERRED": 112,
+    "BLOCKED_WITH_EXACT_GAP": 2
+  },
+  "stories": [
+    {
+      "story_id": "S200",
+      "epic": "CE-01",
+      "title": "Create & Maintain Legal Entity",
+      "release": "R0",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S201",
+      "epic": "CE-01",
+      "title": "Create & Maintain Store (Rooftop)",
+      "release": "R0",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S202",
+      "epic": "CE-01",
+      "title": "Dealer Group Hierarchy View & Maintenance",
+      "release": "R0",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S203",
+      "epic": "CE-01",
+      "title": "Department Code Maintenance",
+      "release": "R0",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S204",
+      "epic": "CE-01",
+      "title": "Franchise Maintenance",
+      "release": "R0",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S205",
+      "epic": "CE-01",
+      "title": "User Account Lifecycle",
+      "release": "R0",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S206",
+      "epic": "CE-01",
+      "title": "Basic Role Management",
+      "release": "R0",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S207",
+      "epic": "CE-01",
+      "title": "Permission Catalog & Check API",
+      "release": "R0",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S004A",
+      "epic": "CE-01",
+      "title": "Dealership Position Role Templates",
+      "release": "R0",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S007",
+      "epic": "CE-01",
+      "title": "Immutable Audit Log",
+      "release": "R0",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S224",
+      "epic": "CE-01",
+      "title": "Document Audit History View",
+      "release": "R0",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S223",
+      "epic": "CE-01",
+      "title": "Configuration Framework",
+      "release": "R0",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S208",
+      "epic": "CE-02",
+      "title": "Fiscal Calendar Definition",
+      "release": "R0",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S209",
+      "epic": "CE-02",
+      "title": "Accounting Period Open & Status",
+      "release": "R0",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S210",
+      "epic": "CE-03",
+      "title": "Basic Chart of Accounts CRUD",
+      "release": "R0",
+      "service": "coa-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S211",
+      "epic": "CE-03",
+      "title": "Account Hierarchy & Totaling Groups",
+      "release": "R0",
+      "service": "coa-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S010",
+      "epic": "CE-03",
+      "title": "Seed Canonical COA Skeleton",
+      "release": "R0",
+      "service": "coa-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S212",
+      "epic": "CE-03",
+      "title": "Journal Source Registry",
+      "release": "R0",
+      "service": "coa-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S213",
+      "epic": "CE-03",
+      "title": "Journal Numbering Sequences",
+      "release": "R0",
+      "service": "coa-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S013",
+      "epic": "CE-03",
+      "title": "Balanced Journal Posting API",
+      "release": "R0",
+      "service": "coa-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S014",
+      "epic": "CE-03",
+      "title": "Trial Balance API",
+      "release": "R0",
+      "service": "coa-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S214",
+      "epic": "CE-04",
+      "title": "Create & Save Draft Manual JE",
+      "release": "R0",
+      "service": "gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S215",
+      "epic": "CE-04",
+      "title": "Validate Manual JE",
+      "release": "R0",
+      "service": "gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S216",
+      "epic": "CE-04",
+      "title": "Post Manual JE (Direct-Post Mode)",
+      "release": "R0",
+      "service": "gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S217",
+      "epic": "CE-04",
+      "title": "View Journal Entry",
+      "release": "R0",
+      "service": "gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S218",
+      "epic": "CE-04",
+      "title": "Reverse Posted Journal Entry",
+      "release": "R0",
+      "service": "gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S219",
+      "epic": "CE-04",
+      "title": "Void/Delete Draft JE",
+      "release": "R0",
+      "service": "gl-service",
+      "status": "BLOCKED_WITH_EXACT_GAP",
+      "gap_or_evidence": "SoD Matrix (S004B equivalent) \u2014 SoD validator exists in close-service/src/domain/sod-validator.ts but as embedded close-logic, not a standalone story-level persistent SoD enforcement service."
+    },
+    {
+      "story_id": "S220",
+      "epic": "CE-05",
+      "title": "GL Account Activity Inquiry",
+      "release": "R0",
+      "service": "gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S221",
+      "epic": "CE-05",
+      "title": "GL Search",
+      "release": "R0",
+      "service": "gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S222",
+      "epic": "CE-05",
+      "title": "Trial Balance Screen & Export",
+      "release": "R0",
+      "service": "gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S227",
+      "epic": "CE-05",
+      "title": "Basic Balance Sheet & Income Statement",
+      "release": "R0",
+      "service": "gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S008",
+      "epic": "CE-06",
+      "title": "Period Soft/Hard Close Enforcement",
+      "release": "R1",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S031",
+      "epic": "CE-06",
+      "title": "Manual JE Approval Governance",
+      "release": "R1",
+      "service": "tenant-service",
+      "status": "BLOCKED_WITH_EXACT_GAP",
+      "gap_or_evidence": "InMemoryApprovalWorkflow \u2014 approval-service holds approvals in-memory only; no persistent DB-backed state table; CE-07 contract satisfied but S031 approval-state persistence is unverified."
+    },
+    {
+      "story_id": "S032",
+      "epic": "CE-06",
+      "title": "Recurring & Auto-Reversing JE Templates",
+      "release": "R1",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S004B",
+      "epic": "CE-06",
+      "title": "SoD Matrix & Mitigating Controls",
+      "release": "R1",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S009",
+      "epic": "CE-06",
+      "title": "COA Statement Metadata & Franchise Packs",
+      "release": "R1",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S011",
+      "epic": "CE-03",
+      "title": "Analysis Codes",
+      "release": "R1",
+      "service": "coa-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S012",
+      "epic": "CE-06",
+      "title": "COA Change Governance",
+      "release": "R1",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S019",
+      "epic": "CE-07",
+      "title": "Posting DSL Parser & Validator",
+      "release": "R1",
+      "service": "posting-recovery-service/gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S020",
+      "epic": "CE-07",
+      "title": "Posting Rule Evaluator & Orchestration",
+      "release": "R1",
+      "service": "posting-recovery-service/gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S021",
+      "epic": "CE-07",
+      "title": "Posting Dead-Letter Queue & Replay",
+      "release": "R1",
+      "service": "posting-recovery-service/gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S023",
+      "epic": "CE-07",
+      "title": "Rule Pack v1 (AP/AR/Cash)",
+      "release": "R1",
+      "service": "posting-recovery-service/gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S026",
+      "epic": "CE-08",
+      "title": "Schedule Open-Item Core",
+      "release": "R1",
+      "service": "gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S027",
+      "epic": "CE-08",
+      "title": "Schedule Aging Engine",
+      "release": "R1",
+      "service": "gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S028",
+      "epic": "CE-08",
+      "title": "Schedule Exception Rules & Escalation",
+      "release": "R1",
+      "service": "gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S029",
+      "epic": "CE-08",
+      "title": "Schedule Item Split/Transfer/Writeoff",
+      "release": "R1",
+      "service": "gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S003",
+      "epic": "CE-06",
+      "title": "Elimination Entity Attributes",
+      "release": "R1",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S036A",
+      "epic": "CE-09",
+      "title": "Vendor Master CRUD",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S036B",
+      "epic": "CE-09",
+      "title": "Vendor Verification Integrations",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S039",
+      "epic": "CE-09",
+      "title": "AP Invoice Entry & 2/3-Way Match",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S041",
+      "epic": "CE-09",
+      "title": "AP Approval Matrix",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S042",
+      "epic": "CE-09",
+      "title": "Use-Tax Self-Assessment",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S043A",
+      "epic": "CE-09",
+      "title": "Manual Single Payment",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S043B",
+      "epic": "CE-09",
+      "title": "Payment Runs & Rails",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S044",
+      "epic": "CE-09",
+      "title": "Trade-Payoff Fast Lane",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S045",
+      "epic": "CE-09",
+      "title": "Void/Stop/Reissue & Check Escheat",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S046",
+      "epic": "CE-09",
+      "title": "Customer AR Master, Credit & Statements",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S048",
+      "epic": "CE-09",
+      "title": "Wholesale Vehicle AR & Title Gate",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S050",
+      "epic": "CE-09",
+      "title": "AR Write-offs & Allowance Model",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S051",
+      "epic": "CE-09",
+      "title": "NSF Handling",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S052",
+      "epic": "CE-09",
+      "title": "Receipting POS & Drawers",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S053",
+      "epic": "CE-09",
+      "title": "Deposit Workflow & Bank Feed Match",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S054A",
+      "epic": "CE-09",
+      "title": "Manual Bank Reconciliation Workbench",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S055",
+      "epic": "CE-09",
+      "title": "Merchant Settlement Reconciliation",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S057",
+      "epic": "CE-09",
+      "title": "Daily Cash Position Dashboard",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S030",
+      "epic": "CE-08",
+      "title": "Schedule Statements & Dunning",
+      "release": "R2",
+      "service": "gl-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S124",
+      "epic": "CE-10",
+      "title": "Certified Tax Engine Adapter",
+      "release": "R2",
+      "service": "fixedops-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S125",
+      "epic": "CE-10",
+      "title": "Regulatory Fee Tables",
+      "release": "R2",
+      "service": "fixedops-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S059",
+      "epic": "CE-11",
+      "title": "RO Close Posting (All Pay Types)",
+      "release": "R3",
+      "service": "parts-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S060",
+      "epic": "CE-11",
+      "title": "RO Reopen/Void Auto-Reversal",
+      "release": "R3",
+      "service": "parts-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S061",
+      "epic": "CE-11",
+      "title": "Labor WIP Mode & Open-RO Report",
+      "release": "R3",
+      "service": "parts-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S062",
+      "epic": "CE-11",
+      "title": "Sublet PO Lifecycle",
+      "release": "R3",
+      "service": "parts-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S064",
+      "epic": "CE-11",
+      "title": "Deferred Maintenance Contracts v1",
+      "release": "R3",
+      "service": "parts-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S065",
+      "epic": "CE-11",
+      "title": "Warranty Claim Receivable Lifecycle",
+      "release": "R3",
+      "service": "parts-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S066",
+      "epic": "CE-11",
+      "title": "Parts Movement Posting & Tie-Out",
+      "release": "R3",
+      "service": "parts-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S067",
+      "epic": "CE-11",
+      "title": "OEM Price-Tape Revaluation",
+      "release": "R3",
+      "service": "parts-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S068",
+      "epic": "CE-11",
+      "title": "Obsolescence Provision & Scrap",
+      "release": "R3",
+      "service": "parts-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S069",
+      "epic": "CE-11",
+      "title": "Parts Physical Inventory",
+      "release": "R3",
+      "service": "parts-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S070",
+      "epic": "CE-11",
+      "title": "Special-Order Deposits & Escheat",
+      "release": "R3",
+      "service": "parts-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S049",
+      "epic": "CE-09",
+      "title": "Insurance AR (Body Shop)",
+      "release": "R3",
+      "service": "cash-service/apar-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S054B",
+      "epic": "CE-09",
+      "title": "Rule-Based Bank Auto-Match",
+      "release": "R3",
+      "service": "cash-service/apar-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S074",
+      "epic": "CE-12",
+      "title": "Vehicle Unit Ledger & Stock-In",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S075",
+      "epic": "CE-12",
+      "title": "Demo Reclass & Depreciation",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S076",
+      "epic": "CE-12",
+      "title": "Used LCNRV Write-downs",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S077",
+      "epic": "CE-12",
+      "title": "Dealer Trades",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S079",
+      "epic": "CE-12",
+      "title": "Floorplan Lender Feed Adapters",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S080",
+      "epic": "CE-12",
+      "title": "Floorplan VIN Match & Breaks",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S081",
+      "epic": "CE-12",
+      "title": "SOT Monitor",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S082",
+      "epic": "CE-12",
+      "title": "Floorplan Interest & Curtailments",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S024",
+      "epic": "CE-12",
+      "title": "Vehicle+F&I Rule Pack",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S084",
+      "epic": "CE-12",
+      "title": "Deal JE Generator",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S085",
+      "epic": "CE-12",
+      "title": "Biller Review Workbench",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S086",
+      "epic": "CE-12",
+      "title": "Deal Unwind",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S087",
+      "epic": "CE-12",
+      "title": "Recontract Delta Posting",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S088",
+      "epic": "CE-12",
+      "title": "CIT Funding Match",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S089",
+      "epic": "CE-12",
+      "title": "Trade Payoff Issuance & Variance",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S090",
+      "epic": "CE-12",
+      "title": "Wholesale Disposition & Arbitration",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S091",
+      "epic": "CE-12",
+      "title": "Finance Reserve & Flat-% Chargeback Reserve",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S092",
+      "epic": "CE-12",
+      "title": "F&I Product Income & Remit Accrual",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S093",
+      "epic": "CE-12",
+      "title": "Product Cancellations",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S094",
+      "epic": "CE-12",
+      "title": "Dealer-Obligor Deferral Mode",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S108",
+      "epic": "CE-13",
+      "title": "Payroll Run GL Posting",
+      "release": "R4",
+      "service": "payroll-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S109",
+      "epic": "CE-13",
+      "title": "Commission Engine",
+      "release": "R4",
+      "service": "payroll-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S110",
+      "epic": "CE-13",
+      "title": "Chargeback Clawback Consumption",
+      "release": "R4",
+      "service": "payroll-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S111",
+      "epic": "CE-13",
+      "title": "Compensation Accruals",
+      "release": "R4",
+      "service": "payroll-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S112",
+      "epic": "CE-13",
+      "title": "Tech Flag-to-Payroll Bridge",
+      "release": "R4",
+      "service": "payroll-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S025",
+      "epic": "CE-13",
+      "title": "Payroll+Close Rule Pack",
+      "release": "R4",
+      "service": "payroll-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S047",
+      "epic": "CE-09",
+      "title": "Fleet AR Consolidated Billing",
+      "release": "R4",
+      "service": "cash-service/apar-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S056",
+      "epic": "CE-09",
+      "title": "ZBA Sweeps & FP-Offset Allocation",
+      "release": "R4",
+      "service": "cash-service/apar-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S063",
+      "epic": "CE-11",
+      "title": "Unapplied Time & Tech Guarantee",
+      "release": "R4",
+      "service": "parts-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S098",
+      "epic": "CE-14",
+      "title": "OEM Adapter Framework & Diff Alerts",
+      "release": "R5",
+      "service": "eom-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S099",
+      "epic": "CE-14",
+      "title": "Ford Feed Adapter",
+      "release": "R5",
+      "service": "eom-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S100",
+      "epic": "CE-14",
+      "title": "GM Feed Adapter",
+      "release": "R5",
+      "service": "eom-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S101A",
+      "epic": "CE-14",
+      "title": "Manual OEM Statement Match Workbench",
+      "release": "R5",
+      "service": "eom-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S103A",
+      "epic": "CE-14",
+      "title": "Incentive Registry & Flat RDR Accruals",
+      "release": "R5",
+      "service": "eom-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S104",
+      "epic": "CE-14",
+      "title": "OEM Financial Statement Renderer",
+      "release": "R5",
+      "service": "eom-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S105",
+      "epic": "CE-14",
+      "title": "Warranty Audit Chargeback & Reserve",
+      "release": "R5",
+      "service": "eom-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S106",
+      "epic": "CE-14",
+      "title": "Co-op Advertising Claims",
+      "release": "R5",
+      "service": "eom-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S113",
+      "epic": "CE-15",
+      "title": "Close Calendar Task Engine",
+      "release": "R5",
+      "service": "migration-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S114",
+      "epic": "CE-15",
+      "title": "Reconciliation Module & PBC Export",
+      "release": "R5",
+      "service": "migration-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S115",
+      "epic": "CE-15",
+      "title": "Pre-Close Scrub Reports",
+      "release": "R5",
+      "service": "migration-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S116",
+      "epic": "CE-15",
+      "title": "Year-End Close",
+      "release": "R5",
+      "service": "migration-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S117",
+      "epic": "CE-15",
+      "title": "Year-End Tax Pack",
+      "release": "R5",
+      "service": "migration-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S119",
+      "epic": "CE-15",
+      "title": "Daily Operating Control (DOC)",
+      "release": "R5",
+      "service": "migration-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S120",
+      "epic": "CE-15",
+      "title": "Statement-Format Financial Packages",
+      "release": "R5",
+      "service": "migration-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S121",
+      "epic": "CE-15",
+      "title": "Fixed Ops KPI Pack",
+      "release": "R5",
+      "service": "migration-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S122",
+      "epic": "CE-15",
+      "title": "Variable Ops KPI Pack",
+      "release": "R5",
+      "service": "migration-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S123",
+      "epic": "CE-15",
+      "title": "Compliance Reporting Pack",
+      "release": "R5",
+      "service": "migration-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S015",
+      "epic": "CE-15",
+      "title": "Multi-Currency & CTA",
+      "release": "R5",
+      "service": "migration-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S016",
+      "epic": "CE-15",
+      "title": "Signed Statement Snapshots",
+      "release": "R5",
+      "service": "migration-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S017",
+      "epic": "CE-15",
+      "title": "WORM Archive & PII Crypto-Shredding",
+      "release": "R5",
+      "service": "migration-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S033",
+      "epic": "CE-06",
+      "title": "Allocation Entries",
+      "release": "R5",
+      "service": "tenant-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S034",
+      "epic": "CE-06",
+      "title": "Intercompany Pairing & Net-Zero",
+      "release": "R5",
+      "service": "tenant-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S035",
+      "epic": "CE-06",
+      "title": "Consolidation Eliminations",
+      "release": "R5",
+      "service": "tenant-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S005",
+      "epic": "CE-06",
+      "title": "HR-Event Provisioning Hooks",
+      "release": "R5",
+      "service": "tenant-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S006",
+      "epic": "CE-06",
+      "title": "MFA & Safeguards Evidence",
+      "release": "R5",
+      "service": "tenant-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S037",
+      "epic": "CE-09",
+      "title": "1099/T4A Flag Rules & Preview",
+      "release": "R5",
+      "service": "cash-service/apar-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S038",
+      "epic": "CE-09",
+      "title": "Vendor Insurance-Cert Tracking",
+      "release": "R5",
+      "service": "cash-service/apar-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S071",
+      "epic": "CE-11",
+      "title": "OEM Parts-Return Pipeline",
+      "release": "R5",
+      "service": "parts-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S072",
+      "epic": "CE-11",
+      "title": "Parts Valuation Config & Landed Cost",
+      "release": "R5",
+      "service": "parts-accounting-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S129",
+      "epic": "CE-16",
+      "title": "Item-Level Schedule Migration & Gates",
+      "release": "R6",
+      "service": "approval-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R6 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S130",
+      "epic": "CE-16",
+      "title": "TB Conversion & COA Mapping Workbench",
+      "release": "R6",
+      "service": "approval-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R6 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S131",
+      "epic": "CE-16",
+      "title": "Parallel-Run Comparison Harness",
+      "release": "R6",
+      "service": "approval-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R6 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S132",
+      "epic": "CE-16",
+      "title": "Statement Archive Import & Runbooks",
+      "release": "R6",
+      "service": "approval-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R6 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S022",
+      "epic": "CE-17",
+      "title": "Rule Simulation Sandbox",
+      "release": "R6",
+      "service": "orchestrator-service/automation-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R6 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S040",
+      "epic": "CE-17",
+      "title": "OCR/EDI Invoice Ingestion",
+      "release": "R7",
+      "service": "orchestrator-service/automation-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S058",
+      "epic": "CE-17",
+      "title": "Lockbox AI Remittance Matching",
+      "release": "R7",
+      "service": "orchestrator-service/automation-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S073",
+      "epic": "CE-17",
+      "title": "LIFO Overlay",
+      "release": "R7",
+      "service": "orchestrator-service/automation-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S091B",
+      "epic": "CE-17",
+      "title": "Experience-Rated Chargeback Model",
+      "release": "R7",
+      "service": "orchestrator-service/automation-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S095",
+      "epic": "CE-17",
+      "title": "Retro/Portfolio Reserve Accrual",
+      "release": "R7",
+      "service": "orchestrator-service/automation-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S096",
+      "epic": "CE-17",
+      "title": "Reinsurance/DOWC Cession",
+      "release": "R7",
+      "service": "orchestrator-service/automation-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S101B",
+      "epic": "CE-17",
+      "title": "OEM Statement Auto-Matcher",
+      "release": "R7",
+      "service": "orchestrator-service/automation-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S102",
+      "epic": "CE-14",
+      "title": "Phase-2 OEM Adapters",
+      "release": "R7",
+      "service": "eom-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S103B",
+      "epic": "CE-17",
+      "title": "Probability-Weighted Incentive Accruals",
+      "release": "R7",
+      "service": "orchestrator-service/automation-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S107",
+      "epic": "CE-17",
+      "title": "NCM/NADA Composite Export",
+      "release": "R7",
+      "service": "orchestrator-service/automation-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S118",
+      "epic": "CE-17",
+      "title": "GAAP Bridge Memo Generator",
+      "release": "R7",
+      "service": "orchestrator-service/automation-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S126",
+      "epic": "CE-17",
+      "title": "DSAR Automation",
+      "release": "R7",
+      "service": "orchestrator-service/automation-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S127",
+      "epic": "CE-17",
+      "title": "Unclaimed Property Module",
+      "release": "R7",
+      "service": "orchestrator-service/automation-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    },
+    {
+      "story_id": "S128",
+      "epic": "CE-17",
+      "title": "SOX Evidence Automation",
+      "release": "R7",
+      "service": "orchestrator-service/automation-service",
+      "status": "PACKAGE_AUTHORIZED_DEFERRED",
+      "gap_or_evidence": "Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+    }
+  ]
+}

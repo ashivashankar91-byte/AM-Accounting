@@ -326,4 +326,33 @@ describe('ReplayService', () => {
     expect(eventTypes).toContain('posting_recovery.replay_started');
     expect(eventTypes).toContain('posting_recovery.replay_completed');
   });
+
+  it('passes legalEntityId through to CH01 when present in the DLQ row', async () => {
+    // CE-07 integration: rule-pack scope resolution requires legalEntityId.
+    // Rows with a non-null legalEntityId must carry it through the replay
+    // so CH01 can resolve the correct posting rule pack for the entity.
+    const rowWithEntity = baseRow({ legalEntityId: 'entity-99' });
+    const ch01 = makeCh01({ outcome: 'POSTED', journalReference: 'JE-2' });
+    const svc = new ReplayService(prisma as any, ch01);
+    await svc.replay('tenant-a', rowWithEntity.id, 'user-1');
+
+    expect(ch01.replay).toHaveBeenCalledTimes(1);
+    const call = (ch01.replay as any).mock.calls[0][0];
+    // The reconstructed envelope must carry legalEntityId for CE-07 rule-pack resolution.
+    expect(call.event.legalEntityId).toBe('entity-99');
+  });
+
+  it('handles DLQ row with legalEntityId=null without error (pre-CE-07 envelopes)', async () => {
+    // Rows created before CE-07 legalEntityId contract may have null.
+    // Replay must succeed and not inject a fabricated legalEntityId.
+    const rowNoEntity = baseRow({ legalEntityId: null });
+    const ch01 = makeCh01({ outcome: 'POSTED', journalReference: 'JE-3' });
+    const svc = new ReplayService(prisma as any, ch01);
+    await svc.replay('tenant-a', rowNoEntity.id, 'user-1');
+
+    expect(ch01.replay).toHaveBeenCalledTimes(1);
+    const call = (ch01.replay as any).mock.calls[0][0];
+    // null/undefined legalEntityId is preserved as-is — never substituted.
+    expect(call.event.legalEntityId == null).toBe(true);
+  });
 });

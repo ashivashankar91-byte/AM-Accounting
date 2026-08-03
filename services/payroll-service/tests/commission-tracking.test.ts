@@ -19,12 +19,13 @@ describe.skipIf(!DATABASE_URL)('Commission Tracking API', () => {
   let tenantId: TenantId;
 
   beforeEach(async () => {
-    prisma = new PrismaClient();
-    // Randomized per-test tenantId gives each test (and each nested
-    // beforeEach block that seeds fixture rows under this tenantId) its own
-    // isolated slice of commission_plans/commission_records, so tests never
-    // bleed rows into one another's counts/aggregates.
+    // Randomized per-test tenantId gives each test its own isolated slice of
+    // commission_plans/commission_records rows, preventing test bleed.
     tenantId = `test-tenant-commission-${randomUUID()}` as TenantId;
+    // connection_limit=1 ensures SET persists on the same connection for all writes.
+    prisma = new PrismaClient({ datasources: { db: { url: DATABASE_URL! + '?connection_limit=1' } } });
+    // Set app.current_tenant_id so RLS policies on commission_plans / commission_records allow writes.
+    await prisma.$executeRawUnsafe(`SET app.current_tenant_id = '${tenantId}'`);
   });
 
   describe('POST /api/v1/payroll/commission-plans', () => {

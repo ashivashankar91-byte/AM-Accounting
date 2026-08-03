@@ -35,11 +35,14 @@ describe.skipIf(!DATABASE_URL)('CE-13 payroll-service — RLS tenant isolation +
   const tenantB = `ce13-rls-tenant-b-${randomUUID()}`;
 
   beforeAll(async () => {
-    superPrisma = new PrismaClient({ datasources: { db: { url: DATABASE_URL } } });
-    appPrisma = new PrismaClient({ datasources: { db: { url: APP_DATABASE_URL } } });
+    // connection_limit=1 ensures SET persists across queries on the same connection.
+    superPrisma = new PrismaClient({ datasources: { db: { url: DATABASE_URL + '?connection_limit=1' } } });
+    appPrisma = new PrismaClient({ datasources: { db: { url: APP_DATABASE_URL + '?connection_limit=1' } } });
     await superPrisma.$connect();
     await appPrisma.$connect();
 
+    // Set context to tenantA and insert tenantA fixture rows.
+    await superPrisma.$executeRawUnsafe(`SET app.current_tenant_id = '${tenantA}'`);
     await superPrisma.payrollBatch.createMany({
       data: [
         {
@@ -47,6 +50,13 @@ describe.skipIf(!DATABASE_URL)('CE-13 payroll-service — RLS tenant isolation +
           payPeriodStart: new Date('2024-01-01'), payPeriodEnd: new Date('2024-01-14'), payDate: new Date('2024-01-19'),
           payFrequency: 'BI_WEEKLY', createdBy: 'tester', providerRunId: 'run-a-1',
         },
+      ],
+    });
+
+    // Switch context to tenantB and insert tenantB fixture rows.
+    await superPrisma.$executeRawUnsafe(`SET app.current_tenant_id = '${tenantB}'`);
+    await superPrisma.payrollBatch.createMany({
+      data: [
         {
           id: randomUUID(), tenantId: tenantB, batchNumber: 'RLS-B-1',
           payPeriodStart: new Date('2024-01-01'), payPeriodEnd: new Date('2024-01-14'), payDate: new Date('2024-01-19'),
@@ -55,17 +65,28 @@ describe.skipIf(!DATABASE_URL)('CE-13 payroll-service — RLS tenant isolation +
       ],
     });
 
+    await superPrisma.$executeRawUnsafe(`SET app.current_tenant_id = '${tenantA}'`);
     await superPrisma.commissionPlan.createMany({
       data: [
         { id: randomUUID(), tenantId: tenantA, employeeId: 'emp-a-1', planType: 'PERCENTAGE', percentageRate: 5, effectiveDate: new Date('2024-01-01') },
+      ],
+    });
+
+    await superPrisma.$executeRawUnsafe(`SET app.current_tenant_id = '${tenantB}'`);
+    await superPrisma.commissionPlan.createMany({
+      data: [
         { id: randomUUID(), tenantId: tenantB, employeeId: 'emp-b-1', planType: 'PERCENTAGE', percentageRate: 5, effectiveDate: new Date('2024-01-01') },
       ],
     });
   });
 
   afterAll(async () => {
-    await superPrisma.payrollBatch.deleteMany({ where: { tenantId: { in: [tenantA, tenantB] } } });
-    await superPrisma.commissionPlan.deleteMany({ where: { tenantId: { in: [tenantA, tenantB] } } });
+    await superPrisma.$executeRawUnsafe(`SET app.current_tenant_id = '${tenantA}'`);
+    await superPrisma.payrollBatch.deleteMany({ where: { tenantId: tenantA } });
+    await superPrisma.commissionPlan.deleteMany({ where: { tenantId: tenantA } });
+    await superPrisma.$executeRawUnsafe(`SET app.current_tenant_id = '${tenantB}'`);
+    await superPrisma.payrollBatch.deleteMany({ where: { tenantId: tenantB } });
+    await superPrisma.commissionPlan.deleteMany({ where: { tenantId: tenantB } });
     await superPrisma.$disconnect();
     await appPrisma.$disconnect();
   });
@@ -95,12 +116,10 @@ describe.skipIf(!DATABASE_URL)('CE-13 payroll-service — RLS tenant isolation +
     const dupPeriodStart = new Date('2024-03-01');
     const dupPeriodEnd = new Date('2024-03-14');
     const providerRunId = `dup-run-${randomUUID()}`;
-    // fix(integration): the unique constraint is now (tenantId,
-    // legalEntityId, providerRunId, payPeriodStart, payPeriodEnd) — a real,
-    // shared legalEntityId is required here, since Postgres treats NULL as
-    // distinct-from-itself in a unique index (two null-entity rows would
-    // never conflict, silently defeating this proof).
     const dupEntity = `entity-dup-${randomUUID()}`;
+
+    // Ensure RLS context is set to tenantA for this test's inserts.
+    await superPrisma.$executeRawUnsafe(`SET app.current_tenant_id = '${tenantA}'`);
 
     const attempt = () => superPrisma.payrollBatch.create({
       data: {

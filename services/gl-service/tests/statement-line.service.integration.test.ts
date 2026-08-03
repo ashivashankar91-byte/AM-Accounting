@@ -24,7 +24,8 @@ describe.skipIf(!DATABASE_URL)('StatementLineService (S009 live-DB proof)', () =
   const accountId = randomUUID();
 
   beforeAll(async () => {
-    prisma = new PrismaClient({ datasources: { db: { url: DATABASE_URL } } });
+    prisma = new PrismaClient({ datasources: { db: { url: DATABASE_URL + "?connection_limit=1" } } });
+    await prisma.$executeRawUnsafe(`SET app.current_tenant_id = '${tenantId}'`);
     await prisma.$connect();
     svc = new StatementLineService(prisma as any);
 

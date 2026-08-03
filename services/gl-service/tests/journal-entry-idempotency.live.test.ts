@@ -33,7 +33,8 @@ describe.skipIf(!DATABASE_URL)('CE-07 — authoritative GL idempotency (journal_
   let crAcctId: string;
 
   beforeAll(async () => {
-    prisma = new PrismaClient({ datasources: { db: { url: DATABASE_URL } } });
+    prisma = new PrismaClient({ datasources: { db: { url: DATABASE_URL + "?connection_limit=1" } } });
+    await prisma.$executeRawUnsafe(`SET app.current_tenant_id = '${TENANT}'`);
     await prisma.$connect();
     repo = new PrismaJournalRepository(prisma as any);
 

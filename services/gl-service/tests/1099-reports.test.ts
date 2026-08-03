@@ -2,17 +2,25 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { TenantId } from '@amacc/shared-kernel';
 import { PrismaClient } from '../node_modules/.prisma/gl-client';
 
-describe('1099 Contractor Reports API', () => {
+// Live-DB guard: requires PostgreSQL with full GL schema (vendor_1099_records table).
+const DATABASE_URL = process.env['DATABASE_URL'];
+
+describe.skipIf(!DATABASE_URL)('1099 Contractor Reports API', () => {
   let prisma: PrismaClient;
   let tenantId: TenantId;
 
   beforeEach(async () => {
-    prisma = new PrismaClient();
-    tenantId = 'test-tenant-1099' as TenantId;
+    // UUID-shaped tenantId to satisfy RLS tenant constraints.
+    tenantId = 'aaaaaaaa-0000-4000-a000-0000000010991' as TenantId;
+    prisma = new PrismaClient({ datasources: { db: { url: DATABASE_URL! + '?connection_limit=1' } } });
+    // Set app.current_tenant_id so RLS policies on vendor_1099_records allow test writes.
+    // connection_limit=1 ensures the SET persists on the same reused connection.
+    await prisma.$executeRawUnsafe(`SET app.current_tenant_id = '${tenantId}'`);
     await (prisma as any).vendor1099Record.deleteMany({ where: { tenantId } });
   });
 
   afterEach(async () => {
+    await prisma.$executeRawUnsafe(`SET app.current_tenant_id = '${tenantId}'`);
     await (prisma as any).vendor1099Record.deleteMany({ where: { tenantId } });
     await prisma.$disconnect();
   });

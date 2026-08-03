@@ -189,7 +189,14 @@ export async function legalEntityRoutes(app: FastifyInstance) {
   });
 
   // ── PATCH /:id/elimination — ACC-S003 elimination-entity configuration ─────
-  app.patch('/:id/elimination', { preHandler: requirePermission(LEGAL_ENTITY_PERMISSIONS.ELIMINATION_CONFIGURE) }, async (request, reply) => {
+  // Human-only mutation: requires an explicit reason and actor identity.
+  // SERVICE tokens are explicitly excluded (allowedServiceIds: empty set) —
+  // no automated service may configure elimination entities.
+  const requireEliminationPermission = createAuthzGuard(
+    container.resolve<AuthzClient>('AuthzClient'),
+    { getTenantId, allowedServiceIds: new Set() },
+  );
+  app.patch('/:id/elimination', { preHandler: requireEliminationPermission(LEGAL_ENTITY_PERMISSIONS.ELIMINATION_CONFIGURE) }, async (request, reply) => {
     const tenantId = getTenantId(request);
     const { id } = request.params as { id: string };
     try {

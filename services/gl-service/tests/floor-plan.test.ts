@@ -3,15 +3,20 @@ import { TenantId } from '@amacc/shared-kernel';
 import { PrismaClient } from '../node_modules/.prisma/gl-client';
 import { Decimal } from '@prisma/client/runtime/library';
 
-describe('Floor Plan Financing API', () => {
+const DATABASE_URL = process.env['DATABASE_URL'];
+
+describe.skipIf(!DATABASE_URL)('Floor Plan Financing API', () => {
   let prisma: PrismaClient;
   let tenantId: TenantId;
   let liabilityAccountId: string;
   let interestAccountId: string;
 
   beforeEach(async () => {
-    prisma = new PrismaClient();
-    tenantId = 'test-tenant-floor-plan' as TenantId;
+    // UUID-shaped tenantId for RLS compliance.
+    tenantId = 'aaaaaaaa-0000-4000-a000-000000001001' as TenantId;
+    // connection_limit=1 ensures SET app.current_tenant_id persists across queries.
+    prisma = new PrismaClient({ datasources: { db: { url: DATABASE_URL! + '?connection_limit=1' } } });
+    await prisma.$executeRawUnsafe(`SET app.current_tenant_id = '${tenantId}'`);
     await (prisma as any).floorPlanUnit.deleteMany({ where: { tenantId } });
     await prisma.gLAccount.deleteMany({ where: { tenantId } });
 
@@ -42,6 +47,7 @@ describe('Floor Plan Financing API', () => {
   });
 
   afterEach(async () => {
+    await prisma.$executeRawUnsafe(`SET app.current_tenant_id = '${tenantId}'`);
     await (prisma as any).floorPlanUnit.deleteMany({ where: { tenantId } });
     await prisma.gLAccount.deleteMany({ where: { tenantId } });
     await prisma.$disconnect();

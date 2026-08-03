@@ -29,7 +29,8 @@ describe.skipIf(!DATABASE_URL)('S014 trial balance export -- live-db proof', () 
   };
 
   beforeAll(async () => {
-    prisma = new PrismaClient({ datasources: { db: { url: DATABASE_URL } } });
+    prisma = new PrismaClient({ datasources: { db: { url: DATABASE_URL + "?connection_limit=1" } } });
+    await prisma.$executeRawUnsafe(`SET app.current_tenant_id = '${tenantA}'`);
     await prisma.$connect();
     trialBalance = new TrialBalanceService(prisma as any);
 

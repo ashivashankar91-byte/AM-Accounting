@@ -8,6 +8,7 @@ import { depositRoutes } from './http/deposit-routes';
 import { settlementRoutes } from './http/settlement-routes';
 import { sweepRoutes } from './http/sweep-routes';
 import { cashPositionRoutes } from './http/cash-position-routes';
+import { cashPeriodReadinessRoutes } from './http/period-readiness-routes';
 import { DrawerService } from './application/cash-drawer-service';
 import { ReceiptSequenceService } from './application/receipt-sequence-service';
 import { ReceiptService } from './application/cash-receipt-service';
@@ -89,6 +90,7 @@ async function bootstrap() {
   await app.register(settlementRoutes, { prefix: '/api/v1/cash' });
   await app.register(sweepRoutes, { prefix: '/api/v1/cash' });
   await app.register(cashPositionRoutes, { prefix: '/api/v1/cash' });
+  await app.register(cashPeriodReadinessRoutes, { prefix: '/api/v1/cash' });
 
   app.get('/health', async () => ({ status: 'ok', service: 'cash-service' }));
 

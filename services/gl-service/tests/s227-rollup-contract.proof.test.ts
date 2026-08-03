@@ -46,7 +46,8 @@ describe.skipIf(!DATABASE_URL)('S227 financial statement roll-up contract proof'
   };
 
   beforeAll(async () => {
-    prisma = new PrismaClient({ datasources: { db: { url: DATABASE_URL } } });
+    prisma = new PrismaClient({ datasources: { db: { url: DATABASE_URL + "?connection_limit=1" } } });
+    await prisma.$executeRawUnsafe(`SET app.current_tenant_id = '${tenantId}'`);
     await prisma.$connect();
 
     await prisma.gLAccount.createMany({

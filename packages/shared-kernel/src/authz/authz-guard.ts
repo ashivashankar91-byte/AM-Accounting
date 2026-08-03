@@ -15,6 +15,20 @@ export type AuthzScopeExtractor = (request: any) =>
 export interface AuthzGuardOptions {
   getTenantId: (request: any) => string;
   scope?: AuthzScopeExtractor;
+  /**
+   * Optional explicit allowlist of serviceId values that may use a SERVICE
+   * token to bypass the human-RBAC lookup on this route.
+   *
+   * - `undefined` (default) — all SERVICE tokens are allowed (preserves
+   *   existing behaviour for read-only / low-sensitivity cross-service calls).
+   * - `new Set()` (empty set) — no SERVICE token is allowed; every caller
+   *   must hold an authenticated user identity with the required permission.
+   *   Use this on human-intent-only mutation routes (e.g. configureElimination).
+   * - `new Set(['cashflow-service', ...])` — only the listed service identities
+   *   are allowed; all others receive 403 FORBIDDEN with reason
+   *   SERVICE_NOT_IN_ALLOWLIST and an auditable log line.
+   */
+  allowedServiceIds?: ReadonlySet<string>;
 }
 
 /**
@@ -42,6 +56,21 @@ export function createAuthzGuard(client: AuthzClient, options: AuthzGuardOptions
       // bypass of authentication -- only of the human-role permission
       // lookup for already-authenticated internal callers.
       if (request.user?.role === 'SERVICE') {
+        const allowed = options.allowedServiceIds;
+        if (allowed !== undefined) {
+          const serviceId = request.user?.serviceId as string | undefined;
+          if (!serviceId || !allowed.has(serviceId)) {
+            // Log auditable refusal before responding
+            console.warn(
+              `[authz-guard] SERVICE token denied: serviceId='${serviceId ?? '<missing>'}' is not in the allowedServiceIds for permission '${permission}' on route '${request.routeOptions?.url ?? request.url}'`,
+            );
+            return reply.status(403).send({
+              error: 'FORBIDDEN',
+              message: `Service '${serviceId ?? '<missing>'}' is not authorized for operation '${permission}'`,
+              reason: 'SERVICE_NOT_IN_ALLOWLIST',
+            });
+          }
+        }
         return;
       }
       const tenantId = options.getTenantId(request);

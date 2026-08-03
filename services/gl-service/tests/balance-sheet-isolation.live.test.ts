@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { PrismaClient } from '../node_modules/.prisma/gl-client';
 import { randomUUID } from 'crypto';
 import { TrialBalanceService } from '../src/application/trial-balance-service';
@@ -31,40 +31,55 @@ describe.skipIf(!DATABASE_URL)('S227 Balance Sheet -- tenant/store isolation (li
   };
 
   beforeAll(async () => {
-    prisma = new PrismaClient({ datasources: { db: { url: DATABASE_URL } } });
+    prisma = new PrismaClient({ datasources: { db: { url: DATABASE_URL + "?connection_limit=1" } } });
     await prisma.$connect();
     fs = new FinancialStatementService(new TrialBalanceService(prisma as any));
 
+    await prisma.$executeRawUnsafe(`SET app.current_tenant_id = '${tenantA}'`);
     await prisma.gLAccount.createMany({
       data: [
         { id: accountIds.aCash, tenantId: tenantA, code: '1000', name: 'Cash', type: 'ASSET', normalBalance: 'DEBIT', allowPosting: true, openingBalance: 0 },
         { id: accountIds.aStock, tenantId: tenantA, code: '3000', name: 'Common Stock', type: 'EQUITY', normalBalance: 'CREDIT', allowPosting: true, openingBalance: 0 },
-        // Tenant B: identical account codes, deliberately, to prove isolation
-        // is by tenantId and not accidental code non-collision.
+      ],
+    });
+    await prisma.$executeRawUnsafe(`SET app.current_tenant_id = '${tenantB}'`);
+    await prisma.gLAccount.createMany({
+      data: [
         { id: accountIds.bCash, tenantId: tenantB, code: '1000', name: 'Cash', type: 'ASSET', normalBalance: 'DEBIT', allowPosting: true, openingBalance: 0 },
         { id: accountIds.bStock, tenantId: tenantB, code: '3000', name: 'Common Stock', type: 'EQUITY', normalBalance: 'CREDIT', allowPosting: true, openingBalance: 0 },
       ],
     });
 
+    await prisma.$executeRawUnsafe(`SET app.current_tenant_id = '${tenantA}'`);
     await prisma.gLAccountPeriodBalance.createMany({
       data: [
-        // Tenant A, store X: balanced BS, Assets 500 = Equity 500.
         { id: randomUUID(), tenantId: tenantA, glAccountId: accountIds.aCash, periodYear: 2026, periodMonth: 4, journalSource: 'BS', companyCode, storeId: storeX, runningBalance: 500, unitCount: 0 },
         { id: randomUUID(), tenantId: tenantA, glAccountId: accountIds.aStock, periodYear: 2026, periodMonth: 4, journalSource: 'BS', companyCode, storeId: storeX, runningBalance: -500, unitCount: 0 },
-        // Tenant A, store Y: different, smaller amounts -- proves slicing.
         { id: randomUUID(), tenantId: tenantA, glAccountId: accountIds.aCash, periodYear: 2026, periodMonth: 4, journalSource: 'BS', companyCode, storeId: storeY, runningBalance: 120, unitCount: 0 },
         { id: randomUUID(), tenantId: tenantA, glAccountId: accountIds.aStock, periodYear: 2026, periodMonth: 4, journalSource: 'BS', companyCode, storeId: storeY, runningBalance: -120, unitCount: 0 },
-        // Tenant B: same company/store code X, much larger amount -- must
-        // never leak into tenant A's Balance Sheet.
+      ],
+    });
+    await prisma.$executeRawUnsafe(`SET app.current_tenant_id = '${tenantB}'`);
+    await prisma.gLAccountPeriodBalance.createMany({
+      data: [
         { id: randomUUID(), tenantId: tenantB, glAccountId: accountIds.bCash, periodYear: 2026, periodMonth: 4, journalSource: 'BS', companyCode, storeId: storeX, runningBalance: 88888, unitCount: 0 },
         { id: randomUUID(), tenantId: tenantB, glAccountId: accountIds.bStock, periodYear: 2026, periodMonth: 4, journalSource: 'BS', companyCode, storeId: storeX, runningBalance: -88888, unitCount: 0 },
       ],
     });
   });
 
-  afterAll(async () => {
-    await prisma.gLAccountPeriodBalance.deleteMany({ where: { tenantId: { in: [tenantA, tenantB] } } });
-    await prisma.gLAccount.deleteMany({ where: { tenantId: { in: [tenantA, tenantB] } } });
+  beforeEach(async () => {
+    // Reset RLS context to tenantA before each test (tenantB queries set it inline).
+    await prisma.$executeRawUnsafe(`SET app.current_tenant_id = '${tenantA}'`);
+  });
+
+    afterAll(async () => {
+    await prisma.$executeRawUnsafe(`SET app.current_tenant_id = '${tenantA}'`);
+    await prisma.gLAccountPeriodBalance.deleteMany({ where: { tenantId: tenantA } });
+    await prisma.gLAccount.deleteMany({ where: { tenantId: tenantA } });
+    await prisma.$executeRawUnsafe(`SET app.current_tenant_id = '${tenantB}'`);
+    await prisma.gLAccountPeriodBalance.deleteMany({ where: { tenantId: tenantB } });
+    await prisma.gLAccount.deleteMany({ where: { tenantId: tenantB } });
     await prisma.$disconnect();
   });
 
@@ -83,6 +98,7 @@ describe.skipIf(!DATABASE_URL)('S227 Balance Sheet -- tenant/store isolation (li
     expect(bsA.assets.total).toBe(500);
     expect(bsA.assets.rows.every((r) => r.amount !== 88888)).toBe(true);
 
+    await prisma.$executeRawUnsafe(`SET app.current_tenant_id = '${tenantB}'`);
     const bsB = await fs.getBalanceSheet(tenantB, { entity: companyCode, store: storeX, asOf: '2026-04' });
     expect(bsB.assets.total).toBe(88888);
     expect(bsB.totalLiabilitiesAndEquity).toBe(88888);
