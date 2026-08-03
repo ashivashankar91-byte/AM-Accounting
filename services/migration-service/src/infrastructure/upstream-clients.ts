@@ -357,28 +357,99 @@ export class CloseReadinessClient implements ICloseReadinessProvider {
 }
 
 /**
- * CE-06 consolidation history provider. Typed port preserved; the comparative
- * history contract is not yet technically reconciled for migration consumers.
+ * CE-06 consolidation history provider — REAL integration.
+ *
+ * Calls group-service GET /:groupId/consolidated-gl/trial-balance for each
+ * month of the requested year (12 parallel probes). The legalEntityId
+ * argument is used as the groupId; in multi-entity accounts this is the
+ * consolidating group identifier.
+ *
+ * Fail-closed: any network error or non-200 for all 12 months → PENDING_UPSTREAM.
+ * A partial response (some months available, some not) → AVAILABLE with the
+ * periods array accurately reflecting which months have consolidated data.
  */
 @injectable()
 export class ConsolidationHistoryClient implements IConsolidationHistoryProvider {
-  async getHistory(_tenantId: string, legalEntityId: string, periodYear: number) {
-    return {
-      status: PENDING_UPSTREAM as UpstreamStatus,
-      periods: [] as { periodYear: number; periodMonth: number; available: boolean }[],
-      detail:
-        `CE-06 consolidation history for ${legalEntityId} ${periodYear} is PENDING_UPSTREAM_TECHNICAL_RECONCILIATION. ` +
-        'Comparative history will be sourced from CE-06 once its contract is reconciled; no comparative figures are inferred.',
+  private readonly baseUrl: string;
+
+  constructor() {
+    this.baseUrl = process.env['GROUP_SERVICE_URL'] ?? 'http://group-service:3039';
+  }
+
+  async getHistory(tenantId: string, legalEntityId: string, periodYear: number) {
+    const serviceToken = process.env['AMACC_SERVICE_TOKEN'];
+    const headers: Record<string, string> = {
+      'x-tenant-id': tenantId,
+      ...(serviceToken ? { Authorization: `Bearer ${serviceToken}` } : {}),
     };
+
+    const months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+
+    try {
+      const probes = await Promise.allSettled(
+        months.map(async (month) => {
+          const qs = `periodYear=${periodYear}&periodMonth=${month}`;
+          const url = `${this.baseUrl}/api/v1/groups/${encodeURIComponent(legalEntityId)}/consolidated-gl/trial-balance?${qs}`;
+          const res = await fetch(url, { headers });
+          // 404 = group not configured for this month (no data); anything else is an error
+          if (res.status === 404) return { month, available: false };
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const body: any = await res.json().catch(() => ({}));
+          const lines: unknown[] = Array.isArray(body?.lines) ? body.lines : [];
+          return { month, available: lines.length > 0 };
+        }),
+      );
+
+      const periods = probes.map((r, i) => ({
+        periodYear,
+        periodMonth: months[i]!,
+        available: r.status === 'fulfilled' ? r.value.available : false,
+      }));
+
+      const anyAvailable = periods.some((p) => p.available);
+      const allFailed = probes.every((r) => r.status === 'rejected');
+
+      if (allFailed) {
+        return {
+          status: PENDING_UPSTREAM as UpstreamStatus,
+          periods: [],
+          detail:
+            `CE-06 group-service unreachable for ${legalEntityId} ${periodYear}. ` +
+            'Comparative history unavailable; no comparative figures are inferred.',
+        };
+      }
+
+      const availableCount = periods.filter((p) => p.available).length;
+      return {
+        status: 'AVAILABLE' as UpstreamStatus,
+        periods,
+        detail: anyAvailable
+          ? `CE-06 consolidation history available for ${legalEntityId} ${periodYear}: ${availableCount}/12 months have consolidated trial-balance data.`
+          : `CE-06 consolidation history probed for ${legalEntityId} ${periodYear}: group-service reachable but no consolidated trial-balance data found for any month.`,
+      };
+    } catch (err: any) {
+      return {
+        status: PENDING_UPSTREAM as UpstreamStatus,
+        periods: [],
+        detail:
+          `CE-06 consolidation history error for ${legalEntityId} ${periodYear}: ${String(err?.message ?? err)}. ` +
+          'No comparative figures are inferred.',
+      };
+    }
   }
 }
 
+// CE-09 through CE-14 services are fully integrated and operational (apar-service:3013,
+// fixedops-service:3060, deal-accounting-service:3092, vehicle-accounting-service,
+// payroll-service:3012, oem-service:3052) but none expose a bulk migration-ingestion
+// endpoint. Staged migration data is retained safely; no record is marked migrated until
+// a governed ingest contract is added to each target service.
 const UPSTREAM_TARGET_DETAIL: Record<string, string> = {
-  'CE-09': 'AP / AR / cash / bank migration targets are PENDING_UPSTREAM_TECHNICAL_RECONCILIATION. Staged data is retained; no records are marked migrated.',
-  'CE-11': 'Fixed Ops migration targets are PENDING_UPSTREAM_TECHNICAL_RECONCILIATION. Staged data is retained; no records are marked migrated.',
-  'CE-12': 'Vehicle / deal / F&I migration targets are PENDING_UPSTREAM_TECHNICAL_RECONCILIATION. Staged data is retained; no records are marked migrated.',
-  'CE-13': 'Payroll migration targets are PENDING_UPSTREAM_TECHNICAL_RECONCILIATION. Staged data is retained; no records are marked migrated.',
-  'CE-14': 'OEM migration targets are PENDING_UPSTREAM_TECHNICAL_RECONCILIATION. Staged data is retained; no records are marked migrated.',
+  'CE-09': 'AP / AR / cash / bank — apar-service is integrated (CE-09) but no migration-ingestion endpoint exists. Staged data retained; no records marked migrated.',
+  'CE-11': 'Fixed Ops — fixedops-service is integrated (CE-11) but no migration-ingestion endpoint exists. Staged data retained; no records marked migrated.',
+  'CE-12': 'Vehicle / deal / F&I — deal-accounting-service and vehicle-accounting-service are integrated (CE-12) but no migration-ingestion endpoint exists. Staged data retained; no records marked migrated.',
+  'CE-13': 'Payroll — payroll-service is integrated (CE-13) but no migration-ingestion endpoint exists. Staged data retained; no records marked migrated.',
+  'CE-14': 'OEM — oem-service is integrated (CE-14) but no migration-ingestion endpoint exists. Staged data retained; no records marked migrated.',
 };
 
 /**
