@@ -17,6 +17,7 @@ import { DepositService } from '../../src/application/deposit-service';
 import { UnconfiguredBankFeedAdapter } from '../../src/infrastructure/bank-feed-adapter';
 import { BankFeedService } from '../../src/application/bank-feed-service';
 import { CashPositionService } from '../../src/application/cash-position-service';
+import { NoopCashReceiptPostingPort } from '../../src/application/cash-receipt-posting-consumer';
 import type { IEventPublisher } from '@amacc/shared-kernel';
 
 const LIVE_DB_URL = process.env['LIVE_DATABASE_URL'];
@@ -45,6 +46,9 @@ describe.skipIf(!LIVE_DB_URL)('Live database — S057 daily cash position dashbo
     container.registerInstance('PrismaClient', prisma as any);
     container.registerInstance('IEventPublisher', noopEvents as any);
     container.registerInstance('BankFeedAdapter', new UnconfiguredBankFeedAdapter());
+    // fix(integration): see deposit-live.test.ts's identical fix — same
+    // no-op fallback index.ts itself uses when no posting JWT is configured.
+    container.registerInstance('CashReceiptPostingPort', new NoopCashReceiptPostingPort());
     container.register('DrawerService', { useClass: DrawerService });
     container.register('ReceiptSequenceService', { useClass: ReceiptSequenceService });
     container.register('ReceiptService', { useClass: ReceiptService });

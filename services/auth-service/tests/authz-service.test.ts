@@ -236,3 +236,38 @@ describe('AuthzService cache', () => {
     expect(r.allow).toBe(true);
   });
 });
+
+// fix(integration) — CE-13 UI closure: myPermissions() feeds the frontend's
+// client-side gating cache (see auth-service's GET /authz/my-permissions and
+// apps/web's AuthContext.refreshPermissions). It must never be the sole
+// enforcement point, only ever mirror what check() would independently grant.
+describe('AuthzService.myPermissions', () => {
+  it('returns the full expanded permission set for a tenant-wide role, deduped across multiple assigned roles', async () => {
+    const svc = makeSvc([
+      { tenantId: TENANT, userId: USER_ADMIN, role: 'ADMIN', entityId: null, storeId: null },
+      { tenantId: TENANT, userId: USER_ADMIN, role: 'ACCOUNTANT', entityId: null, storeId: null },
+    ]);
+    const perms = await svc.myPermissions(USER_ADMIN, { tenantId: TENANT });
+    expect(perms).toEqual(['acct.store.manage', 'acct.store.view', 'je.post']);
+  });
+
+  it('returns [] (never throws) for a user with no role assignment in this tenant — same deny-by-default posture as check()', async () => {
+    const svc = makeSvc([]);
+    const perms = await svc.myPermissions(USER_NOROLE, { tenantId: TENANT });
+    expect(perms).toEqual([]);
+  });
+
+  it('an entity-scoped assignment only contributes its grants when the requested scope matches that entity', async () => {
+    const svc = makeSvc([{ tenantId: TENANT, userId: USER_ADMIN, role: 'ADMIN', entityId: ENTITY, storeId: null }]);
+    const inScope = await svc.myPermissions(USER_ADMIN, { tenantId: TENANT, entityId: ENTITY });
+    expect(inScope).toEqual(['acct.store.manage', 'acct.store.view', 'je.post']);
+    const outOfScope = await svc.myPermissions(USER_ADMIN, { tenantId: TENANT, entityId: 'entity-other' });
+    expect(outOfScope).toEqual([]);
+  });
+
+  it('returns [] for an invalid scope (store without entity) rather than throwing — mirrors check()\'s SCOPE_ESCALATION deny', async () => {
+    const svc = makeSvc([{ tenantId: TENANT, userId: USER_ADMIN, role: 'ADMIN', entityId: null, storeId: null }]);
+    const perms = await svc.myPermissions(USER_ADMIN, { tenantId: TENANT, storeId: STORE });
+    expect(perms).toEqual([]);
+  });
+});

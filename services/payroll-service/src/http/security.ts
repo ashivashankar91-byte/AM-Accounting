@@ -35,6 +35,11 @@ export const PAYROLL_PERMISSIONS = {
   TECH_BRIDGE_MANAGE: 'payroll.tech_bridge.manage',
   REGISTER_YTD_VIEW: 'payroll.register_ytd.view',
   AUDIT_VIEW: 'payroll.audit.view',
+  /** fix(integration) — dedicated CE-09 payment-handoff keys, see
+   * services/auth-service/prisma/migrations/20260804000000_add_ce13_payroll_handoff_audit_permissions.
+   * Replace the payroll.batch.* reuse from the prior integration pass. */
+  PAYMENT_HANDOFF_VIEW: 'payroll.payment_handoff.view',
+  PAYMENT_HANDOFF_MANAGE: 'payroll.payment_handoff.manage',
 } as const;
 
 export function getTenantId(request: any, statusCode = 400): TenantId {
@@ -119,14 +124,11 @@ function resolvePayrollPermission(method: string, url: string): string | null {
   // dead `payroll.audit.view` permission key with a real enforcement point.
   if (/^\/audit$/.test(url) && m === 'GET') return PAYROLL_PERMISSIONS.AUDIT_VIEW;
 
-  // ── fix(integration) Gap 2 — CE-09 payment handoff. Reuses the existing
-  // payroll.batch.* keys (no new permission-catalog migration) — a payment
-  // handoff is evidence attached to a specific posted batch, the same
-  // financial-consequence tier as posting/voiding it. ─────────────────────
-  if (/^\/batches\/[^/]+\/payment-handoff$/.test(url) && m === 'GET') return PAYROLL_PERMISSIONS.BATCH_VIEW;
-  if (/^\/payment-handoffs\/[^/]+\/(transmit|settle)$/.test(url) && m === 'POST') return PAYROLL_PERMISSIONS.BATCH_VOID_REVERSE;
-  if (/^\/payment-handoffs$/.test(url) && m === 'GET') return PAYROLL_PERMISSIONS.BATCH_VIEW;
-  if (/^\/payment-handoffs\/[^/]+$/.test(url) && m === 'GET') return PAYROLL_PERMISSIONS.BATCH_VIEW;
+  // ── fix(integration) — CE-09 payment handoff, dedicated keys. ───────────
+  if (/^\/batches\/[^/]+\/payment-handoff$/.test(url) && m === 'GET') return PAYROLL_PERMISSIONS.PAYMENT_HANDOFF_VIEW;
+  if (/^\/payment-handoffs\/[^/]+\/(transmit|settle)$/.test(url) && m === 'POST') return PAYROLL_PERMISSIONS.PAYMENT_HANDOFF_MANAGE;
+  if (/^\/payment-handoffs$/.test(url) && m === 'GET') return PAYROLL_PERMISSIONS.PAYMENT_HANDOFF_VIEW;
+  if (/^\/payment-handoffs\/[^/]+$/.test(url) && m === 'GET') return PAYROLL_PERMISSIONS.PAYMENT_HANDOFF_VIEW;
 
   // ── S109 commission / draw / dispute ───────────────────────────────────────
   if (/^\/commission-disputes\/[^/]+\/resolve$/.test(url) && m === 'POST') return PAYROLL_PERMISSIONS.COMMISSION_DISPUTE_RESOLVE;
@@ -135,6 +137,7 @@ function resolvePayrollPermission(method: string, url: string): string | null {
   if (/^\/commissions\/report$/.test(url) && m === 'GET') return PAYROLL_PERMISSIONS.COMMISSION_VIEW;
   if (/^\/commissions\/calculate$/.test(url) && m === 'POST') return PAYROLL_PERMISSIONS.COMMISSION_MANAGE;
   if (/^\/commissions\/[^/]+\/(correct|reverse|mark-paid|chargeback)$/.test(url) && m === 'POST') return PAYROLL_PERMISSIONS.COMMISSION_MANAGE;
+  if (/^\/commissions\/[^/]+$/.test(url) && m === 'GET') return PAYROLL_PERMISSIONS.COMMISSION_VIEW;
   if (/^\/commissions$/.test(url) && m === 'GET') return PAYROLL_PERMISSIONS.COMMISSION_VIEW;
   if (/^\/commission-plans\/[^/]+\/(supersede|draws)$/.test(url) && m === 'POST') return PAYROLL_PERMISSIONS.COMMISSION_MANAGE;
   if (/^\/commission-plans$/.test(url)) return m === 'GET' ? PAYROLL_PERMISSIONS.COMMISSION_VIEW : PAYROLL_PERMISSIONS.COMMISSION_MANAGE;
@@ -172,6 +175,15 @@ function resolveEntityScope(prisma: PrismaClient) {
     if (routeUrl.match(/^\/rule-packs\/([^/]+)/) && params.id) {
       const version = await (prisma as any).payrollRulePackVersion.findFirst({ where: { id: params.id, tenantId }, select: { legalEntityId: true } });
       return { entityId: version?.legalEntityId ?? null };
+    }
+    // fix(integration): /payment-handoffs/:id (view, transmit, settle) is
+    // resource-loaded — the handoff's own PERSISTED legalEntityId is the
+    // authorized scope; a request body/query legalEntityId is never
+    // consulted for these routes, so a caller can never claim a different
+    // entity than the resource actually belongs to.
+    if (routeUrl.match(/^\/payment-handoffs\/([^/]+)/) && params.id) {
+      const handoff = await (prisma as any).payrollPaymentHandoff.findFirst({ where: { id: params.id, tenantId }, select: { legalEntityId: true } });
+      return { entityId: handoff?.legalEntityId ?? null };
     }
     // Create/list routes: the body/query legalEntityId IS the requested
     // scope — the authz engine (not this extractor) is what denies an

@@ -149,6 +149,28 @@ export class AuthzService {
     return result;
   }
 
+  /// @net-new fix(integration) — CE-13 UI closure: the frontend's
+  /// client-side permission gating (disabling/hiding actions a user has no
+  /// server-side grant for anyway) had no real data source — nothing ever
+  /// populated it, so every gated button/nav item rendered disabled for
+  /// every user regardless of role. This mirrors check()'s own
+  /// roles-in-scope → role_permission expansion but returns the FULL
+  /// effective set for the caller instead of testing one key, so the UI can
+  /// self-configure once at login without N round-trips. Never the sole
+  /// enforcement point — every route this gates still runs check() itself.
+  async myPermissions(userId: string, scope: Scope): Promise<string[]> {
+    const scopeError = this._validateScope(scope);
+    if (scopeError) return [];
+    const roles = await this._rolesForUserInScope(userId, scope);
+    if (roles.length === 0) return [];
+    const grants = await this._rolePermissionMap();
+    const keys = new Set<string>();
+    for (const role of roles) {
+      for (const key of grants.get(role) ?? []) keys.add(key);
+    }
+    return [...keys].sort();
+  }
+
   // ── catalog — versioned list + optional diff report ─────────────────────────
 
   async catalog(opts: { version?: string; diffFrom?: string } = {}): Promise<CatalogResult> {

@@ -22,6 +22,8 @@ function makePrisma() {
   const plans: any[] = [];
   const records: any[] = [];
   const disputes: any[] = [];
+  const batches: any[] = [];
+  const items: any[] = [];
   let planSeq = 0;
   let recordSeq = 0;
   let disputeSeq = 0;
@@ -57,7 +59,13 @@ function makePrisma() {
         records.push(row);
         return Promise.resolve(row);
       }),
-      findFirst: vi.fn().mockImplementation(({ where }: any) => Promise.resolve(records.find((r) => r.id === where.id && r.tenantId === where.tenantId) ?? null)),
+      findFirst: vi.fn().mockImplementation(({ where, include }: any) => {
+        const row = records.find((r) => r.id === where.id && r.tenantId === where.tenantId) ?? null;
+        if (row && include?.plan) {
+          return Promise.resolve({ ...row, plan: plans.find((p) => p.id === row.planId) ?? null });
+        }
+        return Promise.resolve(row);
+      }),
       findMany: vi.fn().mockImplementation(({ where }: any) => Promise.resolve(records.filter((r) => r.tenantId === where.tenantId && (!where.employeeId || r.employeeId === where.employeeId)))),
       update: vi.fn().mockImplementation(({ where, data }: any) => {
         const row = records.find((r) => r.id === where.id);
@@ -92,7 +100,15 @@ function makePrisma() {
     clawbackRecord: {
       findFirst: vi.fn().mockResolvedValue({ id: 'clawback-1' }),
     },
+    payrollBatch: {
+      findFirst: vi.fn().mockImplementation(({ where }: any) => Promise.resolve(batches.find((b) => b.id === where.id && b.tenantId === where.tenantId) ?? null)),
+    },
+    payrollItem: {
+      findFirst: vi.fn().mockImplementation(({ where }: any) => Promise.resolve(items.find((i) => i.batchId === where.batchId && i.employeeId === where.employeeId && i.tenantId === where.tenantId) ?? null)),
+    },
     outboxEvent: { create: vi.fn().mockResolvedValue({}) },
+    __seedBatch: (b: any) => batches.push(b),
+    __seedItem: (i: any) => items.push(i),
   };
 }
 
@@ -263,6 +279,73 @@ describe('commission-routes — disputes (SoD)', () => {
     });
     expect(resolveRes.statusCode).toBe(200);
     expect(resolveRes.json().status).toBe('RESOLVED');
+  });
+});
+
+describe('commission-routes — GET /commissions/:id (journal drill-down lineage)', () => {
+  it('404s COMMISSION_RECORD_NOT_FOUND for an unknown id', async () => {
+    const app = await buildApp(makePrisma());
+    const res = await app.inject({ method: 'GET', url: '/commissions/does-not-exist', headers: { 'x-tenant-id': 't1' } });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe('COMMISSION_RECORD_NOT_FOUND');
+  });
+
+  it('returns plan lineage (split/draw/guarantee/chargeback) with no batch attached yet', async () => {
+    const app = await buildApp(makePrisma());
+    await app.inject({
+      method: 'POST', url: '/commission-plans', headers: { 'x-tenant-id': 't1', 'x-user-id': 'admin-1' },
+      payload: {
+        legal_entity_id: 'entity-test', employee_id: 'emp-1', plan_type: 'PERCENTAGE', percentage_rate: 5,
+        split_rules: [{ employeeId: 'emp-1', sharePct: 60 }, { employeeId: 'emp-2', sharePct: 40 }],
+        draw_amount: 300, minimum_guarantee: 500,
+        chargeback_terms: { method: 'PRO_RATA', floor: 0 },
+        effective_date: '2024-01-01',
+      },
+    });
+    const calcRes = await app.inject({
+      method: 'POST', url: '/commissions/calculate', headers: { 'x-tenant-id': 't1', 'x-user-id': 'user-1' },
+      payload: { deal_id: 'deal-1', employee_id: 'emp-1', deal_type: 'NEW', gross_profit: 1000, deal_date: '2024-06-01' },
+    });
+    const recordId = calcRes.json().records[0].id;
+
+    const detailRes = await app.inject({ method: 'GET', url: `/commissions/${recordId}`, headers: { 'x-tenant-id': 't1' } });
+    expect(detailRes.statusCode).toBe(200);
+    const body = detailRes.json();
+    expect(body.id).toBe(recordId);
+    expect(body.plan.split_rules).toHaveLength(2);
+    expect(body.plan.draw_amount).toBe(300);
+    expect(body.plan.minimum_guarantee).toBe(500);
+    expect(body.plan.chargeback_terms).toEqual({ method: 'PRO_RATA', floor: 0 });
+    expect(body.batch).toBeNull();
+  });
+
+  it('includes batch/item/journal and a separate reversal journal without overwriting the original journal id', async () => {
+    const prisma = makePrisma();
+    (prisma as any).__seedBatch({ id: 'batch-1', tenantId: 't1', batchNumber: 'B-001', status: 'VOID', legalEntityId: 'entity-1', journalEntryId: 'je-original' });
+    (prisma as any).__seedItem({ tenantId: 't1', batchId: 'batch-1', employeeId: 'emp-1', commissionPay: decimalOf(100), netPay: decimalOf(80) });
+    const app = await buildApp(prisma);
+    await app.inject({
+      method: 'POST', url: '/commission-plans', headers: { 'x-tenant-id': 't1', 'x-user-id': 'admin-1' },
+      payload: { legal_entity_id: 'entity-test', employee_id: 'emp-1', plan_type: 'FLAT', flat_amount: 50, effective_date: '2024-01-01' },
+    });
+    const calcRes = await app.inject({
+      method: 'POST', url: '/commissions/calculate', headers: { 'x-tenant-id': 't1', 'x-user-id': 'user-1' },
+      payload: { deal_id: 'deal-1', employee_id: 'emp-1', deal_type: 'NEW', gross_profit: 1000, deal_date: '2024-06-01' },
+    });
+    const recordId = calcRes.json().records[0].id;
+    // Directly attach batch/journal linkage the way payroll-service.ts's linkPostedBatch/linkReversedBatch would.
+    await (prisma as any).commissionRecord.update({
+      where: { id: recordId },
+      data: { payrollBatchId: 'batch-1', journalEntryId: 'je-original', reversalJournalEntryId: 'je-reversal' },
+    });
+
+    const detailRes = await app.inject({ method: 'GET', url: `/commissions/${recordId}`, headers: { 'x-tenant-id': 't1' } });
+    expect(detailRes.statusCode).toBe(200);
+    const body = detailRes.json();
+    expect(body.journal_entry_id).toBe('je-original');
+    expect(body.reversal_journal_entry_id).toBe('je-reversal');
+    expect(body.batch).toEqual({ id: 'batch-1', batch_number: 'B-001', status: 'VOID', legal_entity_id: 'entity-1', journal_entry_id: 'je-original' });
+    expect(body.item.commission_pay).toBe(100);
   });
 });
 

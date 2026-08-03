@@ -186,6 +186,25 @@ export async function commissionRoutes(app: FastifyInstance, prisma: PrismaClien
     } catch (err) { return handleErr(reply, err); }
   });
 
+  // fix(integration) Gap 1.C — commission journal drill-down: record → plan
+  // (split/draw/guarantee/chargeback lineage) → batch/item → posting
+  // execution → original journal → reversal journal (if voided).
+  app.get('/commissions/:id', async (request, reply) => {
+    try {
+      const tenantId = getTenantId(request);
+      const { id } = request.params as { id: string };
+      const { record, batch, item } = await svc.getRecordDetail(tenantId, id);
+      return reply.send({
+        ...serializeRecord(record),
+        plan: serializePlanLineage(record.plan),
+        batch: batch
+          ? { id: batch.id, batch_number: batch.batchNumber, status: batch.status, legal_entity_id: batch.legalEntityId, journal_entry_id: batch.journalEntryId }
+          : null,
+        item: item ? { id: item.id, commission_pay: Number(item.commissionPay), net_pay: Number(item.netPay) } : null,
+      });
+    } catch (err) { return handleErr(reply, err); }
+  });
+
   // ── Correction / reversal / paid status ─────────────────────────────────
   app.post('/commissions/:id/correct', async (request, reply) => {
     try {
@@ -337,8 +356,25 @@ function serializeRecord(r: any) {
     clawed_back_amount: Number(r.clawedBackAmount ?? 0),
     deal_snapshot_ref: r.dealSnapshotRef ?? null,
     journal_entry_id: r.journalEntryId,
+    payroll_batch_id: r.payrollBatchId ?? null,
+    reversal_journal_entry_id: r.reversalJournalEntryId ?? null,
     period_year: r.periodYear,
     period_month: r.periodMonth,
     created_at: r.createdAt.toISOString(),
+  };
+}
+
+function serializePlanLineage(plan: any) {
+  if (!plan) return null;
+  return {
+    id: plan.id,
+    plan_type: plan.planType,
+    percentage_rate: plan.percentageRate != null ? Number(plan.percentageRate) : null,
+    flat_amount: plan.flatAmount != null ? Number(plan.flatAmount) : null,
+    tiers: plan.tiers ?? null,
+    split_rules: plan.splitRules ?? null,
+    draw_amount: plan.drawAmount != null ? Number(plan.drawAmount) : null,
+    minimum_guarantee: plan.minimumGuarantee != null ? Number(plan.minimumGuarantee) : null,
+    chargeback_terms: plan.chargebackTerms ?? null,
   };
 }

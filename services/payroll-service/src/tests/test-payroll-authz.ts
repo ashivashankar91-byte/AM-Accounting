@@ -70,6 +70,7 @@ const VIEW_ONLY_KEYS = [
   PAYROLL_PERMISSIONS.CONFIG_VIEW, PAYROLL_PERMISSIONS.RULE_PACK_VIEW, PAYROLL_PERMISSIONS.BATCH_VIEW,
   PAYROLL_PERMISSIONS.COMMISSION_VIEW, PAYROLL_PERMISSIONS.CLAWBACK_VIEW, PAYROLL_PERMISSIONS.ACCRUAL_VIEW,
   PAYROLL_PERMISSIONS.TECH_BRIDGE_VIEW, PAYROLL_PERMISSIONS.REGISTER_YTD_VIEW, PAYROLL_PERMISSIONS.AUDIT_VIEW,
+  PAYROLL_PERMISSIONS.PAYMENT_HANDOFF_VIEW,
 ];
 const MANAGE_KEYS = Object.values(PAYROLL_PERMISSIONS).filter((k) => !(VIEW_ONLY_KEYS as string[]).includes(k));
 
@@ -176,6 +177,7 @@ describe('payroll-service route-level authorization (CE-13 RBAC gap-closure)', (
     { permission: PAYROLL_PERMISSIONS.COMMISSION_MANAGE, method: 'POST', path: '/commission-plans/p1/draws', grantedRole: 'ADMIN', payload: {} },
     { permission: PAYROLL_PERMISSIONS.COMMISSION_MANAGE, method: 'POST', path: '/commissions/calculate', grantedRole: 'ADMIN', payload: { deal_id: 'd1', employee_id: 'e1', deal_type: 'RETAIL', gross_profit: 100, deal_date: '2026-01-01' } },
     { permission: PAYROLL_PERMISSIONS.COMMISSION_VIEW, method: 'GET', path: '/commissions', grantedRole: 'ACCOUNTANT' },
+    { permission: PAYROLL_PERMISSIONS.COMMISSION_VIEW, method: 'GET', path: '/commissions/c1', grantedRole: 'ACCOUNTANT' },
     { permission: PAYROLL_PERMISSIONS.COMMISSION_MANAGE, method: 'POST', path: '/commissions/c1/correct', grantedRole: 'ADMIN', payload: {} },
     { permission: PAYROLL_PERMISSIONS.COMMISSION_MANAGE, method: 'POST', path: '/commissions/c1/reverse', grantedRole: 'ADMIN', payload: {} },
     { permission: PAYROLL_PERMISSIONS.COMMISSION_MANAGE, method: 'POST', path: '/commissions/c1/mark-paid', grantedRole: 'ADMIN', payload: {} },
@@ -184,6 +186,16 @@ describe('payroll-service route-level authorization (CE-13 RBAC gap-closure)', (
     { permission: PAYROLL_PERMISSIONS.COMMISSION_VIEW, method: 'GET', path: '/commission-disputes', grantedRole: 'ACCOUNTANT' },
     { permission: PAYROLL_PERMISSIONS.COMMISSION_DISPUTE_RESOLVE, method: 'POST', path: '/commission-disputes/d1/resolve', grantedRole: 'ADMIN', payload: {} },
     { permission: PAYROLL_PERMISSIONS.COMMISSION_VIEW, method: 'GET', path: '/commissions/report', grantedRole: 'ACCOUNTANT' },
+
+    // ── fix(integration) — CE-09 payment handoff (dedicated keys) ───────
+    { permission: PAYROLL_PERMISSIONS.PAYMENT_HANDOFF_VIEW, method: 'GET', path: '/payment-handoffs', grantedRole: 'ACCOUNTANT' },
+    { permission: PAYROLL_PERMISSIONS.PAYMENT_HANDOFF_VIEW, method: 'GET', path: '/payment-handoffs/h1', grantedRole: 'ACCOUNTANT' },
+    { permission: PAYROLL_PERMISSIONS.PAYMENT_HANDOFF_VIEW, method: 'GET', path: '/batches/b1/payment-handoff', grantedRole: 'ACCOUNTANT' },
+    { permission: PAYROLL_PERMISSIONS.PAYMENT_HANDOFF_MANAGE, method: 'POST', path: '/payment-handoffs/h1/transmit', grantedRole: 'ADMIN' },
+    { permission: PAYROLL_PERMISSIONS.PAYMENT_HANDOFF_MANAGE, method: 'POST', path: '/payment-handoffs/h1/settle', grantedRole: 'ADMIN', payload: { settlementReference: 'ref-1' } },
+
+    // ── fix(integration) — payroll audit inquiry ─────────────────────────
+    { permission: PAYROLL_PERMISSIONS.AUDIT_VIEW, method: 'GET', path: '/audit', grantedRole: 'ACCOUNTANT' },
   ];
 
   for (const c of cases) {
@@ -238,6 +250,70 @@ describe('payroll-service route-level authorization (CE-13 RBAC gap-closure)', (
       const res = await app.inject({ method: 'POST', url: '/rule-packs/v1/activate', headers: authed('ADMIN') });
       // Reaches business logic (permissiveFakeService.activate() resolves) —
       // proves the guard is additive, not a bypass or a replacement.
+      expect(res.statusCode).not.toBe(401);
+      expect(res.statusCode).not.toBe(403);
+      await app.close();
+    });
+  });
+
+  // ── fix(integration) — payment-handoff resource-loaded entity
+  // authorization: the handoff's own PERSISTED legalEntityId is the
+  // authorized scope, never a request-body/query claim. ───────────────────
+  describe('payment-handoff resource-loaded legal-entity authorization', () => {
+    function prismaWithHandoff(legalEntityId: string | null) {
+      return {
+        payrollPaymentHandoff: {
+          findFirst: async () => ({ id: 'h1', tenantId: 'tenant-a', legalEntityId }),
+        },
+      };
+    }
+
+    it('a role scoped to entity-a is allowed to view a handoff that belongs to entity-a', async () => {
+      container.registerInstance('PrismaClient', prismaWithHandoff('entity-a'));
+      container.registerInstance('AuthzClient', createFakeAuthzClient(
+        [{ userId: 'CONTROLLER', tenantId: 'tenant-a', role: 'CONTROLLER', entityId: 'entity-a' }],
+        ROLE_GRANTS,
+      ));
+      const app = await buildApp();
+      const res = await app.inject({ method: 'GET', url: '/payment-handoffs/h1', headers: authed('CONTROLLER') });
+      expect(res.statusCode).not.toBe(401);
+      expect(res.statusCode).not.toBe(403);
+      await app.close();
+    });
+
+    it('a role scoped to entity-a is DENIED a handoff that actually belongs to entity-b (cross-legal-entity denial)', async () => {
+      container.registerInstance('PrismaClient', prismaWithHandoff('entity-b'));
+      container.registerInstance('AuthzClient', createFakeAuthzClient(
+        [{ userId: 'CONTROLLER', tenantId: 'tenant-a', role: 'CONTROLLER', entityId: 'entity-a' }],
+        ROLE_GRANTS,
+      ));
+      const app = await buildApp();
+      const res = await app.inject({ method: 'GET', url: '/payment-handoffs/h1', headers: authed('CONTROLLER') });
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({ error: 'FORBIDDEN', reason: 'NO_MATCHING_ROLE' });
+      await app.close();
+    });
+
+    it('a client-supplied body legalEntityId claiming entity-a is IGNORED — the persisted resource (entity-b) still governs, so the same request is still denied', async () => {
+      container.registerInstance('PrismaClient', prismaWithHandoff('entity-b'));
+      container.registerInstance('AuthzClient', createFakeAuthzClient(
+        [{ userId: 'ADMIN', tenantId: 'tenant-a', role: 'ADMIN', entityId: 'entity-a' }],
+        ROLE_GRANTS,
+      ));
+      const app = await buildApp();
+      const res = await app.inject({
+        method: 'POST', url: '/payment-handoffs/h1/settle', headers: authed('ADMIN'),
+        payload: { legalEntityId: 'entity-a', settlementReference: 'ref-1' },
+      });
+      expect(res.statusCode).toBe(403);
+      await app.close();
+    });
+
+    it('a tenant-wide (unscoped) role assignment is unaffected — matches any entity, no regression for existing non-entity-scoped grants', async () => {
+      container.registerInstance('PrismaClient', prismaWithHandoff('entity-b'));
+      registerFakeAuthz(); // default TENANT_A_ASSIGNMENTS have no entityId (tenant-wide)
+      const app = await buildApp();
+      const res = await app.inject({ method: 'GET', url: '/payment-handoffs/h1', headers: authed('CONTROLLER') });
       expect(res.statusCode).not.toBe(401);
       expect(res.statusCode).not.toBe(403);
       await app.close();

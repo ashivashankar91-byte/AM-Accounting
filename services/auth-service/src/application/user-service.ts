@@ -1,6 +1,7 @@
 import { inject, injectable } from 'tsyringe';
 import { PrismaClient } from '.prisma/auth-client';
 import type { IEventPublisher } from '@amacc/shared-kernel';
+import { setTenantContextOnConnection } from '@amacc/shared-kernel';
 import { randomUUID, createHash } from 'crypto';
 import * as bcrypt from 'bcryptjs';
 
@@ -428,19 +429,30 @@ export class UserService {
       throw new InvalidCredentialsError();
     }
 
-    if (user.status === 'INVITED') {
-      await this.prisma.user.update({ where: { id: user.id }, data: { status: 'ACTIVE', version: { increment: 1 } } });
-    }
-    const reset = await this.prisma.user.update({
-      where: { id: user.id },
-      data: { failedLogins: 0 },
-    });
-
+    // fix(integration): the two updates AND the session insert below all
+    // share ONE transaction with the RLS tenant-context SET explicitly run
+    // on that same connection — see authz-service.ts's _rolesForUserInScope
+    // for the identical, already-established fix for this exact class of
+    // bug. Without this, a pooled connection that runs a write without the
+    // SET having landed on that same physical connection has amacc_app's
+    // RLS policy filter/reject the row (observed here both as a spurious
+    // P2025 "Record to update not found" on the user UPDATEs and a 42501
+    // "new row violates row-level security policy" on the session INSERT)
+    // even though the row is genuinely visible/insertable — a false,
+    // non-deterministic login failure either way.
     const sessionToken = `sess_${randomUUID().replace(/-/g, '')}${randomUUID().replace(/-/g, '')}`;
     const tokenHash = createHash('sha256').update(sessionToken).digest('hex');
     const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
-    const session = await this.prisma.session.create({
-      data: { id: randomUUID(), tenantId, userId: user.id, tokenHash, status: 'ACTIVE', expiresAt },
+    const { reset, session } = await this.prisma.$transaction(async (tx) => {
+      await setTenantContextOnConnection(tx, tenantId);
+      if (user.status === 'INVITED') {
+        await tx.user.update({ where: { id: user.id }, data: { status: 'ACTIVE', version: { increment: 1 } } });
+      }
+      const reset = await tx.user.update({ where: { id: user.id }, data: { failedLogins: 0 } });
+      const session = await tx.session.create({
+        data: { id: randomUUID(), tenantId, userId: user.id, tokenHash, status: 'ACTIVE', expiresAt },
+      });
+      return { reset, session };
     });
 
     await this._audit(tenantId, 'user', user.id, 'LOGIN', null, { sessionId: session.id }, user.id);

@@ -24,7 +24,21 @@ vi.mock('../../../api/client', () => ({
     createCommissionDispute: vi.fn(),
     listCommissionDisputes: vi.fn(),
     resolveCommissionDispute: vi.fn(),
+    getCommissionDetail: vi.fn(),
   },
+}));
+
+// fix(integration) — CE-13 UI closure: the commission workbench now reads
+// the selected legal entity to thread legal_entity_id into new plans (see
+// EntityScopeContext.tsx). Mirrors the established mock convention in e.g.
+// WipOpenRoReport.test.tsx.
+vi.mock('../../../context/EntityScopeContext', () => ({
+  useEntityScope: () => ({
+    entityId: 'entity-1', entityLabel: 'CE13-A — CE13 Cert Legal Entity A', storeId: null, consolidated: false,
+    entities: [{ id: 'entity-1', entityCode: 'CE13-A', legalName: 'CE13 Cert Legal Entity A' }],
+    loading: false, noEntitiesConfigured: false, error: null,
+    setEntity: vi.fn(), setStore: vi.fn(), setConsolidated: vi.fn(),
+  }),
 }));
 
 function renderPage() {
@@ -176,5 +190,49 @@ describe('PayrollCommissionWorkbench — unauthorized UI reflection (CE-13 RBAC 
     expect(await screen.findByTestId('commission-disputes-table')).toBeInTheDocument();
     expect(screen.getByTestId('commission-dispute-approve-dispute-1')).toBeDisabled();
     expect(screen.getByTestId('commission-dispute-deny-dispute-1')).toBeDisabled();
+  });
+});
+
+// fix(integration) Gap 1.C — commission journal drill-down.
+describe('PayrollCommissionWorkbench — commission journal drill-down', () => {
+  beforeEach(() => {
+    localStorage.setItem('userPermissions', JSON.stringify(Object.values(PAYROLL_PERMISSIONS)));
+  });
+
+  it('shows plan/batch/journal lineage without overwriting the original journal, including a separate reversal journal', async () => {
+    const user = userEvent.setup();
+    (payrollApi.listCommissions as any).mockResolvedValue([RECORD]);
+    (payrollApi.getCommissionDetail as any).mockResolvedValue({
+      id: 'rec-1', employee_id: 'emp-1', deal_id: 'deal-1', commission_amount: 100, status: 'EARNED',
+      clawed_back_amount: 0, journal_entry_id: 'je-original', reversal_journal_entry_id: 'je-reversal',
+      plan: { plan_type: 'FLAT', split_rules: null, draw_amount: 300, minimum_guarantee: 400, chargeback_terms: null },
+      batch: { batch_number: 'PB-1001', status: 'VOID' },
+      item: { commission_pay: 100, net_pay: 80 },
+    });
+    renderPage();
+    await user.click(screen.getByTestId('commission-tab-records'));
+    await user.click(await screen.findByTestId('commission-record-lineage-rec-1'));
+
+    expect(await screen.findByTestId('commission-lineage-drawer')).toBeInTheDocument();
+    expect(await screen.findByTestId('commission-lineage-original-journal')).toHaveTextContent('je-original');
+    expect(screen.getByTestId('commission-lineage-reversal-journal')).toHaveTextContent('je-reversal');
+    expect(screen.getByText(/PB-1001/)).toBeInTheDocument();
+  });
+
+  it('shows an honest "not yet posted" state when the record has no journal linkage — never a fabricated journal id', async () => {
+    const user = userEvent.setup();
+    (payrollApi.listCommissions as any).mockResolvedValue([RECORD]);
+    (payrollApi.getCommissionDetail as any).mockResolvedValue({
+      id: 'rec-1', employee_id: 'emp-1', deal_id: 'deal-1', commission_amount: 100, status: 'EARNED',
+      clawed_back_amount: 0, journal_entry_id: null, reversal_journal_entry_id: null, plan: null, batch: null, item: null,
+    });
+    renderPage();
+    await user.click(screen.getByTestId('commission-tab-records'));
+    await user.click(await screen.findByTestId('commission-record-lineage-rec-1'));
+
+    expect(await screen.findByTestId('commission-lineage-not-posted')).toBeInTheDocument();
+    expect(screen.getByTestId('commission-lineage-no-plan')).toBeInTheDocument();
+    expect(screen.getByTestId('commission-lineage-no-batch')).toBeInTheDocument();
+    expect(screen.queryByTestId('commission-lineage-original-journal')).not.toBeInTheDocument();
   });
 });

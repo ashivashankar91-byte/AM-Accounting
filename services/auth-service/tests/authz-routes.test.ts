@@ -13,6 +13,12 @@ import { container } from 'tsyringe';
 import { authzRoutes } from '../src/http/authz-routes';
 import { UnknownPermissionError, CatalogVersionNotFoundError } from '../src/application/authz-service';
 
+// fix(integration): authzRoutes now also registers GET /my-permissions,
+// guarded by authMiddleware(JWT_SECRET) — matches the convention in
+// role-routes.test.ts/user-routes.test.ts (the plugin function itself reads
+// AMACC_JWT_SECRET lazily and throws if unset).
+process.env['AMACC_JWT_SECRET'] = 'authz-routes-test-secret';
+
 // ── Fake service with injectable behavior ─────────────────────────────────────
 
 let checkBehavior: (req: any) => any;

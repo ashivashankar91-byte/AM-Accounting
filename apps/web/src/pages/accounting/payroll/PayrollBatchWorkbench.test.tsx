@@ -26,7 +26,21 @@ vi.mock('../../../api/client', () => ({
     release: vi.fn(),
     post: vi.fn(),
     voidBatch: vi.fn(),
+    getBatchPaymentHandoff: vi.fn(),
   },
+}));
+
+// fix(integration) — CE-13 UI closure: the batch workbench now reads the
+// selected legal entity to show a cross-entity warning banner (see
+// EntityScopeContext.tsx). Mirrors the established mock convention in
+// e.g. WipOpenRoReport.test.tsx.
+vi.mock('../../../context/EntityScopeContext', () => ({
+  useEntityScope: () => ({
+    entityId: 'entity-1', entityLabel: 'CE13-A — CE13 Cert Legal Entity A', storeId: null, consolidated: false,
+    entities: [{ id: 'entity-1', entityCode: 'CE13-A', legalName: 'CE13 Cert Legal Entity A' }],
+    loading: false, noEntitiesConfigured: false, error: null,
+    setEntity: vi.fn(), setStore: vi.fn(), setConsolidated: vi.fn(),
+  }),
 }));
 
 function renderPage() {
@@ -42,7 +56,7 @@ function renderPage() {
   );
 }
 
-const BATCH = { id: 'batch-1', batchNumber: 'PB-1001', status: 'DRAFT', items: [] };
+const BATCH = { id: 'batch-1', batchNumber: 'PB-1001', status: 'DRAFT', items: [], legalEntityId: 'entity-1' };
 
 describe('PayrollBatchWorkbench', () => {
   beforeEach(() => {
@@ -208,5 +222,54 @@ describe('PayrollBatchWorkbench — unauthorized UI reflection (CE-13 RBAC gap-c
     await user.click(screen.getByTestId('payroll-batch-tab-posting'));
     expect(screen.getByTestId('payroll-post-btn')).toBeDisabled();
     expect(screen.getByTestId('payroll-void-btn')).toBeDisabled();
+  });
+});
+
+// fix(integration) — CE-13 UI closure: legal-entity reconciliation + CE-09
+// payment-handoff status display.
+describe('PayrollBatchWorkbench — legal-entity reconciliation + payment-handoff status', () => {
+  beforeEach(() => {
+    localStorage.setItem('userPermissions', JSON.stringify(Object.values(PAYROLL_PERMISSIONS)));
+  });
+
+  it('shows LEGAL_ENTITY_RECONCILIATION_REQUIRED and blocks item entry for a batch with no resolved legal entity', async () => {
+    (payrollApi.getBatch as any).mockResolvedValue({ ...BATCH, legalEntityId: null });
+    renderPage();
+    expect(await screen.findByTestId('payroll-batch-legal-entity-reconciliation-required')).toBeInTheDocument();
+    expect(screen.getByTestId('payroll-item-submit')).toBeDisabled();
+  });
+
+  it('shows a cross-entity warning when the batch belongs to a different legal entity than the one currently selected', async () => {
+    (payrollApi.getBatch as any).mockResolvedValue({ ...BATCH, legalEntityId: 'entity-other' });
+    renderPage();
+    expect(await screen.findByTestId('payroll-batch-cross-entity-warning')).toBeInTheDocument();
+  });
+
+  it('shows the real NOT_CONFIGURED payment-handoff state when no handoff exists for this batch', async () => {
+    const user = userEvent.setup();
+    (payrollApi.getBatch as any).mockResolvedValue(BATCH);
+    const err: any = new Error('Not found');
+    err.status = 404;
+    (payrollApi.getBatchPaymentHandoff as any).mockRejectedValue(err);
+    renderPage();
+    await screen.findByTestId('payroll-batch-workbench-page');
+    await user.click(screen.getByTestId('payroll-batch-tab-handoff'));
+    expect(await screen.findByTestId('payroll-handoff-not-configured')).toBeInTheDocument();
+  });
+
+  it('shows the real handoff record — batch, entity, amount, journal linkage — never a fabricated SETTLED state', async () => {
+    const user = userEvent.setup();
+    (payrollApi.getBatch as any).mockResolvedValue(BATCH);
+    (payrollApi.getBatchPaymentHandoff as any).mockResolvedValue({
+      status: 'PAYMENT_IN_PROCESS', batchId: 'batch-1', legalEntityId: 'entity-1', amount: 1500,
+      liabilityAccountNumber: '2200', clearingAccountNumber: '1010', originalJournalEntryId: 'je-1',
+      paymentLinkageReference: 'ext-ref-1', settlementEvidenceRef: null,
+    });
+    renderPage();
+    await screen.findByTestId('payroll-batch-workbench-page');
+    await user.click(screen.getByTestId('payroll-batch-tab-handoff'));
+    const panel = await screen.findByTestId('payroll-handoff-panel');
+    expect(panel).toHaveTextContent(/PAYMENT.IN.PROCESS/i);
+    expect(screen.getByTestId('payroll-handoff-settlement-evidence')).toHaveTextContent('Not independently verified');
   });
 });

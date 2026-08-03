@@ -15,6 +15,7 @@ import { ReceiptService } from '../../src/application/cash-receipt-service';
 import { DepositService, ReceiptNotEligibleError } from '../../src/application/deposit-service';
 import { BankFeedService } from '../../src/application/bank-feed-service';
 import { UnconfiguredBankFeedAdapter } from '../../src/infrastructure/bank-feed-adapter';
+import { NoopCashReceiptPostingPort } from '../../src/application/cash-receipt-posting-consumer';
 import type { IEventPublisher } from '@amacc/shared-kernel';
 
 const LIVE_DB_URL = process.env['LIVE_DATABASE_URL'];
@@ -42,6 +43,13 @@ describe.skipIf(!LIVE_DB_URL)('Live database — S053 deposits + bank feed: cons
     container.registerInstance('PrismaClient', prisma as any);
     container.registerInstance('IEventPublisher', noopEvents as any);
     container.registerInstance('BankFeedAdapter', new UnconfiguredBankFeedAdapter());
+    // fix(integration): ReceiptService now requires CashReceiptPostingPort
+    // (real CE-07 governed-posting call, wired in index.ts) — this test
+    // never exercises receipt posting itself (S053 deposits/bank-feed
+    // conservation), so it uses the same no-op fallback index.ts itself
+    // falls back to when no posting JWT secret is configured, never a
+    // fabricated posting success.
+    container.registerInstance('CashReceiptPostingPort', new NoopCashReceiptPostingPort());
     container.register('DrawerService', { useClass: DrawerService });
     container.register('ReceiptSequenceService', { useClass: ReceiptSequenceService });
     container.register('ReceiptService', { useClass: ReceiptService });

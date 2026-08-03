@@ -141,6 +141,7 @@ import PayrollDashboard from './pages/accounting/payroll/PayrollDashboard';
 import PayrollBatchWorkbench from './pages/accounting/payroll/PayrollBatchWorkbench';
 import PayrollGovernance from './pages/accounting/payroll/PayrollGovernance';
 import PayrollCommissionWorkbench from './pages/accounting/payroll/PayrollCommissionWorkbench';
+import PayrollAudit from './pages/accounting/payroll/PayrollAudit';
 import EOMWorkflow from './pages/accounting/EndOfMonthClose';
 import FSWorkflow from './pages/accounting/FinancialStatements';
 import POWorkflow from './pages/accounting/PurchaseOrders';
@@ -326,6 +327,7 @@ const MODULES: AppModule[] = [
         { path: '/accounting/payroll/dashboard', label: 'Payroll Batches (CE-13)' },
         { path: '/accounting/payroll/commissions', label: 'Commissions & Draws (CE-13)' },
         { path: '/accounting/payroll/governance', label: 'Payroll Governance (CE-13)' },
+        { path: '/accounting/payroll/audit', label: 'Payroll Audit (CE-13)', permission: 'payroll.audit.view' },
       ]},
       { title: 'Payroll Reports', items: [
         { path: '/payroll/reports/workers-comp',        label: 'Workers Comp' },
@@ -955,6 +957,7 @@ export default function App() {
               <Route path="/accounting/payroll/batches/:batchId" element={<PayrollBatchWorkbench />} />
               <Route path="/accounting/payroll/governance" element={<PayrollGovernance />} />
               <Route path="/accounting/payroll/commissions" element={<PayrollCommissionWorkbench />} />
+              <Route path="/accounting/payroll/audit" element={<PayrollAudit />} />
               <Route path="/accounting/eom" element={<EOMWorkflow />} />
               <Route path="/accounting/admin/periods" element={<PeriodControl />} />
               <Route path="/accounting/financial-statements" element={<FSWorkflow />} />

@@ -417,28 +417,59 @@ describe.skipIf(!LIVE_DB_URL)('S019/S020 Live database — posting engine certif
     });
   });
 
-  // ── CE-12/S024 additions: author!=activator SoD (scoped to "ce12." pack
-  // keys only — see posting-engine-service.ts's isCE12PackKey), the pending-
-  // mapping sentinel's real deterministic-rejection behavior at submit time,
-  // and the simulate() dry-run. ─────────────────────────────────────────────
+  // ── CE-12/S024 additions: author!=activator SoD, the pending-mapping
+  // sentinel's real deterministic-rejection behavior at submit time, and the
+  // simulate() dry-run. ────────────────────────────────────────────────────
+  //
+  // fix(integration) correction (found live during CE-13 integration
+  // certification, resolved per that session's investigation): these two
+  // tests originally assumed author!=activator SoD was scoped to
+  // "ce12."-prefixed pack keys only (isCE12PackKey), predating D-S023-28's
+  // later hardening of `activateVersion()` to enforce the SAME check
+  // (actor === version.createdBy -> SelfActivationForbiddenError,
+  // audited as ACTIVATION_FAILED/SELF_ACTIVATION_FORBIDDEN) universally,
+  // for every pack key — see the "D-S023-28 — identity-based
+  // author-vs-activator SoD" describe block above, which already certifies
+  // this for a non-"ce12." pack key. That universal check runs BEFORE the
+  // CE-12-scoped block further down in activateVersion() and is strictly
+  // more protective (same identity can never self-activate ANY pack, not
+  // just "ce12." ones), so these tests were asserting stale, no-longer-true
+  // behavior — not a defect in the SoD control itself, which remains fully
+  // enforced (confirmed: neither test's underlying refusal weakened, only
+  // the label/pack-key-scope assumptions were wrong). The CE-12-scoped
+  // check and its own ACTIVATION_REFUSED_SOD/ActivationSoDViolationError
+  // path are now unreachable dead code for same-actor cases (the universal
+  // check always fires first) but are left in place rather than removed,
+  // to keep this correction narrowly scoped to the test expectations.
   describe('CE-12/S024 additions', () => {
-    it('a non-CE-12 pack key is unaffected by the SoD rule — same-actor author+activate still succeeds (no regression to pre-CE-12 epics)', async () => {
+    it('a non-CE-12 pack key is ALSO subject to the universal same-actor SoD rule (D-S023-28 applies to every pack key, not just "ce12.")', async () => {
       const draft = await engine.createRulePackVersion({ tenantId: TENANT, packKey: 'cert-sod-noncce12', sourceText: JSON.stringify(validRulePack({ ...fixtureOpts(), packKey: 'cert-sod-noncce12' })), actor: 'same-actor' });
       await engine.validateVersion(TENANT, draft.id, 'same-actor');
-      const activated = await engine.activateVersion(TENANT, draft.id, 'same-actor');
+      await expect(engine.activateVersion(TENANT, draft.id, 'same-actor')).rejects.toThrow(SelfActivationForbiddenError);
+      const reloaded = await prisma.postingRulePackVersion.findUnique({ where: { id: draft.id } });
+      expect(reloaded?.status).toBe('VALIDATED'); // refusal never mutates status
+
+      // A different, eligible identity CAN activate it — proves this is a
+      // real SoD refusal, not a broken/permanently-stuck pack.
+      const activated = await engine.activateVersion(TENANT, draft.id, 'a-different-activator');
       expect(activated.status).toBe('ACTIVE');
       await prisma.postingRulePackVersion.update({ where: { id: activated.id }, data: { status: 'SUPERSEDED', supersededAt: new Date() } });
     });
 
-    it('a "ce12." pack key refuses same-actor activation (SoD) and audits the refusal', async () => {
+    it('a "ce12." pack key refuses same-actor activation (SoD, via the universal D-S023-28 check) and audits the refusal', async () => {
       const draft = await engine.createRulePackVersion({ tenantId: TENANT, packKey: 'ce12.sod-fixture', sourceText: JSON.stringify(validRulePack({ ...fixtureOpts(), packKey: 'ce12.sod-fixture' })), actor: 'author-1' });
       await engine.validateVersion(TENANT, draft.id, 'author-1');
       await expect(engine.activateVersion(TENANT, draft.id, 'author-1')).rejects.toThrow(/separately authorized user/);
       const reloaded = await prisma.postingRulePackVersion.findUnique({ where: { id: draft.id } });
       expect(reloaded?.status).toBe('VALIDATED'); // refusal never mutates status
 
-      const refusalAudit = await prisma.auditOutboxEvent.findFirst({ where: { tenantId: TENANT, docId: draft.id, action: 'ACTIVATION_REFUSED_SOD' } });
+      // fix(integration): the universal check audits as ACTIVATION_FAILED
+      // with reason SELF_ACTIVATION_FORBIDDEN (posting-engine-service.ts),
+      // not the CE-12-scoped ACTIVATION_REFUSED_SOD label this test
+      // originally asserted.
+      const refusalAudit = await prisma.auditOutboxEvent.findFirst({ where: { tenantId: TENANT, docId: draft.id, action: 'ACTIVATION_FAILED' } });
       expect(refusalAudit).toBeTruthy();
+      expect((refusalAudit as any)?.after).toMatchObject({ reason: 'SELF_ACTIVATION_FORBIDDEN' });
 
       // A different actor CAN activate it.
       const activated = await engine.activateVersion(TENANT, draft.id, 'activator-2');
@@ -648,7 +679,11 @@ describe.skipIf(!LIVE_DB_URL)('S019/S020 Live database — posting engine certif
       expect(activated.status).toBe('ACTIVE');
 
       const eventId = `evt-pending-mapping-${randomUUID()}`;
-      const envelope = { ...certificationEnvelope({ tenantId: TENANT, eventId, amount: 100 }), eventType: pack.eventType };
+      // fix(integration): this rule pack activates under fixtureOpts()'s
+      // entityId (ENTITY) — certificationEnvelope() defaults legalEntityId
+      // to 'certification-default-entity' when entityId is omitted (see its
+      // own doc-comment), which would never match this pack (NO_RULE_MATCH).
+      const envelope = { ...certificationEnvelope({ tenantId: TENANT, entityId: ENTITY, eventId, amount: 100 }), eventType: pack.eventType };
       const result = await engine.submitEvent(TENANT, envelope, 'tester');
       expect(result.status).toBe('REJECTED');
       expect(result.failureReason).toMatch(/ACCOUNT_MAPPING_VALUES_PENDING|could not be resolved/);
@@ -666,7 +701,9 @@ describe.skipIf(!LIVE_DB_URL)('S019/S020 Live database — posting engine certif
       const activated = await engine.activateVersion(TENANT, draft.id, 'activator-2');
 
       const eventId = `evt-simulate-${randomUUID()}`;
-      const envelope = { ...certificationEnvelope({ tenantId: TENANT, eventId, amount: 777 }), eventType: pack.eventType };
+      // fix(integration): same fix as the ACCOUNT_MAPPING_VALUES_PENDING
+      // test above — this pack also activates under fixtureOpts()'s ENTITY.
+      const envelope = { ...certificationEnvelope({ tenantId: TENANT, entityId: ENTITY, eventId, amount: 777 }), eventType: pack.eventType };
       const before = await prisma.postingExecution.count({ where: { tenantId: TENANT, eventId } });
       const sim = await engine.simulate(TENANT, envelope);
       expect(sim.status).toBe('BLUEPRINT_GENERATED');

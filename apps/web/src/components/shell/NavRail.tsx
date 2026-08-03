@@ -20,6 +20,17 @@ import type { AppModule } from './types';
 const EXPANDED_WIDTH = 232;
 const COLLAPSED_WIDTH = 56;
 
+function hasNavPermission(permission?: string): boolean {
+  if (!permission) return true;
+  try {
+    const raw = localStorage.getItem('userPermissions');
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) && parsed.includes(permission);
+  } catch {
+    return false;
+  }
+}
+
 interface NavRailProps {
   modules: AppModule[];
   activeKey: string;
@@ -82,7 +93,7 @@ export function NavRail({ modules, activeKey, pathname, collapsed, onToggleColla
                       <p className="px-3.5 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-widest text-white/40 select-none whitespace-nowrap">
                         {section.title}
                       </p>
-                      {section.items.map((item) => {
+                      {section.items.filter((item) => hasNavPermission(item.permission)).map((item) => {
                         const itemActive = pathname === item.path || (item.path !== '/' && pathname.startsWith(item.path + '/'));
                         return (
                           <Link

@@ -31,4 +31,8 @@ export const PAYROLL_PERMISSIONS = {
   TECH_BRIDGE_MANAGE: 'payroll.tech_bridge.manage',
   REGISTER_YTD_VIEW: 'payroll.register_ytd.view',
   AUDIT_VIEW: 'payroll.audit.view',
+  // fix(integration) — dedicated CE-09 payment-handoff keys, see
+  // services/auth-service/prisma/migrations/20260804000000_add_ce13_payroll_handoff_audit_permissions.
+  PAYMENT_HANDOFF_VIEW: 'payroll.payment_handoff.view',
+  PAYMENT_HANDOFF_MANAGE: 'payroll.payment_handoff.manage',
 } as const;

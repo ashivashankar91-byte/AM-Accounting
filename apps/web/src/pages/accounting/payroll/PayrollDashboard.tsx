@@ -7,6 +7,8 @@ import StatusBadge from '../../../components/StatusBadge';
 import PageLoader from '../../../components/PageLoader';
 import PageError from '../../../components/PageError';
 import { Banner, EmptyState, FinancialTable, ReportThead, ReportTh, ReportTr, ReportTd } from '../../../components/report';
+import { useEntityScope } from '../../../context/EntityScopeContext';
+import { hasPayrollPermission, parsePayrollPermissions, PAYROLL_PERMISSIONS } from './payrollPermissions';
 
 // CE-13 — Payroll Dashboard (S108). Landing surface for the unified
 // Accounting application's payroll module: statutory-source boundary
@@ -22,10 +24,28 @@ export default function PayrollDashboard() {
   const [form, setForm] = useState({ batchNumber: '', payPeriodStart: '', payPeriodEnd: '', payDate: '', payFrequency: 'BI_WEEKLY', providerRunId: '' });
   const [createError, setCreateError] = useState<string | null>(null);
   const queryClient = useQueryClient();
+  const { entityId, entityLabel, entities, loading: entityLoading, noEntitiesConfigured, setEntity } = useEntityScope();
+  const permissions = parsePayrollPermissions();
+  const canCreateBatch = hasPayrollPermission(permissions, PAYROLL_PERMISSIONS.BATCH_CREATE);
 
-  const sourceModeQuery = useQuery({ queryKey: ['payroll-source-mode'], queryFn: () => payrollApi.getSourceMode(), retry: false });
-  const batchesQuery = useQuery({ queryKey: ['payroll-batches'], queryFn: () => payrollApi.getBatches(), retry: false });
+  const sourceModeQuery = useQuery({ queryKey: ['payroll-source-mode', entityId], queryFn: () => payrollApi.getSourceMode(), retry: false, enabled: !!entityId });
+  const batchesQuery = useQuery({ queryKey: ['payroll-batches', entityId], queryFn: () => payrollApi.getBatches(), retry: false, enabled: !!entityId });
 
+  if (entityLoading) return <PageLoader page="Payroll Dashboard" service="payroll-service" port={3012} />;
+  if (noEntitiesConfigured) {
+    return (
+      <div className="p-7" data-testid="payroll-no-entities">
+        <UiEmptyState title="No legal entities configured" description="A legal entity must exist before payroll can be processed. Configure one under Company Settings." />
+      </div>
+    );
+  }
+  if (!entityId) {
+    return (
+      <div className="p-7" data-testid="payroll-select-entity">
+        <UiEmptyState title="Select a legal entity" description="Payroll is scoped to a single legal entity — select one to continue." />
+      </div>
+    );
+  }
   if (batchesQuery.isLoading) return <PageLoader page="Payroll Dashboard" service="payroll-service" port={3012} />;
   if (batchesQuery.error) {
     const status = (batchesQuery.error as any)?.status;
@@ -42,6 +62,7 @@ export default function PayrollDashboard() {
     setCreateError(null);
     try {
       await payrollApi.submit({
+        legalEntityId: entityId,
         batchNumber: form.batchNumber,
         payPeriodStart: form.payPeriodStart,
         payPeriodEnd: form.payPeriodEnd,
@@ -53,7 +74,7 @@ export default function PayrollDashboard() {
       setForm({ batchNumber: '', payPeriodStart: '', payPeriodEnd: '', payDate: '', payFrequency: 'BI_WEEKLY', providerRunId: '' });
       await queryClient.invalidateQueries({ queryKey: ['payroll-batches'] });
     } catch (err: any) {
-      // Surfaces DUPLICATE_PAYROLL_RUN (409) truthfully rather than retrying silently.
+      // Surfaces DUPLICATE_PAYROLL_RUN (409), LEGAL_ENTITY_RECONCILIATION_REQUIRED (422) and LEGAL_ENTITY_MISMATCH (422) truthfully rather than retrying silently.
       setCreateError(err.message);
     }
   }
@@ -64,11 +85,34 @@ export default function PayrollDashboard() {
         title="Payroll"
         subtitle="Batches, statutory-source boundary status, and governed GL posting (CE-13)."
         actions={
-          <Btn variant="primary" size="md" icon={<PlusCircle size={14} />} onClick={() => setShowCreate(true)} data-testid="payroll-new-batch-btn">
-            New batch
-          </Btn>
+          <div className="flex items-center gap-3">
+            <label className="text-xs font-semibold text-slate-600 flex items-center gap-2" data-testid="payroll-entity-selector">
+              Legal entity
+              <select
+                className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+                value={entityId}
+                onChange={(e) => {
+                  const picked = entities.find((en) => en.id === e.target.value);
+                  if (picked) setEntity(picked.id, `${picked.entityCode} — ${picked.legalName}`);
+                }}
+                data-testid="payroll-entity-select"
+              >
+                {entities.map((en) => (
+                  <option key={en.id} value={en.id}>{en.entityCode} — {en.legalName}</option>
+                ))}
+              </select>
+            </label>
+            {canCreateBatch && (
+              <Btn variant="primary" size="md" icon={<PlusCircle size={14} />} onClick={() => setShowCreate(true)} data-testid="payroll-new-batch-btn">
+                New batch
+              </Btn>
+            )}
+          </div>
         }
       />
+      <div className="text-xs text-slate-500 -mt-4 mb-4" data-testid="payroll-current-entity-label">
+        Scoped to: <span className="font-semibold text-slate-700">{entityLabel}</span>
+      </div>
 
       {sourceMode === 'NOT_CONFIGURED' && (
         <Banner kind="warning" testId="payroll-source-not-configured-banner" title="PAYROLL_SOURCE_NOT_CONFIGURED — no certified payroll withholding source is configured for this tenant.">

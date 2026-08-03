@@ -309,7 +309,18 @@ export const payrollApi = {
   issueCommissionDraw: (planId: string, data: { employeeId: string; amount: number }) =>
     apiFetch<any>(`/api/v1/payroll/commission-plans/${planId}/draws`, { method: 'POST', body: JSON.stringify(data) }),
   calculateCommission: (data: any) => apiFetch<any>('/api/v1/payroll/commissions/calculate', { method: 'POST', body: JSON.stringify(data) }),
-  listCommissions: (params?: string) => apiFetch<any[]>(`/api/v1/payroll/commissions${params ? `?${params}` : ''}`),
+  // fix(integration): GET /commissions always responds with the register
+  // shape `{ period, commissions, month_total, ytd_total }` (see
+  // commission-routes.ts's "Register / YTD queries" section) even when
+  // called with no employeeId — Prisma silently drops an `undefined`
+  // employeeId filter, so the tenant's full commission list comes back
+  // inside `.commissions`. Every caller of this method (CommissionTracking,
+  // PayrollCommissionWorkbench's records tab) has always expected a flat
+  // array, so unwrap here rather than pushing the register shape onto both.
+  listCommissions: (params?: string) =>
+    apiFetch<{ commissions: any[] }>(`/api/v1/payroll/commissions${params ? `?${params}` : ''}`).then((res) => res.commissions ?? []),
+  // fix(integration) Gap 1.C — commission journal drill-down (record → plan → batch/item → journal → reversal journal)
+  getCommissionDetail: (id: string) => apiFetch<any>(`/api/v1/payroll/commissions/${id}`),
   getCommissionReport: (params?: string) => apiFetch<any>(`/api/v1/payroll/commissions/report${params ? `?${params}` : ''}`),
   correctCommission: (id: string, data: { adjustedAmount: number; reason: string }) =>
     apiFetch<any>(`/api/v1/payroll/commissions/${id}/correct`, { method: 'POST', body: JSON.stringify(data) }),
@@ -350,6 +361,21 @@ export const payrollApi = {
   voidBatch: (batchId: string, voidReason: string) => apiFetch<any>(`/api/v1/payroll/batches/${batchId}/void`, { method: 'POST', body: JSON.stringify({ voidReason }) }),
   getRegister: (batchId: string) => apiFetch<any>(`/api/v1/payroll/batches/${batchId}/register`),
   getEmployeeYTD: (employeeId: string, year: number) => apiFetch<any>(`/api/v1/payroll/employees/${employeeId}/ytd?year=${year}`),
+  // fix(integration) Gap 2 — CE-09 payment handoff
+  getBatchPaymentHandoff: (batchId: string) => apiFetch<any>(`/api/v1/payroll/batches/${batchId}/payment-handoff`),
+  listPaymentHandoffs: (params?: { legalEntityId?: string; status?: string }) => {
+    const qs = new URLSearchParams(Object.entries(params ?? {}).filter(([, v]) => !!v) as [string, string][]);
+    return apiFetch<any[]>(`/api/v1/payroll/payment-handoffs${qs.toString() ? `?${qs.toString()}` : ''}`);
+  },
+  getPaymentHandoff: (id: string) => apiFetch<any>(`/api/v1/payroll/payment-handoffs/${id}`),
+  transmitPaymentHandoff: (id: string) => apiFetch<any>(`/api/v1/payroll/payment-handoffs/${id}/transmit`, { method: 'POST' }),
+  settlePaymentHandoff: (id: string, settlementReference: string) =>
+    apiFetch<any>(`/api/v1/payroll/payment-handoffs/${id}/settle`, { method: 'POST', body: JSON.stringify({ settlementReference }) }),
+  // fix(integration) Gap 4 — payroll audit inquiry
+  getAudit: (params?: { legalEntityId?: string; batchId?: string; employeeId?: string; action?: string; actor?: string; fromDate?: string; toDate?: string }) => {
+    const qs = new URLSearchParams(Object.entries(params ?? {}).filter(([, v]) => !!v) as [string, string][]);
+    return apiFetch<{ items: any[] }>(`/api/v1/payroll/audit${qs.toString() ? `?${qs.toString()}` : ''}`);
+  },
 };
 
 // Payroll Reports API (Sprint B — NS-023 through NS-033)

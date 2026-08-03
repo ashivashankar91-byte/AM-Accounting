@@ -125,6 +125,11 @@ function makePrisma() {
       create: async ({ data }: any) => { state.audit.push({ ...data }); return { ...data }; },
     },
   } as any;
+  // fix(integration): UserService.login now wraps its writes in a real
+  // $transaction that calls setTenantContextOnConnection(tx, ...), which
+  // issues tx.$executeRawUnsafe(...) — a no-op stub here since this mock
+  // has no real RLS/session-variable semantics to set.
+  client.$executeRawUnsafe = async () => undefined;
   client.$transaction = async (arg: any) =>
     typeof arg === 'function' ? arg(client) : Promise.all(arg);
   return client;

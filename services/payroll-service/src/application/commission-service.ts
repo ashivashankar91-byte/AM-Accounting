@@ -542,6 +542,31 @@ export class CommissionService {
     return updated;
   }
 
+  /// @net-new fix(integration) Gap 1.C — commission journal drill-down: the
+  /// full lineage from a commission record back through its plan (splits,
+  /// draw, minimum guarantee, chargeback terms), the payroll batch/item it
+  /// was paid through, the original posting journal, and — if the batch was
+  /// later voided — the reversal journal, WITHOUT overwriting the original
+  /// journal's own id (reversalJournalEntryId is a separate column set by
+  /// linkReversedBatch, never a mutation of journalEntryId).
+  async getRecordDetail(tenantId: TenantId, id: string) {
+    const record = await (this.prisma as any).commissionRecord.findFirst({ where: { id, tenantId }, include: { plan: true } });
+    if (!record) throw new CommissionRecordNotFoundError(`Commission record ${id} not found`);
+    const batch = record.payrollBatchId
+      ? await (this.prisma as any).payrollBatch.findFirst({
+          where: { id: record.payrollBatchId, tenantId },
+          select: { id: true, batchNumber: true, status: true, legalEntityId: true, journalEntryId: true, reversalOfBatchId: true, reversedByBatchId: true },
+        })
+      : null;
+    const item = record.payrollBatchId
+      ? await (this.prisma as any).payrollItem.findFirst({
+          where: { tenantId, batchId: record.payrollBatchId, employeeId: record.employeeId },
+          select: { id: true, commissionPay: true, netPay: true },
+        })
+      : null;
+    return { record, batch, item };
+  }
+
   // ── Register / YTD queries ─────────────────────────────────────────────
   async listByEmployee(tenantId: TenantId, employeeId: string, period?: string, status?: string) {
     const where: any = { tenantId, employeeId };

@@ -8,8 +8,23 @@ import PageLoader from '../../../components/PageLoader';
 import PageError from '../../../components/PageError';
 import { Banner, EmptyState, FinancialTable, ReportThead, ReportTh, ReportTr, ReportTd, MoneyTd } from '../../../components/report';
 import { hasPayrollPermission, parsePayrollPermissions, PAYROLL_PERMISSIONS } from './payrollPermissions';
+import { useEntityScope } from '../../../context/EntityScopeContext';
 
-type Tab = 'items' | 'validation' | 'approval' | 'posting' | 'register' | 'ytd';
+type Tab = 'items' | 'validation' | 'approval' | 'posting' | 'handoff' | 'register' | 'ytd';
+
+// CE-09 payment handoff: all 8 truthful states the backend can report — the
+// UI never invents a 9th ("processing...") or collapses these into a binary
+// paid/unpaid. See services/payroll-service/src/application/payment-handoff-service.ts.
+const HANDOFF_STATE_COPY: Record<string, string> = {
+  NOT_CONFIGURED: 'No payment channel is configured for this batch — nothing has been exported or transmitted.',
+  PAYMENT_EXPORT_READY: 'A payment export has been generated and is ready for external transmission.',
+  EXTERNAL_TRANSMISSION_PENDING: 'The export has been handed off to the external payment channel; transmission has not yet been confirmed.',
+  CERTIFICATION_PENDING: 'Transmission is confirmed; awaiting certification evidence from the payment channel.',
+  PAYMENT_IN_PROCESS: 'The payment channel has certified receipt and is processing settlement.',
+  SETTLED: 'Settlement has been independently verified against CE-09 cash evidence.',
+  FAILED: 'The payment channel reported failure — see failure reason below.',
+  VOIDED: 'This handoff was voided; no settlement will occur.',
+};
 
 // CE-13 — Payroll Batch Workbench (S108/S110/S111). One governed batch
 // lifecycle screen, tabbed per the epic's mandatory UI surfaces:
@@ -35,9 +50,17 @@ export default function PayrollBatchWorkbench() {
   const canHoldRelease = hasPayrollPermission(permissions, PAYROLL_PERMISSIONS.BATCH_HOLD_RELEASE);
   const canPost = hasPayrollPermission(permissions, PAYROLL_PERMISSIONS.BATCH_POST);
   const canVoidReverse = hasPayrollPermission(permissions, PAYROLL_PERMISSIONS.BATCH_VOID_REVERSE);
+  const canViewHandoff = hasPayrollPermission(permissions, PAYROLL_PERMISSIONS.PAYMENT_HANDOFF_VIEW);
+  const { entityId: currentEntityId, entityLabel: currentEntityLabel } = useEntityScope();
 
   const batchQuery = useQuery({ queryKey: ['payroll-batch', batchId], queryFn: () => payrollApi.getBatch(batchId), retry: false, enabled: !!batchId });
   const registerQuery = useQuery({ queryKey: ['payroll-register', batchId], queryFn: () => payrollApi.getRegister(batchId), retry: false, enabled: tab === 'register' && !!batchId });
+  const handoffQuery = useQuery({
+    queryKey: ['payroll-batch-handoff', batchId],
+    queryFn: () => payrollApi.getBatchPaymentHandoff(batchId),
+    retry: false,
+    enabled: tab === 'handoff' && !!batchId && canViewHandoff,
+  });
   const ytdQuery = useQuery({
     queryKey: ['payroll-ytd', ytdEmployeeId, ytdYear],
     queryFn: () => payrollApi.getEmployeeYTD(ytdEmployeeId, ytdYear),
@@ -80,6 +103,18 @@ export default function PayrollBatchWorkbench() {
         badge={<StatusBadge status={batch?.status} />}
       />
 
+      {batch && !batch.legalEntityId && (
+        <Banner kind="warning" testId="payroll-batch-legal-entity-reconciliation-required" title="LEGAL_ENTITY_RECONCILIATION_REQUIRED">
+          This batch has no resolved legal entity — it predates entity-scoped payroll or was created against an ambiguous
+          legacy record. Items, mappings, commissions and postings are blocked until it is reconciled to a legal entity.
+        </Banner>
+      )}
+      {batch?.legalEntityId && currentEntityId && batch.legalEntityId !== currentEntityId && (
+        <Banner kind="warning" testId="payroll-batch-cross-entity-warning" title="Cross-entity batch">
+          This batch belongs to a different legal entity than the one currently selected ({currentEntityLabel}). Switch the
+          legal entity selector to act on it.
+        </Banner>
+      )}
       {batch?.status === 'HOLD' && (
         <Banner kind="warning" testId="payroll-batch-hold-banner" title="On hold">
           {batch.holdReason} — held by {batch.heldBy}. Release before validating or approving.
@@ -89,7 +124,7 @@ export default function PayrollBatchWorkbench() {
       {actionResult && <Banner kind="success" testId="payroll-batch-action-result" title="Success"><pre className="text-[11px] whitespace-pre-wrap">{actionResult}</pre></Banner>}
 
       <div className="flex items-center gap-1 border-b border-slate-200 mt-6 mb-4 flex-wrap">
-        {(['items', 'validation', 'approval', 'posting', 'register', 'ytd'] as Tab[]).map((t) => (
+        {(['items', 'validation', 'approval', 'posting', 'handoff', 'register', 'ytd'] as Tab[]).map((t) => (
           <button
             key={t}
             className={`px-3 py-2 text-[13px] font-semibold border-b-2 capitalize ${tab === t ? 'border-brand text-brand' : 'border-transparent text-slate-500'}`}
@@ -117,8 +152,8 @@ export default function PayrollBatchWorkbench() {
             </div>
             <Btn
               variant="primary" size="sm" className="mt-3" data-testid="payroll-item-submit"
-              disabled={!canEdit}
-              title={!canEdit ? 'Requires payroll.batch.edit permission' : undefined}
+              disabled={!canEdit || !batch?.legalEntityId}
+              title={!canEdit ? 'Requires payroll.batch.edit permission' : !batch?.legalEntityId ? 'Batch requires legal-entity reconciliation before items can be added' : undefined}
               onClick={() => runAction(() => payrollApi.addBatchItem(batchId, {
                 employeeId: itemForm.employeeId,
                 regularPay: Number(itemForm.regularPay || 0),
@@ -215,6 +250,65 @@ export default function PayrollBatchWorkbench() {
             </div>
           </div>
         </div>
+      )}
+
+      {tab === 'handoff' && (
+        !canViewHandoff ? (
+          <div className="p-6" data-testid="payroll-handoff-unauthorized"><EmptyState testId="payroll-handoff-unauthorized-inner" title="Unauthorized" message="You do not have permission to view payment-handoff status (requires payroll.payment_handoff.view)." /></div>
+        ) : handoffQuery.isLoading ? <PageLoader page="Payment Handoff" service="payroll-service" port={3012} /> :
+        handoffQuery.error ? (
+          (handoffQuery.error as any)?.status === 404 ? (
+            <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6" data-testid="payroll-handoff-not-configured">
+              <StatusBadge status="NOT_CONFIGURED" />
+              <p className="text-sm text-slate-600 mt-2">{HANDOFF_STATE_COPY.NOT_CONFIGURED}</p>
+            </div>
+          ) : <PageError error={handoffQuery.error as Error} serviceName="payroll-service" retry={() => handoffQuery.refetch()} />
+        ) : (
+          (() => {
+            const h = handoffQuery.data;
+            if (!h) {
+              return (
+                <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6" data-testid="payroll-handoff-not-configured">
+                  <StatusBadge status="NOT_CONFIGURED" />
+                  <p className="text-sm text-slate-600 mt-2">{HANDOFF_STATE_COPY.NOT_CONFIGURED}</p>
+                </div>
+              );
+            }
+            return (
+              <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 space-y-4" data-testid="payroll-handoff-panel">
+                <div className="flex items-center gap-3">
+                  <StatusBadge status={h.status} />
+                  <span className="text-sm text-slate-600">{HANDOFF_STATE_COPY[h.status] ?? h.status}</span>
+                </div>
+                <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                  <div><dt className="text-xs text-slate-500">Batch</dt><dd data-testid="payroll-handoff-batch">{h.batchId ?? batchId}</dd></div>
+                  <div><dt className="text-xs text-slate-500">Legal entity</dt><dd data-testid="payroll-handoff-entity">{h.legalEntityId ?? '—'}</dd></div>
+                  <div><dt className="text-xs text-slate-500">Amount</dt><dd data-testid="payroll-handoff-amount">{h.amount != null ? Number(h.amount).toLocaleString(undefined, { style: 'currency', currency: 'USD' }) : '—'}</dd></div>
+                  <div><dt className="text-xs text-slate-500">Liability account</dt><dd data-testid="payroll-handoff-liability-account">{h.liabilityAccountNumber ?? '—'}</dd></div>
+                  <div><dt className="text-xs text-slate-500">Clearing account</dt><dd data-testid="payroll-handoff-clearing-account">{h.clearingAccountNumber ?? '—'}</dd></div>
+                  <div>
+                    <dt className="text-xs text-slate-500">Original journal</dt>
+                    <dd data-testid="payroll-handoff-original-journal">
+                      {h.originalJournalEntryId ? <a className="underline text-brand" href={`/accounting/gl/journal-entries/${h.originalJournalEntryId}`}>{h.originalJournalEntryId}</a> : '—'}
+                    </dd>
+                  </div>
+                  <div><dt className="text-xs text-slate-500">Payment linkage reference</dt><dd data-testid="payroll-handoff-payment-linkage">{h.paymentLinkageReference ?? '—'}</dd></div>
+                  <div><dt className="text-xs text-slate-500">Settlement evidence</dt><dd data-testid="payroll-handoff-settlement-evidence">{h.settlementEvidenceRef ?? 'Not independently verified'}</dd></div>
+                  {h.status === 'FAILED' && (
+                    <div className="col-span-2"><dt className="text-xs text-slate-500">Failure reason</dt><dd className="text-red-700" data-testid="payroll-handoff-failure-reason">{h.failureReason ?? 'Unspecified'}</dd></div>
+                  )}
+                  {h.status === 'VOIDED' && (
+                    <div className="col-span-2"><dt className="text-xs text-slate-500">Void status</dt><dd data-testid="payroll-handoff-void-status">Voided{h.voidReason ? ` — ${h.voidReason}` : ''}</dd></div>
+                  )}
+                </dl>
+                <p className="text-xs text-slate-400">
+                  Settlement is only ever reported once independently verified against CE-09 cash evidence — there is no manual
+                  action here that marks a payment SETTLED.
+                </p>
+              </div>
+            );
+          })()
+        )
       )}
 
       {tab === 'register' && (

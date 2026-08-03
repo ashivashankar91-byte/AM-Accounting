@@ -6,6 +6,7 @@ import StatusBadge from '../../../components/StatusBadge';
 import PageLoader from '../../../components/PageLoader';
 import { Banner, EmptyState, FinancialTable, ReportThead, ReportTh, ReportTr, ReportTd, Drawer, DrawerRow } from '../../../components/report';
 import { hasPayrollPermission, parsePayrollPermissions, PAYROLL_PERMISSIONS } from './payrollPermissions';
+import { useEntityScope } from '../../../context/EntityScopeContext';
 
 type Tab = 'plans' | 'records' | 'disputes';
 
@@ -22,10 +23,12 @@ export default function PayrollCommissionWorkbench() {
   const [newPlanOpen, setNewPlanOpen] = useState(false);
   const [drawDrawerPlanId, setDrawDrawerPlanId] = useState<string | null>(null);
   const [disputeDrawerRecordId, setDisputeDrawerRecordId] = useState<string | null>(null);
+  const [lineageRecordId, setLineageRecordId] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const permissions = parsePayrollPermissions();
   const canManageCommissions = hasPayrollPermission(permissions, PAYROLL_PERMISSIONS.COMMISSION_MANAGE);
   const canResolveDisputes = hasPayrollPermission(permissions, PAYROLL_PERMISSIONS.COMMISSION_DISPUTE_RESOLVE);
+  const { entityId, entityLabel } = useEntityScope();
 
   const plansQuery = useQuery({ queryKey: ['commission-plans'], queryFn: () => payrollApi.listCommissionPlans(), retry: false, enabled: tab === 'plans' });
   const recordsQuery = useQuery({ queryKey: ['commission-records'], queryFn: () => payrollApi.listCommissions(), retry: false, enabled: tab === 'records' });
@@ -47,6 +50,9 @@ export default function PayrollCommissionWorkbench() {
         title="Commission, Draws &amp; Disputes"
         subtitle="S109 — tenant-configured commission plans, split rules, draws, minimum guarantees, and dispute resolution with SoD enforcement."
       />
+      <div className="text-xs text-slate-500 -mt-4 mb-4" data-testid="commission-current-entity-label">
+        Scoped to: <span className="font-semibold text-slate-700">{entityLabel ?? 'Select a legal entity'}</span>
+      </div>
 
       {actionError && <Banner kind="error" testId="commission-action-error" title="Action failed">{actionError}</Banner>}
 
@@ -59,7 +65,11 @@ export default function PayrollCommissionWorkbench() {
           ))}
         </div>
         {tab === 'plans' && (
-          <Btn variant="primary" size="sm" disabled={!canManageCommissions} title={!canManageCommissions ? 'Requires payroll.commission.manage permission' : undefined} data-testid="commission-new-plan-btn" onClick={() => setNewPlanOpen(true)}>New Plan</Btn>
+          <Btn
+            variant="primary" size="sm" disabled={!canManageCommissions || !entityId}
+            title={!canManageCommissions ? 'Requires payroll.commission.manage permission' : !entityId ? 'Select a legal entity first' : undefined}
+            data-testid="commission-new-plan-btn" onClick={() => setNewPlanOpen(true)}
+          >New Plan</Btn>
         )}
       </div>
 
@@ -79,6 +89,7 @@ export default function PayrollCommissionWorkbench() {
           error={recordsQuery.isError}
           act={act}
           onDispute={(id) => setDisputeDrawerRecordId(id)}
+          onDrillDown={(id) => setLineageRecordId(id)}
           canManage={canManageCommissions}
         />
       )}
@@ -105,6 +116,9 @@ export default function PayrollCommissionWorkbench() {
           onClose={() => setDisputeDrawerRecordId(null)}
           onCreated={() => { setDisputeDrawerRecordId(null); queryClient.invalidateQueries({ queryKey: ['commission-disputes'] }); }}
         />
+      )}
+      {lineageRecordId && (
+        <LineageDrawer recordId={lineageRecordId} onClose={() => setLineageRecordId(null)} />
       )}
     </div>
   );
@@ -147,10 +161,11 @@ function PlansTab({ data, loading, error, onDraw, canManage }: { data: any[] | u
   );
 }
 
-function RecordsTab({ data, loading, error, act, onDispute, canManage }: {
+function RecordsTab({ data, loading, error, act, onDispute, onDrillDown, canManage }: {
   data: any[] | undefined; loading: boolean; error: boolean;
   act: (fn: () => Promise<any>, keys: string[]) => Promise<void>;
   onDispute: (id: string) => void;
+  onDrillDown: (id: string) => void;
   canManage: boolean;
 }) {
   if (loading) return <PageLoader page="Commission register" service="payroll-service" port={3012} />;
@@ -179,6 +194,7 @@ function RecordsTab({ data, loading, error, act, onDispute, canManage }: {
             <ReportTd><StatusBadge status={r.status} /></ReportTd>
             <ReportTd>
               <div className="flex gap-1">
+                <Btn variant="ghost" size="sm" data-testid={`commission-record-lineage-${r.id}`} onClick={() => onDrillDown(r.id)}>View lineage</Btn>
                 <Btn variant="ghost" size="sm" disabled={!canManage} title={!canManage ? 'Requires payroll.commission.manage permission' : undefined} data-testid={`commission-record-mark-paid-${r.id}`} onClick={() => act(() => payrollApi.markCommissionPaid(r.id), ['commission-records'])}>Mark paid</Btn>
                 <Btn variant="ghost" size="sm" disabled={!canManage} title={!canManage ? 'Requires payroll.commission.manage permission' : undefined} data-testid={`commission-record-dispute-${r.id}`} onClick={() => onDispute(r.id)}>Dispute</Btn>
                 <Btn variant="ghost" size="sm" disabled={!canManage} title={!canManage ? 'Requires payroll.commission.manage permission' : undefined} data-testid={`commission-record-reverse-${r.id}`} onClick={() => act(() => payrollApi.reverseCommission(r.id, { reason: 'user-initiated reversal' }), ['commission-records'])}>Reverse</Btn>
@@ -232,6 +248,7 @@ function DisputesTab({ data, loading, error, act, canResolve }: {
 }
 
 function NewPlanDrawer({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const { entityId } = useEntityScope();
   const [employeeId, setEmployeeId] = useState('');
   const [planType, setPlanType] = useState<'FLAT' | 'PERCENTAGE' | 'TIERED'>('PERCENTAGE');
   const [rate, setRate] = useState('');
@@ -242,9 +259,14 @@ function NewPlanDrawer({ onClose, onCreated }: { onClose: () => void; onCreated:
 
   async function submit() {
     setError(null);
+    if (!entityId) {
+      setError('Select a legal entity before creating a commission plan.');
+      return;
+    }
     setSubmitting(true);
     try {
       const payload: any = {
+        legal_entity_id: entityId,
         employee_id: employeeId,
         plan_type: planType,
         effective_date: new Date().toISOString().slice(0, 10),
@@ -338,6 +360,77 @@ function DrawDrawer({ planId, onClose, onIssued }: { planId: string; onClose: ()
       <input className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm mb-3" data-testid="commission-draw-employee" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} />
       <label className="block text-[12px] font-medium text-slate-600 mb-1">Amount</label>
       <input type="number" className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" data-testid="commission-draw-amount" value={amount} onChange={(e) => setAmount(e.target.value)} />
+    </Drawer>
+  );
+}
+
+// fix(integration) Gap 1.C — commission journal drill-down: record → plan
+// (split/draw/guarantee/chargeback lineage) → batch/item → posting
+// execution → original journal → reversal journal. The original journal's
+// own id is never overwritten by a later reversal — both are shown
+// side-by-side when both exist.
+function LineageDrawer({ recordId, onClose }: { recordId: string; onClose: () => void }) {
+  const detailQuery = useQuery({ queryKey: ['commission-detail', recordId], queryFn: () => payrollApi.getCommissionDetail(recordId), retry: false });
+
+  return (
+    <Drawer open onClose={onClose} title="Commission journal drill-down" subtitle={`Record ${recordId}`} testId="commission-lineage-drawer" actions={<Btn variant="secondary" size="sm" onClick={onClose}>Close</Btn>}>
+      {detailQuery.isLoading && <p className="text-sm text-slate-500" data-testid="commission-lineage-loading">Loading…</p>}
+      {detailQuery.isError && (
+        <Banner kind="error" testId="commission-lineage-error" title="Could not load lineage">
+          {((detailQuery.error as any)?.message) ?? 'The payroll service could not be reached.'}
+        </Banner>
+      )}
+      {detailQuery.data && (
+        <div className="space-y-4" data-testid="commission-lineage-content">
+          <section>
+            <h4 className="text-xs font-semibold text-slate-500 uppercase mb-1">Record</h4>
+            <DrawerRow label="Employee" value={detailQuery.data.employee_id} />
+            {detailQuery.data.split_employee_id && <DrawerRow label="Split leg for" value={detailQuery.data.split_employee_id} />}
+            <DrawerRow label="Deal" value={detailQuery.data.deal_id ?? '—'} />
+            <DrawerRow label="Commission amount" value={String(detailQuery.data.commission_amount)} />
+            <DrawerRow label="Status" value={detailQuery.data.status} />
+            {detailQuery.data.applied_to_draw && <DrawerRow label="Applied to draw" value="Yes — recovered against an outstanding draw" />}
+            {Number(detailQuery.data.clawed_back_amount) > 0 && <DrawerRow label="Clawed back" value={String(detailQuery.data.clawed_back_amount)} />}
+          </section>
+
+          <section className="border-t border-slate-100 pt-3">
+            <h4 className="text-xs font-semibold text-slate-500 uppercase mb-1">Plan lineage</h4>
+            {detailQuery.data.plan ? (
+              <>
+                <DrawerRow label="Plan type" value={detailQuery.data.plan.plan_type} />
+                {detailQuery.data.plan.split_rules && <DrawerRow label="Split rules" value={JSON.stringify(detailQuery.data.plan.split_rules)} />}
+                {detailQuery.data.plan.draw_amount != null && <DrawerRow label="Draw amount" value={String(detailQuery.data.plan.draw_amount)} />}
+                {detailQuery.data.plan.minimum_guarantee != null && <DrawerRow label="Minimum guarantee" value={String(detailQuery.data.plan.minimum_guarantee)} />}
+                {detailQuery.data.plan.chargeback_terms && <DrawerRow label="Chargeback terms" value={JSON.stringify(detailQuery.data.plan.chargeback_terms)} />}
+              </>
+            ) : <p className="text-sm text-slate-400" data-testid="commission-lineage-no-plan">No plan linked to this record.</p>}
+          </section>
+
+          <section className="border-t border-slate-100 pt-3">
+            <h4 className="text-xs font-semibold text-slate-500 uppercase mb-1">Batch / item / posting</h4>
+            {detailQuery.data.batch ? (
+              <>
+                <DrawerRow label="Batch" value={`${detailQuery.data.batch.batch_number} (${detailQuery.data.batch.status})`} />
+                {detailQuery.data.item && <DrawerRow label="Item commission pay" value={String(detailQuery.data.item.commission_pay)} />}
+              </>
+            ) : <p className="text-sm text-slate-400" data-testid="commission-lineage-no-batch">Not yet attached to a payroll batch item.</p>}
+          </section>
+
+          <section className="border-t border-slate-100 pt-3">
+            <h4 className="text-xs font-semibold text-slate-500 uppercase mb-1">Journal linkage</h4>
+            {detailQuery.data.journal_entry_id ? (
+              <DrawerRow label="Original journal" value={
+                <a className="underline text-brand" href={`/accounting/gl/journal-entries/${detailQuery.data.journal_entry_id}`} data-testid="commission-lineage-original-journal">{detailQuery.data.journal_entry_id}</a>
+              } />
+            ) : <p className="text-sm text-slate-400" data-testid="commission-lineage-not-posted">Not yet posted.</p>}
+            {detailQuery.data.reversal_journal_entry_id && (
+              <DrawerRow label="Reversal journal" value={
+                <a className="underline text-brand" href={`/accounting/gl/journal-entries/${detailQuery.data.reversal_journal_entry_id}`} data-testid="commission-lineage-reversal-journal">{detailQuery.data.reversal_journal_entry_id}</a>
+              } />
+            )}
+          </section>
+        </div>
+      )}
     </Drawer>
   );
 }
