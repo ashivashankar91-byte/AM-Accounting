@@ -129,7 +129,7 @@ const SERVICES: Array<{ prefix: string; upstream: string; rateLimit?: number; re
   // CE-16 S129/S130/S131/S132 — accounting migration. migration-service writes
   // only to its own controlled staging; every financial effect leaves staging
   // through CE-07 governed posting, never through this proxy.
-  { prefix: '/api/v1/migration',      upstream: process.env['MIGRATION_SERVICE_URL']      ?? 'http://migration-service:3060' },
+  { prefix: '/api/v1/migration',      upstream: process.env['MIGRATION_SERVICE_URL']      ?? 'http://migration-service:3062' },
 ];
 
 // ── Request logging hook ──────────────────────────────────────────────────────

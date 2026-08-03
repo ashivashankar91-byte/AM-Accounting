@@ -692,6 +692,7 @@ services:
       SCHEDULE_SERVICE_URL: http://schedule-service:3018
       GROUP_SERVICE_URL: http://group-service:3039
       CLOSE_SERVICE_URL: http://close-service:3095
+      MIGRATION_SERVICE_URL: http://migration-service:3062
     depends_on:
       - auth-service
       - gl-service
@@ -758,18 +759,19 @@ services:
       migrator: { condition: service_completed_successfully }
 
   # CE-16 S129/S130/S131/S132 — accounting migration service
+  # Port 3062: fixedops-service owns 3060; close-service is on 3095 (not 3052).
   migration-service:
     build:
       context: .
       dockerfile: services/migration-service/Dockerfile
     ports:
-      - "3060:3060"
+      - "3062:3062"
     environment:
       <<: *service-env
-      PORT: 3060
+      PORT: 3062
       POSTING_SERVICE_URL: http://posting-recovery-service:3049
       SCHEDULE_SERVICE_URL: http://schedule-service:3018
-      CLOSE_SERVICE_URL: http://close-service:3052
+      CLOSE_SERVICE_URL: http://close-service:3095
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
