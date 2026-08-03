@@ -2208,6 +2208,7 @@ export const oemApi = {
   previewCoopAccrual: (storeId: string, programId: string, period: string, periodQualifyingSalesAmount: string) =>
     apiFetch<any>('/api/v1/oem/coop/accrual/preview', { method: 'POST', body: JSON.stringify({ storeId, programId, period, periodQualifyingSalesAmount }) }),
   approveCoopAccrual: (id: string) => apiFetch<any>(`/api/v1/oem/coop/accrual/previews/${id}/approve`, { method: 'POST' }),
+};
 
 // ─── close-service (CE-15 Close & Statutory) ────────────────────────────
 export const closeApi = {

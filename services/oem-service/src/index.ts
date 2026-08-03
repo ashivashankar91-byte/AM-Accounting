@@ -3,6 +3,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import { container } from 'tsyringe';
 import { oemRoutes } from './http/routes';
+import { oemPeriodReadinessRoutes } from './http/period-readiness-routes';
 import { OemProfileService } from './application/profile-service';
 import { OemStagingService } from './application/staging-service';
 import { OemMatchService } from './application/match-service';
@@ -75,6 +76,7 @@ async function bootstrap() {
   container.register(OemCoopService, { useClass: OemCoopService });
 
   await app.register(oemRoutes, { prefix: '/api/v1/oem' });
+  await app.register(oemPeriodReadinessRoutes, { prefix: '/api/v1/oem' });
   app.get('/health', async () => ({ status: 'ok', service: 'oem-service' }));
 
   // CE-14: drain audit_outbox to the real S007 audit-service, same pattern

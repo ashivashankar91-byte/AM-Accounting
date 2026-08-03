@@ -4,6 +4,7 @@ import cors from '@fastify/cors';
 import { container } from 'tsyringe';
 import { PrismaClient } from '.prisma/payroll-client';
 import { payrollRoutes } from './http/routes';
+import { payrollPeriodReadinessRoutes } from './http/period-readiness-routes';
 import { RabbitMQEventPublisher } from './infrastructure/event-publisher';
 import { PayrollService } from './application/payroll-service';
 import { IEventPublisher, OutboxProcessor, createTenantRlsMiddleware, tenantContextHook, AuthzClient, HttpAuthzClient } from '@amacc/shared-kernel';
@@ -114,6 +115,7 @@ async function bootstrap() {
   });
 
   await app.register(payrollRoutes, { prefix: '/api/v1/payroll' });
+  await app.register(payrollPeriodReadinessRoutes, { prefix: '/api/v1/payroll' });
   app.get('/health', async () => ({ status: 'ok', service: 'payroll-service' }));
 
   const port = parseInt(process.env['PORT'] ?? '3012', 10);

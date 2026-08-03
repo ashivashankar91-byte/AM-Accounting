@@ -3,6 +3,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import { container } from 'tsyringe';
 import { fixedOpsRoutes } from './http/routes';
+import { fixedopsPeriodReadinessRoutes } from './http/period-readiness-routes';
 import { RoCloseService } from './application/ro-close-service';
 import { RoReversalService } from './application/ro-reversal-service';
 import { RoReportService } from './application/ro-report-service';
@@ -61,6 +62,7 @@ async function bootstrap() {
   container.register(WarrantyClaimService, { useClass: WarrantyClaimService });
 
   await app.register(fixedOpsRoutes, { prefix: '/api/v1/fixedops' });
+  await app.register(fixedopsPeriodReadinessRoutes, { prefix: '/api/v1/fixedops' });
   app.get('/health', async () => ({ status: 'ok', service: 'fixedops-service' }));
 
   const auditDrainer = new AuditOutboxDrainer(

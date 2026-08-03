@@ -120,6 +120,12 @@ const SERVICES: Array<{ prefix: string; upstream: string; rateLimit?: number; re
   // postings travel through the standard matrix-row/envelope path (CE-07/
   // CE-09) same as every other epic.
   { prefix: '/api/v1/oem',            upstream: process.env['OEM_SERVICE_URL']            ?? 'http://oem-service:3052' },
+  // CE-15 S113-S123 S015-S017 — Close & Statutory (close calendar,
+  // reconciliation module, pre-close scrub, year-end, tax pack, DOC,
+  // statement packages, KPI packs, compliance reporting, multi-currency,
+  // signed snapshots, WORM archive). close-service has zero direct GL
+  // writes; all postings travel through the CE-07 governed posting path.
+  { prefix: '/api/v1/close',          upstream: process.env['CLOSE_SERVICE_URL']          ?? 'http://close-service:3095' },
 ];
 
 // ── Request logging hook ──────────────────────────────────────────────────────

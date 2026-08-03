@@ -4,6 +4,7 @@ import cors from '@fastify/cors';
 import { container } from 'tsyringe';
 import { PrismaClient } from '.prisma/apar-client';
 import { aparRoutes } from './http/routes';
+import { aparPeriodReadinessRoutes } from './http/period-readiness-routes';
 import { RabbitMQEventPublisher } from './infrastructure/event-publisher';
 import { PrismaAREntryRepository } from './infrastructure/ar-repository';
 import { PrismaAPEntryRepository } from './infrastructure/ap-repository';
@@ -117,6 +118,7 @@ async function bootstrap() {
   }));
 
   await app.register(aparRoutes, { prefix: '/api/v1/apar' });
+  await app.register(aparPeriodReadinessRoutes, { prefix: '/api/v1/apar' });
   app.get('/health', async () => ({ status: 'ok', service: 'apar-service' }));
 
   // AMACC-CH04 S036A: apar-service had no audit mechanism at all before

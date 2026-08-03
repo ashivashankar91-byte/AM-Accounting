@@ -10,6 +10,7 @@ import { PrismaClient } from '.prisma/deal-accounting-client';
 import pino from 'pino';
 
 import { dealAccountingRoutes } from './http/routes';
+import { dealPeriodReadinessRoutes } from './http/period-readiness-routes';
 import { makeDealAuditStore } from './infrastructure/audit';
 import { RabbitMQEventPublisher } from './infrastructure/event-publisher';
 import { DomainOutboxDrainer } from './infrastructure/putr-outbox';
@@ -75,6 +76,7 @@ async function bootstrap() {
   container.register(DueBillService, { useClass: DueBillService });
 
   await app.register(dealAccountingRoutes, { prefix: '/api/v1/deal-accounting' });
+  await app.register(dealPeriodReadinessRoutes, { prefix: '/api/v1/deal-accounting' });
   app.get('/health', async () => ({ status: 'ok', service: 'deal-accounting-service' }));
 
   // Drain deal_audit_reference to the real S007 audit-service — same
