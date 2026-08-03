@@ -185,6 +185,36 @@ function resolveEntityScope(prisma: PrismaClient) {
       const handoff = await (prisma as any).payrollPaymentHandoff.findFirst({ where: { id: params.id, tenantId }, select: { legalEntityId: true } });
       return { entityId: handoff?.legalEntityId ?? null };
     }
+    // fix(integration): every action taken AGAINST an existing commission
+    // plan/record/dispute, accrual, or clawback — as opposed to CREATING one,
+    // where the body/query legalEntityId is the legitimately-requested new
+    // scope — is resource-loaded from that row's own persisted legalEntityId.
+    // Without this, a caller whose OWN role assignment happens to be scoped
+    // to entity A could claim `legalEntityId: <entity A>` in the request
+    // body/query while acting on a resource that actually belongs to entity
+    // B, and the authz check (which only ever compared against the
+    // CLIENT-SUPPLIED scope) would incorrectly allow it — a real
+    // cross-entity bypass, not merely a UI-hiding gap.
+    if (routeUrl.match(/^\/commission-plans\/([^/]+)\/(supersede|draws)$/) && params.id) {
+      const plan = await (prisma as any).commissionPlan.findFirst({ where: { id: params.id, tenantId }, select: { legalEntityId: true } });
+      return { entityId: plan?.legalEntityId ?? null };
+    }
+    if (routeUrl.match(/^\/commissions\/([^/]+)/) && params.id) {
+      const record = await (prisma as any).commissionRecord.findFirst({ where: { id: params.id, tenantId }, select: { legalEntityId: true } });
+      return { entityId: record?.legalEntityId ?? null };
+    }
+    if (routeUrl.match(/^\/commission-disputes\/([^/]+)\/resolve$/) && params.id) {
+      const dispute = await (prisma as any).commissionDispute.findFirst({ where: { id: params.id, tenantId }, select: { legalEntityId: true } });
+      return { entityId: dispute?.legalEntityId ?? null };
+    }
+    if (routeUrl.match(/^\/accruals\/([^/]+)\/approve$/) && params.id) {
+      const accrual = await (prisma as any).accrualEntry.findFirst({ where: { id: params.id, tenantId }, select: { legalEntityId: true } });
+      return { entityId: accrual?.legalEntityId ?? null };
+    }
+    if (routeUrl.match(/^\/clawbacks\/([^/]+)\/resolve$/) && params.id) {
+      const clawback = await (prisma as any).clawbackRecord.findFirst({ where: { id: params.id, tenantId }, select: { legalEntityId: true } });
+      return { entityId: clawback?.legalEntityId ?? null };
+    }
     // Create/list routes: the body/query legalEntityId IS the requested
     // scope — the authz engine (not this extractor) is what denies an
     // actor whose role assignment isn't scoped to it.

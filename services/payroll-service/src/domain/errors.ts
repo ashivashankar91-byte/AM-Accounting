@@ -69,3 +69,30 @@ export class SegregationOfDutiesError extends Error {
     this.name = 'SegregationOfDutiesError';
   }
 }
+
+/**
+ * fix(integration): thrown when coa-service (CE-07) itself refuses to
+ * register/validate/activate the shadow posting-engine rule pack this
+ * payroll rule pack's own lifecycle now drives — e.g. the caller lacks
+ * CE-07's own posting_engine.rule_pack.* permission for this legal entity,
+ * or CE-07's own author != activator SoD check refuses the activation. The
+ * real CE-07 status code/message is always forwarded verbatim (never
+ * swallowed, never retried into a fabricated success) so the caller sees
+ * the true reason governed GL posting is not yet possible for this pack.
+ */
+export class Ce07RulePackRegistrationError extends Error {
+  constructor(readonly status: number, readonly code: string, message: string) {
+    super(message);
+    this.name = 'Ce07RulePackRegistrationError';
+  }
+}
+
+/** Thrown when a payroll rule-pack action that must drive a CE-07 registration call has no caller bearer token to forward (e.g. a service-to-service call with no real human session). */
+export class MissingBearerTokenError extends Error {
+  readonly status = 401;
+  readonly code = 'MISSING_BEARER_TOKEN';
+  constructor(message = 'A real, authenticated bearer token is required to register/activate the corresponding CE-07 posting-engine rule pack.') {
+    super(message);
+    this.name = 'MissingBearerTokenError';
+  }
+}

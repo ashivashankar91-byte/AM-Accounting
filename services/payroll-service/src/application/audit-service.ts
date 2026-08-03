@@ -50,8 +50,12 @@ export class PayrollAuditService {
       // reversal event 'PAYROLL_BATCH_VOIDED' (see payroll-service.ts's
       // voidBatch) — a different label than the CE-07 wire eventType
       // ('PAYROLL_BATCH_REVERSED'/'payroll.batch.reversed.v1'). Both are
-      // included so the audit trail is never silently incomplete.
-      eventType: { in: ['PAYROLL_BATCH_POSTED', 'PAYROLL_BATCH_REVERSED', 'PAYROLL_BATCH_VOIDED'] },
+      // included so the audit trail is never silently incomplete. Also
+      // includes the two highest-consequence CONFIGURATION mutations
+      // (statutory-source-mode change, rule-pack activation) — see
+      // ce13-routes.ts's PUT /config/source-mode and rule-pack-service.ts's
+      // activate().
+      eventType: { in: ['PAYROLL_BATCH_POSTED', 'PAYROLL_BATCH_REVERSED', 'PAYROLL_BATCH_VOIDED', 'PAYROLL_SOURCE_MODE_CHANGED', 'PAYROLL_RULE_PACK_ACTIVATED'] },
       ...((filters.fromDate || filters.toDate) && {
         createdAt: {
           ...(filters.fromDate && { gte: new Date(filters.fromDate) }),

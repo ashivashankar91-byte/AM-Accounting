@@ -27,7 +27,17 @@ const PASSWORD = 'Ce13Cert!2026';
 
 const USERS = [
   { email: 'author@ce13cert.test', tenantId: TENANT_A, role: 'CONTROLLER' },
-  { email: 'approver@ce13cert.test', tenantId: TENANT_A, role: 'CONTROLLER' },
+  // fix(integration): ADMIN, not CONTROLLER — rule-pack activation now also
+  // drives a REAL CE-07 (coa-service) posting-engine rule-pack activation
+  // (see services/payroll-service/src/infrastructure/ce07-rule-pack-registrar.ts),
+  // and CE-07's own posting_engine.rule_pack.activate permission is
+  // deliberately ADMIN-only (20260729020000_extend_authz_catalog_posting_engine
+  // migration: "the highest-risk, hardest-to-reverse transition ... matches
+  // the fiscal.period.lock precedent"). A CONTROLLER activator would still
+  // pass payroll's OWN author != activator SoD check but then genuinely,
+  // honestly fail at the CE-07 call with a real 403 — this is not a gap
+  // this seed should paper over.
+  { email: 'approver@ce13cert.test', tenantId: TENANT_A, role: 'ADMIN' },
   { email: 'noperm@ce13cert.test', tenantId: TENANT_A, role: null },
   { email: 'xt@ce13cert.test', tenantId: TENANT_B, role: 'CONTROLLER' },
 ];

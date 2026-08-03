@@ -13,7 +13,7 @@ import { z } from 'zod';
 import { asTenantId, TenantId } from '@amacc/shared-kernel';
 import { container } from 'tsyringe';
 import { PayrollRulePackService, RulePackActivationError, RulePackAuthorEqualsActivatorError } from '../application/rule-pack-service';
-import { NonTestTenantRefusedError } from '../domain/errors';
+import { NonTestTenantRefusedError, Ce07RulePackRegistrationError, MissingBearerTokenError } from '../domain/errors';
 import { PaymentHandoffService, PaymentHandoffNotFoundError, PaymentHandoffStateError, SettlementVerificationFailedError } from '../application/payment-handoff-service';
 import { PayrollAuditService } from '../application/audit-service';
 
@@ -31,6 +31,11 @@ function getUserId(request: any): string {
   return (request as any).user?.sub ?? (request.headers['x-user-id'] as string) ?? 'system';
 }
 
+/** The real, forwarded bearer token of the authenticated caller — never this service's own service token — so CE-07's shadow rule-pack registration records/enforces the SAME real identity payroll's own SoD ceremony already established. Null for a call with no Authorization header (e.g. a bare service-to-service call), which the registrar then honestly refuses rather than silently skipping CE-07 registration. */
+function getBearerToken(request: any): string | null {
+  return (request.headers['authorization'] as string | undefined) ?? null;
+}
+
 function handleErr(reply: any, err: unknown) {
   const message = err instanceof Error ? err.message : 'Internal error';
   if (err instanceof RulePackAuthorEqualsActivatorError) return reply.status(403).send({ error: 'RULE_PACK_SOD_VIOLATION', message });
@@ -39,6 +44,8 @@ function handleErr(reply: any, err: unknown) {
   if (err instanceof PaymentHandoffNotFoundError) return reply.status(404).send({ error: err.code, message });
   if (err instanceof PaymentHandoffStateError) return reply.status(422).send({ error: err.code, message });
   if (err instanceof SettlementVerificationFailedError) return reply.status(422).send({ error: err.code, message });
+  if (err instanceof Ce07RulePackRegistrationError) return reply.status(err.status).send({ error: err.code, message: err.message });
+  if (err instanceof MissingBearerTokenError) return reply.status(err.status).send({ error: err.code, message: err.message });
   const statusCode = (err as any)?.statusCode ?? (message.includes('not found') ? 404 : 500);
   return reply.status(statusCode).send({ error: message });
 }
@@ -74,14 +81,25 @@ export async function ce13Routes(app: FastifyInstance, prisma: any) {
       }).parse(request.body);
       const legalEntityId = body.legalEntityId ?? null;
       const existing = await (prisma as any).payrollTenantConfig.findFirst({ where: { tenantId, legalEntityId } });
+      const previousMode = existing?.payrollSourceMode ?? 'NOT_CONFIGURED';
+      const actor = getUserId(request);
       const config = existing
         ? await (prisma as any).payrollTenantConfig.update({
             where: { id: existing.id },
-            data: { payrollSourceMode: body.payrollSourceMode, updatedBy: getUserId(request) },
+            data: { payrollSourceMode: body.payrollSourceMode, updatedBy: actor },
           })
         : await (prisma as any).payrollTenantConfig.create({
-            data: { tenantId, legalEntityId, payrollSourceMode: body.payrollSourceMode, updatedBy: getUserId(request) },
+            data: { tenantId, legalEntityId, payrollSourceMode: body.payrollSourceMode, updatedBy: actor },
           });
+      // fix(integration) — audit successful configuration changes: the
+      // statutory-source boundary mode is the single highest-consequence
+      // payroll config setting (governs whether withholding may ever be
+      // silently estimated). Reuses the same outbox convention
+      // PayrollAuditService already surfaces PAYROLL_BATCH_* events from —
+      // never a second, parallel audit mechanism.
+      await (prisma as any).outboxEvent.create({
+        data: { eventType: 'PAYROLL_SOURCE_MODE_CHANGED', tenantId, payload: { legalEntityId, previousMode, newMode: body.payrollSourceMode, actor } as any },
+      });
       return reply.send(config);
     } catch (err) { return handleErr(reply, err); }
   });
@@ -99,7 +117,7 @@ export async function ce13Routes(app: FastifyInstance, prisma: any) {
     try {
       const tenantId = getTenantId(request);
       const body = z.object({ legalEntityId: z.string().min(1), packKey: z.string().min(1), rows: z.array(RulePackRowSchema) }).parse(request.body);
-      const version = await rulePackSvc.createDraft(tenantId, body.legalEntityId, body.packKey, body.rows, getUserId(request));
+      const version = await rulePackSvc.createDraft(tenantId, body.legalEntityId, body.packKey, body.rows, getUserId(request), getBearerToken(request));
       return reply.status(201).send(version);
     } catch (err) { return handleErr(reply, err); }
   });
@@ -124,7 +142,7 @@ export async function ce13Routes(app: FastifyInstance, prisma: any) {
     try {
       const tenantId = getTenantId(request);
       const { id } = request.params as { id: string };
-      return reply.send(await rulePackSvc.validate(tenantId, id));
+      return reply.send(await rulePackSvc.validate(tenantId, id, getBearerToken(request)));
     } catch (err) { return handleErr(reply, err); }
   });
 
@@ -132,7 +150,7 @@ export async function ce13Routes(app: FastifyInstance, prisma: any) {
     try {
       const tenantId = getTenantId(request);
       const { id } = request.params as { id: string };
-      return reply.send(await rulePackSvc.activate(tenantId, id, getUserId(request)));
+      return reply.send(await rulePackSvc.activate(tenantId, id, getUserId(request), getBearerToken(request)));
     } catch (err) { return handleErr(reply, err); }
   });
 

@@ -88,6 +88,14 @@ export class AmbiguousRulePackMatchError extends Error {
 }
 
 /** D-S023-25 — replay is only defined for an execution whose prior terminal outcome was NOT already POSTED. */
+/** Internal-only signal (never surfaced to an HTTP caller directly) carrying which account number failed to resolve, thrown inside the account-resolution $transaction so a genuine miss aborts that transaction rather than silently continuing under a possibly-wrong RLS context. */
+class AccountResolutionFailedError extends Error {
+  constructor(readonly accountNumber: string) {
+    super(`Account ${accountNumber} could not be resolved`);
+    this.name = 'AccountResolutionFailedError';
+  }
+}
+
 export class ReplayNotEligibleError extends Error {
   readonly status = 422;
   readonly code = 'REPLAY_NOT_ELIGIBLE';
@@ -473,15 +481,24 @@ export class PostingEngineService {
     // envelope's own legalEntityId (never inferred from a candidate that
     // happens to match) is now a hard filter, same standing as tenantId.
     const occurredAt = new Date(envelope.occurredAt);
-    const candidates = await this.prisma.postingRulePackVersion.findMany({
-      where: {
-        tenantId: authenticatedTenantId,
-        entityId: envelope.legalEntityId,
-        eventType: envelope.eventType,
-        status: 'ACTIVE',
-        effectiveFrom: { lte: occurredAt },
-        OR: [{ effectiveTo: null }, { effectiveTo: { gte: occurredAt } }],
-      },
+    // fix(integration): pinned to the SAME connection the tenant-context SET
+    // runs on — see createRulePackVersion's identical fix above for the
+    // full explanation (rls-middleware.ts's disclosed connection-pool
+    // limitation). Found live during CE-13 governed-posting certification:
+    // this call had no such protection, so a real ACTIVE rule pack was
+    // intermittently invisible to its own event-matching query.
+    const candidates = await this.prisma.$transaction(async (tx) => {
+      await setTenantContextOnConnection(tx, authenticatedTenantId);
+      return tx.postingRulePackVersion.findMany({
+        where: {
+          tenantId: authenticatedTenantId,
+          entityId: envelope.legalEntityId,
+          eventType: envelope.eventType,
+          status: 'ACTIVE',
+          effectiveFrom: { lte: occurredAt },
+          OR: [{ effectiveTo: null }, { effectiveTo: { gte: occurredAt } }],
+        },
+      });
     });
     const matchingSchema = candidates.filter((c) => c.eventSchemaVersions.includes(envelope.eventSchemaVersion));
     const considered = candidates.map((c) => ({ id: c.id, packKey: c.packKey, semver: c.semver }));
@@ -521,15 +538,28 @@ export class PostingEngineService {
     const blueprintHash = hashBlueprint(match.rule.ruleId, lines);
 
     // Resolve account ids for the accepted posting path's line shape.
-    const accountIds = new Map<string, string>();
-    for (const line of lines) {
-      if (accountIds.has(line.accountNumber)) continue;
-      const acct = await this.prisma.glAccount.findUnique({ where: { entityId_accountNumber: { entityId: pack.entityId, accountNumber: line.accountNumber } } });
-      if (!acct) {
-        return this.finalizeRejected(authenticatedTenantId, envelope, eventHash, selected.id, match.rule.ruleId, blueprintHash,
-          `Account ${line.accountNumber} could not be resolved for entity ${pack.entityId} at posting time.`, classifyFailure('account-resolution', ''), actor);
-      }
-      accountIds.set(line.accountNumber, acct.id);
+    // fix(integration): pinned to one connection with the tenant context
+    // explicitly SET on it — found live during CE-13 governed-posting
+    // certification returning a false "could not be resolved" for an
+    // account that genuinely existed (same rls-middleware.ts connection-pool
+    // class of bug already fixed elsewhere in this file).
+    let accountIds: Map<string, string>;
+    try {
+      accountIds = await this.prisma.$transaction(async (tx) => {
+        await setTenantContextOnConnection(tx, authenticatedTenantId);
+        const ids = new Map<string, string>();
+        for (const line of lines) {
+          if (ids.has(line.accountNumber)) continue;
+          const acct = await tx.glAccount.findUnique({ where: { entityId_accountNumber: { entityId: pack.entityId, accountNumber: line.accountNumber } } });
+          if (!acct) throw new AccountResolutionFailedError(line.accountNumber);
+          ids.set(line.accountNumber, acct.id);
+        }
+        return ids;
+      });
+    } catch (e) {
+      if (!(e instanceof AccountResolutionFailedError)) throw e;
+      return this.finalizeRejected(authenticatedTenantId, envelope, eventHash, selected.id, match.rule.ruleId, blueprintHash,
+        `Account ${e.accountNumber} could not be resolved for entity ${pack.entityId} at posting time.`, classifyFailure('account-resolution', ''), actor);
     }
 
     return this.evaluateAndPost(authenticatedTenantId, envelope, eventHash, pack, selected.id, match.rule.ruleId, blueprintHash, lines, accountIds, actor);

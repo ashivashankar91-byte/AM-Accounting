@@ -84,9 +84,23 @@ interface ResolvedGlLine {
   amount: number;
 }
 
+/**
+ * fix(integration): CE-07's line-item DSL requires every debitLineItemsPath/
+ * creditLineItemsPath entry to resolve to a POSITIVE decimal amount
+ * (services/coa-service/.../blueprint.ts's resolveLineItems ->
+ * INVALID_AMOUNT) — a real GL journal never carries a meaningless $0.00
+ * line. payroll-service's own buildJournalLines emits one distribution PER
+ * POSSIBLE pay component regardless of whether this batch actually used it
+ * (e.g. EMPLOYER_FICA_EXPENSE debit 0 when no employer FICA was withheld
+ * this run) — those zero-amount rows are honest bookkeeping placeholders on
+ * the payroll side, never something CE-07's authoritative journal should
+ * ever receive as a "line". Filtered out here, not upstream, so
+ * payroll-service's own register/reporting still sees the full component
+ * breakdown including legitimate zeros.
+ */
 function toResolvedLines(distributions: PayrollDistributionLine[], direction: 'DEBIT' | 'CREDIT'): ResolvedGlLine[] {
   return distributions
-    .filter((d) => d.direction === direction)
+    .filter((d) => d.direction === direction && Math.abs(d.amount) > 0.005)
     .map((d) => ({ accountNumber: d.payComponent, storeId: PAYROLL_DEFAULT_STORE_ID, deptCode: d.department || null, amount: d.amount }));
 }
 
@@ -114,7 +128,8 @@ const WIRE_EVENT_TYPE: Record<PayrollPostingEventInput['eventType'], string> = {
 
 export interface PayrollPostingEventInput {
   tenantId: string;
-  legalEntityId?: string | null;
+  /** Required — the batch's own persisted legal entity. Never defaulted to tenantId; both callers (postBatch/voidBatch) already fail closed with LegalEntityReconciliationRequiredError before this gateway is ever invoked if it's missing. */
+  legalEntityId: string;
   batchId: string;
   batchNumber: string;
   businessDate: string; // YYYY-MM-DD
@@ -187,13 +202,14 @@ export class HttpPostingGateway implements IPostingGateway {
     const envelope = {
       eventId,
       tenantId: input.tenantId,
-      // CE-07 requires legalEntityId as a top-level, non-empty envelope
-      // field (services/coa-service/.../event-envelope.ts REQUIRED_ENVELOPE_FIELDS)
-      // — payroll-service has no legal-entity dimension of its own, so this
-      // follows the same single-entity-per-tenant default apar-service's
-      // ap-invoice-envelope.ts already establishes (legalEntityId = tenantId
-      // unless the caller resolved a real one).
-      legalEntityId: input.legalEntityId ?? input.tenantId,
+      // fix(integration): CE-07 requires legalEntityId as a top-level,
+      // non-empty envelope field (services/coa-service/.../event-envelope.ts
+      // REQUIRED_ENVELOPE_FIELDS) — the batch's own real, persisted legal
+      // entity, NEVER a tenantId substitution. Both callers of this gateway
+      // (payroll-service.ts's postBatch/voidBatch) already fail closed with
+      // LegalEntityReconciliationRequiredError before reaching here if the
+      // batch has none, so input.legalEntityId is always real by this point.
+      legalEntityId: input.legalEntityId,
       eventType: WIRE_EVENT_TYPE[input.eventType],
       eventSchemaVersion: '1.0',
       occurredAt: nowIso,
@@ -207,7 +223,7 @@ export class HttpPostingGateway implements IPostingGateway {
       payload: {
         batchId: input.batchId,
         batchNumber: input.batchNumber,
-        legalEntityId: input.legalEntityId ?? null,
+        legalEntityId: input.legalEntityId,
         payPeriodStart: input.payPeriodStart,
         payPeriodEnd: input.payPeriodEnd,
         // Raw business facts (payComponent/department/direction) — kept for

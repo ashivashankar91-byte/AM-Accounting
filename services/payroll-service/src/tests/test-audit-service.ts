@@ -72,4 +72,25 @@ describe('PayrollAuditService', () => {
     // filtering by employeeId excludes batch-level source events entirely rather than guessing a match
     expect(result.find((r) => r.kind === 'SOURCE_EVENT')).toBeUndefined();
   });
+
+  // fix(integration) — audits the two highest-consequence configuration
+  // mutations (statutory-source-mode change, rule-pack activation).
+  it('surfaces a real PAYROLL_SOURCE_MODE_CHANGED configuration-change event', async () => {
+    const prisma = makePrisma({
+      outbox: [{ id: 'evt-cfg-1', eventType: 'PAYROLL_SOURCE_MODE_CHANGED', createdAt: new Date('2026-08-01T00:00:00Z'), payload: { previousMode: 'NOT_CONFIGURED', newMode: 'MANUAL_ATTESTED', actor: 'controller-1' } }],
+    });
+    const svc = new PayrollAuditService(prisma as any);
+    const result = await svc.query('tenant-test' as any, {});
+    expect(result[0].action).toBe('PAYROLL_SOURCE_MODE_CHANGED');
+    expect(result[0].actor).toBe('controller-1');
+  });
+
+  it('surfaces a real PAYROLL_RULE_PACK_ACTIVATED configuration-change event', async () => {
+    const prisma = makePrisma({
+      outbox: [{ id: 'evt-cfg-2', eventType: 'PAYROLL_RULE_PACK_ACTIVATED', createdAt: new Date('2026-08-01T00:00:00Z'), payload: { versionId: 'v1', packKey: 'k', author: 'author-1', activatedBy: 'activator-1' } }],
+    });
+    const svc = new PayrollAuditService(prisma as any);
+    const result = await svc.query('tenant-test' as any, { action: 'PAYROLL_RULE_PACK_ACTIVATED' });
+    expect(result[0].evidence).toMatchObject({ packKey: 'k', author: 'author-1', activatedBy: 'activator-1' });
+  });
 });

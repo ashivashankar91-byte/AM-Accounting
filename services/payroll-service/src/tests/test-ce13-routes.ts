@@ -82,12 +82,32 @@ function makePrisma() {
       create: vi.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: 'bridge-1', ...data })),
       findMany: vi.fn().mockResolvedValue([]),
     },
+    outboxEvent: { create: vi.fn().mockResolvedValue({}) },
+  };
+}
+
+// fix(integration): the real CE-07 shadow-registration side effect
+// (services/payroll-service/src/infrastructure/ce07-rule-pack-registrar.ts)
+// is a separate HTTP boundary to coa-service — this HTTP-level test suite
+// mocks it exactly like it mocks Prisma, so the assertions below stay
+// focused on ce13-routes.ts's own request/response contract and
+// PayrollRulePackService's own SoD/status-transition logic. The real
+// end-to-end CE-07 registration is proven live in
+// services/payroll-service/src/tests/test-rule-pack-service.ts's dedicated
+// CE-07 describe blocks and the live curl/Playwright certification.
+function makeCe07RegistrarStub() {
+  let seq = 0;
+  return {
+    draft: vi.fn().mockImplementation(async () => ({ id: `ce07-version-${++seq}`, status: 'DRAFT' })),
+    validate: vi.fn().mockResolvedValue({ valid: true, findings: [] }),
+    activate: vi.fn().mockResolvedValue({ status: 'ACTIVE' }),
   };
 }
 
 async function buildApp(prisma: any) {
   container.reset();
   container.registerInstance('PrismaClient', prisma);
+  container.registerInstance('ICe07RulePackRegistrar', makeCe07RegistrarStub());
   container.register('PayrollRulePackService', { useClass: PayrollRulePackService });
   container.registerInstance('PaymentHandoffService', new Proxy({}, { get: () => async () => ({}) }));
   container.registerInstance('PayrollAuditService', new Proxy({}, { get: () => async () => ({ items: [] }) }));

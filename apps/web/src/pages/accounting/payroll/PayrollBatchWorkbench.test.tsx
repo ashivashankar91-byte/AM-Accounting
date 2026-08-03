@@ -96,6 +96,22 @@ describe('PayrollBatchWorkbench', () => {
     await waitFor(() => expect(payrollApi.addBatchItem).toHaveBeenCalled());
   });
 
+  it('fix(integration): an attested gross withholding figure is sent under the real PayrollWithholdingLines.federalTax field, never the non-existent totalWithholding key that a prior defect silently discarded', async () => {
+    const user = userEvent.setup();
+    (payrollApi.getBatch as any).mockResolvedValue(BATCH);
+    (payrollApi.addBatchItem as any).mockResolvedValue({ id: 'item-1' });
+    renderPage();
+
+    await screen.findByTestId('payroll-add-item-form');
+    await user.type(screen.getByTestId('payroll-item-employee-id'), 'emp-1');
+    await user.type(screen.getByPlaceholderText(/Attested gross withholding/i), '300');
+    await user.click(screen.getByTestId('payroll-item-submit'));
+    await waitFor(() => expect(payrollApi.addBatchItem).toHaveBeenCalledWith(
+      'batch-1',
+      expect.objectContaining({ attestedWithholding: { federalTax: 300 } }),
+    ));
+  });
+
   it('runs validation', async () => {
     const user = userEvent.setup();
     (payrollApi.getBatch as any).mockResolvedValue(BATCH);

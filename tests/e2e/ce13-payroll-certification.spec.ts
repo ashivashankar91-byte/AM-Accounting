@@ -26,27 +26,25 @@
  *     npx playwright test tests/e2e/ce13-payroll-certification.spec.ts --project=chromium
  *
  * ─────────────────────────────────────────────────────────────────────────
- * REMAINING GENUINE FINDING (disclosed, not papered over — re-verified live
- * immediately before this run via a direct create→validate→approve→post
- * cycle against a real ACTIVE payroll rule pack in this same environment):
- *   Governed posting still returns ACCOUNT_MAPPING_VALUES_PENDING ("No
- *   active rule pack version covers this event type/schema version/date.")
- *   from coa-service's posting-engine side of the handshake, even against a
- *   fully validated, SoD-approved batch and a real ACTIVE payroll-authored
- *   rule pack. This is coa-service's posting-engine rule-pack matcher not
- *   yet recognizing payroll-authored packs by event type/schema version —
- *   a pre-existing, disclosed integration gap between payroll-service's own
- *   S025 rule-pack governance (which DOES work end-to-end: create →
- *   validate → author-self-activation-denied → approver-activated, proven
- *   below) and coa-service's posting-engine, first found in an earlier
- *   integration phase and explicitly out of scope for this phase's UI/
- *   security/browser-certification closure work (coa-service's
- *   posting-engine rule-pack matcher is a separate subsystem this phase did
- *   not touch). Consequence for this run: scenarios that depend on a
- *   successful post (journal display, payment-handoff progressing past
- *   NOT_CONFIGURED, void/reversal producing two real journals) instead
- *   assert the real, truthful refusal — never a fabricated journal id or
- *   handoff state.
+ * GOVERNED-POSTING GAP CLOSED (was the sole remaining blocker in the prior
+ * closure pass — this run proves the fix live, not just via unit test):
+ *   Root cause was that payroll's own S025 rule pack (packKey/rows —
+ *   payComponent -> real GL account NUMBER) was never CE-07's OWN
+ *   posting-engine rule pack (services/coa-service/src/domain/posting-engine
+ *   — eventType/schemaVersion/legalEntityId/effective-date -> blueprint).
+ *   Nothing ever registered the latter for payroll.batch.posted.v1 /
+ *   payroll.batch.reversed.v1, so every real post deterministically refused
+ *   with NO_RULE_MATCH regardless of how correct payroll's own S025
+ *   governance was. Fixed by
+ *   services/payroll-service/src/infrastructure/ce07-rule-pack-registrar.ts:
+ *   activating a payroll rule pack version now ALSO drafts/validates/
+ *   activates a real, matching CE-07 shadow rule pack — authenticated as
+ *   the SAME two real, distinct author/activator identities payroll's own
+ *   SoD ceremony already establishes, so CE-07's own author != activator
+ *   SoD and ADMIN-only activation tier are independently, honestly enforced
+ *   (never bypassed, never a fabricated success). Scenarios below now
+ *   assert the REAL success path — a genuine, balanced, POSTED gl-service
+ *   journal — as a hard requirement, not an optional branch.
  * ─────────────────────────────────────────────────────────────────────────
  */
 import { test, expect, Page, APIRequestContext } from '@playwright/test';
@@ -69,6 +67,31 @@ const ENTITY_XT = process.env['CE13_ENTITY_XT']!;
 // Unique run id so re-running this spec never collides with a prior run's
 // batch numbers / providerRunIds / employee codes / rule-pack keys.
 const RUN = Date.now();
+
+// fix(integration): the main CE-13 batch's pay PERIOD (start/end) is
+// anchored to RUN, entirely decoupled from "today" — so repeated same-day
+// suite runs against this same persistent database never collide on
+// payroll-service's Rule 9 (no period overlap with an already-POSTED batch
+// of the same frequency, see payroll-service.ts's validate()). Before the
+// governed-posting fix, this batch never reached POSTED, so the collision
+// was latent; now that real posting succeeds (proving the fix), a stable,
+// unique period per run is required for the suite to be safely re-runnable.
+// payDate is deliberately left anchored to the real "today" (+3 days) since
+// Rule 5 independently rejects a pay date more than 7 days in the future —
+// no rule ties payPeriodEnd to payDate, so the two can vary independently.
+// Shared by scenario 5 (which creates the batch) and the
+// duplicate-payroll-prevention scenario (which must resubmit the EXACT SAME
+// window to prove the duplicate check).
+function mainBatchWindow() {
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  const payDate = fmt(new Date(Date.now() + 3 * 86_400_000));
+  const periodAnchor = new Date(946_684_800_000 + (RUN % 100_000) * 86_400_000); // 2000-01-01 + up to ~274 years, keyed off RUN
+  return {
+    periodStart: fmt(new Date(periodAnchor.getTime() - 10 * 86_400_000)),
+    periodEnd: fmt(periodAnchor),
+    payDate,
+  };
+}
 
 let SALES_EMPLOYEE_ID: string;
 let ENTITY_B_EMPLOYEE_ID: string;
@@ -189,6 +212,18 @@ test.describe.serial('CE-13 Payroll Certification — real backend, real Postgre
     expect(empBRes.ok()).toBeTruthy();
     ENTITY_B_EMPLOYEE_ID = (await empBRes.json()).id;
 
+    // A real coa-service (CE-07) GL account for entity A — the account
+    // NUMBER payroll's own GL mapping resolves pay components to, which
+    // CE-07's posting engine independently resolves again at post-time
+    // (services/coa-service/.../posting-engine-service.ts's account-id
+    // lookup) before it will ever write a journal line against it. 409
+    // (already exists, e.g. a re-run of this suite) is equally acceptable.
+    const acctRes = await request.post(`${API_BASE}/api/v1/coa/accounts`, {
+      headers: { Authorization: `Bearer ${token}`, 'x-tenant-id': TENANT_A },
+      data: { entityId: ENTITY_A, accountNumber: '60000', name: 'CE13 Cert Payroll Clearing', type: 'EXPENSE', normalBalance: 'DR', postable: true },
+    });
+    expect([201, 409]).toContain(acctRes.status());
+
     await page.goto(`${BASE}/accounting/payroll/governance`);
     await expect(page.getByTestId('payroll-governance-page')).toBeVisible();
     await expect(page.getByTestId('payroll-gov-tab-source-mode')).toBeVisible();
@@ -216,6 +251,15 @@ test.describe.serial('CE-13 Payroll Certification — real backend, real Postgre
     const pack = await createRes.json();
     expect(pack.status).toBe('DRAFT');
     expect(pack.legalEntityId).toBe(ENTITY_A);
+    // fix(integration): creating a payroll rule pack now ALSO drafts a real
+    // shadow CE-07 posting-engine rule pack for both PAYROLL_BATCH_POSTED
+    // and PAYROLL_BATCH_REVERSED — the SEPARATE, authoritative record CE-07
+    // itself matches real events against (see
+    // infrastructure/ce07-rule-pack-registrar.ts). Without this, S025
+    // governance can be fully correct on the payroll side and every real
+    // post would still deterministically refuse with NO_RULE_MATCH.
+    expect(pack.ce07PostedVersionId, 'a real CE-07 shadow rule pack must be drafted for PAYROLL_BATCH_POSTED').toBeTruthy();
+    expect(pack.ce07ReversedVersionId, 'a real CE-07 shadow rule pack must be drafted for PAYROLL_BATCH_REVERSED').toBeTruthy();
     RULE_PACK_ID = pack.id;
 
     const validateRes = await request.post(`${API_BASE}/api/v1/payroll/rule-packs/${pack.id}/validate`, {
@@ -237,6 +281,13 @@ test.describe.serial('CE-13 Payroll Certification — real backend, real Postgre
     await expect(page.getByTestId('payroll-governance-action-error')).toBeVisible({ timeout: 10_000 });
     await expect(page.getByTestId('payroll-governance-action-error')).toContainText(/RULE_PACK_SOD_VIOLATION|author/i);
 
+    // fix(integration): the approver must hold CE-07's OWN
+    // posting_engine.rule_pack.activate permission — deliberately ADMIN-only
+    // (the documented "highest-risk, hardest-to-reverse transition"
+    // precedent, matching fiscal.period.lock) — since activating a payroll
+    // rule pack now ALSO activates the real CE-07 shadow rule pack.
+    // approver@ce13cert.test is seeded as ADMIN for exactly this reason
+    // (see scripts/ce13-cert-seed.mjs).
     await logout(page);
     await login(page, TENANT_A, APPROVER_EMAIL, PASSWORD);
     await page.goto(`${BASE}/accounting/payroll/governance`);
@@ -245,6 +296,20 @@ test.describe.serial('CE-13 Payroll Certification — real backend, real Postgre
     await page.getByTestId(`payroll-rule-pack-activate-${pack.id}`).click();
     await expect(page.getByTestId('payroll-governance-action-error')).not.toBeVisible({ timeout: 5_000 });
     await expect(page.getByTestId(`payroll-rule-pack-row-${pack.id}`)).toContainText('ACTIVE', { timeout: 10_000 });
+
+    // Direct-API proof that the shadow CE-07 rule packs are genuinely
+    // ACTIVE in coa-service itself — not just recorded as such on the
+    // payroll side.
+    const approverToken = await apiLogin(request, TENANT_A, APPROVER_EMAIL);
+    const ce07Res = await request.get(`${API_BASE}/api/v1/coa/posting-engine/rule-packs?entityId=${ENTITY_A}`, {
+      headers: { Authorization: `Bearer ${approverToken}`, 'x-tenant-id': TENANT_A },
+    });
+    expect(ce07Res.ok()).toBeTruthy();
+    const ce07Packs = (await ce07Res.json()).items ?? [];
+    const postedShadow = ce07Packs.find((p: any) => p.versions?.some((v: any) => v.id === pack.ce07PostedVersionId));
+    const reversedShadow = ce07Packs.find((p: any) => p.versions?.some((v: any) => v.id === pack.ce07ReversedVersionId));
+    expect(postedShadow?.versions.find((v: any) => v.id === pack.ce07PostedVersionId)?.status, 'CE-07 shadow rule pack (posted) must be genuinely ACTIVE').toBe('ACTIVE');
+    expect(reversedShadow?.versions.find((v: any) => v.id === pack.ce07ReversedVersionId)?.status, 'CE-07 shadow rule pack (reversed) must be genuinely ACTIVE').toBe('ACTIVE');
   });
 
   // ── 4. Commission plan, split/draw/guarantee, dispute ─────────────────────
@@ -318,12 +383,7 @@ test.describe.serial('CE-13 Payroll Certification — real backend, real Postgre
     await page.reload();
 
     const providerRunId = `ce13-cert-run-${RUN}`;
-    const today = new Date();
-    const fmt = (d: Date) => d.toISOString().slice(0, 10);
-    const payDate = fmt(new Date(today.getTime() + 3 * 86_400_000));
-    const periodOffsetDays = 10 + (RUN % 1000);
-    const periodStart = fmt(new Date(today.getTime() - periodOffsetDays * 86_400_000));
-    const periodEnd = fmt(new Date(today.getTime() + 3 * 86_400_000));
+    const { periodStart, periodEnd, payDate } = mainBatchWindow();
 
     await page.getByTestId('payroll-new-batch-btn').click();
     await expect(page.getByTestId('payroll-create-batch-form')).toBeVisible();
@@ -367,7 +427,7 @@ test.describe.serial('CE-13 Payroll Certification — real backend, real Postgre
     // never silently accepted.
     const crossRes = await request.post(`${API_BASE}/api/v1/payroll/batches/${BATCH_ID}/items`, {
       headers: { Authorization: `Bearer ${token}`, 'x-tenant-id': TENANT_A },
-      data: { employeeId: ENTITY_B_EMPLOYEE_ID, regularPay: 500, attestedBy: 'CE13 Cert Author', sourceDocumentRef: `PROVIDER-XENT-${RUN}`, attestedWithholding: { totalWithholding: 100 } },
+      data: { employeeId: ENTITY_B_EMPLOYEE_ID, regularPay: 500, attestedBy: 'CE13 Cert Author', sourceDocumentRef: `PROVIDER-XENT-${RUN}`, attestedWithholding: { federalTax: 100 } },
     });
     expect(crossRes.status()).toBe(422);
     expect((await crossRes.json()).error ?? (await crossRes.text())).toBeTruthy();
@@ -427,7 +487,7 @@ test.describe.serial('CE-13 Payroll Certification — real backend, real Postgre
     const unmappedBatch = await unmappedBatchRes.json();
     const addUnmappedItemRes = await request.post(`${API_BASE}/api/v1/payroll/batches/${unmappedBatch.id}/items`, {
       headers: { Authorization: `Bearer ${token}`, 'x-tenant-id': TENANT_A },
-      data: { employeeId: partsEmployee.id, regularPay: 900, attestedBy: 'CE13 Cert Author', sourceDocumentRef: `PROVIDER-REG-PARTS-${RUN}`, attestedWithholding: { totalWithholding: 180 } },
+      data: { employeeId: partsEmployee.id, regularPay: 900, attestedBy: 'CE13 Cert Author', sourceDocumentRef: `PROVIDER-REG-PARTS-${RUN}`, attestedWithholding: { federalTax: 180 } },
     });
     expect(addUnmappedItemRes.ok()).toBeTruthy();
     const validateUnmappedRes = await request.post(`${API_BASE}/api/v1/payroll/batches/${unmappedBatch.id}/validate`, {
@@ -466,9 +526,10 @@ test.describe.serial('CE-13 Payroll Certification — real backend, real Postgre
     await expect(page.getByTestId('payroll-batch-action-error')).not.toBeVisible({ timeout: 10_000 });
     await expect(page.getByTestId('payroll-batch-workbench-page')).toContainText(/APPROVED/i, { timeout: 10_000 });
 
-    // 8/9/10/13. Governed posting — real attempt through the UI, honest
-    // reporting either way. Approver who approved cannot also post (SoD),
-    // so post as the original author.
+    // 8/9/10/13. Governed posting — real attempt through the UI. Approver
+    // who approved cannot also post (SoD), so post as the original author.
+    // With the CE-07 shadow rule pack now genuinely ACTIVE (scenario 3),
+    // this is a HARD success requirement, not an optional branch.
     await logout(page);
     await login(page, TENANT_A, AUTHOR_EMAIL, PASSWORD);
     await page.goto(batchUrl);
@@ -477,19 +538,35 @@ test.describe.serial('CE-13 Payroll Certification — real backend, real Postgre
     await page.getByTestId('payroll-batch-tab-posting').click();
     await page.getByTestId('payroll-post-btn').click();
     await expect(page.getByTestId('payroll-batch-action-result').or(page.getByTestId('payroll-batch-action-error'))).toBeVisible({ timeout: 10_000 });
-    const journalLink = page.getByTestId('payroll-journal-link');
-    if (await journalLink.isVisible({ timeout: 5_000 }).catch(() => false)) {
-      // 9/10. PAYROLL_BATCH_POSTED + journal display — genuine success path.
-      await expect(journalLink).toBeVisible();
-    } else {
-      // GENUINE FINDING (see file header) — real refusal asserted truthfully.
-      await expect(page.getByTestId('payroll-batch-action-error')).toBeVisible();
-      await expect(page.getByTestId('payroll-batch-action-error')).toContainText(/ACCOUNT_MAPPING_VALUES_PENDING|no active rule pack/i);
-      test.info().annotations.push({
-        type: 'finding',
-        description: 'Governed posting refused with ACCOUNT_MAPPING_VALUES_PENDING even with a real ACTIVE, entity-scoped payroll rule pack in place — coa-service posting-engine does not recognize this rule pack by event type/schema version. See file header.',
-      });
+    if (await page.getByTestId('payroll-batch-action-error').isVisible({ timeout: 2_000 }).catch(() => false)) {
+      const errText = await page.getByTestId('payroll-batch-action-error').textContent();
+      throw new Error(`Governed posting was refused; expected a real success given the ACTIVE CE-07 shadow rule pack from scenario 3: ${errText}`);
     }
+    // 9/10. PAYROLL_BATCH_POSTED + real journal display — genuine success.
+    const journalLink = page.getByTestId('payroll-journal-link');
+    await expect(journalLink).toBeVisible({ timeout: 10_000 });
+    const journalAnchor = journalLink.locator('a');
+    const journalHref = await journalAnchor.getAttribute('href');
+    const journalId = journalHref!.split('/').pop()!;
+
+    // Direct-API proof of the AUTHORITATIVE gl-service journal: balanced,
+    // and containing the configured account mapping (60000) — never a
+    // fabricated/partial journal.
+    const journalRes = await request.get(`${API_BASE}/api/v1/gl/journal-entries/${journalId}`, { headers: { Authorization: `Bearer ${token}`, 'x-tenant-id': TENANT_A } });
+    expect(journalRes.ok()).toBeTruthy();
+    const journal = await journalRes.json();
+    expect(journal.lines.length, 'journal must contain real posted lines').toBeGreaterThan(0);
+    expect(journal.lines.every((l: any) => l.glAccountCode === '60000')).toBe(true);
+    const totalDebits = journal.lines.reduce((s: number, l: any) => s + Number(l.debit), 0);
+    const totalCredits = journal.lines.reduce((s: number, l: any) => s + Number(l.credit), 0);
+    expect(Math.abs(totalDebits - totalCredits), 'journal must be balanced').toBeLessThan(0.01);
+
+    // Approve the journal (PO-DEC-001 agent-review gate — never
+    // auto-approved by this path) to reach real POSTED status and confirm
+    // JOURNAL_ENTRY_POSTED evidence.
+    const approveJournalRes = await request.post(`${API_BASE}/api/v1/gl/journal-entries/${journalId}/approve`, { headers: { Authorization: `Bearer ${token}`, 'x-tenant-id': TENANT_A }, data: {} });
+    expect(approveJournalRes.ok()).toBeTruthy();
+    expect((await approveJournalRes.json()).status).toBe('POSTED');
 
     // 12. Payroll register and YTD.
     await page.getByTestId('payroll-batch-tab-register').click();
@@ -506,36 +583,25 @@ test.describe.serial('CE-13 Payroll Certification — real backend, real Postgre
     await page.getByTestId('payroll-batch-number-input').fill(`CE13-CERT-DUP-${RUN}`);
     await page.getByTestId('payroll-provider-run-id-input').fill(`ce13-cert-run-${RUN}`);
     const dupForm = page.locator('[data-testid="payroll-create-batch-form"]');
-    const today = new Date();
-    const fmt = (d: Date) => d.toISOString().slice(0, 10);
-    const periodOffsetDays = 10 + (RUN % 1000);
-    await dupForm.locator('input[type="date"]').nth(0).fill(fmt(new Date(today.getTime() - periodOffsetDays * 86_400_000)));
-    await dupForm.locator('input[type="date"]').nth(1).fill(fmt(new Date(today.getTime() + 3 * 86_400_000)));
-    await dupForm.locator('input[type="date"]').nth(2).fill(fmt(new Date(today.getTime() + 3 * 86_400_000)));
+    const dupWindow = mainBatchWindow();
+    await dupForm.locator('input[type="date"]').nth(0).fill(dupWindow.periodStart);
+    await dupForm.locator('input[type="date"]').nth(1).fill(dupWindow.periodEnd);
+    await dupForm.locator('input[type="date"]').nth(2).fill(dupWindow.payDate);
     await page.getByTestId('payroll-create-batch-submit').click();
     await expect(page.getByTestId('payroll-create-batch-error')).toBeVisible({ timeout: 10_000 });
     await expect(page.getByTestId('payroll-create-batch-error')).toContainText(/already exists for providerRunId|duplicate/i);
 
     // 18. Safe retry — a legitimately-idempotent resubmit of the SAME post
     // action (CE-07 envelope-hash idempotency, see event-envelope.ts's
-    // hashEnvelope excluding occurredAt) must produce the SAME real outcome
-    // both times — never a duplicate journal, and never a different/worse
-    // error on the second attempt.
+    // hashEnvelope excluding occurredAt) must return the SAME original
+    // journal both times — never a duplicate journal, never a worse error.
     await page.goto(batchUrl);
     await page.getByTestId('payroll-batch-tab-posting').click();
     await page.getByTestId('payroll-post-btn').click();
     await expect(page.getByTestId('payroll-batch-action-result').or(page.getByTestId('payroll-batch-action-error'))).toBeVisible({ timeout: 10_000 });
-    const firstOutcome = (await journalLink.isVisible({ timeout: 2_000 }).catch(() => false))
-      ? 'POSTED'
-      : (await page.getByTestId('payroll-batch-action-error').textContent()) ?? '';
-    await page.getByTestId('payroll-post-btn').click();
-    await expect(page.getByTestId('payroll-batch-action-result').or(page.getByTestId('payroll-batch-action-error'))).toBeVisible({ timeout: 10_000 });
-    if (firstOutcome === 'POSTED') {
-      await expect(journalLink).toBeVisible();
-    } else {
-      await expect(page.getByTestId('payroll-batch-action-error')).toBeVisible();
-      await expect(page.getByTestId('payroll-batch-action-error')).toContainText(firstOutcome);
-    }
+    await expect(journalLink).toBeVisible({ timeout: 10_000 });
+    const retryJournalHref = await journalAnchor.getAttribute('href');
+    expect(retryJournalHref, 'retry must return the ORIGINAL journal, never a new/duplicate one').toBe(journalHref);
   });
 
   // ── 11. Commission journal drill-down ─────────────────────────────────────
@@ -662,13 +728,9 @@ test.describe.serial('CE-13 Payroll Certification — real backend, real Postgre
     await selectEntity(page, ENTITY_A, 'CE13-A — CE13 Cert Legal Entity A');
     await page.reload();
     await page.getByTestId('payroll-batch-tab-handoff').click();
-    // Because governed posting is genuinely refused in this environment
-    // (see file header), the handoff never progresses past NOT_CONFIGURED —
-    // asserted honestly rather than fabricating a later state. If posting
-    // ever succeeds in a future run (the coa-service gap is fixed), the
-    // panel renders the real handoff record instead — both are valid,
-    // truthful outcomes this assertion accepts.
-    await expect(page.getByTestId('payroll-handoff-not-configured').or(page.getByTestId('payroll-handoff-panel'))).toBeVisible({ timeout: 10_000 });
+    // This batch was genuinely POSTED by the prior serial test (real CE-07
+    // shadow rule pack now ACTIVE), so the real handoff panel must render.
+    await expect(page.getByTestId('payroll-handoff-panel')).toBeVisible({ timeout: 10_000 });
   });
 
   // ── 20. LEGAL_ENTITY_RECONCILIATION_REQUIRED demo (identity-conflict) ────
@@ -740,11 +802,12 @@ test.describe.serial('CE-13 Payroll Certification — real backend, real Postgre
     }
   });
 
-  // ── 22. Void / reversal (real disclosed refusal upstream of posting) ─────
-  test('22. Void/reversal is only reachable from a real POSTED batch — refused honestly for an unposted one', async ({ page, request }) => {
+  // ── 22. Void / reversal (real success path) ───────────────────────────────
+  test('22. Void/reversal of a real POSTED batch creates a linked reversing journal, preserving the original journal identity', async ({ page, request }) => {
     const token = await apiLogin(request, TENANT_A, AUTHOR_EMAIL);
     const batchCheck = await request.get(`${API_BASE}/api/v1/payroll/batches/${BATCH_ID}`, { headers: { Authorization: `Bearer ${token}`, 'x-tenant-id': TENANT_A } });
     const batch = await batchCheck.json();
+    expect(batch.status, 'batch must be genuinely POSTED by the prior serial test').toBe('POSTED');
 
     await login(page, TENANT_A, AUTHOR_EMAIL, PASSWORD);
     await page.goto(`${BASE}/accounting/payroll/batches/${BATCH_ID}`);
@@ -753,24 +816,31 @@ test.describe.serial('CE-13 Payroll Certification — real backend, real Postgre
     await page.getByTestId('payroll-void-btn').click();
     await expect(page.getByTestId('payroll-batch-action-result').or(page.getByTestId('payroll-batch-action-error'))).toBeVisible({ timeout: 10_000 });
 
-    if (batch.status === 'POSTED') {
-      // Genuine success path: both the original and the reversal journal
-      // are real, distinct ids (original journal identity never overwritten).
-      const afterVoid = await request.get(`${API_BASE}/api/v1/payroll/batches/${BATCH_ID}`, { headers: { Authorization: `Bearer ${token}`, 'x-tenant-id': TENANT_A } });
-      const afterBody = await afterVoid.json();
-      expect(afterBody.status).toBe('VOID');
-      expect(afterBody.journalEntryId).toBe(batch.journalEntryId);
-    } else {
-      await expect(page.getByTestId('payroll-batch-action-error')).toBeVisible();
-      test.info().annotations.push({
-        type: 'finding',
-        description: `Void/reversal correctly refused a non-POSTED batch (status was ${batch.status} at the time of this call) — real dependency-unavailable state, not fabricated. Downstream of the same disclosed governed-posting gap in the file header.`,
-      });
-    }
+    // Genuine success path: the ORIGINAL journal's identity is preserved on
+    // the batch (never overwritten), and a real, distinct reversing journal
+    // is linked via the PAYROLL_BATCH_VOIDED source event (S218 reversal —
+    // see payroll-service.ts's voidBatch).
+    const afterVoid = await request.get(`${API_BASE}/api/v1/payroll/batches/${BATCH_ID}`, { headers: { Authorization: `Bearer ${token}`, 'x-tenant-id': TENANT_A } });
+    const afterBody = await afterVoid.json();
+    expect(afterBody.status).toBe('VOID');
+    expect(afterBody.journalEntryId).toBe(batch.journalEntryId);
+
+    const auditRes = await request.get(`${API_BASE}/api/v1/payroll/audit?batchId=${BATCH_ID}&action=PAYROLL_BATCH_VOIDED`, { headers: { Authorization: `Bearer ${token}`, 'x-tenant-id': TENANT_A } });
+    expect(auditRes.ok()).toBeTruthy();
+    const reversalEvent = (await auditRes.json()).items?.[0];
+    expect(reversalEvent?.journalEntryId, 'a real, distinct reversing journal must be linked').toBeTruthy();
+    expect(reversalEvent.journalEntryId).not.toBe(batch.journalEntryId);
+
+    const reversalRes = await request.get(`${API_BASE}/api/v1/gl/journal-entries/${reversalEvent.journalEntryId}`, { headers: { Authorization: `Bearer ${token}`, 'x-tenant-id': TENANT_A } });
+    expect(reversalRes.ok()).toBeTruthy();
+    const reversalJournal = await reversalRes.json();
+    const revDebits = reversalJournal.lines.reduce((s: number, l: any) => s + Number(l.debit), 0);
+    const revCredits = reversalJournal.lines.reduce((s: number, l: any) => s + Number(l.credit), 0);
+    expect(Math.abs(revDebits - revCredits), 'reversing journal must itself be balanced').toBeLessThan(0.01);
   });
 
-  // ── 23. Unauthorized denials: legacy posting-engine RBAC + new keys ──────
-  test('23. noperm user is denied posting-engine, payment-handoff, and audit access; payroll-service config mutation has no RBAC gate (architectural finding)', async ({ page, request }) => {
+  // ── 23. Unauthorized denials: posting-engine + payroll config RBAC ────────
+  test('23. noperm user is denied posting-engine, payment-handoff, audit, and payroll configuration-mutation access', async ({ page, request }) => {
     await login(page, TENANT_A, NOPERM_EMAIL, PASSWORD);
 
     const nopermToken = await apiLogin(request, TENANT_A, NOPERM_EMAIL);
@@ -802,21 +872,22 @@ test.describe.serial('CE-13 Payroll Certification — real backend, real Postgre
     await page.goto(`${BASE}/accounting/payroll/batches/${BATCH_ID}`);
     await expect(page.getByTestId('payroll-batch-unauthorized')).toBeVisible({ timeout: 10_000 });
 
-    // Pre-existing architectural finding (out of scope for this closure
-    // phase — see git history): payroll-service's own config-mutation
-    // routes have no RBAC gate at all.
+    // fix(integration) Blocker 2 — every payroll configuration-mutation
+    // route now enforces a dedicated server-side permission (see
+    // security.ts's resolvePayrollPermission/attachPayrollRouteSecurity).
+    // noperm holds none of these and must be refused, never rely on UI
+    // hiding alone.
     const configRes = await request.put(`${API_BASE}/api/v1/payroll/config/source-mode`, {
       headers: { Authorization: `Bearer ${nopermToken}`, 'x-tenant-id': TENANT_A },
       data: { payrollSourceMode: 'TEST_FIXTURE' },
     });
-    if (configRes.status() === 200) {
-      test.info().annotations.push({
-        type: 'finding',
-        description: 'ARCHITECTURAL (pre-existing, out of scope for this closure phase): payroll-service\'s config-mutation routes (e.g. PUT /config/source-mode) have no RBAC/permission gate — noperm still gets 200. Distinct from the newly-added payment-handoff/audit RBAC verified working correctly above.',
-      });
-    } else {
-      expect(configRes.status()).toBe(403);
-    }
+    expect(configRes.status()).toBe(403);
+
+    const rulePackCreateRes = await request.post(`${API_BASE}/api/v1/payroll/rule-packs`, {
+      headers: { Authorization: `Bearer ${nopermToken}`, 'x-tenant-id': TENANT_A },
+      data: { legalEntityId: ENTITY_A, packKey: `noperm-${RUN}`, rows: [] },
+    });
+    expect(rulePackCreateRes.status()).toBe(403);
   });
 
   // ── 24. Resource-loaded cross-entity payment-handoff denial ──────────────

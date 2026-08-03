@@ -14,6 +14,7 @@ import { PrismaGLMappingRepository } from './infrastructure/gl-mapping-repositor
 import { PrismaTaxRateRepository } from './infrastructure/tax-rate-repository';
 import { PrismaEmployeeYTDRepository } from './infrastructure/employee-ytd-repository';
 import { HttpPostingGateway } from './infrastructure/posting-gateway';
+import { HttpCe07RulePackRegistrar } from './infrastructure/ce07-rule-pack-registrar';
 import { PayrollSourceRegistry } from './domain/engines/payroll-source-registry';
 import { PayrollRulePackService } from './application/rule-pack-service';
 import { CommissionService } from './application/commission-service';
@@ -66,6 +67,7 @@ async function bootstrap() {
   container.register('ITaxRateRepository', { useClass: PrismaTaxRateRepository });
   container.register('IEmployeeYTDRepository', { useClass: PrismaEmployeeYTDRepository });
   container.register('IPostingGateway', { useClass: HttpPostingGateway });
+  container.register('ICe07RulePackRegistrar', { useClass: HttpCe07RulePackRegistrar });
   container.registerSingleton('PayrollSourceRegistry', PayrollSourceRegistry);
   container.register('PayrollService', { useClass: PayrollService });
   container.register('PayrollRulePackService', { useClass: PayrollRulePackService });

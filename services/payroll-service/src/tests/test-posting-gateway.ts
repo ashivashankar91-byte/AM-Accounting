@@ -23,6 +23,7 @@ vi.mock('@amacc/shared-kernel', async () => {
 
 const baseInput = {
   tenantId: 'tenant-test',
+  legalEntityId: 'entity-test',
   batchId: 'batch-1',
   batchNumber: 'PR-2024-01',
   businessDate: '2024-01-17',
@@ -74,7 +75,7 @@ describe('HttpPostingGateway', () => {
     expect(result.journalEntryId).toBe('je-1');
   });
 
-  it('integration reconciliation: envelope always carries a non-empty top-level legalEntityId (CE-07 REQUIRED_ENVELOPE_FIELDS) — defaults to tenantId when the caller does not resolve a real legal entity', async () => {
+  it('fix(integration): the envelope\'s top-level legalEntityId is always the caller\'s real, resolved legal entity — never a tenantId substitution', async () => {
     let capturedBody: any = null;
     global.fetch = vi.fn().mockImplementation(async (_url: string, opts: any) => {
       capturedBody = JSON.parse(opts.body);
@@ -83,10 +84,12 @@ describe('HttpPostingGateway', () => {
 
     const gw = new HttpPostingGateway('test-secret', 'http://coa-service:3016');
     await gw.submitPayrollEvent(baseInput);
-    expect(capturedBody.legalEntityId).toBe('tenant-test');
+    expect(capturedBody.legalEntityId).toBe('entity-test');
+    expect(capturedBody.legalEntityId).not.toBe(baseInput.tenantId);
 
     await gw.submitPayrollEvent({ ...baseInput, legalEntityId: 'entity-42' });
     expect(capturedBody.legalEntityId).toBe('entity-42');
+    expect(capturedBody.payload.legalEntityId).toBe('entity-42');
   });
 
   it('the same idempotencyKey always produces the same eventId (deterministic identity, safe retry)', async () => {

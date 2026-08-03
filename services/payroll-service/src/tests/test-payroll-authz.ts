@@ -319,4 +319,86 @@ describe('payroll-service route-level authorization (CE-13 RBAC gap-closure)', (
       await app.close();
     });
   });
+
+  // ── fix(integration) — resource-loaded entity authorization for every
+  // ACTION taken against an EXISTING commission plan/record/dispute,
+  // accrual, and clawback (as opposed to creating one, where the body/query
+  // legalEntityId is the legitimately-requested new scope). Mirrors the
+  // payment-handoff block above: the resource's own PERSISTED
+  // legalEntityId is the authorized scope, a client-supplied legalEntityId
+  // claiming a DIFFERENT entity than the actor's real assignment is never
+  // sufficient, and a request claiming the actor's OWN entity while the
+  // resource actually belongs to a different one is still denied.
+  describe('commission/accrual/clawback resource-loaded legal-entity authorization', () => {
+    function fakePrismaWithEntity(model: string, legalEntityId: string | null) {
+      return {
+        [model]: {
+          findFirst: async () => ({ id: 'r1', tenantId: 'tenant-a', legalEntityId }),
+        },
+      } as any;
+    }
+
+    const resourceCases: Array<{ label: string; model: string; method: 'GET' | 'POST'; path: string; payload?: any }> = [
+      { label: 'commission plan action (supersede)', model: 'commissionPlan', method: 'POST', path: '/commission-plans/r1/supersede' },
+      { label: 'commission record action (correct)', model: 'commissionRecord', method: 'POST', path: '/commissions/r1/correct', payload: { adjustedAmount: 1, reason: 'x' } },
+      { label: 'commission dispute resolve', model: 'commissionDispute', method: 'POST', path: '/commission-disputes/r1/resolve', payload: { resolution: 'DENY' } },
+      { label: 'accrual approve', model: 'accrualEntry', method: 'POST', path: '/accruals/r1/approve' },
+      { label: 'clawback resolve', model: 'clawbackRecord', method: 'POST', path: '/clawbacks/r1/resolve' },
+    ];
+
+    for (const rc of resourceCases) {
+      describe(rc.label, () => {
+        it('a role scoped to entity-a is allowed when the resource actually belongs to entity-a', async () => {
+          container.registerInstance('PrismaClient', fakePrismaWithEntity(rc.model, 'entity-a'));
+          container.registerInstance('AuthzClient', createFakeAuthzClient(
+            [{ userId: 'ADMIN', tenantId: 'tenant-a', role: 'ADMIN', entityId: 'entity-a' }],
+            ROLE_GRANTS,
+          ));
+          const app = await buildApp();
+          const res = await app.inject({ method: rc.method, url: rc.path, headers: authed('ADMIN'), payload: rc.payload });
+          expect(res.statusCode).not.toBe(401);
+          expect(res.statusCode).not.toBe(403);
+          await app.close();
+        });
+
+        it('a role scoped to entity-a is DENIED when the resource actually belongs to entity-b (cross-legal-entity denial)', async () => {
+          container.registerInstance('PrismaClient', fakePrismaWithEntity(rc.model, 'entity-b'));
+          container.registerInstance('AuthzClient', createFakeAuthzClient(
+            [{ userId: 'ADMIN', tenantId: 'tenant-a', role: 'ADMIN', entityId: 'entity-a' }],
+            ROLE_GRANTS,
+          ));
+          const app = await buildApp();
+          const res = await app.inject({ method: rc.method, url: rc.path, headers: authed('ADMIN'), payload: rc.payload });
+          expect(res.statusCode).toBe(403);
+          expect(res.json()).toMatchObject({ error: 'FORBIDDEN', reason: 'NO_MATCHING_ROLE' });
+          await app.close();
+        });
+
+        it('a client-supplied legalEntityId claiming entity-a is IGNORED — the persisted resource (entity-b) still governs', async () => {
+          container.registerInstance('PrismaClient', fakePrismaWithEntity(rc.model, 'entity-b'));
+          container.registerInstance('AuthzClient', createFakeAuthzClient(
+            [{ userId: 'ADMIN', tenantId: 'tenant-a', role: 'ADMIN', entityId: 'entity-a' }],
+            ROLE_GRANTS,
+          ));
+          const app = await buildApp();
+          const res = await app.inject({
+            method: rc.method, url: `${rc.path}?legalEntityId=entity-a`, headers: authed('ADMIN'),
+            payload: { ...(rc.payload ?? {}), legalEntityId: 'entity-a' },
+          });
+          expect(res.statusCode).toBe(403);
+          await app.close();
+        });
+
+        it('a tenant-wide (unscoped) role assignment is unaffected — matches any entity, no regression', async () => {
+          container.registerInstance('PrismaClient', fakePrismaWithEntity(rc.model, 'entity-b'));
+          registerFakeAuthz(); // default TENANT_A_ASSIGNMENTS have no entityId (tenant-wide)
+          const app = await buildApp();
+          const res = await app.inject({ method: rc.method, url: rc.path, headers: authed('ADMIN'), payload: rc.payload });
+          expect(res.statusCode).not.toBe(401);
+          expect(res.statusCode).not.toBe(403);
+          await app.close();
+        });
+      });
+    }
+  });
 });

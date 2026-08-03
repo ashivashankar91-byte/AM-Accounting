@@ -256,6 +256,16 @@ model PayrollRulePackVersion {
   validatedAt   DateTime? @map("validated_at")
   activatedAt   DateTime? @map("activated_at")
   supersededAt  DateTime? @map("superseded_at")
+  /// @net-new fix(integration): the shadow CE-07 (coa-service) posting-engine
+  /// rule-pack version ids this version's own create/validate/activate
+  /// lifecycle drives (see infrastructure/ce07-rule-pack-registrar.ts) —
+  /// the SEPARATE, authoritative record CE-07 itself matches real events
+  /// against. Null until each stage completes; a version can be ACTIVE on
+  /// the payroll side while its CE-07 counterpart is still DRAFT/VALIDATED
+  /// if activation hasn't been reached yet — real posting deterministically
+  /// refuses (NO_RULE_MATCH) until both are ACTIVE, never silently assumed.
+  ce07PostedVersionId   String? @map("ce07_posted_version_id")
+  ce07ReversedVersionId String? @map("ce07_reversed_version_id")
 
   @@unique([tenantId, legalEntityId, packKey, version])
   @@map("payroll_rule_pack_version")

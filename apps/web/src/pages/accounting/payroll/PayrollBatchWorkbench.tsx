@@ -162,8 +162,20 @@ export default function PayrollBatchWorkbench() {
                 bonusPay: Number(itemForm.bonusPay || 0),
                 attestedBy: itemForm.attestedBy || undefined,
                 sourceDocumentRef: itemForm.sourceDocumentRef || undefined,
+                // fix(integration): PayrollWithholdingLines (the real
+                // backend contract — see domain/payroll-adapter-contract.ts)
+                // has no `totalWithholding` field; a lump-sum attested
+                // figure with that key was silently discarded (spread into
+                // an object whose named fields — federalTax/stateTax/
+                // socialSecurity/medicare — were never populated), so this
+                // form always posted a $0 withholding regardless of what
+                // the controller typed. This single attested-gross-
+                // withholding field has no per-category breakdown to
+                // attest against, so the real, unreduced attested amount is
+                // recorded under federalTax — an honest "this much was
+                // withheld," never a fabricated category split.
                 ...(itemForm.attestedGrossWithholding && {
-                  attestedWithholding: { totalWithholding: Number(itemForm.attestedGrossWithholding) },
+                  attestedWithholding: { federalTax: Number(itemForm.attestedGrossWithholding) },
                 }),
               }))}
             >
