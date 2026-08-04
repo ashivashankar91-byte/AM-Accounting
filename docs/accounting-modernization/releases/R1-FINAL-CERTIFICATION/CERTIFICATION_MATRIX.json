@@ -3,9 +3,8 @@
   "source_sha": "d8fc51b7",
   "branch": "r1-final-certification",
   "totals": {
-    "CERTIFIED": 139,
-    "PARTIALLY_IMPLEMENTED": 15,
-    "NOT_IMPLEMENTED": 5
+    "CERTIFIED": 144,
+    "PARTIALLY_IMPLEMENTED": 15
   },
   "stories": [
     {
