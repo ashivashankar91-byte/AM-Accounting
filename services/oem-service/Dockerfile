@@ -9,5 +9,5 @@ COPY packages/shared-kernel packages/shared-kernel
 COPY services/oem-service services/oem-service
 RUN npm -w packages/shared-kernel run build
 WORKDIR /app/services/oem-service
-RUN npx prisma generate
+RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npx prisma generate
 CMD ["npx", "tsx", "src/index.ts"]

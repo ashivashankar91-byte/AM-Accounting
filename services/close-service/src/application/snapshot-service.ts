@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import { inject, injectable } from 'tsyringe';
 import { ISnapshotRepository } from '../domain/interfaces';
 import { computeRenderedHash } from '../domain/snapshot-ceremony';

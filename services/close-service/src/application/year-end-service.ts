@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import { inject, injectable } from 'tsyringe';
 import type { IEventPublisher } from '@amacc/shared-kernel';
 import { IYearEndRepository } from '../domain/interfaces';

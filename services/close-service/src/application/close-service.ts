@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import { inject, injectable } from 'tsyringe';
 import { applyTransition, CloseState } from '../domain/close-state-machine';
 import { aggregateReadiness, ReadinessSignal } from '../domain/readiness-aggregator';

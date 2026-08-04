@@ -210,7 +210,7 @@ export async function partsAccountingRoutes(app: FastifyInstance) {
         });
       }
       // bandConfig from DB takes precedence; caller-supplied b.bandConfig is ignored when config is present.
-      return reply.status(201).send(await obsolescence.preview(tenantId, legalEntityId, b.asOfDate, bandConfigRow.bandConfig, b.lines));
+      return reply.status(201).send(await obsolescence.preview(tenantId, legalEntityId, b.asOfDate, bandConfigRow.bandConfig as Record<string, number>, b.lines));
     } catch (e) { return handleError(e, reply); }
   });
   app.post('/obsolescence/:runId/approve', { preHandler: requirePartsPermission(P.OBSOLESCENCE_APPROVE) }, async (req, reply) => {
