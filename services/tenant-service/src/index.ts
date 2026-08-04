@@ -17,6 +17,7 @@ import { DepartmentService } from './application/department-service';
 import { FranchiseService } from './application/franchise-service';
 import { OrgService } from './application/org-service';
 import { HrProvisioningService } from './application/hr-provisioning-service';
+import { HttpAuthServiceClient } from './infrastructure/auth-service-client';
 import { mfaRoutes } from './http/mfa-routes';
 import { hrProvisioningRoutes } from './http/hr-provisioning-routes';
 import {
@@ -53,10 +54,27 @@ async function bootstrap() {
   // S005 — HR-Event Provisioning Hooks
   // Subscribe to HR system events and auto-provision/deprovision accounting roles.
   // Every action is persisted in hr_provisioning_events for audit lineage (S007).
-  const hrProvisioningSvc = new HrProvisioningService(prisma);
+  const authServiceClient = new HttpAuthServiceClient({
+    baseUrl: process.env['AUTH_SERVICE_URL'] ?? 'http://auth-service:3001',
+    serviceToken: process.env['INTERNAL_SERVICE_TOKEN'] ?? '',
+  });
+  const hrProvisioningSvc = new HrProvisioningService(prisma, authServiceClient);
   for (const eventType of ['HR_USER_CREATED', 'HR_USER_TERMINATED', 'HR_USER_ROLE_CHANGED']) {
-    eventPublisher.subscribe(eventType, async (event) => {
-      await hrProvisioningSvc.processHrEvent(event.payload as any);
+    eventPublisher.subscribe(eventType, async (event: any) => {
+      const payload = event.payload ?? event;
+      await hrProvisioningSvc.processHrEvent(
+        {
+          tenantId: payload.tenantId,
+          legalEntityId: payload.legalEntityId,
+          hrEventType: payload.hrEventType ?? eventType,
+          hrUserId: payload.hrUserId,
+          hrSystem: payload.hrSystem ?? 'broker',
+          sourceCorrelationId: payload.sourceCorrelationId ?? event.correlationId,
+          requestedByServiceIdentity: payload.requestedByServiceIdentity ?? 'hr-connector:hris',
+          payload: payload.payload ?? {},
+        },
+        payload.tenantId,
+      ).catch((err) => logger.error({ err, eventType }, 'S005: broker consumer error'));
     });
   }
   logger.info('S005: HR-event provisioning consumer registered for HR_USER_CREATED, HR_USER_TERMINATED, HR_USER_ROLE_CHANGED');

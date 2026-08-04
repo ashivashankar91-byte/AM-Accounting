@@ -245,21 +245,29 @@ model AuditOutboxEvent {
 // S005 — HR-Event Provisioning Hooks
 // Every HR-originated provisioning action is persisted for audit lineage.
 model HrProvisioningEvent {
-  id                String   @id @default(uuid())
-  tenantId          String   @map("tenant_id")
-  hrEventType       String   @map("hr_event_type")
-  hrUserId          String   @map("hr_user_id")
-  hrSystem          String   @map("hr_system")
-  payload           Json     @default("{}")
-  accountingAction  String   @map("accounting_action")
-  accountingUserId  String?  @map("accounting_user_id")
-  accountingRoles   String[] @map("accounting_roles")
-  processedAt       DateTime @default(now()) @map("processed_at")
-  errorMessage      String?  @map("error_message")
-  correlationId     String   @default(uuid()) @map("correlation_id")
+  id                    String    @id @default(uuid())
+  tenantId              String    @map("tenant_id")
+  legalEntityId         String?   @map("legal_entity_id")    // S005: stored separately, never aliased to tenantId
+  hrEventType           String    @map("hr_event_type")       // HR_USER_CREATED | HR_USER_TERMINATED | HR_USER_ROLE_CHANGED
+  hrUserId              String    @map("hr_user_id")
+  hrSystem              String    @map("hr_system")
+  payload               Json      @default("{}")
+  sourceCorrelationId   String?   @map("source_correlation_id") // from calling HR system; unique per tenant
+  accountingAction      String    @map("accounting_action")   // PROVISIONED | DEPROVISIONED | ROLE_UPDATED | IGNORED | ERROR
+  accountingUserId      String?   @map("accounting_user_id")
+  accountingRoles       String[]  @map("accounting_roles")
+  status                String    @default("PROCESSED") @map("status") // PROCESSED | FAILED_RETRYABLE | FAILED_TERMINAL | DUPLICATE
+  retryCount            Int       @default(0) @map("retry_count")
+  lastAttemptAt         DateTime? @map("last_attempt_at")
+  processedAt           DateTime  @default(now()) @map("processed_at")
+  errorMessage          String?   @map("error_message")
+  correlationId         String    @default(uuid()) @map("correlation_id") // internal trace id
 
+  @@unique([tenantId, sourceCorrelationId], name: "uq_hr_prov_source_corr")
   @@index([tenantId])
+  @@index([legalEntityId])
   @@index([hrUserId])
+  @@index([status])
   @@map("hr_provisioning_events")
 }
 

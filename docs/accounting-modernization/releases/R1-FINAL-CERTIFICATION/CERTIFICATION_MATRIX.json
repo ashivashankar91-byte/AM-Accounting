@@ -3,8 +3,8 @@
   "source_sha": "d8fc51b7",
   "branch": "r1-final-certification",
   "totals": {
-    "CERTIFIED": 132,
-    "PARTIALLY_IMPLEMENTED": 17,
+    "CERTIFIED": 133,
+    "PARTIALLY_IMPLEMENTED": 16,
     "NOT_IMPLEMENTED": 10
   },
   "stories": [
@@ -1220,8 +1220,8 @@
       "title": "HR-Event Provisioning Hooks",
       "release": "R5",
       "service": "tenant-service",
-      "status": "PARTIALLY_IMPLEMENTED",
-      "gap_or_evidence": "User lifecycle DB schema exists; iam.user.deactivated event is defined but broker-backed fan-out consumer for S206 role auto-revoke is NOT built; no HR system webhook adapter exists"
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/tenant-service/tests/s005/hr-provisioning.cert.test.ts (11 tests) AC1-AC10 all passing"
     },
     {
       "story_id": "S006",
