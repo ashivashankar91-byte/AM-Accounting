@@ -35,7 +35,7 @@ Ensure the following tools are installed and at the required versions **before**
 | Docker Desktop | 24+ | `docker --version` |
 | Docker Compose | 2.20+ (plugin) | `docker compose version` |
 | Node.js | 20.x LTS | `node --version` |
-| Yarn | 1.22+ (classic) or 4.x (Berry) | `yarn --version` |
+| npm | 10.x (bundled with Node 20) | `npm --version` |
 | PostgreSQL client | 15+ (psql) | `psql --version` |
 | Git | 2.40+ | `git --version` |
 
@@ -67,13 +67,16 @@ lsof -iTCP:5174 -sTCP:LISTEN
 
 ## 2. Environment Variables
 
-Copy the example env file and fill in required secrets:
+> **Note:** This repository does not currently ship a `.env.example` template.
+> Create `.env` at the repository root manually with the variables below.
 
 ```bash
-cp .env.example .env
+touch .env
 ```
 
-Required variables (must be non-empty before startup):
+Required variables (must be non-empty before startup — `docker-compose.yml` will
+fail fast with a `variable is required` error if `AMACC_JWT_SECRET`, `JWT_SECRET`,
+or `ADMIN_API_KEY` are unset):
 
 ```dotenv
 # JWT — must match across all services
@@ -115,24 +118,29 @@ docker compose ps | grep -E 'postgres|redis|rabbitmq'
 Expected output — all three containers should show `healthy`:
 
 ```
-NAME                                          STATUS
-am-accounting-r1-integration-postgres-1      running (healthy)
-am-accounting-r1-integration-redis-1         running (healthy)
-am-accounting-r1-integration-rabbitmq-1      running (healthy)
+NAME                                              STATUS
+am-accounting-all-159-integration-postgres-1     running (healthy)
+am-accounting-all-159-integration-redis-1        running (healthy)
+am-accounting-all-159-integration-rabbitmq-1     running (healthy)
 ```
+
+> **Container name prefix:** Compose derives the project name from the
+> repository directory name (no `name:` override is set in `docker-compose.yml`).
+> If you checked this repo out under a different folder name, substitute your
+> own prefix — check with `docker compose ps`.
 
 ### Infrastructure Health Checks
 
 ```bash
 # PostgreSQL
-docker exec am-accounting-r1-integration-postgres-1 pg_isready -U amacc
+docker exec am-accounting-all-159-integration-postgres-1 pg_isready -U amacc
 
 # Redis
-docker exec am-accounting-r1-integration-redis-1 redis-cli ping
+docker exec am-accounting-all-159-integration-redis-1 redis-cli ping
 # Expected: PONG
 
 # RabbitMQ
-docker exec am-accounting-r1-integration-rabbitmq-1 rabbitmq-diagnostics check_running
+docker exec am-accounting-all-159-integration-rabbitmq-1 rabbitmq-diagnostics check_running
 # Expected: Diagnostics checks OK
 ```
 
@@ -153,13 +161,23 @@ docker compose logs -f --tail=50
 Wait approximately **60–90 seconds** for all services to initialize. Then verify overall health:
 
 ```bash
-# Count healthy services
+# Only postgres/redis/rabbitmq define a Docker HEALTHCHECK in docker-compose.yml
+# — the 43 application services have no HEALTHCHECK instruction, so they will
+# show as "running" (not "running (healthy)"), even once ready. Use this to
+# confirm the infra tier plus overall container count instead:
 docker compose ps | grep -c "running (healthy)"
-# Expected: 38 or more
+# Expected: 3 (postgres, redis, rabbitmq)
 
-# Show any unhealthy or exited containers
-docker compose ps | grep -v "running (healthy)"
+docker compose ps --status running | wc -l
+# Expected: ~45 (43 app services + web + api-gateway; migrator exits after completion)
+
+# Show any exited/restarting containers
+docker compose ps | grep -vE "running|Up"
 ```
+
+Use the [bulk health-endpoint check](#7-service-health-endpoints) in Section 7
+for authoritative per-service readiness — it is the only reliable signal since
+application containers have no Docker-level healthcheck.
 
 ### Targeted Service Startup (Subset)
 
@@ -194,57 +212,60 @@ bash scripts/migrate-all.sh
 
 ### Per-Service Migrations
 
-Each service uses its own Prisma schema. To migrate a single service:
+Each service uses its own Prisma schema, scoped under the `@amacc/*` npm
+workspace name (see each service's `package.json`). The list below matches
+[scripts/migrate-all.sh](../../scripts/migrate-all.sh) — only services with a
+`prisma/migrations/` directory are included; services with just a
+`prisma/schema.prisma` (no migration history) or no `prisma/` at all are
+omitted since `prisma migrate deploy` has nothing to apply for them.
+
+To migrate a single service:
 
 ```bash
-# Format: yarn workspace <service-name> prisma migrate deploy
-yarn workspace @am/gl-service prisma migrate deploy
-yarn workspace @am/eom-service prisma migrate deploy
-yarn workspace @am/payroll-service prisma migrate deploy
-yarn workspace @am/apar-service prisma migrate deploy
-yarn workspace @am/recon-service prisma migrate deploy
-yarn workspace @am/coa-service prisma migrate deploy
-yarn workspace @am/approval-service prisma migrate deploy
-yarn workspace @am/tax-service prisma migrate deploy
-yarn workspace @am/oem-service prisma migrate deploy
-yarn workspace @am/fixedops-service prisma migrate deploy
-yarn workspace @am/parts-accounting-service prisma migrate deploy
-yarn workspace @am/vehicle-accounting-service prisma migrate deploy
-yarn workspace @am/floorplan-service prisma migrate deploy
-yarn workspace @am/deal-accounting-service prisma migrate deploy
-yarn workspace @am/fni-reserve-service prisma migrate deploy
-yarn workspace @am/fs-service prisma migrate deploy
-yarn workspace @am/cash-service prisma migrate deploy
-yarn workspace @am/migration-service prisma migrate deploy
-yarn workspace @am/compliance-service prisma migrate deploy
-yarn workspace @am/audit-service prisma migrate deploy
-yarn workspace @am/close-service prisma migrate deploy
-yarn workspace @am/schedule-service prisma migrate deploy
-yarn workspace @am/automation-service prisma migrate deploy
-yarn workspace @am/onboarding-service prisma migrate deploy
-yarn workspace @am/notification-service prisma migrate deploy
-yarn workspace @am/auth-service prisma migrate deploy
-yarn workspace @am/tenant-service prisma migrate deploy
-yarn workspace @am/user-service prisma migrate deploy
-yarn workspace @am/group-service prisma migrate deploy
-yarn workspace @am/connector-service prisma migrate deploy
-yarn workspace @am/analytics-service prisma migrate deploy
-yarn workspace @am/cashflow-service prisma migrate deploy
-yarn workspace @am/document-service prisma migrate deploy
-yarn workspace @am/query-service prisma migrate deploy
-yarn workspace @am/webhook-service prisma migrate deploy
-yarn workspace @am/orchestrator-service prisma migrate deploy
+# Format: npm run --workspace=services/<service-name> -- prisma migrate deploy
+npx prisma migrate deploy --schema=services/tenant-service/prisma/schema.prisma
+npx prisma migrate deploy --schema=services/auth-service/prisma/schema.prisma
+npx prisma migrate deploy --schema=services/coa-service/prisma/schema.prisma
+npx prisma migrate deploy --schema=services/posting-recovery-service/prisma/schema.prisma
+npx prisma migrate deploy --schema=services/tax-service/prisma/schema.prisma
+npx prisma migrate deploy --schema=services/audit-service/prisma/schema.prisma
+npx prisma migrate deploy --schema=services/gl-service/prisma/schema.prisma
+npx prisma migrate deploy --schema=services/apar-service/prisma/schema.prisma
+npx prisma migrate deploy --schema=services/cash-service/prisma/schema.prisma
+npx prisma migrate deploy --schema=services/schedule-service/prisma/schema.prisma
+npx prisma migrate deploy --schema=services/vehicle-accounting-service/prisma/schema.prisma
+npx prisma migrate deploy --schema=services/floorplan-service/prisma/schema.prisma
+npx prisma migrate deploy --schema=services/deal-accounting-service/prisma/schema.prisma
+npx prisma migrate deploy --schema=services/fni-reserve-service/prisma/schema.prisma
+npx prisma migrate deploy --schema=services/eom-service/prisma/schema.prisma
+npx prisma migrate deploy --schema=services/payroll-service/prisma/schema.prisma
+npx prisma migrate deploy --schema=services/fs-service/prisma/schema.prisma
+npx prisma migrate deploy --schema=services/recon-service/prisma/schema.prisma
+npx prisma migrate deploy --schema=services/cashflow-service/prisma/schema.prisma
+npx prisma migrate deploy --schema=services/fixedops-service/prisma/schema.prisma
+npx prisma migrate deploy --schema=services/parts-accounting-service/prisma/schema.prisma
+npx prisma migrate deploy --schema=services/oem-service/prisma/schema.prisma
+npx prisma migrate deploy --schema=services/close-service/prisma/schema.prisma
+npx prisma migrate deploy --schema=services/migration-service/prisma/schema.prisma
+npx prisma migrate deploy --schema=services/automation-service/prisma/schema.prisma
+npx prisma migrate deploy --schema=services/approval-service/prisma/schema.prisma
 ```
+
+> `user-service`, `compliance-service`, `group-service`, `analytics-service`,
+> `document-service`, `query-service`, `webhook-service`, and
+> `orchestrator-service` have a `prisma/schema.prisma` but no migration
+> history — they are provisioned via `prisma db push`, not `migrate deploy`.
+> `onboarding-service`, `notification-service`, and `connector-service` have
+> no Prisma schema at all.
 
 ### Verify Migration Status
 
 ```bash
 # Check pending migrations for a specific service
-yarn workspace @am/gl-service prisma migrate status
+npx prisma migrate status --schema=services/gl-service/prisma/schema.prisma
 
-# Check all services at once
-bash scripts/check-migrations.sh 2>/dev/null || \
-  for svc in gl-service eom-service payroll-service apar-service; do
+# Check several services at once (no scripts/check-migrations.sh exists in this repo)
+for svc in gl-service eom-service payroll-service apar-service; do
     echo "=== $svc ===" && \
     DATABASE_URL="postgresql://amacc:amacc_dev@localhost:5433/amacc" \
     npx prisma migrate status --schema=services/$svc/prisma/schema.prisma
@@ -266,20 +287,24 @@ All seed commands must be run from the **repository root** with the full service
 # DESTRUCTIVE RESET — drops all demo tenant data and re-seeds from scratch
 # Use before a demo to ensure a clean, consistent state
 # ─────────────────────────────────────────────────────────────────────
-yarn seed:all-159-demo --reset
+npm run seed:all-159-demo:reset
 
 # ─────────────────────────────────────────────────────────────────────
 # IDEMPOTENT SEED — safe to run multiple times without data duplication
 # Use to refresh data if something was accidentally modified mid-demo
 # ─────────────────────────────────────────────────────────────────────
-yarn seed:all-159-demo
+npm run seed:all-159-demo
 
 # ─────────────────────────────────────────────────────────────────────
 # VERIFY ONLY — does not modify data; checks all seed assertions pass
 # Run as part of preflight to confirm environment is ready
 # ─────────────────────────────────────────────────────────────────────
-yarn seed:all-159-demo --verify
+npm run seed:all-159-demo:verify
 ```
+
+> These map to dedicated `package.json` scripts (`seed:all-159-demo:reset`,
+> `seed:all-159-demo`, `seed:all-159-demo:verify`) — there is no single script
+> that accepts a `--reset`/`--verify` flag.
 
 ### What the Seed Creates
 
@@ -444,7 +469,7 @@ All demo accounts are scoped to the `tenant-kunes` tenant. Password applies to a
 |--------|-----|-------|
 | Web Frontend | http://localhost:5174 | Vite dev server; proxies API calls to gateway |
 | API Gateway | http://localhost:3100 | All client API traffic routes here |
-| PostgreSQL | localhost:5433 | Container: `am-accounting-r1-integration-postgres-1` |
+| PostgreSQL | localhost:5433 | Container: `am-accounting-all-159-integration-postgres-1` (prefix depends on checkout folder name) |
 | RabbitMQ Management UI | http://localhost:15673 | guest / guest |
 | Redis | localhost:6380 | No auth in dev |
 
@@ -510,7 +535,7 @@ logs/
 
 ```bash
 # Redirect seed output for review
-yarn seed:all-159-demo --reset 2>&1 | tee seed-output.log
+npm run seed:all-159-demo:reset 2>&1 | tee seed-output.log
 ```
 
 ---
@@ -553,8 +578,8 @@ sleep 15
 docker compose up -d
 # Wait 60 s for all services
 sleep 60
-yarn seed:all-159-demo --reset
-yarn seed:all-159-demo --verify
+npm run seed:all-159-demo:reset
+npm run seed:all-159-demo:verify
 echo "Environment is demo-ready."
 ```
 
