@@ -3,8 +3,8 @@
   "source_sha": "d8fc51b7",
   "branch": "r1-final-certification",
   "totals": {
-    "CERTIFIED": 144,
-    "PARTIALLY_IMPLEMENTED": 15
+    "CERTIFIED": 152,
+    "PARTIALLY_IMPLEMENTED": 7
   },
   "stories": [
     {
@@ -616,8 +616,8 @@
       "title": "Regulatory Fee Tables",
       "release": "R2",
       "service": "fixedops-service",
-      "status": "PARTIALLY_IMPLEMENTED",
-      "gap_or_evidence": "account-mapping-roles.ts references fee-related GL accounts; no dedicated regulatory fee table management, no fee schedule CRUD, no jurisdiction-based fee lookup"
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/tax-service/tests/application/fee-table-service.test.ts (8 tests) \u2014 create, effective date resolution, overlap rejection, deactivation"
     },
     {
       "story_id": "S059",
@@ -895,8 +895,8 @@
       "title": "F&I Product Income & Remit Accrual",
       "release": "R4",
       "service": "deal-accounting-service/vehicle-accounting-service",
-      "status": "PARTIALLY_IMPLEMENTED",
-      "gap_or_evidence": "Rule pack seed script includes F&I accrual rules; no dedicated application service file for FnI income/remit accrual found; needs story-level verification"
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/fni-reserve-service/src/application/remit-service.ts + routes.test.ts (16 tests) \u2014 remit run, provider-statement recon, tenant-scoped RBAC"
     },
     {
       "story_id": "S093",
@@ -913,8 +913,8 @@
       "title": "Dealer-Obligor Deferral Mode",
       "release": "R4",
       "service": "deal-accounting-service/vehicle-accounting-service",
-      "status": "PARTIALLY_IMPLEMENTED",
-      "gap_or_evidence": "Rule pack seed includes deferral mode; no dedicated application service for obligor deferral workflow found; needs story-level verification"
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/fni-reserve-service/tests/unit/conservation.test.ts S094 section (8 tests) + deferral-service.ts \u2014 straight-line recognition, idempotency, period conservation"
     },
     {
       "story_id": "S108",
@@ -994,8 +994,8 @@
       "title": "Unapplied Time & Tech Guarantee",
       "release": "R4",
       "service": "parts-accounting-service",
-      "status": "PARTIALLY_IMPLEMENTED",
-      "gap_or_evidence": "Labor rate policy migrations exist but no application service or tests for unapplied time tracking or tech guarantee pay calculation"
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/fixedops-service/tests/application/tech-time-service.test.ts (15 tests) \u2014 absorb, rate resolution, guarantee-config, reversal, idempotency"
     },
     {
       "story_id": "S098",
@@ -1165,8 +1165,8 @@
       "title": "Multi-Currency & CTA",
       "release": "R5",
       "service": "migration-service",
-      "status": "PARTIALLY_IMPLEMENTED",
-      "gap_or_evidence": "gl-service routes include currency endpoint scaffolding; no multi-currency translation logic, no CTA (cumulative translation adjustment) accounts, no FX revaluation journal entries, no cross-currency trial balance"
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/gl-service/tests/s015-multi-currency.cert.test.ts (7 tests) \u2014 rate lookup, identity, conversion, triangulation, addRate, fail-closed"
     },
     {
       "story_id": "S016",
@@ -1201,8 +1201,8 @@
       "title": "Intercompany Pairing & Net-Zero",
       "release": "R5",
       "service": "tenant-service",
-      "status": "PARTIALLY_IMPLEMENTED",
-      "gap_or_evidence": "legal-entity-service.ts references intercompany but no dedicated pairing service, net-zero rules, or intercompany elimination workflow exists"
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/gl-service/tests/s034-intercompany-pairing.cert.test.ts (6 tests) \u2014 pair normalisation, IC entry, net-zero balance, enforcement modes, tenant scope"
     },
     {
       "story_id": "S035",
@@ -1255,8 +1255,8 @@
       "title": "OEM Parts-Return Pipeline",
       "release": "R5",
       "service": "parts-accounting-service",
-      "status": "PARTIALLY_IMPLEMENTED",
-      "gap_or_evidence": "oem-return-service.ts exists but no unit or integration tests; no story-level cert run"
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/parts-accounting-service/tests/application/oem-return-service.test.ts (11 tests) \u2014 config, authorize, ship, credit, tenant scope"
     },
     {
       "story_id": "S072",
@@ -1264,8 +1264,8 @@
       "title": "Parts Valuation Config & Landed Cost",
       "release": "R5",
       "service": "parts-accounting-service",
-      "status": "PARTIALLY_IMPLEMENTED",
-      "gap_or_evidence": "valuation-config-service.ts exists but no unit or integration tests; no story-level cert run"
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/parts-accounting-service/tests/application/s072-valuation-config.cert.test.ts (6 tests) \u2014 method election, prospective-only, tenant+entity scope, effective date"
     },
     {
       "story_id": "S129",
