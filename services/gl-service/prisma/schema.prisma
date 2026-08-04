@@ -781,3 +781,101 @@ model OemStatementMapping {
   @@index([tenantId])
   @@index([tenantId, oemCode, statementYear])
 }
+
+// S033 — Allocation Templates
+model AllocationTemplate {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  name            String
+  description     String?
+  sourceAccountId String   @map("source_account_id")
+  allocationBasis String   @default("PERCENTAGE") @map("allocation_basis")
+  journalSource   String   @default("ALLOCATION") @map("journal_source")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdBy       String   @map("created_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  lines           AllocationTemplateLine[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("allocation_templates")
+}
+
+model AllocationTemplateLine {
+  id              String  @id @default(uuid())
+  templateId      String  @map("template_id")
+  tenantId        String  @map("tenant_id")
+  targetAccountId String  @map("target_account_id")
+  allocationPct   Decimal? @map("allocation_pct") @db.Decimal(10, 6)
+  fixedAmount     Decimal? @map("fixed_amount") @db.Decimal(15, 2)
+  departmentCode  String? @map("department_code")
+  description     String?
+  lineOrder       Int     @default(0) @map("line_order")
+  template        AllocationTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId])
+  @@index([tenantId])
+  @@map("allocation_template_lines")
+}
+
+// S034 — Intercompany Pairs
+model IntercompanyPair {
+  id                    String   @id @default(uuid())
+  tenantId              String   @map("tenant_id")
+  entityAId             String   @map("entity_a_id")
+  entityBId             String   @map("entity_b_id")
+  icReceivableAccount   String?  @map("ic_receivable_account")
+  icPayableAccount      String?  @map("ic_payable_account")
+  enforcement           String   @default("WARN")
+  createdBy             String   @map("created_by")
+  createdAt             DateTime @default(now()) @map("created_at")
+  entries               IntercompanyEntry[]
+
+  @@unique([tenantId, entityAId, entityBId])
+  @@index([tenantId])
+  @@map("intercompany_pairs")
+}
+
+model IntercompanyEntry {
+  id                    String   @id @default(uuid())
+  tenantId              String   @map("tenant_id")
+  pairId                String   @map("pair_id")
+  journalEntryId        String   @map("journal_entry_id")
+  originatingEntityId   String   @map("originating_entity_id")
+  contraJournalEntryId  String?  @map("contra_journal_entry_id")
+  icAmount              Decimal  @map("ic_amount") @db.Decimal(15, 2)
+  periodYear            Int      @map("period_year")
+  periodMonth           Int      @map("period_month")
+  status                String   @default("UNMATCHED")
+  createdAt             DateTime @default(now()) @map("created_at")
+  pair                  IntercompanyPair @relation(fields: [pairId], references: [id])
+
+  @@index([tenantId])
+  @@index([journalEntryId])
+  @@index([tenantId, periodYear, periodMonth])
+  @@map("intercompany_entries")
+}
+
+// S035 — Consolidation Elimination Runs
+model ConsolidationEliminationRun {
+  id                     String   @id @default(uuid())
+  tenantId               String   @map("tenant_id")
+  eliminationEntityId    String   @map("elimination_entity_id")
+  periodYear             Int      @map("period_year")
+  periodMonth            Int      @map("period_month")
+  status                 String   @default("PENDING")
+  startedBy              String   @map("started_by")
+  startedAt              DateTime @default(now()) @map("started_at")
+  completedAt            DateTime? @map("completed_at")
+  journalEntryIds        String[] @default([]) @map("journal_entry_ids")
+  icPairsProcessed       Int      @default(0) @map("ic_pairs_processed")
+  totalEliminatedDebit   Decimal  @default(0) @map("total_eliminated_debit") @db.Decimal(15, 2)
+  totalEliminatedCredit  Decimal  @default(0) @map("total_eliminated_credit") @db.Decimal(15, 2)
+  errorMessage           String?  @map("error_message")
+
+  @@unique([tenantId, eliminationEntityId, periodYear, periodMonth])
+  @@index([tenantId])
+  @@index([tenantId, periodYear, periodMonth])
+  @@map("consolidation_elimination_runs")
+}

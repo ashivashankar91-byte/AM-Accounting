@@ -18,6 +18,8 @@ import {
   Search,
   Bot,
   ChevronRight,
+  ArrowLeftRight,
+  Layers,
 } from 'lucide-react';
 
 interface NavItem {
@@ -38,6 +40,8 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/accounting/financial-statements', label: 'Financial Statements', icon: <BarChart3 size={18} /> },
   { path: '/coa', label: 'Chart of Accounts', icon: <ListTree size={18} /> },
   { path: '/schedules', label: 'Schedules', icon: <Table2 size={18} /> },
+  { path: '/intercompany', label: 'Intercompany', icon: <ArrowLeftRight size={18} /> },
+  { path: '/allocation-templates', label: 'Allocations', icon: <Layers size={18} /> },
   { path: '/approvals', label: 'Approvals', icon: <CheckSquare size={18} /> },
   { path: '/reports', label: 'Reports', icon: <FileBarChart size={18} /> },
   { path: '/ml', label: 'ML Intelligence', icon: <Brain size={18} /> },

@@ -16,6 +16,9 @@ import { StoreService } from './application/store-service';
 import { DepartmentService } from './application/department-service';
 import { FranchiseService } from './application/franchise-service';
 import { OrgService } from './application/org-service';
+import { HrProvisioningService } from './application/hr-provisioning-service';
+import { mfaRoutes } from './http/mfa-routes';
+import { hrProvisioningRoutes } from './http/hr-provisioning-routes';
 import {
   IEventPublisher, ITenantRepository, HttpAuthzClient, AuthzClient,
   HttpAuditClient, AuditOutboxDrainer, makePrismaAuditOutboxStore,
@@ -47,6 +50,17 @@ async function bootstrap() {
   });
   await eventPublisher.connect();
 
+  // S005 — HR-Event Provisioning Hooks
+  // Subscribe to HR system events and auto-provision/deprovision accounting roles.
+  // Every action is persisted in hr_provisioning_events for audit lineage (S007).
+  const hrProvisioningSvc = new HrProvisioningService(prisma);
+  for (const eventType of ['HR_USER_CREATED', 'HR_USER_TERMINATED', 'HR_USER_ROLE_CHANGED']) {
+    eventPublisher.subscribe(eventType, async (event) => {
+      await hrProvisioningSvc.processHrEvent(event.payload as any);
+    });
+  }
+  logger.info('S005: HR-event provisioning consumer registered for HR_USER_CREATED, HR_USER_TERMINATED, HR_USER_ROLE_CHANGED');
+
   // DI registrations
   container.registerInstance('PrismaClient', prisma);
   container.registerInstance<IEventPublisher>('IEventPublisher', eventPublisher);
@@ -70,6 +84,10 @@ async function bootstrap() {
   await app.register(orgRoutes, { prefix: '/api/v1/org' });
   await app.register(departmentRoutes, { prefix: '/api/v1/entities' });
   await app.register(oemRefRoutes, { prefix: '/api/v1/oems' });
+  // S006 — MFA & Safeguards Evidence routes
+  await app.register(mfaRoutes, { prefix: '/api/v1/mfa' });
+  // S005 — HR Provisioning Events read-only audit log
+  await app.register(hrProvisioningRoutes, { prefix: '/api/v1/hr-provisioning' });
   app.get('/health', async () => ({ status: 'ok', service: 'tenant-service' }));
 
   // R0 Stabilization Phase 4: drain audit_outbox to the real S007 audit-service.

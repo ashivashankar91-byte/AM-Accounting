@@ -101,6 +101,8 @@ export enum JournalStatus {
   POSTED = 'POSTED',
   HELD = 'HELD',
   REVERSED = 'REVERSED',
+  /** S219 — Void/Delete Draft JE: DRAFT entries may be voided by authorized actors */
+  VOIDED = 'VOIDED',
 }
 
 export enum EOMCloseStatus {

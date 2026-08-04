@@ -12,6 +12,7 @@ export type EventType =
   | 'JOURNAL_ENTRY_SUBMITTED'
   | 'JOURNAL_ENTRY_POSTED'
   | 'JOURNAL_ENTRY_HELD'
+  | 'JOURNAL_ENTRY_VOIDED'  // S219 — Void/Delete Draft JE
   | 'GL_ANOMALY_DETECTED'
   // EOM events
   | 'EOM_CLOSE_INITIATED'
@@ -118,6 +119,7 @@ export const EVENT_ROUTING: Record<EventType, string[]> = {
   JOURNAL_ENTRY_SUBMITTED:  ['agent-gl'],
   JOURNAL_ENTRY_POSTED:     ['audit-service', 'fs-service'],
   JOURNAL_ENTRY_HELD:       ['notification-service', 'audit-service'],
+  JOURNAL_ENTRY_VOIDED:     ['audit-service'],  // S219 — Void/Delete Draft JE
   GL_ANOMALY_DETECTED:      ['agent-t1', 'notification-service'],
   // EOM
   EOM_CLOSE_INITIATED:      ['agent-eom', 'audit-service'],

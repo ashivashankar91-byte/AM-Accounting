@@ -134,6 +134,11 @@ export const tenantApi = {
   list: () => apiFetch<any[]>('/api/v1/tenants', { headers: { 'x-admin-api-key': 'amacc-admin-dev-key' } }),
   getById: (id: string) => apiFetch<any>(`/api/v1/tenants/${id}`),
   create: (data: any) => apiFetch<any>('/api/v1/tenants', { method: 'POST', body: JSON.stringify(data), headers: { 'x-admin-api-key': 'amacc-admin-dev-key' } }),
+  // S006 — MFA & Safeguards Evidence
+  getMfaPolicy: () => apiFetch<any>('/api/v1/mfa/policy'),
+  setMfaPolicy: (data: any) => apiFetch<any>('/api/v1/mfa/policy', { method: 'PUT', body: JSON.stringify(data) }),
+  getSafeguardsEvidence: (params?: string) => apiFetch<any>(`/api/v1/mfa/evidence${params ? `?${params}` : ''}`),
+  recordMfaEvent: (data: any) => apiFetch<any>('/api/v1/mfa/evidence', { method: 'POST', body: JSON.stringify(data) }),
 };
 
 // Command Center API — 7 dedicated computed endpoints
@@ -201,6 +206,20 @@ export const glApi = {
   deleteTemplate: (id: string) => apiFetch<void>(`/api/v1/gl/admin/journal-templates/${id}`, { method: 'DELETE' }),
   // Journal Entry Reverse
   reverseEntry: (id: string, data: any) => apiFetch<any>(`/api/v1/gl/journal-entries/${id}/reverse`, { method: 'POST', body: JSON.stringify(data) }),
+  // S219 — Void/Delete Draft Journal Entry
+  voidEntry: (id: string, reason: string) => apiFetch<any>(`/api/v1/gl/journal-entries/${id}`, { method: 'DELETE', body: JSON.stringify({ reason }) }),
+  // S033 — Allocation Templates
+  listAllocationTemplates: () => apiFetch<any[]>('/api/v1/gl/admin/allocation-templates'),
+  createAllocationTemplate: (data: any) => apiFetch<any>('/api/v1/gl/admin/allocation-templates', { method: 'POST', body: JSON.stringify(data) }),
+  getAllocationTemplate: (id: string) => apiFetch<any>(`/api/v1/gl/admin/allocation-templates/${id}`),
+  runAllocation: (id: string, data: any) => apiFetch<any>(`/api/v1/gl/admin/allocation-templates/${id}/run`, { method: 'POST', body: JSON.stringify(data) }),
+  // S034 — Intercompany Pairs
+  listIntercompanyPairs: () => apiFetch<any[]>('/api/v1/gl/admin/intercompany-pairs'),
+  createIntercompanyPair: (data: any) => apiFetch<any>('/api/v1/gl/admin/intercompany-pairs', { method: 'POST', body: JSON.stringify(data) }),
+  checkIcNetZero: (year: number, month: number) => apiFetch<any[]>(`/api/v1/gl/admin/intercompany-pairs/net-zero?year=${year}&month=${month}`),
+  // S035 — Consolidation Elimination Runs
+  listEliminationRuns: (eliminationEntityId?: string) => apiFetch<any[]>(`/api/v1/gl/admin/consolidation/elimination-runs${eliminationEntityId ? `?eliminationEntityId=${eliminationEntityId}` : ''}`),
+  runElimination: (data: any) => apiFetch<any>('/api/v1/gl/admin/consolidation/elimination-runs', { method: 'POST', body: JSON.stringify(data) }),
   // Floor Plan Financing (Phase 1)
   registerFloorPlanUnit: (data: any) => apiFetch<any>('/api/v1/gl/floor-plan/units', { method: 'POST', body: JSON.stringify(data) }),
   listFloorPlanUnits: (params?: string) => apiFetch<any>(`/api/v1/gl/floor-plan/units${params ? `?${params}` : ''}`),

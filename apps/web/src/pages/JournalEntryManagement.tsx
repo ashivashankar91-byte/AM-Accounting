@@ -4,7 +4,7 @@ import { glApi } from '../api/client';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type EntryStatus = 'DRAFT' | 'PENDING_REVIEW' | 'POSTED';
+type EntryStatus = 'DRAFT' | 'PENDING_REVIEW' | 'POSTED' | 'VOIDED';
 
 interface JournalLine {
   id: string;
@@ -41,6 +41,7 @@ const STATUS_STYLES: Record<EntryStatus, string> = {
   DRAFT: 'bg-gray-100 text-gray-700',
   PENDING_REVIEW: 'bg-yellow-100 text-yellow-800',
   POSTED: 'bg-green-100 text-green-700',
+  VOIDED: 'bg-red-100 text-red-700',
 };
 
 const AGENT_STATUS_STYLES: Record<string, string> = {
@@ -360,10 +361,22 @@ function NewEntryForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel
 
 function EntryDetail({ entry, onClose }: { entry: JournalEntry; onClose: () => void }) {
   const queryClient = useQueryClient();
+  const [showVoidConfirm, setShowVoidConfirm] = useState(false);
+  const [voidReason, setVoidReason] = useState('');
 
   const submitMut = useMutation({
     mutationFn: () => glApi.submitEntry(entry.id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['gl-entries'] }),
+  });
+
+  // S219 — Void/Delete Draft JE (SoD: actor ≠ creator enforced server-side)
+  const voidMut = useMutation({
+    mutationFn: () => glApi.voidEntry(entry.id, voidReason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['gl-entries'] });
+      setShowVoidConfirm(false);
+      onClose();
+    },
   });
 
   return (
@@ -422,12 +435,49 @@ function EntryDetail({ entry, onClose }: { entry: JournalEntry; onClose: () => v
         )}
 
         {entry.status === 'DRAFT' && (
-          <div className="flex justify-end gap-3">
-            <button onClick={() => submitMut.mutate()} disabled={submitMut.isPending}
-              className="px-5 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-2">
-              {submitMut.isPending && <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-              Submit for Review
-            </button>
+          <div className="space-y-3">
+            {showVoidConfirm ? (
+              <div className="border border-red-200 bg-red-50 rounded-lg p-4 space-y-3">
+                <p className="text-sm font-semibold text-red-800">Confirm Void — This action cannot be undone.</p>
+                <p className="text-xs text-red-600">A voided draft entry has no accounting effect. Provide a reason for audit trail (S007).</p>
+                <textarea
+                  value={voidReason}
+                  onChange={e => setVoidReason(e.target.value)}
+                  placeholder="Reason for voiding this draft entry (required)"
+                  rows={2}
+                  className="w-full text-sm border border-red-300 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-red-500"
+                />
+                <div className="flex gap-2 justify-end">
+                  <button onClick={() => { setShowVoidConfirm(false); setVoidReason(''); }}
+                    className="px-4 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => voidMut.mutate()}
+                    disabled={voidMut.isPending || voidReason.trim().length < 3}
+                    className="px-4 py-1.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center gap-2">
+                    {voidMut.isPending && <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                    Confirm Void
+                  </button>
+                </div>
+                {voidMut.isError && (
+                  <p className="text-sm text-red-600">{(voidMut.error as Error).message}</p>
+                )}
+              </div>
+            ) : (
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => setShowVoidConfirm(true)}
+                  className="px-4 py-2 text-sm border border-red-300 text-red-600 rounded-lg hover:bg-red-50">
+                  Void Draft
+                </button>
+                <button onClick={() => submitMut.mutate()} disabled={submitMut.isPending}
+                  className="px-5 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-2">
+                  {submitMut.isPending && <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                  Submit for Review
+                </button>
+              </div>
+            )}
           </div>
         )}
         {submitMut.isError && (
@@ -451,6 +501,7 @@ const STATUS_FILTERS: { label: string; value: EntryStatus | '' }[] = [
   { label: 'Draft', value: 'DRAFT' },
   { label: 'Pending Review', value: 'PENDING_REVIEW' },
   { label: 'Posted', value: 'POSTED' },
+  { label: 'Voided', value: 'VOIDED' },
 ];
 
 export default function JournalEntryManagement() {
@@ -474,6 +525,7 @@ export default function JournalEntryManagement() {
     DRAFT: (entries as JournalEntry[]).filter(e => e.status === 'DRAFT').length,
     PENDING_REVIEW: (entries as JournalEntry[]).filter(e => e.status === 'PENDING_REVIEW').length,
     POSTED: (entries as JournalEntry[]).filter(e => e.status === 'POSTED').length,
+    VOIDED: (entries as JournalEntry[]).filter(e => e.status === 'VOIDED').length,
   };
 
   return (

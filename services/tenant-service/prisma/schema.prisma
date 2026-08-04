@@ -241,3 +241,60 @@ model AuditOutboxEvent {
   @@index([publishedAt, retryCount])
   @@map("audit_outbox")
 }
+
+// S005 — HR-Event Provisioning Hooks
+// Every HR-originated provisioning action is persisted for audit lineage.
+model HrProvisioningEvent {
+  id                String   @id @default(uuid())
+  tenantId          String   @map("tenant_id")
+  hrEventType       String   @map("hr_event_type")
+  hrUserId          String   @map("hr_user_id")
+  hrSystem          String   @map("hr_system")
+  payload           Json     @default("{}")
+  accountingAction  String   @map("accounting_action")
+  accountingUserId  String?  @map("accounting_user_id")
+  accountingRoles   String[] @map("accounting_roles")
+  processedAt       DateTime @default(now()) @map("processed_at")
+  errorMessage      String?  @map("error_message")
+  correlationId     String   @default(uuid()) @map("correlation_id")
+
+  @@index([tenantId])
+  @@index([hrUserId])
+  @@map("hr_provisioning_events")
+}
+
+// S006 — MFA Policy per Tenant
+model MfaPolicy {
+  id          String   @id @default(uuid())
+  tenantId    String   @unique @map("tenant_id")
+  enforcement String   @default("OPTIONAL")
+  totpEnabled Boolean  @default(true) @map("totp_enabled")
+  smsEnabled  Boolean  @default(false) @map("sms_enabled")
+  exemptRoles String[] @default([]) @map("exempt_roles")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("mfa_policies")
+}
+
+// S006 — Safeguards Evidence (immutable MFA audit log)
+model SafeguardsEvidence {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  userId        String   @map("user_id")
+  eventType     String   @map("event_type")
+  mfaMethod     String?  @map("mfa_method")
+  resourceType  String?  @map("resource_type")
+  resourceId    String?  @map("resource_id")
+  ipAddress     String?  @map("ip_address")
+  userAgent     String?  @map("user_agent")
+  evidenceHash  String?  @map("evidence_hash")
+  occurredAt    DateTime @default(now()) @map("occurred_at")
+  sessionId     String?  @map("session_id")
+  correlationId String   @default(uuid()) @map("correlation_id")
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([occurredAt])
+  @@map("safeguards_evidence")
+}

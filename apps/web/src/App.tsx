@@ -243,6 +243,11 @@ import EmployeeHistoryReport from './pages/payroll/reports/EmployeeHistoryReport
 import EarningsDeductionsReport from './pages/payroll/reports/EarningsDeductionsReport';
 import TaxSummaryReport from './pages/payroll/reports/TaxSummaryReport';
 import FourOhOneKReport from './pages/payroll/reports/FourOhOneKReport';
+// S033/S034/S035/S219 Wave 1 new pages
+import AllocationTemplates from './pages/AllocationTemplates';
+// S005/S006 Wave 1 admin pages
+import HrProvisioningEvents from './pages/HrProvisioningEvents';
+import MfaSettings from './pages/MfaSettings';
 import EMPOWERExport from './pages/payroll/reports/EMPOWERExport';
 import EmployeeWageExport from './pages/payroll/reports/EmployeeWageExport';
 import PayrollPositivePay from './pages/payroll/reports/PayrollPositivePay';
@@ -874,6 +879,12 @@ export default function App() {
               <Route path="/payroll" element={<Payroll />} />
               <Route path="/recon" element={<Reconciliation />} />
               <Route path="/intercompany" element={<Intercompany />} />
+              {/* S033 — Allocation Templates */}
+              <Route path="/allocation-templates" element={<AllocationTemplates />} />
+              {/* S005 — HR Provisioning Events */}
+              <Route path="/hr-provisioning" element={<HrProvisioningEvents />} />
+              {/* S006 — MFA Policy & Safeguards */}
+              <Route path="/mfa-settings" element={<MfaSettings />} />
               <Route path="/warranty" element={<WarrantyDCS />} />
               <Route path="/journal-sources" element={<JournalSources />} />
               <Route path="/eom" element={<EOMClose />} />

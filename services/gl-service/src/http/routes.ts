@@ -11,6 +11,10 @@ import { report1099Routes } from './1099-routes';
 import { floorPlanRoutes } from './floor-plan-routes';
 import { withSerializableRetry } from '../lib/serializable-retry';
 import { attachRouteSecurity, getActor, getTenantId, GL_PERMISSIONS } from './security';
+import { AllocationService } from '../application/allocation-service';
+import { IntercompanyService } from '../application/intercompany-service';
+import { ConsolidationEliminationService } from '../application/consolidation-elimination-service';
+import Decimal from 'decimal.js';
 
 const NORMAL_BALANCE_MAP: Record<string, 'DEBIT' | 'CREDIT'> = {
   ASSET: 'DEBIT',
@@ -561,6 +565,19 @@ export async function glRoutes(app: FastifyInstance) {
     const reverserId = (request as any).user?.sub ?? (request.headers['x-user-id'] as string) ?? 'system';
     const reversalEntry = await svc.reverseJournalEntry(id, tenantId, body.reversalDate, body.reason, reverserId);
     return reply.status(201).send(reversalEntry);
+  });
+
+  // S219 — DELETE /journal-entries/:id — Void/Discard a DRAFT journal entry
+  // Only DRAFT entries may be voided. SoD: actor ≠ creator (per S004B policy).
+  app.delete('/journal-entries/:id', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const body = z.object({
+      reason: z.string().min(1, 'Void reason is required'),
+    }).parse(request.body ?? {});
+    const voidedBy = (request as any).user?.sub ?? (request.headers['x-user-id'] as string) ?? 'system';
+    const entry = await svc.discardDraftJournalEntry(id, tenantId, voidedBy, body.reason);
+    return reply.send(entry);
   });
 
   // ── DMS-native RO ingest endpoint ─────────────────────────────────────────
@@ -2964,5 +2981,107 @@ export async function glRoutes(app: FastifyInstance) {
       icAccounts,
       lines: nonIcLines,
     });
+  });
+
+  // ── S033 — Allocation Entries ─────────────────────────────────────────────
+  const allocationSvc = new AllocationService(prisma as any, svc);
+
+  app.get('/admin/allocation-templates', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    return reply.send(await allocationSvc.listTemplates(tenantId));
+  });
+
+  app.post('/admin/allocation-templates', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = getActor(request);
+    const body = z.object({
+      name: z.string().min(1),
+      description: z.string().optional(),
+      sourceAccountId: z.string().min(1),
+      allocationBasis: z.enum(['PERCENTAGE', 'FIXED_AMOUNT']).default('PERCENTAGE'),
+      journalSource: z.string().optional(),
+      lines: z.array(z.object({
+        targetAccountId: z.string().min(1),
+        allocationPct: z.number().optional(),
+        fixedAmount: z.number().optional(),
+        departmentCode: z.string().optional(),
+        description: z.string().optional(),
+      })).min(1),
+    }).parse(request.body);
+    return reply.status(201).send(await allocationSvc.createTemplate(body as any, tenantId, actor));
+  });
+
+  app.get('/admin/allocation-templates/:id', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    return reply.send(await allocationSvc.getTemplate(id, tenantId));
+  });
+
+  app.post('/admin/allocation-templates/:id/run', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = getActor(request);
+    const { id } = request.params as { id: string };
+    const body = z.object({
+      sourceAmount: z.number(),
+      entryDate: z.string().transform(s => new Date(s)),
+      description: z.string().optional(),
+    }).parse(request.body);
+    const result = await allocationSvc.runAllocation(
+      id, tenantId, new Decimal(body.sourceAmount), body.entryDate, actor, body.description,
+    );
+    return reply.status(201).send(result);
+  });
+
+  // ── S034 — Intercompany Pairing & Net-Zero ────────────────────────────────
+  const icSvc = new IntercompanyService(prisma as any);
+
+  app.get('/admin/intercompany-pairs', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    return reply.send(await icSvc.listPairs(tenantId));
+  });
+
+  app.post('/admin/intercompany-pairs', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = getActor(request);
+    const body = z.object({
+      entityAId: z.string().min(1),
+      entityBId: z.string().min(1),
+      icReceivableAccount: z.string().optional(),
+      icPayableAccount: z.string().optional(),
+      enforcement: z.enum(['NONE', 'WARN', 'BLOCK']).default('WARN'),
+    }).parse(request.body);
+    return reply.status(201).send(await icSvc.createPair(body as any, tenantId, actor));
+  });
+
+  app.get('/admin/intercompany-pairs/net-zero', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const query = z.object({
+      year: z.coerce.number().int(),
+      month: z.coerce.number().int(),
+    }).parse(request.query);
+    return reply.send(await icSvc.checkNetZero(tenantId, query.year, query.month));
+  });
+
+  // ── S035 — Consolidation Eliminations ────────────────────────────────────
+  const elimSvc = new ConsolidationEliminationService(prisma as any, svc);
+
+  app.post('/admin/consolidation/elimination-runs', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = getActor(request);
+    const body = z.object({
+      eliminationEntityId: z.string().min(1),
+      periodYear: z.number().int(),
+      periodMonth: z.number().int().min(1).max(12),
+    }).parse(request.body);
+    const result = await elimSvc.runElimination(body, tenantId, actor);
+    return reply.status(201).send(result);
+  });
+
+  app.get('/admin/consolidation/elimination-runs', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const query = z.object({
+      eliminationEntityId: z.string().optional(),
+    }).parse(request.query ?? {});
+    return reply.send(await elimSvc.getRunHistory(tenantId, query.eliminationEntityId));
   });
 }

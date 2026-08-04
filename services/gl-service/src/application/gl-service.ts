@@ -519,6 +519,85 @@ export class GLService {
     return this.journalRepo.create(expandedDto, tenantId);
   }
 
+  // ── S219: Journal Entry — Void/Discard Draft (DRAFT → VOIDED) ────────────
+
+  /**
+   * @story S219 — Void/Delete Draft JE
+   * @accounting-rule Only DRAFT entries may be voided. PENDING_REVIEW, POSTED, and
+   *   REVERSED entries are immutable — their accounting effects must be corrected via
+   *   reversal (S218). A void does not produce a ledger effect — the entry never posted.
+   * @sod The actor (voidedBy) may not be the same as the entry creator when
+   *   SoD is enforced by tenant policy. Inherit S004B SoD matrix.
+   * @audit Every void is written to the immutable audit log (S007).
+   * @idempotent A second call on an already-VOIDED entry is a no-op (returns current state).
+   */
+  async discardDraftJournalEntry(
+    entryId: string,
+    tenantId: TenantId,
+    voidedBy: string,
+    reason: string,
+  ): Promise<JournalEntry> {
+    const entry = await this.journalRepo.findById(entryId, tenantId);
+    if (!entry) throw new JournalEntryNotFoundError(entryId);
+
+    // Idempotency — already voided is acceptable
+    if ((entry.status as string) === JournalStatus.VOIDED) {
+      return entry;
+    }
+
+    if (entry.status !== JournalStatus.DRAFT) {
+      throw new InvalidStatusTransitionError(entry.status, 'DRAFT');
+    }
+
+    // SoD check: actor must not be the entry creator (mirrors S004B enforcement)
+    const creatorId = (entry as any).createdByUserId;
+    if (creatorId && voidedBy && creatorId === voidedBy) {
+      throw new SegregationOfDutiesError();
+    }
+
+    const correlationId = crypto.randomUUID();
+
+    await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, tenantId);
+      await tx.journalEntry.update({
+        where: { id: entryId },
+        data: { status: 'VOIDED' },
+      });
+      await appendAuditRowsTx(tx, {
+        tenantId,
+        docType: 'JOURNAL_ENTRY',
+        docId: entryId,
+        action: 'VOIDED',
+        actor: voidedBy,
+        before: { status: entry.status },
+        after: { status: 'VOIDED', reason, correlationId },
+        writeEventOutbox: false,
+      });
+      await tx.outboxEvent.create({
+        data: {
+          eventType: 'JOURNAL_ENTRY_VOIDED',
+          tenantId,
+          payload: { entryId, voidedBy, reason } as any,
+          correlationId,
+        },
+      });
+    });
+
+    try {
+      await this.eventPublisher.publish(
+        createEvent('JOURNAL_ENTRY_VOIDED', tenantId, { entryId, voidedBy, reason }),
+      );
+      await (this.prisma as any).outboxEvent.updateMany({
+        where: { correlationId, publishedAt: null },
+        data: { publishedAt: new Date() },
+      });
+    } catch {
+      // Outbox processor will retry
+    }
+
+    return this.journalRepo.findById(entryId, tenantId) as Promise<JournalEntry>;
+  }
+
   // ── Journal Entry — Submit for Review (DRAFT → PENDING_REVIEW) ───────────
 
   /**
