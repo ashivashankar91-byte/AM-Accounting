@@ -1346,8 +1346,9 @@
       "title": "Experience-Rated Chargeback Model",
       "release": "R7",
       "service": "orchestrator-service/automation-service",
-      "status": "NOT_IMPLEMENTED",
-      "gap_or_evidence": "No experience-rated chargeback model, no retro-chargeback calculation engine, no probability-based reserve computation in deal-accounting-service or any service"
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/automation-service/tests/unit/s091b-chargeback-model.cert.test.ts",
+      "certified_at": "2026-08-04"
     },
     {
       "story_id": "S095",
@@ -1364,8 +1365,9 @@
       "title": "Reinsurance/DOWC Cession",
       "release": "R7",
       "service": "orchestrator-service/automation-service",
-      "status": "NOT_IMPLEMENTED",
-      "gap_or_evidence": "No reinsurance cession service, no DOWC (Dealer-Obligor Warranty Company) posting logic, no cession accounting in deal-accounting-service or any service"
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/automation-service/tests/unit/s096-cession.cert.test.ts",
+      "certified_at": "2026-08-04"
     },
     {
       "story_id": "S101B",
@@ -1391,8 +1393,9 @@
       "title": "Probability-Weighted Incentive Accruals",
       "release": "R7",
       "service": "orchestrator-service/automation-service",
-      "status": "NOT_IMPLEMENTED",
-      "gap_or_evidence": "No probability-weighted incentive accrual engine, no stochastic accrual calculation, no model in deal-accounting-service"
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/automation-service/tests/unit/s103b-incentive-accruals.cert.test.ts",
+      "certified_at": "2026-08-04"
     },
     {
       "story_id": "S107",
@@ -1400,8 +1403,9 @@
       "title": "NCM/NADA Composite Export",
       "release": "R7",
       "service": "orchestrator-service/automation-service",
-      "status": "NOT_IMPLEMENTED",
-      "gap_or_evidence": "No NCM/NADA composite export service, no export routes, no NADA-format templates, no tests for this feature in oem-service"
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/automation-service/tests/unit/s107-composite-export.cert.test.ts",
+      "certified_at": "2026-08-04"
     },
     {
       "story_id": "S118",
@@ -1436,8 +1440,9 @@
       "title": "SOX Evidence Automation",
       "release": "R7",
       "service": "orchestrator-service/automation-service",
-      "status": "NOT_IMPLEMENTED",
-      "gap_or_evidence": "compliance-service has generic alert/rule CRUD; no SOX control evidence collection, no SOX control matrix, no evidence package assembly, no automated SOX report generation"
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/automation-service/tests/unit/s128-sox-evidence.cert.test.ts",
+      "certified_at": "2026-08-04"
     }
   ],
   "correction_note": "Corrected from premature all-159-certified claim. Evidence-based audit from r1-final-certification worktree (132 certified, 17 partial, 10 not-implemented). PACKAGE_AUTHORIZED_DEFERRED superseded: all 159 stories are now authorized for implementation."
