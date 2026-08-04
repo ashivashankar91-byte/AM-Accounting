@@ -3,9 +3,9 @@
   "source_sha": "d8fc51b7",
   "branch": "r1-final-certification",
   "totals": {
-    "CERTIFIED": 45,
+    "CERTIFIED": 47,
     "PACKAGE_AUTHORIZED_DEFERRED": 112,
-    "BLOCKED_WITH_EXACT_GAP": 2
+    "BLOCKED_WITH_EXACT_GAP": 0
   },
   "stories": [
     {
@@ -248,8 +248,8 @@
       "title": "Void/Delete Draft JE",
       "release": "R0",
       "service": "gl-service",
-      "status": "BLOCKED_WITH_EXACT_GAP",
-      "gap_or_evidence": "SoD Matrix (S004B equivalent) \u2014 SoD validator exists in close-service/src/domain/sod-validator.ts but as embedded close-logic, not a standalone story-level persistent SoD enforcement service."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "Central SoD policy module in shared-kernel (ISoDPolicyStore, InMemorySoDPolicyStore, SoDError, SoDPolicy types); close-service migrated to export createDefaultSoDPolicy; fail-closed when policy unavailable; no wildcard bypass; explicit service allowlist."
     },
     {
       "story_id": "S220",
@@ -302,8 +302,8 @@
       "title": "Manual JE Approval Governance",
       "release": "R1",
       "service": "tenant-service",
-      "status": "BLOCKED_WITH_EXACT_GAP",
-      "gap_or_evidence": "InMemoryApprovalWorkflow \u2014 approval-service holds approvals in-memory only; no persistent DB-backed state table; CE-07 contract satisfied but S031 approval-state persistence is unverified."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "PrismaApprovalWorkflow \u2014 persistent approval_requests table with RLS, restart-safe, self-approval 403, optimistic concurrency, immutable decision history."
     },
     {
       "story_id": "S032",

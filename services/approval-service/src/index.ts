@@ -15,7 +15,15 @@ async function bootstrap() {
   const eventPublisher = new RabbitMQEventPublisher({ url: process.env['RABBITMQ_URL'] ?? 'amqp://localhost:5672', serviceName: 'approval-service' });
   await eventPublisher.connect();
 
-  const workflow = new InMemoryApprovalWorkflow(eventPublisher);
+  let workflow: import('@amacc/shared-kernel').IApprovalWorkflow;
+  if (process.env['DATABASE_URL']) {
+    const prismaModule = require('.prisma/approval-client');
+    const prisma = new prismaModule.PrismaClient();
+    const { PrismaApprovalWorkflow } = require('./application/prisma-approval-workflow');
+    workflow = new PrismaApprovalWorkflow(prisma, eventPublisher);
+  } else {
+    workflow = new InMemoryApprovalWorkflow(eventPublisher);
+  }
 
   await app.register(approvalRoutes(workflow), { prefix: '/api/v1/approvals' });
   app.get('/health', async () => ({ status: 'ok', service: 'approval-service' }));

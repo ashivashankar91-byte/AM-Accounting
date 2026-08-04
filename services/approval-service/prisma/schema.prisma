@@ -1,0 +1,53 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/approval-client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model ApprovalRequestRecord {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  legalEntityId   String?  @map("legal_entity_id")
+  agentName       String   @map("agent_name")
+  actionType      String   @map("action_type")
+  entityRef       String   @map("entity_ref")
+  reasoning       String
+  evidence        Json     @default("[]")
+  requiredRole    String   @map("required_role")
+  requesterId     String?  @map("requester_id")
+  eligibleApprovers Json   @default("[]") @map("eligible_approvers")
+  status          String   @default("PENDING")
+  decidedBy       String?  @map("decided_by")
+  decisionNote    String?  @map("decision_note")
+  proposedAt      DateTime @default(now()) @map("proposed_at")
+  expiresAt       DateTime @map("expires_at")
+  decidedAt       DateTime? @map("decided_at")
+  cancelledAt     DateTime? @map("cancelled_at")
+  cancelReason    String?  @map("cancel_reason")
+  sourceAction    String?  @map("source_action")
+  idempotencyKey  String?  @unique @map("idempotency_key")
+  version         Int      @default(0)
+
+  history         ApprovalDecisionHistory[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, legalEntityId])
+  @@map("approval_requests")
+}
+
+model ApprovalDecisionHistory {
+  id         String   @id @default(uuid())
+  requestId  String   @map("request_id")
+  actorId    String   @map("actor_id")
+  decision   String
+  note       String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  request    ApprovalRequestRecord @relation(fields: [requestId], references: [id])
+
+  @@map("approval_decision_history")
+}

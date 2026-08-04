@@ -1,3 +1,5 @@
+import { SoDPolicy } from '@amacc/shared-kernel';
+
 export class SoDViolationError extends Error {
   constructor(msg: string) { super(msg); this.name = 'SoDViolationError'; }
 }
@@ -23,4 +25,24 @@ export function validateReopenActor(initiatorId: string, approverId: string): vo
   if (initiatorId === approverId) {
     throw new SoDViolationError('Reopen initiator and approver must be different users');
   }
+}
+
+export function createDefaultSoDPolicy(tenantId: string, legalEntityId: string): SoDPolicy {
+  return {
+    id: `default-${tenantId}-${legalEntityId}`,
+    tenantId,
+    legalEntityId,
+    version: 1,
+    status: 'ACTIVE',
+    conflicts: [],
+    requesterApproverBarrier: true,
+    authorActivatorBarrier: true,
+    preparerPosterBarrier: true,
+    migrationPreparerApproverBarrier: true,
+    automationIdentityRestrictions: [],
+    effectiveFrom: new Date('2024-01-01'),
+    authorId: 'system',
+    createdAt: new Date('2024-01-01'),
+    updatedAt: new Date('2024-01-01'),
+  };
 }
