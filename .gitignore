@@ -64,3 +64,4 @@ tfplan-*
 tfplan[0-9]*
 *.tfvars
 !*.tfvars.example
+node_modules
