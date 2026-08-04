@@ -9,7 +9,7 @@
 import { Pool } from 'pg';
 import { randomUUID } from 'crypto';
 
-const DEMO_TENANT_ID = 'kunes-demo';
+const DEMO_TENANT_ID = 'tenant-kunes';
 const DB_URL = process.env.DATABASE_URL || 'postgresql://amacc:amacc_dev@localhost:5433/amacc';
 
 async function tableExists(pool: Pool, name: string): Promise<boolean> {
