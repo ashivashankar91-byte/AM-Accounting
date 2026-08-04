@@ -3,9 +3,9 @@
   "source_sha": "d8fc51b7",
   "branch": "r1-final-certification",
   "totals": {
-    "CERTIFIED": 134,
+    "CERTIFIED": 136,
     "PARTIALLY_IMPLEMENTED": 16,
-    "NOT_IMPLEMENTED": 9
+    "NOT_IMPLEMENTED": 7
   },
   "stories": [
     {
@@ -1175,8 +1175,8 @@
       "title": "Signed Statement Snapshots",
       "release": "R5",
       "service": "migration-service",
-      "status": "NOT_IMPLEMENTED",
-      "gap_or_evidence": "document-service is a generic file upload service using Anthropic AI for analysis; no cryptographic signing, no statement snapshot workflow, no snapshot version control, no signed-statement audit trail"
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/close-service/tests/unit/s016-signed-snapshots.cert.test.ts (6 tests) + snapshot-ceremony.test.ts (5 tests)"
     },
     {
       "story_id": "S017",
@@ -1184,8 +1184,8 @@
       "title": "WORM Archive & PII Crypto-Shredding",
       "release": "R5",
       "service": "migration-service",
-      "status": "NOT_IMPLEMENTED",
-      "gap_or_evidence": "No WORM (write-once-read-many) storage implementation, no immutable-log archive, no PII field encryption, no crypto-shredding (key deletion for GDPR erasure) anywhere in codebase"
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/close-service/tests/unit/s017-worm-archive.cert.test.ts (5 tests) AC1-AC5 passing"
     },
     {
       "story_id": "S033",
