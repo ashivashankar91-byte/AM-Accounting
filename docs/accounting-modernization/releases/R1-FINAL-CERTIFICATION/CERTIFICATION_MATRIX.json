@@ -1,11 +1,11 @@
 {
-  "certification_run": "2026-08-04",
+  "certification_run": "2026-08-04-corrected",
   "source_sha": "d8fc51b7",
   "branch": "r1-final-certification",
   "totals": {
-    "CERTIFIED": 47,
-    "PACKAGE_AUTHORIZED_DEFERRED": 112,
-    "BLOCKED_WITH_EXACT_GAP": 0
+    "CERTIFIED": 132,
+    "PARTIALLY_IMPLEMENTED": 17,
+    "NOT_IMPLEMENTED": 10
   },
   "stories": [
     {
@@ -437,8 +437,8 @@
       "title": "Vendor Master CRUD",
       "release": "R2",
       "service": "cash-service/apar-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s036a-vendor-master.cert.test.ts"
     },
     {
       "story_id": "S036B",
@@ -446,8 +446,8 @@
       "title": "Vendor Verification Integrations",
       "release": "R2",
       "service": "cash-service/apar-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s036b-vendor-verification.cert.test.ts"
     },
     {
       "story_id": "S039",
@@ -455,8 +455,8 @@
       "title": "AP Invoice Entry & 2/3-Way Match",
       "release": "R2",
       "service": "cash-service/apar-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s039-ap-invoice.cert.test.ts"
     },
     {
       "story_id": "S041",
@@ -464,8 +464,8 @@
       "title": "AP Approval Matrix",
       "release": "R2",
       "service": "cash-service/apar-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s041-ap-approval.cert.test.ts"
     },
     {
       "story_id": "S042",
@@ -473,8 +473,8 @@
       "title": "Use-Tax Self-Assessment",
       "release": "R2",
       "service": "cash-service/apar-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s042-use-tax.cert.test.ts"
     },
     {
       "story_id": "S043A",
@@ -482,8 +482,8 @@
       "title": "Manual Single Payment",
       "release": "R2",
       "service": "cash-service/apar-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s043a-manual-payment.cert.test.ts"
     },
     {
       "story_id": "S043B",
@@ -491,8 +491,8 @@
       "title": "Payment Runs & Rails",
       "release": "R2",
       "service": "cash-service/apar-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s043b-payment-run.cert.test.ts"
     },
     {
       "story_id": "S044",
@@ -500,8 +500,8 @@
       "title": "Trade-Payoff Fast Lane",
       "release": "R2",
       "service": "cash-service/apar-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s044-trade-payoff.cert.test.ts"
     },
     {
       "story_id": "S045",
@@ -509,8 +509,8 @@
       "title": "Void/Stop/Reissue & Check Escheat",
       "release": "R2",
       "service": "cash-service/apar-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s045-void-reissue.cert.test.ts"
     },
     {
       "story_id": "S046",
@@ -518,8 +518,8 @@
       "title": "Customer AR Master, Credit & Statements",
       "release": "R2",
       "service": "cash-service/apar-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s046-customer-ar.cert.test.ts"
     },
     {
       "story_id": "S048",
@@ -527,8 +527,8 @@
       "title": "Wholesale Vehicle AR & Title Gate",
       "release": "R2",
       "service": "cash-service/apar-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s048-wholesale-vehicle-ar.cert.test.ts"
     },
     {
       "story_id": "S050",
@@ -536,8 +536,8 @@
       "title": "AR Write-offs & Allowance Model",
       "release": "R2",
       "service": "cash-service/apar-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s050-ar-writeoff.cert.test.ts"
     },
     {
       "story_id": "S051",
@@ -545,8 +545,8 @@
       "title": "NSF Handling",
       "release": "R2",
       "service": "cash-service/apar-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s051-nsf.cert.test.ts"
     },
     {
       "story_id": "S052",
@@ -554,8 +554,8 @@
       "title": "Receipting POS & Drawers",
       "release": "R2",
       "service": "cash-service/apar-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s052-cash-drawer.cert.test.ts"
     },
     {
       "story_id": "S053",
@@ -563,8 +563,8 @@
       "title": "Deposit Workflow & Bank Feed Match",
       "release": "R2",
       "service": "cash-service/apar-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s053-deposit-workflow.cert.test.ts"
     },
     {
       "story_id": "S054A",
@@ -572,8 +572,8 @@
       "title": "Manual Bank Reconciliation Workbench",
       "release": "R2",
       "service": "cash-service/apar-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "PARTIALLY_IMPLEMENTED",
+      "gap_or_evidence": "cash-position-adapters.ts references reconciliation but no dedicated recon workbench route or application service; missing manual match/unmatch, statement import, difference resolution flows"
     },
     {
       "story_id": "S055",
@@ -581,8 +581,8 @@
       "title": "Merchant Settlement Reconciliation",
       "release": "R2",
       "service": "cash-service/apar-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s055-merchant-settlement.cert.test.ts"
     },
     {
       "story_id": "S057",
@@ -590,8 +590,8 @@
       "title": "Daily Cash Position Dashboard",
       "release": "R2",
       "service": "cash-service/apar-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s057-cash-position.cert.test.ts"
     },
     {
       "story_id": "S030",
@@ -599,8 +599,8 @@
       "title": "Schedule Statements & Dunning",
       "release": "R2",
       "service": "gl-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s030-statement-dunning.cert.test.ts"
     },
     {
       "story_id": "S124",
@@ -608,8 +608,8 @@
       "title": "Certified Tax Engine Adapter",
       "release": "R2",
       "service": "fixedops-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "PARTIALLY_IMPLEMENTED",
+      "gap_or_evidence": "account-mapping-roles.ts provides GL account mapping for tax roles; no dedicated tax-engine adapter interface, no certified tax engine integration (Vertex/Avalara), no regulatory fee tables"
     },
     {
       "story_id": "S125",
@@ -617,8 +617,8 @@
       "title": "Regulatory Fee Tables",
       "release": "R2",
       "service": "fixedops-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "PARTIALLY_IMPLEMENTED",
+      "gap_or_evidence": "account-mapping-roles.ts references fee-related GL accounts; no dedicated regulatory fee table management, no fee schedule CRUD, no jurisdiction-based fee lookup"
     },
     {
       "story_id": "S059",
@@ -626,8 +626,8 @@
       "title": "RO Close Posting (All Pay Types)",
       "release": "R3",
       "service": "parts-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s059-s065-fixedops.cert.test.ts"
     },
     {
       "story_id": "S060",
@@ -635,8 +635,8 @@
       "title": "RO Reopen/Void Auto-Reversal",
       "release": "R3",
       "service": "parts-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s059-s065-fixedops.cert.test.ts"
     },
     {
       "story_id": "S061",
@@ -644,8 +644,8 @@
       "title": "Labor WIP Mode & Open-RO Report",
       "release": "R3",
       "service": "parts-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s059-s065-fixedops.cert.test.ts"
     },
     {
       "story_id": "S062",
@@ -653,8 +653,8 @@
       "title": "Sublet PO Lifecycle",
       "release": "R3",
       "service": "parts-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s059-s065-fixedops.cert.test.ts"
     },
     {
       "story_id": "S064",
@@ -662,8 +662,8 @@
       "title": "Deferred Maintenance Contracts v1",
       "release": "R3",
       "service": "parts-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s059-s065-fixedops.cert.test.ts"
     },
     {
       "story_id": "S065",
@@ -671,8 +671,8 @@
       "title": "Warranty Claim Receivable Lifecycle",
       "release": "R3",
       "service": "parts-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s059-s065-fixedops.cert.test.ts"
     },
     {
       "story_id": "S066",
@@ -680,8 +680,8 @@
       "title": "Parts Movement Posting & Tie-Out",
       "release": "R3",
       "service": "parts-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s066-s070-parts.cert.test.ts"
     },
     {
       "story_id": "S067",
@@ -689,8 +689,8 @@
       "title": "OEM Price-Tape Revaluation",
       "release": "R3",
       "service": "parts-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s066-s070-parts.cert.test.ts"
     },
     {
       "story_id": "S068",
@@ -698,8 +698,8 @@
       "title": "Obsolescence Provision & Scrap",
       "release": "R3",
       "service": "parts-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s066-s070-parts.cert.test.ts"
     },
     {
       "story_id": "S069",
@@ -707,8 +707,8 @@
       "title": "Parts Physical Inventory",
       "release": "R3",
       "service": "parts-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s066-s070-parts.cert.test.ts"
     },
     {
       "story_id": "S070",
@@ -716,8 +716,8 @@
       "title": "Special-Order Deposits & Escheat",
       "release": "R3",
       "service": "parts-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s066-s070-parts.cert.test.ts"
     },
     {
       "story_id": "S049",
@@ -725,8 +725,8 @@
       "title": "Insurance AR (Body Shop)",
       "release": "R3",
       "service": "cash-service/apar-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s049-insurance-ar.cert.test.ts"
     },
     {
       "story_id": "S054B",
@@ -734,8 +734,8 @@
       "title": "Rule-Based Bank Auto-Match",
       "release": "R3",
       "service": "cash-service/apar-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "NOT_IMPLEMENTED",
+      "gap_or_evidence": "No auto-match engine, no rule-based matching service, no tests for automated bank statement matching in cash-service or any other service"
     },
     {
       "story_id": "S074",
@@ -743,8 +743,8 @@
       "title": "Vehicle Unit Ledger & Stock-In",
       "release": "R4",
       "service": "deal-accounting-service/vehicle-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s074-vehicle-unit-ledger.cert.test.ts"
     },
     {
       "story_id": "S075",
@@ -752,8 +752,8 @@
       "title": "Demo Reclass & Depreciation",
       "release": "R4",
       "service": "deal-accounting-service/vehicle-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s075-demo-reclass.cert.test.ts"
     },
     {
       "story_id": "S076",
@@ -761,8 +761,8 @@
       "title": "Used LCNRV Write-downs",
       "release": "R4",
       "service": "deal-accounting-service/vehicle-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s076-lcnrv-writedown.cert.test.ts"
     },
     {
       "story_id": "S077",
@@ -770,8 +770,8 @@
       "title": "Dealer Trades",
       "release": "R4",
       "service": "deal-accounting-service/vehicle-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s077-dealer-trades.cert.test.ts"
     },
     {
       "story_id": "S079",
@@ -779,8 +779,8 @@
       "title": "Floorplan Lender Feed Adapters",
       "release": "R4",
       "service": "deal-accounting-service/vehicle-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s079-s082-floorplan.cert.test.ts"
     },
     {
       "story_id": "S080",
@@ -788,8 +788,8 @@
       "title": "Floorplan VIN Match & Breaks",
       "release": "R4",
       "service": "deal-accounting-service/vehicle-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s079-s082-floorplan.cert.test.ts"
     },
     {
       "story_id": "S081",
@@ -797,8 +797,8 @@
       "title": "SOT Monitor",
       "release": "R4",
       "service": "deal-accounting-service/vehicle-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s079-s082-floorplan.cert.test.ts"
     },
     {
       "story_id": "S082",
@@ -806,8 +806,8 @@
       "title": "Floorplan Interest & Curtailments",
       "release": "R4",
       "service": "deal-accounting-service/vehicle-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s079-s082-floorplan.cert.test.ts"
     },
     {
       "story_id": "S024",
@@ -815,8 +815,8 @@
       "title": "Vehicle+F&I Rule Pack",
       "release": "R4",
       "service": "deal-accounting-service/vehicle-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s024-s084-s085-deal-review.cert.test.ts"
     },
     {
       "story_id": "S084",
@@ -824,8 +824,8 @@
       "title": "Deal JE Generator",
       "release": "R4",
       "service": "deal-accounting-service/vehicle-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s024-s084-s085-deal-review.cert.test.ts"
     },
     {
       "story_id": "S085",
@@ -833,8 +833,8 @@
       "title": "Biller Review Workbench",
       "release": "R4",
       "service": "deal-accounting-service/vehicle-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s024-s084-s085-deal-review.cert.test.ts"
     },
     {
       "story_id": "S086",
@@ -842,8 +842,8 @@
       "title": "Deal Unwind",
       "release": "R4",
       "service": "deal-accounting-service/vehicle-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s086-s093-deal-lifecycle.cert.test.ts"
     },
     {
       "story_id": "S087",
@@ -851,8 +851,8 @@
       "title": "Recontract Delta Posting",
       "release": "R4",
       "service": "deal-accounting-service/vehicle-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s086-s093-deal-lifecycle.cert.test.ts"
     },
     {
       "story_id": "S088",
@@ -860,8 +860,8 @@
       "title": "CIT Funding Match",
       "release": "R4",
       "service": "deal-accounting-service/vehicle-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s086-s093-deal-lifecycle.cert.test.ts"
     },
     {
       "story_id": "S089",
@@ -869,8 +869,8 @@
       "title": "Trade Payoff Issuance & Variance",
       "release": "R4",
       "service": "deal-accounting-service/vehicle-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s086-s093-deal-lifecycle.cert.test.ts"
     },
     {
       "story_id": "S090",
@@ -878,8 +878,8 @@
       "title": "Wholesale Disposition & Arbitration",
       "release": "R4",
       "service": "deal-accounting-service/vehicle-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s086-s093-deal-lifecycle.cert.test.ts"
     },
     {
       "story_id": "S091",
@@ -887,8 +887,8 @@
       "title": "Finance Reserve & Flat-% Chargeback Reserve",
       "release": "R4",
       "service": "deal-accounting-service/vehicle-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s086-s093-deal-lifecycle.cert.test.ts"
     },
     {
       "story_id": "S092",
@@ -896,8 +896,8 @@
       "title": "F&I Product Income & Remit Accrual",
       "release": "R4",
       "service": "deal-accounting-service/vehicle-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "PARTIALLY_IMPLEMENTED",
+      "gap_or_evidence": "Rule pack seed script includes F&I accrual rules; no dedicated application service file for FnI income/remit accrual found; needs story-level verification"
     },
     {
       "story_id": "S093",
@@ -905,8 +905,8 @@
       "title": "Product Cancellations",
       "release": "R4",
       "service": "deal-accounting-service/vehicle-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s086-s093-deal-lifecycle.cert.test.ts"
     },
     {
       "story_id": "S094",
@@ -914,8 +914,8 @@
       "title": "Dealer-Obligor Deferral Mode",
       "release": "R4",
       "service": "deal-accounting-service/vehicle-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "PARTIALLY_IMPLEMENTED",
+      "gap_or_evidence": "Rule pack seed includes deferral mode; no dedicated application service for obligor deferral workflow found; needs story-level verification"
     },
     {
       "story_id": "S108",
@@ -923,8 +923,8 @@
       "title": "Payroll Run GL Posting",
       "release": "R4",
       "service": "payroll-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s108-payroll-gl-posting.cert.test.ts"
     },
     {
       "story_id": "S109",
@@ -932,8 +932,8 @@
       "title": "Commission Engine",
       "release": "R4",
       "service": "payroll-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s109-commission-engine.cert.test.ts"
     },
     {
       "story_id": "S110",
@@ -941,8 +941,8 @@
       "title": "Chargeback Clawback Consumption",
       "release": "R4",
       "service": "payroll-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s110-chargeback-handoff.cert.test.ts"
     },
     {
       "story_id": "S111",
@@ -950,8 +950,8 @@
       "title": "Compensation Accruals",
       "release": "R4",
       "service": "payroll-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s111-compensation-accruals.cert.test.ts"
     },
     {
       "story_id": "S112",
@@ -959,8 +959,8 @@
       "title": "Tech Flag-to-Payroll Bridge",
       "release": "R4",
       "service": "payroll-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s112-tech-flag-bridge.cert.test.ts"
     },
     {
       "story_id": "S025",
@@ -968,8 +968,8 @@
       "title": "Payroll+Close Rule Pack",
       "release": "R4",
       "service": "payroll-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s025-rule-pack.cert.test.ts"
     },
     {
       "story_id": "S047",
@@ -977,8 +977,8 @@
       "title": "Fleet AR Consolidated Billing",
       "release": "R4",
       "service": "cash-service/apar-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s047-fleet-ar.cert.test.ts"
     },
     {
       "story_id": "S056",
@@ -986,8 +986,8 @@
       "title": "ZBA Sweeps & FP-Offset Allocation",
       "release": "R4",
       "service": "cash-service/apar-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s056-zba-sweeps.cert.test.ts"
     },
     {
       "story_id": "S063",
@@ -995,8 +995,8 @@
       "title": "Unapplied Time & Tech Guarantee",
       "release": "R4",
       "service": "parts-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "PARTIALLY_IMPLEMENTED",
+      "gap_or_evidence": "Labor rate policy migrations exist but no application service or tests for unapplied time tracking or tech guarantee pay calculation"
     },
     {
       "story_id": "S098",
@@ -1004,8 +1004,8 @@
       "title": "OEM Adapter Framework & Diff Alerts",
       "release": "R5",
       "service": "eom-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s098-s106-oem-cert.test.ts"
     },
     {
       "story_id": "S099",
@@ -1013,8 +1013,8 @@
       "title": "Ford Feed Adapter",
       "release": "R5",
       "service": "eom-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s098-s106-oem-cert.test.ts"
     },
     {
       "story_id": "S100",
@@ -1022,8 +1022,8 @@
       "title": "GM Feed Adapter",
       "release": "R5",
       "service": "eom-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s098-s106-oem-cert.test.ts"
     },
     {
       "story_id": "S101A",
@@ -1031,8 +1031,8 @@
       "title": "Manual OEM Statement Match Workbench",
       "release": "R5",
       "service": "eom-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s098-s106-oem-cert.test.ts"
     },
     {
       "story_id": "S103A",
@@ -1040,8 +1040,8 @@
       "title": "Incentive Registry & Flat RDR Accruals",
       "release": "R5",
       "service": "eom-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s098-s106-oem-cert.test.ts"
     },
     {
       "story_id": "S104",
@@ -1049,8 +1049,8 @@
       "title": "OEM Financial Statement Renderer",
       "release": "R5",
       "service": "eom-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s104-s120-fs-statements.cert.test.ts"
     },
     {
       "story_id": "S105",
@@ -1058,8 +1058,8 @@
       "title": "Warranty Audit Chargeback & Reserve",
       "release": "R5",
       "service": "eom-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s098-s106-oem-cert.test.ts"
     },
     {
       "story_id": "S106",
@@ -1067,8 +1067,8 @@
       "title": "Co-op Advertising Claims",
       "release": "R5",
       "service": "eom-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s098-s106-oem-cert.test.ts"
     },
     {
       "story_id": "S113",
@@ -1076,8 +1076,8 @@
       "title": "Close Calendar Task Engine",
       "release": "R5",
       "service": "migration-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/close-state-machine.test.ts;tests/unit/readiness-aggregator.test.ts;tests/live-db/close-lifecycle.test.ts;tests/unit/s113-close-calendar.cert.test.ts"
     },
     {
       "story_id": "S114",
@@ -1085,8 +1085,8 @@
       "title": "Reconciliation Module & PBC Export",
       "release": "R5",
       "service": "migration-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/integration/snapshot-integrity.test.ts;tests/unit/s114-reconciliation.cert.test.ts"
     },
     {
       "story_id": "S115",
@@ -1094,8 +1094,8 @@
       "title": "Pre-Close Scrub Reports",
       "release": "R5",
       "service": "migration-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/scrub-engine.test.ts;tests/integration/preliminary-close.test.ts;tests/unit/s115-scrub-reports.cert.test.ts"
     },
     {
       "story_id": "S116",
@@ -1103,8 +1103,8 @@
       "title": "Year-End Close",
       "release": "R5",
       "service": "migration-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/year-end-engine.test.ts;tests/integration/year-end-roll.test.ts;tests/unit/s116-s117-yearend.cert.test.ts"
     },
     {
       "story_id": "S117",
@@ -1112,8 +1112,8 @@
       "title": "Year-End Tax Pack",
       "release": "R5",
       "service": "migration-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/retention-engine.test.ts;tests/unit/s116-s117-yearend.cert.test.ts"
     },
     {
       "story_id": "S119",
@@ -1121,8 +1121,8 @@
       "title": "Daily Operating Control (DOC)",
       "release": "R5",
       "service": "migration-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s119-daily-operating-control.cert.test.ts"
     },
     {
       "story_id": "S120",
@@ -1130,8 +1130,8 @@
       "title": "Statement-Format Financial Packages",
       "release": "R5",
       "service": "migration-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s104-s120-fs-statements.cert.test.ts"
     },
     {
       "story_id": "S121",
@@ -1139,8 +1139,8 @@
       "title": "Fixed Ops KPI Pack",
       "release": "R5",
       "service": "migration-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "PARTIALLY_IMPLEMENTED",
+      "gap_or_evidence": "EOM orchestrator has generic step execution; no dedicated fixed-ops KPI pack application service or KPI definitions found; no story-level cert run"
     },
     {
       "story_id": "S122",
@@ -1148,8 +1148,8 @@
       "title": "Variable Ops KPI Pack",
       "release": "R5",
       "service": "migration-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "PARTIALLY_IMPLEMENTED",
+      "gap_or_evidence": "EOM orchestrator has generic step execution; no dedicated variable-ops KPI pack application service or KPI definitions found; no story-level cert run"
     },
     {
       "story_id": "S123",
@@ -1157,8 +1157,8 @@
       "title": "Compliance Reporting Pack",
       "release": "R5",
       "service": "migration-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "PARTIALLY_IMPLEMENTED",
+      "gap_or_evidence": "compliance-service has generic compliance alert/rule CRUD and status endpoint; no reporting-pack-specific regulatory reports (DOT/DMS compliance pack), no report format templates, no story-level tests"
     },
     {
       "story_id": "S015",
@@ -1166,8 +1166,8 @@
       "title": "Multi-Currency & CTA",
       "release": "R5",
       "service": "migration-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "PARTIALLY_IMPLEMENTED",
+      "gap_or_evidence": "gl-service routes include currency endpoint scaffolding; no multi-currency translation logic, no CTA (cumulative translation adjustment) accounts, no FX revaluation journal entries, no cross-currency trial balance"
     },
     {
       "story_id": "S016",
@@ -1175,8 +1175,8 @@
       "title": "Signed Statement Snapshots",
       "release": "R5",
       "service": "migration-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "NOT_IMPLEMENTED",
+      "gap_or_evidence": "document-service is a generic file upload service using Anthropic AI for analysis; no cryptographic signing, no statement snapshot workflow, no snapshot version control, no signed-statement audit trail"
     },
     {
       "story_id": "S017",
@@ -1184,8 +1184,8 @@
       "title": "WORM Archive & PII Crypto-Shredding",
       "release": "R5",
       "service": "migration-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "NOT_IMPLEMENTED",
+      "gap_or_evidence": "No WORM (write-once-read-many) storage implementation, no immutable-log archive, no PII field encryption, no crypto-shredding (key deletion for GDPR erasure) anywhere in codebase"
     },
     {
       "story_id": "S033",
@@ -1193,8 +1193,8 @@
       "title": "Allocation Entries",
       "release": "R5",
       "service": "tenant-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "NOT_IMPLEMENTED",
+      "gap_or_evidence": "No application code, no DB migrations, no tests for allocation entries in any service"
     },
     {
       "story_id": "S034",
@@ -1202,8 +1202,8 @@
       "title": "Intercompany Pairing & Net-Zero",
       "release": "R5",
       "service": "tenant-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "PARTIALLY_IMPLEMENTED",
+      "gap_or_evidence": "legal-entity-service.ts references intercompany but no dedicated pairing service, net-zero rules, or intercompany elimination workflow exists"
     },
     {
       "story_id": "S035",
@@ -1211,8 +1211,8 @@
       "title": "Consolidation Eliminations",
       "release": "R5",
       "service": "tenant-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s035-franchise.cert.test.ts"
     },
     {
       "story_id": "S005",
@@ -1220,8 +1220,8 @@
       "title": "HR-Event Provisioning Hooks",
       "release": "R5",
       "service": "tenant-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "PARTIALLY_IMPLEMENTED",
+      "gap_or_evidence": "User lifecycle DB schema exists; iam.user.deactivated event is defined but broker-backed fan-out consumer for S206 role auto-revoke is NOT built; no HR system webhook adapter exists"
     },
     {
       "story_id": "S006",
@@ -1229,8 +1229,8 @@
       "title": "MFA & Safeguards Evidence",
       "release": "R5",
       "service": "tenant-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "NOT_IMPLEMENTED",
+      "gap_or_evidence": "No TOTP/MFA/2FA code in auth-service or any other service; no MFA DB schema, no MFA routes, no tests"
     },
     {
       "story_id": "S037",
@@ -1238,8 +1238,8 @@
       "title": "1099/T4A Flag Rules & Preview",
       "release": "R5",
       "service": "cash-service/apar-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s037-1099-flag-rules.cert.test.ts"
     },
     {
       "story_id": "S038",
@@ -1247,8 +1247,8 @@
       "title": "Vendor Insurance-Cert Tracking",
       "release": "R5",
       "service": "cash-service/apar-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s038-insurance-cert.cert.test.ts"
     },
     {
       "story_id": "S071",
@@ -1256,8 +1256,8 @@
       "title": "OEM Parts-Return Pipeline",
       "release": "R5",
       "service": "parts-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "PARTIALLY_IMPLEMENTED",
+      "gap_or_evidence": "oem-return-service.ts exists but no unit or integration tests; no story-level cert run"
     },
     {
       "story_id": "S072",
@@ -1265,8 +1265,8 @@
       "title": "Parts Valuation Config & Landed Cost",
       "release": "R5",
       "service": "parts-accounting-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "PARTIALLY_IMPLEMENTED",
+      "gap_or_evidence": "valuation-config-service.ts exists but no unit or integration tests; no story-level cert run"
     },
     {
       "story_id": "S129",
@@ -1274,8 +1274,8 @@
       "title": "Item-Level Schedule Migration & Gates",
       "release": "R6",
       "service": "approval-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R6 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s129-staging-gates.cert.test.ts"
     },
     {
       "story_id": "S130",
@@ -1283,8 +1283,8 @@
       "title": "TB Conversion & COA Mapping Workbench",
       "release": "R6",
       "service": "approval-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R6 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s130-mapping-workbench.cert.test.ts"
     },
     {
       "story_id": "S131",
@@ -1292,8 +1292,8 @@
       "title": "Parallel-Run Comparison Harness",
       "release": "R6",
       "service": "approval-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R6 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s131-comparison-harness.cert.test.ts"
     },
     {
       "story_id": "S132",
@@ -1301,8 +1301,8 @@
       "title": "Statement Archive Import & Runbooks",
       "release": "R6",
       "service": "approval-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R6 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s132-archive-runbook.cert.test.ts"
     },
     {
       "story_id": "S022",
@@ -1310,8 +1310,8 @@
       "title": "Rule Simulation Sandbox",
       "release": "R6",
       "service": "orchestrator-service/automation-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R6 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s022-sandbox.cert.test.ts"
     },
     {
       "story_id": "S040",
@@ -1319,8 +1319,8 @@
       "title": "OCR/EDI Invoice Ingestion",
       "release": "R7",
       "service": "orchestrator-service/automation-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s040-invoice-ingestion.cert.test.ts"
     },
     {
       "story_id": "S058",
@@ -1328,8 +1328,8 @@
       "title": "Lockbox AI Remittance Matching",
       "release": "R7",
       "service": "orchestrator-service/automation-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s058-lockbox-matching.cert.test.ts"
     },
     {
       "story_id": "S073",
@@ -1337,8 +1337,8 @@
       "title": "LIFO Overlay",
       "release": "R7",
       "service": "orchestrator-service/automation-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s073-lifo-overlay.cert.test.ts"
     },
     {
       "story_id": "S091B",
@@ -1346,8 +1346,8 @@
       "title": "Experience-Rated Chargeback Model",
       "release": "R7",
       "service": "orchestrator-service/automation-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "NOT_IMPLEMENTED",
+      "gap_or_evidence": "No experience-rated chargeback model, no retro-chargeback calculation engine, no probability-based reserve computation in deal-accounting-service or any service"
     },
     {
       "story_id": "S095",
@@ -1355,8 +1355,8 @@
       "title": "Retro/Portfolio Reserve Accrual",
       "release": "R7",
       "service": "orchestrator-service/automation-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "PARTIALLY_IMPLEMENTED",
+      "gap_or_evidence": "Rule pack seed mentions reserve accrual; no application service, no API routes, no dedicated DB schema for portfolio/retro reserve accrual"
     },
     {
       "story_id": "S096",
@@ -1364,8 +1364,8 @@
       "title": "Reinsurance/DOWC Cession",
       "release": "R7",
       "service": "orchestrator-service/automation-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "NOT_IMPLEMENTED",
+      "gap_or_evidence": "No reinsurance cession service, no DOWC (Dealer-Obligor Warranty Company) posting logic, no cession accounting in deal-accounting-service or any service"
     },
     {
       "story_id": "S101B",
@@ -1373,8 +1373,8 @@
       "title": "OEM Statement Auto-Matcher",
       "release": "R7",
       "service": "orchestrator-service/automation-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "PARTIALLY_IMPLEMENTED",
+      "gap_or_evidence": "Manual match service (S101A) exists; automated/rule-based auto-matching not found as distinct application service; match-service tests partially reference auto-match scenarios"
     },
     {
       "story_id": "S102",
@@ -1382,8 +1382,8 @@
       "title": "Phase-2 OEM Adapters",
       "release": "R7",
       "service": "eom-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "PARTIALLY_IMPLEMENTED",
+      "gap_or_evidence": "Adapter SPI interface exists enabling plug-in adapters; no concrete Phase-2 brand adapters (Honda/Toyota/etc.) implemented beyond Ford and GM"
     },
     {
       "story_id": "S103B",
@@ -1391,8 +1391,8 @@
       "title": "Probability-Weighted Incentive Accruals",
       "release": "R7",
       "service": "orchestrator-service/automation-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "NOT_IMPLEMENTED",
+      "gap_or_evidence": "No probability-weighted incentive accrual engine, no stochastic accrual calculation, no model in deal-accounting-service"
     },
     {
       "story_id": "S107",
@@ -1400,8 +1400,8 @@
       "title": "NCM/NADA Composite Export",
       "release": "R7",
       "service": "orchestrator-service/automation-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "NOT_IMPLEMENTED",
+      "gap_or_evidence": "No NCM/NADA composite export service, no export routes, no NADA-format templates, no tests for this feature in oem-service"
     },
     {
       "story_id": "S118",
@@ -1409,8 +1409,8 @@
       "title": "GAAP Bridge Memo Generator",
       "release": "R7",
       "service": "orchestrator-service/automation-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s118-gaap-bridge.cert.test.ts"
     },
     {
       "story_id": "S126",
@@ -1418,8 +1418,8 @@
       "title": "DSAR Automation",
       "release": "R7",
       "service": "orchestrator-service/automation-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s126-dsar.cert.test.ts"
     },
     {
       "story_id": "S127",
@@ -1427,8 +1427,8 @@
       "title": "Unclaimed Property Module",
       "release": "R7",
       "service": "orchestrator-service/automation-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s127-unclaimed-property.cert.test.ts"
     },
     {
       "story_id": "S128",
@@ -1436,8 +1436,9 @@
       "title": "SOX Evidence Automation",
       "release": "R7",
       "service": "orchestrator-service/automation-service",
-      "status": "PACKAGE_AUTHORIZED_DEFERRED",
-      "gap_or_evidence": "Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate."
+      "status": "NOT_IMPLEMENTED",
+      "gap_or_evidence": "compliance-service has generic alert/rule CRUD; no SOX control evidence collection, no SOX control matrix, no evidence package assembly, no automated SOX report generation"
     }
-  ]
+  ],
+  "correction_note": "Corrected from premature all-159-certified claim. Evidence-based audit from r1-final-certification worktree (132 certified, 17 partial, 10 not-implemented). PACKAGE_AUTHORIZED_DEFERRED superseded: all 159 stories are now authorized for implementation."
 }
