@@ -36,8 +36,15 @@ interface RegisterEntry {
   arEntryId?: string;
   amount?: number | string;
   reason?: string;
-  period?: string;
+  status?: string;
   createdAt?: string;
+}
+
+interface WriteOffRegisterResponse {
+  period: string | null;
+  writeOffCount: number;
+  totalWrittenOff: number;
+  writeOffs: RegisterEntry[];
 }
 
 interface AllowancePreview {
@@ -99,9 +106,9 @@ export default function WriteOffsAndAllowances() {
     isError: registerError,
     error: registerErrorObj,
     refetch: refetchRegister,
-  } = useQuery<RegisterEntry[]>({
+  } = useQuery<WriteOffRegisterResponse>({
     queryKey: ['write-offs-register', submittedRegisterPeriod],
-    queryFn: () => writeOffApi.getRegister(submittedRegisterPeriod ? `period=${submittedRegisterPeriod}` : undefined),
+    queryFn: () => writeOffApi.getRegister(submittedRegisterPeriod ? `period=${submittedRegisterPeriod}` : undefined) as Promise<WriteOffRegisterResponse>,
     enabled: activeTab === 'writeoffs' && submittedRegisterPeriod !== undefined,
     retry: false,
   });
@@ -289,22 +296,27 @@ export default function WriteOffsAndAllowances() {
             {registerLoading && <PageLoader page="register" />}
             {registerError && <PageError error={registerErrorObj as Error} retry={refetchRegister} />}
             {!registerLoading && register && (
-              register.length === 0 ? (
+              register.writeOffs.length === 0 ? (
                 <p className="text-xs text-slate-400 py-3">No register entries for this period.</p>
               ) : (
-                <table className="w-full text-xs">
-                  <thead><tr className="border-b text-slate-500"><th className="py-1 text-left">AR Entry</th><th className="py-1 text-left">Period</th><th className="py-1 text-left">Reason</th><th className="py-1 text-right">Amount</th></tr></thead>
-                  <tbody>
-                    {register.map((r, i) => (
-                      <tr key={r.id ?? i} className="border-b border-slate-50">
-                        <td className="py-1.5 font-mono">{r.arEntryId ?? '—'}</td>
-                        <td className="py-1.5">{r.period ?? '—'}</td>
-                        <td className="py-1.5 text-slate-600">{r.reason ?? '—'}</td>
-                        <td className="py-1.5 text-right font-mono"><MoneyCell value={r.amount ?? 0} /></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <>
+                  <p className="text-xs text-slate-500 mb-2">
+                    {register.writeOffCount} write-off{register.writeOffCount === 1 ? '' : 's'} · Total <MoneyCell value={register.totalWrittenOff} />
+                    {register.period ? ` · Period ${register.period}` : ''}
+                  </p>
+                  <table className="w-full text-xs">
+                    <thead><tr className="border-b text-slate-500"><th className="py-1 text-left">AR Entry</th><th className="py-1 text-left">Reason</th><th className="py-1 text-right">Amount</th></tr></thead>
+                    <tbody>
+                      {register.writeOffs.map((r, i) => (
+                        <tr key={r.id ?? i} className="border-b border-slate-50">
+                          <td className="py-1.5 font-mono">{r.arEntryId ?? '—'}</td>
+                          <td className="py-1.5 text-slate-600">{r.reason ?? '—'}</td>
+                          <td className="py-1.5 text-right font-mono"><MoneyCell value={r.amount ?? 0} /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
               )
             )}
             {submittedRegisterPeriod === undefined && !registerLoading && (

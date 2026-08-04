@@ -30,6 +30,8 @@ export default function TransactionDetailPopup({
   const [noteText, setNoteText] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [reversePrompt, setReversePrompt] = useState<{ type: 'ADJUSTMENT' | 'REVERSAL' } | null>(null);
+  const [reverseReason, setReverseReason] = useState('');
 
   const { data: txn, isLoading, error } = useQuery<any>({
     queryKey: ['txn-detail', transactionId],
@@ -38,11 +40,14 @@ export default function TransactionDetailPopup({
     retry: false,
   });
 
-  const reverseMutation = useMutation<any, Error, { type: 'ADJUSTMENT' | 'REVERSAL' }>({
-    mutationFn: ({ type }) => glApi.reverseEntry(transactionId!, { type }),
+  const reverseMutation = useMutation<any, Error, { type: 'ADJUSTMENT' | 'REVERSAL'; reason: string }>({
+    mutationFn: ({ type, reason }) =>
+      glApi.reverseEntry(transactionId!, { type, reason, reversalDate: new Date().toISOString() }),
     onSuccess: (_, vars) => {
       setActionSuccess(vars.type === 'REVERSAL' ? 'Reversal created successfully.' : 'Adjustment created successfully.');
       setActionError(null);
+      setReversePrompt(null);
+      setReverseReason('');
     },
     onError: (e) => {
       setActionError(e.message);
@@ -183,6 +188,37 @@ export default function TransactionDetailPopup({
               </table>
             </div>
 
+            {/* Inline reverse/adjustment reason prompt */}
+            {reversePrompt && (
+              <div className="border-t border-gray-200 px-4 py-2 bg-gray-50">
+                <p className="text-xs font-medium text-gray-600 mb-1">
+                  Reason for {reversePrompt.type === 'REVERSAL' ? 'reversal' : 'adjustment'} (required)
+                </p>
+                <textarea
+                  className="w-full h-16 text-xs border border-gray-300 rounded px-2 py-1 font-mono resize-none focus:outline-none focus:ring-1 focus:ring-brand"
+                  value={reverseReason}
+                  onChange={(e) => setReverseReason(e.target.value)}
+                  placeholder="Enter reason…"
+                  autoFocus
+                />
+                <div className="flex gap-2 mt-1">
+                  <button
+                    className="h-7 px-3 text-xs bg-brand text-white rounded hover:bg-brand-hover disabled:opacity-50"
+                    disabled={!reverseReason.trim() || reverseMutation.isPending}
+                    onClick={() => reverseMutation.mutate({ type: reversePrompt.type, reason: reverseReason.trim() })}
+                  >
+                    Confirm {reversePrompt.type === 'REVERSAL' ? 'Reverse' : 'Adjustment'}
+                  </button>
+                  <button
+                    className="h-7 px-3 text-xs border border-gray-300 rounded hover:bg-gray-100"
+                    onClick={() => { setReversePrompt(null); setReverseReason(''); }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Inline note textarea */}
             {noteOpen && (
               <div className="border-t border-gray-200 px-4 py-2 bg-gray-50">
@@ -229,7 +265,7 @@ export default function TransactionDetailPopup({
               <button
                 className="h-8 px-3 text-xs flex items-center gap-1.5 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50"
                 disabled={reverseMutation.isPending}
-                onClick={() => reverseMutation.mutate({ type: 'ADJUSTMENT' })}
+                onClick={() => { setReversePrompt({ type: 'ADJUSTMENT' }); setReverseReason(''); }}
               >
                 {reverseMutation.isPending && reverseMutation.variables?.type === 'ADJUSTMENT' ? (
                   <Loader2 size={13} className="animate-spin" />
@@ -241,7 +277,7 @@ export default function TransactionDetailPopup({
               <button
                 className="h-8 px-3 text-xs flex items-center gap-1.5 border border-red-300 text-red-700 rounded hover:bg-red-50 disabled:opacity-50"
                 disabled={reverseMutation.isPending}
-                onClick={() => reverseMutation.mutate({ type: 'REVERSAL' })}
+                onClick={() => { setReversePrompt({ type: 'REVERSAL' }); setReverseReason(''); }}
               >
                 {reverseMutation.isPending && reverseMutation.variables?.type === 'REVERSAL' ? (
                   <Loader2 size={13} className="animate-spin" />
