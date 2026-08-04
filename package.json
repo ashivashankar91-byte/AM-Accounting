@@ -24,6 +24,9 @@
     "seed:r1-demo": "bash scripts/seed-r1-demo.sh",
     "seed:r1-demo:reset": "bash scripts/seed-r1-demo.sh --reset",
     "seed:r1-demo:verify": "npx tsx scripts/verify-r1-demo.ts",
+    "seed:all-159-demo": "bash scripts/seed-all-159-demo.sh",
+    "seed:all-159-demo:reset": "bash scripts/seed-all-159-demo.sh --reset",
+    "seed:all-159-demo:verify": "bash scripts/seed-all-159-demo.sh --verify",
     "release:generate": "node scripts/generate-release-doc.js",
     "release:check": "node scripts/generate-release-doc.js --check"
   },
