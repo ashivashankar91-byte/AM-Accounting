@@ -484,6 +484,48 @@ model RecognitionRunLine {
 // followed here: audit outbox only.
 // ---------------------------------------------------------------------------
 
+// S095 — Portfolio Reserve Accrual
+// Tenant-configurable percent-of-portfolio reserve configuration and
+// per-period accrual runs (idempotent on period key).
+model PortfolioReserveConfig {
+  id               String    @id @default(uuid())
+  tenantId         String    @map("tenant_id")
+  legalEntityId    String    @map("legal_entity_id")
+  portfolioCode    String    @map("portfolio_code")
+  accrualBasisBp   Int       @map("accrual_basis_bp")    // basis points: 100 bp = 1%
+  effectiveFrom    DateTime  @map("effective_from")
+  effectiveTo      DateTime? @map("effective_to")
+  createdBy        String    @map("created_by")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  accruals PortfolioReserveAccrual[]
+
+  @@index([tenantId, legalEntityId, portfolioCode])
+  @@map("portfolio_reserve_config")
+}
+
+model PortfolioReserveAccrual {
+  id               String    @id @default(uuid())
+  tenantId         String    @map("tenant_id")
+  legalEntityId    String    @map("legal_entity_id")
+  portfolioCode    String    @map("portfolio_code")
+  configId         String    @map("config_id")
+  periodYear       Int       @map("period_year")
+  periodMonth      Int       @map("period_month")
+  portfolioBalance Decimal   @db.Decimal(15, 2) @map("portfolio_balance")
+  accrualAmount    Decimal   @db.Decimal(15, 2) @map("accrual_amount")
+  idempotencyKey   String    @map("idempotency_key")
+  postedJournalId  String?   @map("posted_journal_id")
+  actor            String
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  config PortfolioReserveConfig @relation(fields: [configId], references: [id])
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, legalEntityId, portfolioCode, periodYear, periodMonth])
+  @@map("portfolio_reserve_accrual")
+}
+
 model AuditOutboxEvent {
   id            String    @id @default(uuid())
   tenantId      String    @map("tenant_id")
