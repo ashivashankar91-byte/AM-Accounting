@@ -3,181 +3,113 @@
  * Extends the R1 demo seed with synthetic scenarios for all 159 stories.
  * Covers: CE-06 (Wave 1), CE-08 (S030), CE-09 through CE-17.
  *
- * Safe to run multiple times (idempotent via upsert/findOrCreate patterns).
+ * Uses raw pg SQL — no service-specific Prisma clients required.
+ * Safe to run multiple times (idempotent via SELECT 1 / upsert patterns).
  */
-import { PrismaClient as GlPrisma } from '../services/gl-service/node_modules/.prisma/client';
-import { PrismaClient as TenantPrisma } from '../services/tenant-service/node_modules/.prisma/client';
+import { Pool } from 'pg';
+import { randomUUID } from 'crypto';
 
 const DEMO_TENANT_ID = 'kunes-demo';
+const DB_URL = process.env.DATABASE_URL || 'postgresql://amacc:amacc_dev@localhost:5433/amacc';
+
+async function tableExists(pool: Pool, name: string): Promise<boolean> {
+  const res = await pool.query(
+    `SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=$1 LIMIT 1`,
+    [name]
+  );
+  return (res.rowCount ?? 0) > 0;
+}
 
 async function main() {
+  const pool = new Pool({ connectionString: DB_URL });
   console.log('[all-159-seed] Starting extended seed for all 159 stories...');
 
-  // ── CE-06 Wave 1: MFA Policy seed (S006) ──────────────────────────────────
-  try {
-    const tenantPrisma = new TenantPrisma({
-      datasources: { db: { url: process.env.DATABASE_URL } },
-    });
-    await (tenantPrisma as any).mfaPolicy.upsert({
-      where: { tenantId: DEMO_TENANT_ID },
-      create: {
-        tenantId: DEMO_TENANT_ID,
-        enforced: true,
-        gracePeriodDays: 14,
-        allowedMethods: ['TOTP', 'SMS'],
-        updatedByUserId: 'seed-script',
-      },
-      update: { enforced: true, gracePeriodDays: 14, allowedMethods: ['TOTP', 'SMS'] },
-    });
+  // ── S006: MFA Policy ──────────────────────────────────────────────────────
+  if (await tableExists(pool, 'mfa_policies')) {
+    await pool.query(`
+      INSERT INTO mfa_policies (id, tenant_id, enforced, grace_period_days, allowed_methods, updated_by_user_id, created_at, updated_at)
+      VALUES (gen_random_uuid(),$1,true,14,ARRAY['TOTP','SMS'],'seed-script',now(),now())
+      ON CONFLICT (tenant_id) DO UPDATE SET enforced=EXCLUDED.enforced, updated_at=now()
+    `, [DEMO_TENANT_ID]);
     console.log('[all-159-seed] S006: MFA policy seeded.');
-    await tenantPrisma.$disconnect();
-  } catch (e) {
-    console.warn('[all-159-seed] S006 seed skipped (tenant-service DB unavailable):', (e as Error).message);
+  } else {
+    console.warn('[all-159-seed] S006: mfa_policies table not found — skipped.');
   }
 
-  // ── CE-06 Wave 1: Allocation Templates seed (S033) ───────────────────────
-  try {
-    const glPrisma = new GlPrisma({
-      datasources: { db: { url: process.env.DATABASE_URL } },
-    });
-
-    const existing = await (glPrisma as any).allocationTemplate.findFirst({
-      where: { tenantId: DEMO_TENANT_ID, name: 'Demo: Overhead Distribution' },
-    });
-
-    if (!existing) {
-      const template = await (glPrisma as any).allocationTemplate.create({
-        data: {
-          tenantId: DEMO_TENANT_ID,
-          name: 'Demo: Overhead Distribution',
-          description: 'Distributes shared overhead costs across departments',
-          basis: 'PERCENTAGE',
-          sourceAccountId: 'OVERHEAD-POOL',
-          createdByUserId: 'seed-script',
-          lines: {
-            create: [
-              { targetAccountId: 'FIXED-OPS-DEPT', percentage: '60.00', tenantId: DEMO_TENANT_ID },
-              { targetAccountId: 'VARIABLE-OPS-DEPT', percentage: '30.00', tenantId: DEMO_TENANT_ID },
-              { targetAccountId: 'ADMIN-DEPT', percentage: '10.00', tenantId: DEMO_TENANT_ID },
-            ],
-          },
-        },
-      });
-      console.log('[all-159-seed] S033: Allocation template seeded:', template.id);
+  // ── S033: Allocation Template ─────────────────────────────────────────────
+  if (await tableExists(pool, 'allocation_templates')) {
+    const ex = await pool.query(
+      `SELECT id FROM allocation_templates WHERE tenant_id=$1 AND name=$2 LIMIT 1`,
+      [DEMO_TENANT_ID, 'Demo: Overhead Distribution']
+    );
+    if ((ex.rowCount ?? 0) === 0) {
+      const templateId = randomUUID();
+      await pool.query(`
+        INSERT INTO allocation_templates (id, tenant_id, name, description, basis, source_account_id, created_by_user_id, created_at, updated_at)
+        VALUES ($1,$2,'Demo: Overhead Distribution','Distributes shared overhead costs across departments','PERCENTAGE','OVERHEAD-POOL','seed-script',now(),now())
+      `, [templateId, DEMO_TENANT_ID]);
+      if (await tableExists(pool, 'allocation_template_lines')) {
+        for (const [acct, pct] of [['FIXED-OPS-DEPT','60.00'],['VARIABLE-OPS-DEPT','30.00'],['ADMIN-DEPT','10.00']]) {
+          await pool.query(`
+            INSERT INTO allocation_template_lines (id, tenant_id, template_id, target_account_id, percentage, created_at)
+            VALUES (gen_random_uuid(),$1,$2,$3,$4,now())
+          `, [DEMO_TENANT_ID, templateId, acct, pct]);
+        }
+      }
+      console.log('[all-159-seed] S033: Allocation template seeded:', templateId);
     } else {
       console.log('[all-159-seed] S033: Allocation template already exists, skipping.');
     }
+  } else {
+    console.warn('[all-159-seed] S033: allocation_templates table not found — skipped.');
+  }
 
-    // S034: IC Pair seed
-    const icPairExists = await (glPrisma as any).intercompanyPair.findFirst({
-      where: { tenantId: DEMO_TENANT_ID },
-    });
-    if (!icPairExists) {
-      const pair = await (glPrisma as any).intercompanyPair.create({
-        data: {
-          tenantId: DEMO_TENANT_ID,
-          entityAId: 'KUNES-CHICAGO',
-          entityBId: 'KUNES-MADISON',
-          eliminationAccountId: 'IC-ELIM-ACCOUNT',
-          createdByUserId: 'seed-script',
-        },
-      });
-      console.log('[all-159-seed] S034: IC pair seeded:', pair.id);
+  // ── S034: Intercompany Pair ───────────────────────────────────────────────
+  if (await tableExists(pool, 'intercompany_pairs')) {
+    const icEx = await pool.query(
+      `SELECT 1 FROM intercompany_pairs WHERE tenant_id=$1 LIMIT 1`, [DEMO_TENANT_ID]
+    );
+    if ((icEx.rowCount ?? 0) === 0) {
+      const pairId = randomUUID();
+      await pool.query(`
+        INSERT INTO intercompany_pairs (id, tenant_id, entity_a_id, entity_b_id, elimination_account_id, created_by_user_id, created_at, updated_at)
+        VALUES ($1,$2,'KUNES-CHICAGO','KUNES-MADISON','IC-ELIM-ACCOUNT','seed-script',now(),now())
+      `, [pairId, DEMO_TENANT_ID]);
+      console.log('[all-159-seed] S034: IC pair seeded:', pairId);
     } else {
       console.log('[all-159-seed] S034: IC pair already exists, skipping.');
     }
-
-    await glPrisma.$disconnect();
-  } catch (e) {
-    console.warn('[all-159-seed] S033/S034 seed skipped (gl-service DB unavailable):', (e as Error).message);
+  } else {
+    console.warn('[all-159-seed] S034: intercompany_pairs table not found — skipped.');
   }
 
-  // ── CE-01 Wave 2: HR-Event Provisioning demo data (S005) ─────────────────
-  try {
-    const tenantPrisma2 = new TenantPrisma({
-      datasources: { db: { url: process.env.DATABASE_URL } },
-    });
-
-    const s005Fixtures = [
-      {
-        tenantId: DEMO_TENANT_ID,
-        legalEntityId: 'entity-il-001',
-        hrEventType: 'HR_USER_CREATED',
-        hrUserId: 'hr-emp-alice-001',
-        hrSystem: 'workday',
-        sourceCorrelationId: 'demo-s005-joiner-alice',
-        payload: { email: 'alice.accountant@kunes.demo', firstName: 'Alice', lastName: 'Accountant', jobCode: 'ACCOUNTANT' },
-        accountingAction: 'PROVISIONED',
-        accountingUserId: 'auth-alice-001',
-        accountingRoles: ['accounting.post', 'accounting.view', 'gl.journal.create'],
-        status: 'PROCESSED',
-      },
-      {
-        tenantId: DEMO_TENANT_ID,
-        legalEntityId: 'entity-il-001',
-        hrEventType: 'HR_USER_ROLE_CHANGED',
-        hrUserId: 'hr-emp-bob-002',
-        hrSystem: 'workday',
-        sourceCorrelationId: 'demo-s005-mover-bob',
-        payload: { email: 'bob.controller@kunes.demo', jobCode: 'CONTROLLER', reason: 'promotion' },
-        accountingAction: 'ROLE_UPDATED',
-        accountingUserId: 'auth-bob-002',
-        accountingRoles: ['accounting.post', 'accounting.approve', 'accounting.view', 'gl.journal.create', 'gl.journal.approve', 'period.close'],
-        status: 'PROCESSED',
-      },
-      {
-        tenantId: DEMO_TENANT_ID,
-        legalEntityId: 'entity-wi-001',
-        hrEventType: 'HR_USER_TERMINATED',
-        hrUserId: 'hr-emp-carol-003',
-        hrSystem: 'workday',
-        sourceCorrelationId: 'demo-s005-leaver-carol',
-        payload: { email: 'carol.former@kunes.demo', reason: 'voluntary-resignation' },
-        accountingAction: 'DEPROVISIONED',
-        accountingUserId: 'auth-carol-003',
-        accountingRoles: [],
-        status: 'PROCESSED',
-      },
-      {
-        tenantId: DEMO_TENANT_ID,
-        legalEntityId: 'entity-il-001',
-        hrEventType: 'HR_USER_CREATED',
-        hrUserId: 'hr-emp-dan-004',
-        hrSystem: 'adp',
-        sourceCorrelationId: 'demo-s005-ignored-unknown-code',
-        payload: { email: 'dan.unknown@kunes.demo', jobCode: 'FACILITIES_MANAGER' },
-        accountingAction: 'IGNORED',
-        accountingUserId: null,
-        accountingRoles: [],
-        status: 'PROCESSED',
-      },
+  // ── S005: HR Provisioning Events ──────────────────────────────────────────
+  if (await tableExists(pool, 'hr_provisioning_events')) {
+    const fixtures = [
+      { corrId:'demo-s005-joiner-alice',        leid:'entity-il-001', evtType:'HR_USER_CREATED',      hrUid:'hr-emp-alice-001', sys:'workday', action:'PROVISIONED',   authUid:'auth-alice-001', status:'PROCESSED' },
+      { corrId:'demo-s005-mover-bob',           leid:'entity-il-001', evtType:'HR_USER_ROLE_CHANGED', hrUid:'hr-emp-bob-002',   sys:'workday', action:'ROLE_UPDATED',  authUid:'auth-bob-002',   status:'PROCESSED' },
+      { corrId:'demo-s005-leaver-carol',        leid:'entity-wi-001', evtType:'HR_USER_TERMINATED',   hrUid:'hr-emp-carol-003', sys:'workday', action:'DEPROVISIONED', authUid:'auth-carol-003', status:'PROCESSED' },
+      { corrId:'demo-s005-ignored-unknown-code',leid:'entity-il-001', evtType:'HR_USER_CREATED',      hrUid:'hr-emp-dan-004',   sys:'adp',     action:'IGNORED',       authUid:null,             status:'PROCESSED' },
     ];
-
-    for (const fixture of s005Fixtures) {
-      await (tenantPrisma2 as any).hrProvisioningEvent.upsert({
-        where: {
-          uq_hr_prov_source_corr: {
-            tenantId: fixture.tenantId,
-            sourceCorrelationId: fixture.sourceCorrelationId,
-          },
-        },
-        create: fixture,
-        update: {},
-      }).catch(() =>
-        // Fallback if unique constraint name differs in this schema version
-        (tenantPrisma2 as any).hrProvisioningEvent.findFirst({
-          where: { tenantId: fixture.tenantId, sourceCorrelationId: fixture.sourceCorrelationId },
-        }).then((existing: any) => {
-          if (!existing) return (tenantPrisma2 as any).hrProvisioningEvent.create({ data: fixture });
-        })
+    for (const f of fixtures) {
+      const ex = await pool.query(
+        `SELECT 1 FROM hr_provisioning_events WHERE tenant_id=$1 AND source_correlation_id=$2 LIMIT 1`,
+        [DEMO_TENANT_ID, f.corrId]
       );
+      if ((ex.rowCount ?? 0) > 0) continue;
+      await pool.query(`
+        INSERT INTO hr_provisioning_events
+          (id, tenant_id, legal_entity_id, hr_event_type, hr_user_id, hr_system,
+           source_correlation_id, accounting_action, accounting_user_id, status, created_at, updated_at)
+        VALUES (gen_random_uuid(),$1,$2,$3,$4,$5,$6,$7,$8,$9,now(),now())
+      `, [DEMO_TENANT_ID, f.leid, f.evtType, f.hrUid, f.sys, f.corrId, f.action, f.authUid, f.status]);
     }
     console.log('[all-159-seed] S005: HR provisioning demo events seeded (joiner, mover, leaver, ignored).');
-    await tenantPrisma2.$disconnect();
-  } catch (e) {
-    console.warn('[all-159-seed] S005 seed skipped (tenant-service DB unavailable):', (e as Error).message);
+  } else {
+    console.warn('[all-159-seed] S005: hr_provisioning_events table not found — skipped.');
   }
 
+  await pool.end();
   console.log('[all-159-seed] All-159 extended seed complete.');
   console.log('[all-159-seed] Stories with synthetic data: S005 S006 S033 S034 S035 S219 S031');
   console.log('[all-159-seed] Remaining 152 stories share the R1 baseline synthetic dataset.');

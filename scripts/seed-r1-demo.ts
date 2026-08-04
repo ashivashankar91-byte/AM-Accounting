@@ -333,9 +333,9 @@ async function seedLegalEntities(client: PoolClient): Promise<void> {
   if (await tableExists(client, 'stores')) {
     for (const le of LEGAL_ENTITIES) {
       await client.query(`
-        INSERT INTO stores (id, tenant_id, legal_entity_id, store_code, name, status, effective_date)
-        VALUES (gen_random_uuid(),$1,$2,$3,$4,'ACTIVE','2026-01-01')
-        ON CONFLICT (tenant_id, store_code) DO NOTHING
+        INSERT INTO stores (id, tenant_id, entity_id, store_code, store_name, status, state_province)
+        VALUES (gen_random_uuid(),$1,$2,$3,$4,'ACTIVE','WI')
+        ON CONFLICT (id) DO NOTHING
       `, [TENANT_ID, le.id, le.storeCode, le.storeName]);
     }
   }
@@ -508,9 +508,9 @@ async function seedJournalEntries(client: PoolClient, glMap: Record<string, stri
         const glId = glMap[line.code];
         if (!glId) { continue; }
         await client.query(`
-          INSERT INTO journal_lines (id, tenant_id, journal_entry_id, gl_account_id, debit, credit, memo)
-          VALUES (gen_random_uuid(),$1,$2,$3,$4,$5,$6)
-        `, [TENANT_ID, jeId, glId, line.dr / 100, line.cr / 100, je.desc]);
+          INSERT INTO journal_lines (id, journal_entry_id, gl_account_id, debit, credit, memo)
+          VALUES (gen_random_uuid(),$1,$2,$3,$4,$5)
+        `, [jeId, glId, line.dr / 100, line.cr / 100, je.desc]);
       }
     }
     created++;
@@ -536,9 +536,9 @@ async function seedVendors(client: PoolClient): Promise<{ [num: string]: string 
       await client.query(`
         INSERT INTO vendors
           (id, tenant_id, vendor_number, normalized_vendor_number, vendor_name, normalized_vendor_name,
-           vendor_type, address, city, state, postal_code, remit_state, is_1099_vendor, ein,
-           is_active, created_at, updated_at)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$10,true,$12,true,now(),now())
+           vendor_type, address1, city, state, zip, is_1099_misc, tax_id,
+           is_active, status, created_at, updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true,$12,true,'ACTIVE',now(),now())
       `, [vid, TENANT_ID, v.num, v.num.toUpperCase(), v.name, norm, v.type, v.addr, v.city, v.state, v.zip, v.ein]);
     }
     idMap[v.num] = vid;
@@ -560,7 +560,7 @@ async function seedAPEntries(client: PoolClient, vendorMap: Record<string, strin
     { inv:'AP-8775', vnum:'V-0006', amt:230.00,  due:'2026-02-15', status:'OPEN', note:'Tool kit — 44 days overdue' },
     { inv:'AP-8760', vnum:'V-0007', amt:150.00,  due:'2026-01-30', status:'OPEN', note:'DMS support Q1 — 60 days overdue' },
     { inv:'AP-8740', vnum:'V-0008', amt:80.00,   due:'2025-12-20', status:'OPEN', note:'Hardware — 90+ days overdue' },
-    { inv:'AP-8830', vnum:'V-0001', amt:560.00,  due:'2026-04-15', status:'APPROVED', note:'Approved – pending payment' },
+    { inv:'AP-8830', vnum:'V-0001', amt:560.00,  due:'2026-04-15', status:'Approved', note:'Approved – pending payment' },
     { inv:'AP-8831', vnum:'V-0009', amt:1200.00, due:'2026-04-20', status:'PAID', note:'Enterprise rental – paid 2026-03-20', checkNum:'CHK-4421', paidDate:'2026-03-20' },
     { inv:'AP-8832', vnum:'V-0010', amt:4500.00, due:'2026-04-30', status:'OPEN', note:'Insurance premium Q2 — DISPUTED', holdFlag:true },
   ];
@@ -606,15 +606,24 @@ async function seedCustomers(client: PoolClient): Promise<{ [num: string]: strin
       );
       const colNames = cols.rows.map((r: any) => r.column_name);
       const hasCustType = colNames.includes('customer_type');
-      await client.query(`
-        INSERT INTO customers
-          (id, tenant_id, customer_number, ${hasCustType ? 'customer_type,' : ''} first_name, last_name,
-           phone, city, state, postal_code, is_active, created_at, updated_at)
-        VALUES ($1,$2,$3,${hasCustType ? `$${hasCustType ? 9 : 8},` : ''} $4,$5,$6,$7,$8,$9,true,now(),now())
-      `.replace(/\s+/g, ' '),
-      hasCustType
-        ? [cid, TENANT_ID, c.num, c.first, c.last, c.phone, c.city, c.state, c.zip, c.custType]
-        : [cid, TENANT_ID, c.num, c.first, c.last, c.phone, c.city, c.state, c.zip]);
+      const customerFullName = `${c.first} ${c.last}`;
+      const normalizedNum = c.num.toUpperCase();
+      const normalizedName = customerFullName.toLowerCase().trim();
+      if (hasCustType) {
+        await client.query(`
+          INSERT INTO customers
+            (id, tenant_id, customer_number, normalized_customer_number, customer_type, customer_name, normalized_customer_name,
+             phone, city, state, zip, is_active, status, created_at, updated_at)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true,'ACTIVE',now(),now())
+        `, [cid, TENANT_ID, c.num, normalizedNum, c.custType, customerFullName, normalizedName, c.phone, c.city, c.state, c.zip]);
+      } else {
+        await client.query(`
+          INSERT INTO customers
+            (id, tenant_id, customer_number, normalized_customer_number, customer_name, normalized_customer_name,
+             phone, city, state, zip, is_active, status, created_at, updated_at)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true,'ACTIVE',now(),now())
+        `, [cid, TENANT_ID, c.num, normalizedNum, customerFullName, normalizedName, c.phone, c.city, c.state, c.zip]);
+      }
     }
     idMap[c.num] = cid;
   }
@@ -717,8 +726,8 @@ async function seedPayroll(client: PoolClient): Promise<void> {
         INSERT INTO employees
           (id, tenant_id, legal_entity_id, employee_code, first_name, last_name, department,
            pay_type, pay_rate, commission_rate, pay_frequency, federal_filing_status,
-           is_active, hire_date)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'BI_WEEKLY','SINGLE',true,'2022-01-01')
+           is_active, hire_date, created_at, updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'BI_WEEKLY','SINGLE',true,'2022-01-01',now(),now())
       `, [eid, TENANT_ID, e.leid, e.code, e.first, e.last, e.dept,
           e.payType, e.payType === 'SALARY' ? e.payRate : (e.payRate ?? null),
           e.commRate ?? null]);
@@ -727,8 +736,8 @@ async function seedPayroll(client: PoolClient): Promise<void> {
         INSERT INTO employees
           (id, tenant_id, employee_code, first_name, last_name, department,
            pay_type, pay_rate, commission_rate, pay_frequency, federal_filing_status,
-           is_active, hire_date)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'BI_WEEKLY','SINGLE',true,'2022-01-01')
+           is_active, hire_date, created_at, updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'BI_WEEKLY','SINGLE',true,'2022-01-01',now(),now())
       `, [eid, TENANT_ID, e.code, e.first, e.last, e.dept,
           e.payType, e.payType === 'SALARY' ? e.payRate : (e.payRate ?? null),
           e.commRate ?? null]);
@@ -765,20 +774,20 @@ async function seedPayroll(client: PoolClient): Promise<void> {
         INSERT INTO payroll_batches
           (id, tenant_id, legal_entity_id, batch_number, pay_period_start, pay_period_end, pay_date,
            pay_frequency, status, total_gross_pay, total_deductions, total_net_pay, total_employer_tax,
-           employee_count, approved_by, approved_at, posted_at, voided_at, void_reason, idempotency_key)
-        VALUES (gen_random_uuid(),$1,$2,$3,$4,$5,$6,'BI_WEEKLY',$7,$8,$9,$10,$11,5,$12,$13,$14,$15,$16,$17)
+           employee_count, approved_by, approved_at, posted_at, voided_at, void_reason, created_by, created_at, updated_at)
+        VALUES (gen_random_uuid(),$1,$2,$3,$4,$5,$6,'BI_WEEKLY',$7,$8,$9,$10,$11,5,$12,$13,$14,$15,$16,'seed',now(),now())
       `, [TENANT_ID, b.leid, b.num, b.start, b.end, b.payDate, b.status,
           b.gross, b.ded, b.net, b.empTax, b.approvedBy, b.approvedAt,
-          b.postedAt, (b as any).voidReason ?? null, idempKey]);
+          b.postedAt, null, (b as any).voidReason ?? null]);
     } else {
       await client.query(`
         INSERT INTO payroll_batches
           (id, tenant_id, batch_number, pay_period_start, pay_period_end, pay_date,
            pay_frequency, status, total_gross_pay, total_deductions, total_net_pay, total_employer_tax,
-           employee_count, approved_by, approved_at, posted_at, idempotency_key)
-        VALUES (gen_random_uuid(),$1,$2,$3,$4,$5,'BI_WEEKLY',$6,$7,$8,$9,$10,5,$11,$12,$13,$14)
+           employee_count, approved_by, approved_at, posted_at, created_by, created_at, updated_at)
+        VALUES (gen_random_uuid(),$1,$2,$3,$4,$5,'BI_WEEKLY',$6,$7,$8,$9,$10,5,$11,$12,$13,'seed',now(),now())
       `, [TENANT_ID, b.num, b.start, b.end, b.payDate, b.status,
-          b.gross, b.ded, b.net, b.empTax, b.approvedBy, b.approvedAt, b.postedAt, idempKey]);
+          b.gross, b.ded, b.net, b.empTax, b.approvedBy, b.approvedAt, b.postedAt]);
     }
     batchCreated++;
   }
@@ -792,9 +801,9 @@ async function seedOEM(client: PoolClient): Promise<void> {
   // NOTE: DEMO_FIXTURE mode — these OEM profiles simulate external connections.
   // No real OEM acknowledgements are represented here.
   const profiles = [
-    { id: randomUUID(), make:'Ford',      status:'DEMO_FIXTURE', prog:'Ford Motor Credit Statement',     ver:'2.1.0' },
-    { id: randomUUID(), make:'Chevrolet', status:'DEMO_FIXTURE', prog:'GM Financial Statement',           ver:'3.0.0' },
-    { id: randomUUID(), make:'Toyota',    status:'DEMO_FIXTURE', prog:'Toyota Financial Services Stmt',  ver:'1.8.0' },
+    { id: randomUUID(), make:'Ford',      status:'CERTIFICATION_PENDING', prog:'Ford Motor Credit Statement',     ver:'2.1.0' },
+    { id: randomUUID(), make:'Chevrolet', status:'CERTIFICATION_PENDING', prog:'GM Financial Statement',           ver:'3.0.0' },
+    { id: randomUUID(), make:'Toyota',    status:'CERTIFICATION_PENDING', prog:'Toyota Financial Services Stmt',  ver:'1.8.0' },
   ];
 
   let created = 0;
@@ -816,9 +825,9 @@ async function seedOEM(client: PoolClient): Promise<void> {
   // Incentive programs
   if (await tableExists(client, 'oem_incentive_programs')) {
     const incentives = [
-      { make:'Ford',      name:'Ford Fast Lane Bonus Q1 2026', type:'VOLUME_BONUS', amount:45000.00, status:'PENDING' },
-      { make:'Chevrolet', name:'GM Dealer Growth Incentive Q1', type:'VOLUME_BONUS', amount:32000.00, status:'CONFIRMED' },
-      { make:'Toyota',    name:'Toyota National Dealer Award',  type:'QUALITY_BONUS', amount:18500.00, status:'DISPUTED' },
+      { make:'Ford',      name:'Ford Fast Lane Bonus Q1 2026', type:'VOLUME_BONUS', amount:45000.00 },
+      { make:'Chevrolet', name:'GM Dealer Growth Incentive Q1', type:'VOLUME_BONUS', amount:32000.00 },
+      { make:'Toyota',    name:'Toyota National Dealer Award',  type:'QUALITY_BONUS', amount:18500.00 },
     ];
     for (const inc of incentives) {
       const profEx = await client.query(
@@ -827,15 +836,16 @@ async function seedOEM(client: PoolClient): Promise<void> {
       if (profEx.rowCount! === 0) continue;
       const profId = profEx.rows[0].id;
       const ex = await client.query(
-        `SELECT 1 FROM oem_incentive_programs WHERE tenant_id=$1 AND program_name=$2 LIMIT 1`, [TENANT_ID, inc.name]
+        `SELECT 1 FROM oem_incentive_programs WHERE tenant_id=$1 AND profile_id=$2 AND program_id=$3 LIMIT 1`,
+        [TENANT_ID, profId, inc.name]
       );
       if (ex.rowCount! > 0) continue;
       await client.query(`
         INSERT INTO oem_incentive_programs
-          (id, tenant_id, profile_id, program_name, incentive_type, estimated_amount, status,
-           effective_start, effective_end, created_at, updated_at)
-        VALUES (gen_random_uuid(),$1,$2,$3,$4,$5,$6,'2026-01-01','2026-03-31',now(),now())
-      `, [TENANT_ID, profId, inc.name, inc.type, inc.amount, inc.status]);
+          (id, tenant_id, profile_id, make, program_id, "termsSummary", amount_type, flat_amount_per_unit,
+           effective_from, effective_to, active, created_at)
+        VALUES (gen_random_uuid(),$1,$2,$3,$4,$5,'FLAT',$6,'2026-01-01','2026-03-31',true,now())
+      `, [TENANT_ID, profId, inc.make, inc.name, inc.type, inc.amount]);
     }
   }
   log(`OEM profiles: ${created} (DEMO_FIXTURE mode)`);
@@ -846,27 +856,27 @@ async function seedCloseData(client: PoolClient): Promise<void> {
   if (!(await tableExists(client, 'close_period_states'))) { log('SKIP: close_period_states not found'); return; }
 
   const closePeriods = [
-    { entity:LE_FORD_ID,   period:'2026-01', status:'LOCKED',      prelim:true,  final:true  },
-    { entity:LE_FORD_ID,   period:'2026-02', status:'HARD_CLOSED', prelim:true,  final:true  },
-    { entity:LE_FORD_ID,   period:'2026-03', status:'IN_PROGRESS', prelim:false, final:false },
-    { entity:LE_CHEV_ID,   period:'2026-01', status:'LOCKED',      prelim:true,  final:true  },
-    { entity:LE_CHEV_ID,   period:'2026-02', status:'HARD_CLOSED', prelim:true,  final:true  },
-    { entity:LE_TOYOTA_ID, period:'2026-01', status:'LOCKED',      prelim:true,  final:true  },
-    { entity:LE_TOYOTA_ID, period:'2026-02', status:'SOFT_CLOSED', prelim:true,  final:false },
+    { entity:LE_FORD_ID,   year:2026, month:1, state:'LOCKED',      by:'controller@kunes-demo.local' },
+    { entity:LE_FORD_ID,   year:2026, month:2, state:'HARD_CLOSED', by:'controller@kunes-demo.local' },
+    { entity:LE_FORD_ID,   year:2026, month:3, state:'IN_PROGRESS', by:'controller@kunes-demo.local' },
+    { entity:LE_CHEV_ID,   year:2026, month:1, state:'LOCKED',      by:'controller@kunes-demo.local' },
+    { entity:LE_CHEV_ID,   year:2026, month:2, state:'HARD_CLOSED', by:'controller@kunes-demo.local' },
+    { entity:LE_TOYOTA_ID, year:2026, month:1, state:'LOCKED',      by:'controller@kunes-demo.local' },
+    { entity:LE_TOYOTA_ID, year:2026, month:2, state:'SOFT_CLOSED', by:'controller@kunes-demo.local' },
   ];
 
   let created = 0;
   for (const cp of closePeriods) {
     const ex = await client.query(
-      `SELECT 1 FROM close_period_states WHERE tenant_id=$1 AND entity_id=$2 AND period_code=$3 LIMIT 1`,
-      [TENANT_ID, cp.entity, cp.period]
+      `SELECT 1 FROM close_period_states WHERE tenant_id=$1 AND legal_entity_id=$2 AND period_year=$3 AND period_month=$4 LIMIT 1`,
+      [TENANT_ID, cp.entity, cp.year, cp.month]
     );
     if (ex.rowCount! > 0) continue;
     await client.query(`
       INSERT INTO close_period_states
-        (id, tenant_id, entity_id, period_code, status, preliminary_close_complete, final_close_complete, created_at)
-      VALUES (gen_random_uuid(),$1,$2,$3,$4,$5,$6,now())
-    `, [TENANT_ID, cp.entity, cp.period, cp.status, cp.prelim, cp.final]);
+        (id, tenant_id, legal_entity_id, period_year, period_month, state, transition_by, transition_at, version, created_at, updated_at)
+      VALUES (gen_random_uuid(),$1,$2,$3,$4,$5,$6,now(),1,now(),now())
+    `, [TENANT_ID, cp.entity, cp.year, cp.month, cp.state, cp.by]);
     created++;
   }
   log(`Close period states: ${created}`);
@@ -877,21 +887,21 @@ async function seedMigrationData(client: PoolClient): Promise<void> {
   if (!(await tableExists(client, 'source_systems'))) { log('SKIP: source_systems not found'); return; }
 
   const ex = await client.query(
-    `SELECT 1 FROM source_systems WHERE tenant_id=$1 AND source_code=$2 LIMIT 1`,
+    `SELECT 1 FROM source_systems WHERE tenant_id=$1 AND system_code=$2 LIMIT 1`,
     [TENANT_ID, 'CDK-LEGACY-KFM']
   );
   if (ex.rowCount! > 0) { log('Migration source: already exists'); return; }
 
   await client.query(`
     INSERT INTO source_systems
-      (id, tenant_id, source_code, source_name, source_type, status, created_at)
-    VALUES (gen_random_uuid(),$1,'CDK-LEGACY-KFM','CDK Legacy – Kunes Ford Madison','DMS_LEGACY','REGISTERED',now())
+      (id, tenant_id, system_code, system_name, source_type, connection_status, created_at, updated_at)
+    VALUES (gen_random_uuid(),$1,'CDK-LEGACY-KFM','CDK Legacy – Kunes Ford Madison','DMS_LEGACY','CERTIFICATION_PENDING',now(),now())
   `, [TENANT_ID]);
 
   await client.query(`
     INSERT INTO source_systems
-      (id, tenant_id, source_code, source_name, source_type, status, created_at)
-    VALUES (gen_random_uuid(),$1,'CDK-LEGACY-KCM','CDK Legacy – Kunes Chevrolet Milwaukee','DMS_LEGACY','REGISTERED',now())
+      (id, tenant_id, system_code, system_name, source_type, connection_status, created_at, updated_at)
+    VALUES (gen_random_uuid(),$1,'CDK-LEGACY-KCM','CDK Legacy – Kunes Chevrolet Milwaukee','DMS_LEGACY','CERTIFICATION_PENDING',now(),now())
   `, [TENANT_ID]);
 
   log('Migration sources: 2 registered');
@@ -920,9 +930,9 @@ async function seedAutomation(client: PoolClient): Promise<void> {
     if (ex.rowCount! > 0) continue;
     await client.query(`
       INSERT INTO automation_capabilities
-        (id, tenant_id, capability_code, capability_name, mode, risk_level, is_enabled, created_at, updated_at)
-      VALUES (gen_random_uuid(),$1,$2,$3,$4,$5,true,now(),now())
-    `, [TENANT_ID, c.code, c.name, c.mode, c.risk]);
+        (id, tenant_id, legal_entity_id, capability_code, story_id, current_authority, policy_version, version, created_at, updated_at)
+      VALUES (gen_random_uuid(),$1,$2,$3,$4,'OBSERVE_ONLY','1.0',1,now(),now())
+    `, [TENANT_ID, LE_FORD_ID, c.code, c.code]);
     created++;
   }
   log(`Automation capabilities: ${created} (all OBSERVE_ONLY / APPROVAL_REQUIRED per R1 policy)`);
@@ -939,16 +949,16 @@ async function seedEOMSteps(client: PoolClient): Promise<void> {
 
   const eomId = randomUUID();
   await client.query(`
-    INSERT INTO eom_closes (id, tenant_id, period, status)
-    VALUES ($1,$2,'2026-03','IN_PROGRESS')
+    INSERT INTO eom_closes (id, tenant_id, period_year, period_month, close_type, status, initiated_by)
+    VALUES ($1,$2,2026,3,'MONTHLY','IN_PROGRESS','controller@kunes-demo.local')
   `, [eomId, TENANT_ID]);
 
   const steps = [
-    { code:'010', name:'Pre-Close Checklist',       status:'DONE' },
-    { code:'020', name:'Verify Open Items',         status:'DONE' },
-    { code:'062', name:'Parts Close',               status:'DONE' },
-    { code:'065', name:'Parts Reconciliation',      status:'DONE' },
-    { code:'068', name:'Service Close',             status:'RUNNING' },
+    { code:'010', name:'Pre-Close Checklist',       status:'COMPLETE' },
+    { code:'020', name:'Verify Open Items',         status:'COMPLETE' },
+    { code:'062', name:'Parts Close',               status:'COMPLETE' },
+    { code:'065', name:'Parts Reconciliation',      status:'COMPLETE' },
+    { code:'068', name:'Service Close',             status:'IN_PROGRESS' },
     { code:'070', name:'Body Shop Close',           status:'PENDING' },
     { code:'071', name:'Variable Operations Close', status:'PENDING' },
     { code:'074', name:'Fixed Operations Close',    status:'PENDING' },
@@ -956,15 +966,15 @@ async function seedEOMSteps(client: PoolClient): Promise<void> {
     { code:'200', name:'FS Generation',             status:'PENDING' },
     { code:'300', name:'FS Submission to OEM',      status:'PENDING' },
   ];
-  if (await tableExists(client, 'eom_close_steps')) {
+  if (await tableExists(client, 'eom_steps')) {
     for (const s of steps) {
       await client.query(`
-        INSERT INTO eom_close_steps
+        INSERT INTO eom_steps
           (id, eom_close_id, step_code, step_name, status, started_at, completed_at)
         VALUES (gen_random_uuid(),$1,$2,$3,$4,$5,$6)
       `, [eomId, s.code, s.name, s.status,
           s.status !== 'PENDING' ? new Date() : null,
-          s.status === 'DONE' ? new Date() : null]);
+          s.status === 'COMPLETE' ? new Date() : null]);
     }
   }
   log('EOM close: March 2026 in-progress, 4 steps done');
@@ -975,11 +985,11 @@ async function seedPurchaseOrders(client: PoolClient): Promise<void> {
   if (!(await tableExists(client, 'purchase_orders'))) { log('SKIP: purchase_orders not found'); return; }
 
   const pos = [
-    { num:'PO-2026-0142', vendor:'AutoNation Parts',    amt:5600.00, status:'RECEIVED',  note:'Parts replenishment – fully received' },
-    { num:'PO-2026-0143', vendor:'NAPA Auto Parts',     amt:3200.00, status:'PARTIAL',   note:'Partial delivery – 2 lines outstanding' },
-    { num:'PO-2026-0144', vendor:'Sherwin-Williams',    amt:1800.00, status:'OPEN',      note:'Body shop supplies – ordered' },
-    { num:'PO-2026-0145', vendor:'Snap-On Tools',       amt:4500.00, status:'OPEN',      note:'Alignment equipment – pending approval' },
-    { num:'PO-2026-0146', vendor:'Shell Fleet Fuel',    amt:2200.00, status:'APPROVED',  note:'Fuel contract Q2' },
+    { num:'PO-2026-0142', vendor:'AutoNation Parts',    amt:5600.00, status:'RECEIVED',           note:'Parts replenishment – fully received' },
+    { num:'PO-2026-0143', vendor:'NAPA Auto Parts',     amt:3200.00, status:'PARTIALLY_RECEIVED', note:'Partial delivery – 2 lines outstanding' },
+    { num:'PO-2026-0144', vendor:'Sherwin-Williams',    amt:1800.00, status:'SUBMITTED',          note:'Body shop supplies – ordered' },
+    { num:'PO-2026-0145', vendor:'Snap-On Tools',       amt:4500.00, status:'SUBMITTED',          note:'Alignment equipment – pending approval' },
+    { num:'PO-2026-0146', vendor:'Shell Fleet Fuel',    amt:2200.00, status:'APPROVED',           note:'Fuel contract Q2' },
   ];
 
   let created = 0;
@@ -990,8 +1000,8 @@ async function seedPurchaseOrders(client: PoolClient): Promise<void> {
     if (ex.rowCount! > 0) continue;
     await client.query(`
       INSERT INTO purchase_orders
-        (id, tenant_id, po_number, vendor_name, total_amount, status, notes, created_at)
-      VALUES (gen_random_uuid(),$1,$2,$3,$4,$5,$6,now())
+        (id, tenant_id, po_number, vendor_name, total, status, notes, po_date, created_at, updated_at)
+      VALUES (gen_random_uuid(),$1,$2,$3,$4,$5,$6,now(),now(),now())
     `, [TENANT_ID, po.num, po.vendor, po.amt, po.status, po.note]);
     created++;
   }
@@ -1003,27 +1013,27 @@ async function seedSchedules(client: PoolClient): Promise<void> {
   if (!(await tableExists(client, 'schedules'))) { log('SKIP: schedules not found'); return; }
 
   const schedules = [
-    { code:'SCHED-AR-TRADE', name:'AR Trade Receivables',      type:'RECEIVABLE', status:'OPEN' },
-    { code:'SCHED-AR-WARR',  name:'AR Warranty Receivables',   type:'RECEIVABLE', status:'OPEN' },
-    { code:'SCHED-AP-TRADE', name:'AP Trade Payables',         type:'PAYABLE',    status:'OPEN' },
-    { code:'SCHED-INV-NEW',  name:'New Vehicle Inventory',     type:'INVENTORY',  status:'OPEN' },
-    { code:'SCHED-INV-USED', name:'Used Vehicle Inventory',    type:'INVENTORY',  status:'OPEN' },
-    { code:'SCHED-INV-PARTS','name':'Parts Inventory',          type:'INVENTORY',  status:'OPEN' },
-    { code:'SCHED-FLRPLN',   name:'Floor Plan Payable',        type:'PAYABLE',    status:'OPEN' },
-    { code:'SCHED-PAYROLL',  name:'Accrued Payroll',           type:'ACCRUAL',    status:'OPEN' },
+    { num:'10', title:'AR Trade Receivables    ',      type:1, purge:0 },
+    { num:'11', title:'AR Warranty Receivables  ',     type:1, purge:0 },
+    { num:'20', title:'AP Trade Payables        ',     type:2, purge:0 },
+    { num:'30', title:'New Vehicle Inventory    ',     type:3, purge:0 },
+    { num:'31', title:'Used Vehicle Inventory   ',     type:3, purge:0 },
+    { num:'32', title:'Parts Inventory          ',     type:3, purge:0 },
+    { num:'40', title:'Floor Plan Payable       ',     type:2, purge:0 },
+    { num:'50', title:'Accrued Payroll          ',     type:4, purge:0 },
   ];
 
   let created = 0;
   for (const s of schedules) {
     const ex = await client.query(
-      `SELECT 1 FROM schedules WHERE tenant_id=$1 AND schedule_code=$2 LIMIT 1`, [TENANT_ID, s.code]
+      `SELECT 1 FROM schedules WHERE tenant_id=$1 AND schedule_number=$2 LIMIT 1`, [TENANT_ID, s.num]
     );
     if (ex.rowCount! > 0) continue;
     await client.query(`
       INSERT INTO schedules
-        (id, tenant_id, schedule_code, name, schedule_type, status, created_at)
-      VALUES (gen_random_uuid(),$1,$2,$3,$4,$5,now())
-    `, [TENANT_ID, s.code, s.name, s.type, s.status]);
+        (id, tenant_id, schedule_number, title, schedule_type, eom_purge_type)
+      VALUES (gen_random_uuid(),$1,$2,$3,$4,$5)
+    `, [TENANT_ID, s.num, s.title, s.type, s.purge]);
     created++;
   }
   log(`Schedules: ${created}`);
