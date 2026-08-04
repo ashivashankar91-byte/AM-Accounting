@@ -3,9 +3,9 @@
   "source_sha": "d8fc51b7",
   "branch": "r1-final-certification",
   "totals": {
-    "CERTIFIED": 136,
-    "PARTIALLY_IMPLEMENTED": 16,
-    "NOT_IMPLEMENTED": 7
+    "CERTIFIED": 139,
+    "PARTIALLY_IMPLEMENTED": 15,
+    "NOT_IMPLEMENTED": 5
   },
   "stories": [
     {
@@ -572,8 +572,8 @@
       "title": "Manual Bank Reconciliation Workbench",
       "release": "R2",
       "service": "cash-service/apar-service",
-      "status": "PARTIALLY_IMPLEMENTED",
-      "gap_or_evidence": "cash-position-adapters.ts references reconciliation but no dedicated recon workbench route or application service; missing manual match/unmatch, statement import, difference resolution flows"
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/recon-service/tests/recon-session-service.test.ts (12 tests) \u2014 idempotency, statement lines, matching, completion"
     },
     {
       "story_id": "S055",
@@ -734,8 +734,8 @@
       "title": "Rule-Based Bank Auto-Match",
       "release": "R3",
       "service": "cash-service/apar-service",
-      "status": "NOT_IMPLEMENTED",
-      "gap_or_evidence": "No auto-match engine, no rule-based matching service, no tests for automated bank statement matching in cash-service or any other service"
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/recon-service/tests/auto-match-service.test.ts (6 tests) + auto-match-rules-domain.test.ts (12 tests)"
     },
     {
       "story_id": "S074",
@@ -1193,8 +1193,8 @@
       "title": "Allocation Entries",
       "release": "R5",
       "service": "tenant-service",
-      "status": "NOT_IMPLEMENTED",
-      "gap_or_evidence": "No application code, no DB migrations, no tests for allocation entries in any service"
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/gl-service/tests/s033-allocation-entries.cert.test.ts (7 tests) AC1-AC7 passing"
     },
     {
       "story_id": "S034",
