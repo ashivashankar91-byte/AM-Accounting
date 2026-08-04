@@ -15,12 +15,8 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import crypto from 'crypto';
 
-function getTenantId(request: any): string {
-  return (
-    request.headers['x-tenant-id'] ??
-    (request as any).tenantId ??
-    'default'
-  );
+function getTenantId(request: any): string | null {
+  return request.headers['x-tenant-id'] ?? null;
 }
 
 function getActor(request: any): string {
@@ -30,9 +26,16 @@ function getActor(request: any): string {
 export async function mfaRoutes(app: FastifyInstance) {
   const prisma = (app as any).prisma;
 
+  // Enforce x-tenant-id on every route in this plugin (CLAUDE.md critical rule)
+  app.addHook('preHandler', async (request, reply) => {
+    if (!request.headers['x-tenant-id']) {
+      return reply.status(400).send({ error: 'x-tenant-id header required' });
+    }
+  });
+
   // GET /mfa/policy — Get MFA policy for tenant
   app.get('/policy', async (request, reply) => {
-    const tenantId = getTenantId(request);
+    const tenantId = getTenantId(request)!;
     let policy = await prisma.mfaPolicy.findUnique({ where: { tenantId } });
     if (!policy) {
       // Return default policy if not configured
@@ -49,7 +52,7 @@ export async function mfaRoutes(app: FastifyInstance) {
 
   // PUT /mfa/policy — Set MFA policy for tenant
   app.put('/policy', async (request, reply) => {
-    const tenantId = getTenantId(request);
+    const tenantId = getTenantId(request)!;
     const body = z.object({
       enforcement: z.enum(['OPTIONAL', 'REQUIRED_FOR_FINANCE', 'REQUIRED_ALL']),
       totpEnabled: z.boolean().default(true),
@@ -67,7 +70,7 @@ export async function mfaRoutes(app: FastifyInstance) {
 
   // GET /mfa/evidence — Query safeguards evidence
   app.get('/evidence', async (request, reply) => {
-    const tenantId = getTenantId(request);
+    const tenantId = getTenantId(request)!;
     const query = z.object({
       userId: z.string().optional(),
       eventType: z.string().optional(),
@@ -97,7 +100,7 @@ export async function mfaRoutes(app: FastifyInstance) {
   // [DEMO_FIXTURE] In prototype mode, this endpoint accepts any TOTP code and records
   // it as verified. Production connects to the configured TOTP provider.
   app.post('/evidence', async (request, reply) => {
-    const tenantId = getTenantId(request);
+    const tenantId = getTenantId(request)!;
     const body = z.object({
       userId: z.string().min(1),
       eventType: z.enum(['MFA_VERIFIED', 'MFA_FAILED', 'MFA_BYPASS_GRANTED', 'MFA_ENROLLED', 'MFA_RESET']),

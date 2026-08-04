@@ -3,9 +3,9 @@
   "source_sha": "d8fc51b7",
   "branch": "r1-final-certification",
   "totals": {
-    "CERTIFIED": 133,
+    "CERTIFIED": 134,
     "PARTIALLY_IMPLEMENTED": 16,
-    "NOT_IMPLEMENTED": 10
+    "NOT_IMPLEMENTED": 9
   },
   "stories": [
     {
@@ -1229,8 +1229,8 @@
       "title": "MFA & Safeguards Evidence",
       "release": "R5",
       "service": "tenant-service",
-      "status": "NOT_IMPLEMENTED",
-      "gap_or_evidence": "No TOTP/MFA/2FA code in auth-service or any other service; no MFA DB schema, no MFA routes, no tests"
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/tenant-service/tests/s006-mfa-safeguards.cert.test.ts (7 tests) AC1-AC7 passing"
     },
     {
       "story_id": "S037",
