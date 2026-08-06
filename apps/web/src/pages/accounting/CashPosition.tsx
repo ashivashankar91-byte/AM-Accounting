@@ -99,7 +99,7 @@ export default function CashPosition() {
   });
 
   const exportMutation = useMutation({
-    mutationFn: () => cashPositionApi.exportPosition({ asOf: new Date().toISOString() }),
+    mutationFn: () => cashPositionApi.exportPosition({ entityId, businessDate }),
     onSuccess: () => {
       setExportSuccess(true);
       setExportError(null);
