@@ -52,6 +52,10 @@ function AssessmentDetail({ id, onClose }: { id: string; onClose: () => void }) 
 export default function UseTaxAssessments() {
   const [tab, setTab] = useState<Tab>('assessments');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [period, setPeriod] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
 
   const assessmentsQuery = useQuery({
     queryKey: ['use-tax-assessments'],
@@ -61,8 +65,8 @@ export default function UseTaxAssessments() {
   });
 
   const registerQuery = useQuery({
-    queryKey: ['use-tax-register'],
-    queryFn: () => useTaxApi.getRegister(),
+    queryKey: ['use-tax-register', period],
+    queryFn: () => useTaxApi.getRegister(`period=${period}`),
     retry: false,
     enabled: tab === 'register',
   });
@@ -135,7 +139,17 @@ export default function UseTaxAssessments() {
       )}
 
       {tab === 'register' && (
-        <DataTable
+        <>
+          <div className="flex items-center gap-3 pb-2">
+            <label className="text-sm font-medium text-gray-700">Period</label>
+            <input
+              type="month"
+              value={period}
+              onChange={(e) => setPeriod(e.target.value)}
+              className="border border-gray-300 rounded-md px-2 h-8 text-sm font-mono"
+            />
+          </div>
+          <DataTable
           columns={[
             { key: 'id', label: 'ID', mono: true },
             { key: 'period', label: 'Period' },
@@ -150,6 +164,7 @@ export default function UseTaxAssessments() {
           emptyTitle="No register entries"
           emptySubtitle="No use-tax register entries found."
         />
+        </>
       )}
 
       {selectedId && <AssessmentDetail id={selectedId} onClose={() => setSelectedId(null)} />}
