@@ -269,11 +269,14 @@ export default function Settlements() {
   const [showImport, setShowImport] = useState(false);
 
   const { data: status } = useQuery({ queryKey: ['settlement-status'], queryFn: () => settlementApi.getStatus() });
-  const { data: batches, isLoading, error, refetch } = useQuery({
+  const { data: batchesResp, isLoading, error, refetch } = useQuery({
     queryKey: ['settlement-batches'],
     queryFn: () => settlementApi.listBatches(),
     enabled: activeTab === 'batches',
   });
+  const batches: any[] = Array.isArray(batchesResp)
+    ? batchesResp
+    : (batchesResp as any)?.items ?? [];
 
   if (selectedBatchId) return (
     <div className="p-6 max-w-5xl mx-auto">
