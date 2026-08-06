@@ -1,19 +1,20 @@
 # AMACC — Team Setup Guide
 
-> **Do NOT use a zip file.** Always clone from Git to get the latest fixes.
+> ⚠️ **Do NOT download a zip file from GitHub.** Zip has no Docker images and no database — the app will not run.
+> ✅ **Always use `git clone` (below).** This is the only supported way to run the app.
 
 ---
 
 ## Prerequisites
 
-- Docker Desktop 4.x+ (running)
-- Git
-- 16 GB RAM recommended (45 containers)
-- Ports free: 5174 (web), 5433 (postgres), 6380 (redis), 3100 (API gateway), 15673 (RabbitMQ UI)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) 4.x+ — **must be running before you start**
+- Git (any recent version)
+- 16 GB RAM recommended (runs 45 containers)
+- Free ports: **5174** (web), 5433 (postgres), 6380 (redis), 3100 (API gateway)
 
 ---
 
-## 1. Clone the repo
+## 1. Clone the repo (Mac / Linux / Windows Git Bash)
 
 ```bash
 git clone https://github.com/ashivashankar91-byte/AM-Accounting.git
@@ -21,10 +22,14 @@ cd AM-Accounting
 git checkout accounting-all-159-integration
 ```
 
-> If you already have it cloned, pull the latest:
+> **Already cloned?** Just pull the latest changes:
 > ```bash
+> cd AM-Accounting
+> git checkout accounting-all-159-integration
 > git pull origin accounting-all-159-integration
 > ```
+>
+> Then jump to Step 2. **You must run `--build` again after a pull** to get new code into Docker.
 
 ---
 
@@ -34,15 +39,17 @@ git checkout accounting-all-159-integration
 docker compose up --build -d
 ```
 
-- `--build` rebuilds images from source (required on first run or after code changes)
-- `-d` runs in background
-- Takes 5–10 minutes first time (downloads base images, builds 35+ services)
+> ⚠️ **`--build` is NOT optional.** Without it, Docker uses old cached images and you will see old screens.
 
-Wait for the migrator to finish:
+- First run: 5–15 minutes (downloads base images + builds 35 services)
+- Subsequent runs: 2–5 minutes
+- `-d` = runs in background (you get your terminal back)
+
+**Wait for database migrations to finish before seeding:**
+
 ```bash
 docker compose logs migrator -f
-# Wait until you see: "All migrations have been successfully applied"
-# Press Ctrl+C to exit
+# Press Ctrl+C when you see: "All migrations have been successfully applied"
 ```
 
 ---
@@ -50,8 +57,11 @@ docker compose logs migrator -f
 ## 3. Load demo data
 
 ```bash
-echo "y" | bash scripts/seed-all-159-demo.sh
+bash scripts/seed-all-159-demo.sh
 ```
+
+> On **Windows**: open Git Bash (comes with Git for Windows) and run the same command.
+> Or use WSL2 terminal.
 
 This loads:
 - 12 demo users
@@ -87,7 +97,23 @@ URL: **http://localhost:5174/amacc/**
 
 ## Troubleshooting
 
-### "Failed to Load — API error 500"
+### ❌ "I see old screens / old UI"
+
+This is the most common issue. Cause: Docker used a cached image.
+
+**Fix:**
+```bash
+# Stop everything and rebuild from scratch
+docker compose down
+docker compose up --build -d
+bash scripts/seed-all-159-demo.sh
+```
+
+Hard-refresh your browser: **Cmd+Shift+R** (Mac) or **Ctrl+Shift+R** (Windows).
+
+---
+
+### ❌ "Failed to Load — API error 500"
 Postgres ran out of connections. Fixed in latest code (`max_connections=300`). Make sure you did `--build`:
 ```bash
 docker compose down
