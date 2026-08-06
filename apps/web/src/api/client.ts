@@ -163,10 +163,10 @@ export const glApi = {
   createEntry: (data: any) => apiFetch<any>('/api/v1/gl/journal-entries', { method: 'POST', body: JSON.stringify(data) }),
   postEntry: (id: string) => apiFetch<any>(`/api/v1/gl/journal-entries/${id}/post`, { method: 'POST' }),
   approveEntry: (id: string) => apiFetch<any>(`/api/v1/gl/journal-entries/${id}/approve`, { method: 'POST' }),
-  // /gl/entries — canonical journal entry management endpoint
-  listEntries: (params?: string) => apiFetch<any[]>(`/api/v1/gl/entries${params ? `?${params}` : ''}`),
-  createJournalEntry: (data: any) => apiFetch<any>('/api/v1/gl/entries', { method: 'POST', body: JSON.stringify(data) }),
-  submitEntry: (id: string) => apiFetch<any>(`/api/v1/gl/entries/${id}/submit`, { method: 'POST' }),
+  // /gl/journal-entries — canonical journal entry management endpoint
+  listEntries: (params?: string) => apiFetch<any[]>(`/api/v1/gl/journal-entries${params ? `?${params}` : ''}`),
+  createJournalEntry: (data: any) => apiFetch<any>('/api/v1/gl/journal-entries', { method: 'POST', body: JSON.stringify(data) }),
+  submitEntry: (id: string) => apiFetch<any>(`/api/v1/gl/journal-entries/${id}/post`, { method: 'POST' }),
   getTrialBalance: (year: number, month: number) => apiFetch<any>(`/api/v1/gl/trial-balance?year=${year}&month=${month}`),
   getBalanceSheet: (asOfDate?: string) => apiFetch<any>(`/api/v1/gl/balance-sheet${asOfDate ? `?asOfDate=${asOfDate}` : ''}`),
   getIncomeStatement: (year: number, month: number) => apiFetch<any>(`/api/v1/gl/income-statement?year=${year}&month=${month}`),
