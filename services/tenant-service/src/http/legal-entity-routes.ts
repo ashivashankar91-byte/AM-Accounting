@@ -34,8 +34,9 @@ function getTenantId(request: any): string {
 // duplicated here. Deny-by-default is enforced by the central engine itself.
 
 export const LEGAL_ENTITY_PERMISSIONS = {
-  VIEW:   'acct.entity.view',
-  MANAGE: 'acct.entity.manage',
+  VIEW:                    'acct.entity.view',
+  MANAGE:                  'acct.entity.manage',
+  ELIMINATION_CONFIGURE:   'acct.entity.elimination_configure',
 } as const;
 
 function handleError(error: unknown, reply: any) {
@@ -47,7 +48,9 @@ function handleError(error: unknown, reply: any) {
     return reply.status(status).send({ error: error.code, message: error.message });
   }
   if (error instanceof LegalEntityValidationError) {
-    return reply.status(422).send({ error: error.code, message: error.message });
+    const body: any = { error: error.code, message: error.message };
+    if ((error as any).ownedStores) body.ownedStores = (error as any).ownedStores;
+    return reply.status(422).send(body);
   }
   if (error instanceof z.ZodError) {
     return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
@@ -92,6 +95,12 @@ const DeactivateSchema = z.object({
   version:      z.number().int().min(1),
   reason:       z.string().min(1).max(500),
   deactivatedBy: z.string().min(1).max(100),
+});
+
+const ConfigureEliminationSchema = z.object({
+  version:       z.number().int().min(1),
+  isElimination: z.boolean(),
+  reason:        z.string().min(1).max(500).optional(),
 });
 
 // ── Route Registration ────────────────────────────────────────────────────────
@@ -173,6 +182,26 @@ export async function legalEntityRoutes(app: FastifyInstance) {
     try {
       const body = DeactivateSchema.parse(request.body);
       const entity = await svc.deactivate(tenantId, id, body);
+      return reply.send(entity);
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
+  // ── PATCH /:id/elimination — ACC-S003 elimination-entity configuration ─────
+  // Human-only mutation: requires an explicit reason and actor identity.
+  // SERVICE tokens are explicitly excluded (allowedServiceIds: empty set) —
+  // no automated service may configure elimination entities.
+  const requireEliminationPermission = createAuthzGuard(
+    container.resolve<AuthzClient>('AuthzClient'),
+    { getTenantId, allowedServiceIds: new Set() },
+  );
+  app.patch('/:id/elimination', { preHandler: requireEliminationPermission(LEGAL_ENTITY_PERMISSIONS.ELIMINATION_CONFIGURE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const body = ConfigureEliminationSchema.parse(request.body);
+      const entity = await svc.configureElimination(tenantId, id, { ...body, actor: request.user?.sub ?? 'system' });
       return reply.send(entity);
     } catch (err) {
       return handleError(err, reply);

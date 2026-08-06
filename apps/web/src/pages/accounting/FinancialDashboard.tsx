@@ -220,6 +220,79 @@ const EMPTY_AGING: AgingData = {
   ninety_plus: { days: '90+', amount: 0, count: 0 },
 };
 
+// ─── Real API adapter ─────────────────────────────────────────────────────────
+// dashboardApi.getSummary() (/api/v1/dashboard/summary) returns a real,
+// live shape (companyName, financials, deptPerformance, arAging, apAging,
+// eom, floorplan, ...) that never matched this screen's original DashboardData
+// contract (daily_cash, mtd_pl, dept_performance, ap_aging, ...) -- so every
+// field below silently fell back to its empty default and the whole screen
+// rendered $0 / "No data" even though the backend had real numbers. This
+// adapter maps the real response onto the shape the rest of this file (and
+// its charts) already expects.
+
+// Static, industry-standard dealership GP% reference targets — the backend
+// summary endpoint reports actuals only, no per-department targets, so these
+// are presentational reference lines, not live/fetched data.
+const DEPT_GP_TARGETS: Record<string, number> = {
+  'New Vehicles': 7,
+  'Used Vehicles': 12,
+  'Parts': 45,
+  'Service': 65,
+  'F&I': 90,
+  'Body Shop': 40,
+};
+
+function toAgingData(a?: { total: number; current: number; days30: number; days60: number; days90: number; over90: number }): AgingData {
+  if (!a) return EMPTY_AGING;
+  return {
+    total: a.total,
+    current: { days: 'Current', amount: a.current, count: 0 },
+    thirty_plus: { days: '30+', amount: a.days30, count: 0 },
+    sixty_plus: { days: '60+', amount: a.days60, count: 0 },
+    ninety_plus: { days: '90+', amount: a.days90 + a.over90, count: 0 },
+  };
+}
+
+function adaptSummary(raw: any): DashboardData | undefined {
+  if (!raw) return undefined;
+  const fin = raw.financials ?? {};
+  const deptPerformance = (raw.deptPerformance ?? []).map((dp: any) => ({
+    department: dp.department,
+    gp_percentage: dp.revenue > 0 ? (dp.grossProfit / dp.revenue) * 100 : 0,
+    target: DEPT_GP_TARGETS[dp.department] ?? 20,
+  }));
+  const revenue = fin.totalRevenue ?? 0;
+  const gp = (raw.deptPerformance ?? []).reduce((s: number, dp: any) => s + (dp.grossProfit ?? 0), 0);
+  const ni = fin.netIncome ?? 0;
+  const reconBalanced = raw.reconStatus ? (raw.reconStatus.totalVariance ?? 0) === 0 : true;
+  return {
+    daily_cash: (raw.cashPosition?.accounts ?? []).map((a: any) => ({
+      account_name: a.account, account_code: a.account, balance: a.balance,
+    })),
+    // No true budget figure is exposed by this endpoint — using the actual
+    // as its own comparator (0% variance) rather than fabricating a budget.
+    mtd_pl: { revenue, gp, ni, budget_revenue: revenue, budget_gp: gp, budget_ni: ni, prior_year_revenue: 0, cogs: fin.totalExpenses != null ? revenue - gp : undefined, opex: fin.totalExpenses },
+    dept_performance: deptPerformance,
+    ap_aging: toAgingData(raw.apAging),
+    ar_aging: toAgingData(raw.arAging),
+    eom_checklist: raw.eom?.current
+      ? { completed: raw.eom.current.stepsComplete, total: raw.eom.current.stepsTotal, items: [{ name: raw.eom.current.currentStep, completed: false }] }
+      : { completed: 0, total: 1, items: [] },
+    floor_plan: raw.floorplan
+      ? { total_balance: raw.floorplan.totalExposure, interest_accrual: 0, units_count: (raw.floorplan.newVehicles?.count ?? 0) + (raw.floorplan.usedVehicles?.count ?? 0) }
+      : { total_balance: 0, interest_accrual: 0, units_count: 0 },
+    pending_txns: { count: raw.pendingApprovals ?? 0, total: 0 },
+    cash_flow_forecast: [],
+    anomalies: [],
+    eom_readiness: raw.eom?.current?.status ?? '',
+    unposted_entries: 0,
+    draft_entries: raw.glSummary?.draft ?? 0,
+    gl_balanced: reconBalanced,
+    dso: 0,
+    dpo: 0,
+  };
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function FinancialDashboard() {
@@ -232,7 +305,13 @@ export default function FinancialDashboard() {
     queryFn: async () => {
       const r = await dashboardApi.getSummary();
       setLastRefresh(new Date());
-      return r as DashboardData;
+      // Real /api/v1/dashboard/summary shape (companyName, period, financials,
+      // deptPerformance, arAging, ...) does NOT match this screen's original
+      // DashboardData contract — casting it as DashboardData was itself the
+      // root cause of the "all $0 / empty" bug (every field silently
+      // undefined). adaptSummary() below does the real mapping; `raw` here
+      // is intentionally the true, untyped API response.
+      return r as any;
     },
     retry: false,
     refetchInterval: autoRefresh ? 300_000 : false,
@@ -282,24 +361,27 @@ export default function FinancialDashboard() {
   }
 
   // ── Safe data extraction ──────────────────────────────────────────────────
+  // adaptSummary() maps the real /api/v1/dashboard/summary response onto this
+  // screen's DashboardData contract (see adapter comment above).
 
+  const adapted = adaptSummary(raw);
   const d: DashboardData = {
-    daily_cash:       raw?.daily_cash       ?? [],
-    mtd_pl:           raw?.mtd_pl           ?? { revenue: 0, gp: 0, ni: 0, budget_revenue: 1, budget_gp: 1, budget_ni: 1, prior_year_revenue: 0, cogs: 0, opex: 0 },
-    dept_performance: raw?.dept_performance ?? [],
-    ap_aging:         raw?.ap_aging         ?? EMPTY_AGING,
-    ar_aging:         raw?.ar_aging         ?? EMPTY_AGING,
-    eom_checklist:    raw?.eom_checklist    ?? { completed: 0, total: 1, items: [] },
-    floor_plan:       raw?.floor_plan       ?? { total_balance: 0, interest_accrual: 0, units_count: 0 },
-    pending_txns:     raw?.pending_txns     ?? { count: 0, total: 0 },
-    cash_flow_forecast: raw?.cash_flow_forecast ?? [],
-    anomalies:        raw?.anomalies        ?? [],
-    eom_readiness:    raw?.eom_readiness    ?? '',
-    unposted_entries: raw?.unposted_entries ?? 0,
-    draft_entries:    raw?.draft_entries    ?? 0,
-    gl_balanced:      raw?.gl_balanced      ?? true,
-    dso:              raw?.dso              ?? 0,
-    dpo:              raw?.dpo              ?? 0,
+    daily_cash:       adapted?.daily_cash       ?? [],
+    mtd_pl:           adapted?.mtd_pl           ?? { revenue: 0, gp: 0, ni: 0, budget_revenue: 1, budget_gp: 1, budget_ni: 1, prior_year_revenue: 0, cogs: 0, opex: 0 },
+    dept_performance: adapted?.dept_performance ?? [],
+    ap_aging:         adapted?.ap_aging         ?? EMPTY_AGING,
+    ar_aging:         adapted?.ar_aging         ?? EMPTY_AGING,
+    eom_checklist:    adapted?.eom_checklist    ?? { completed: 0, total: 1, items: [] },
+    floor_plan:       adapted?.floor_plan       ?? { total_balance: 0, interest_accrual: 0, units_count: 0 },
+    pending_txns:     adapted?.pending_txns     ?? { count: 0, total: 0 },
+    cash_flow_forecast: adapted?.cash_flow_forecast ?? [],
+    anomalies:        adapted?.anomalies        ?? [],
+    eom_readiness:    adapted?.eom_readiness    ?? '',
+    unposted_entries: adapted?.unposted_entries ?? 0,
+    draft_entries:    adapted?.draft_entries    ?? 0,
+    gl_balanced:      adapted?.gl_balanced      ?? true,
+    dso:              adapted?.dso              ?? 0,
+    dpo:              adapted?.dpo              ?? 0,
   };
 
   const cashTotal  = d.daily_cash.reduce((s, a) => s + a.balance, 0);
@@ -353,7 +435,7 @@ export default function FinancialDashboard() {
       {/* Header */}
       <PageHeader
         title="Financial Dashboard"
-        subtitle={`May 2026 · MTD Performance + Forecast · Refreshed ${lastRefresh.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+        subtitle={`${raw?.period ?? '—'} · MTD Performance + Forecast · Refreshed ${lastRefresh.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
         actions={
           <div className="flex items-center gap-3">
             <label className="flex items-center gap-1.5 text-[12px] text-slate-500 cursor-pointer select-none">
@@ -445,10 +527,14 @@ export default function FinancialDashboard() {
               </thead>
               <tbody>
                 <PLRow label="Net Revenue"      actual={d.mtd_pl.revenue} budget={d.mtd_pl.budget_revenue} bold />
-                <PLRow label="Cost of Sales"    actual={cogs}             budget={d.mtd_pl.budget_revenue * 0.65} indent isExpense />
+                {/* No real COGS/OpEx budget is exposed by the backend either —
+                    using actuals (0% var) rather than the previous fabricated
+                    "* 0.65 of revenue/GP" budget guess, which produced
+                    misleading variances whenever real COGS/OpEx differed. */}
+                <PLRow label="Cost of Sales"    actual={cogs}             budget={cogs} indent isExpense />
                 <PLRow label="Gross Profit"     actual={d.mtd_pl.gp}      budget={d.mtd_pl.budget_gp} bold />
                 <PLRow label={`GP %  ${pct(gpPct)}`} actual={0} budget={0} isSub />
-                <PLRow label="Operating Expenses" actual={opex}           budget={d.mtd_pl.budget_gp * 0.65} indent isExpense />
+                <PLRow label="Operating Expenses" actual={opex}           budget={opex} indent isExpense />
                 <PLRow label="Net Income"       actual={d.mtd_pl.ni}      budget={d.mtd_pl.budget_ni} bold />
                 <PLRow label={`NI %  ${pct(niPct)}`} actual={0} budget={0} isSub />
               </tbody>
@@ -579,7 +665,7 @@ export default function FinancialDashboard() {
           </SectionCard>
 
           {/* EOM Close Status */}
-          <SectionCard title="EOM Close — May 2026" icon={CheckCircle} accent="#059669" action="EOM Dashboard" onAction={() => navigate('/accounting/eom')}>
+          <SectionCard title={`EOM Close — ${raw?.period ?? '—'}`} icon={CheckCircle} accent="#059669" action="EOM Dashboard" onAction={() => navigate('/accounting/eom')}>
             <div className="mb-3">
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-[12px] text-slate-500">

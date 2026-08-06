@@ -90,3 +90,32 @@ model AuditChainAnchor {
 
   @@map("audit_chain_anchors")
 }
+
+/// AI Agents dashboard (apps/web/src/pages/Agents.tsx) backing store. Shared
+/// across all 5 agent runtime services (agent-gl, agent-eom, agent-payroll,
+/// agent-apar, agent-t1) via a plain `pg` client (not Prisma — those services
+/// don't carry a Prisma workspace), each writing here instead of keeping its
+/// own private in-memory array. Prior to this table, each agent service's
+/// InMemoryAuditLogger only held its OWN process's actions, so the unified
+/// dashboard (which only ever queried agent-t1's `/api/v1/agents/log`) could
+/// never show GL Integrity/EOM/Payroll/AP-AR actions even when they occurred,
+/// and all history was lost on every restart. Distinct from AuditLog above:
+/// AuditLog is an immutable SOC2/SOX compliance trail; this table intentionally
+/// allows the humanResolvedAt/humanRequired columns to be updated when a human
+/// resolves a flagged agent action.
+model AgentActionLog {
+  id               String    @id @default(uuid())
+  tenantId         String    @map("tenant_id")
+  agentName        String    @map("agent_name")
+  triggerEvent     String    @map("trigger_event")
+  inputSummary     String    @default("") @map("input_summary")
+  actionTaken      String    @map("action_taken")
+  outcome          String
+  humanRequired    Boolean   @default(false) @map("human_required")
+  humanResolvedAt  DateTime? @map("human_resolved_at")
+  details          Json?
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  @@map("agent_action_logs")
+  @@index([tenantId, createdAt(sort: Desc)])
+}

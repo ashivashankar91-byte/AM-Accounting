@@ -2,10 +2,9 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { T1CopilotAgent } from '../domain/t1-copilot-agent';
 import { AnthropicClaudeClient } from '../infrastructure/claude-client';
-import { InMemoryAuditLogger } from '../infrastructure/audit-logger';
 import { RabbitMQEventPublisher } from '../infrastructure/event-publisher';
 import { T1AgentTools } from '../infrastructure/agent-tools';
-import { asTenantId, createEvent, DMSType } from '@amacc/shared-kernel';
+import { asTenantId, createEvent, DMSType, IAuditLogger } from '@amacc/shared-kernel';
 
 const ChatSchema = z.object({
   message: z.string().min(1),
@@ -18,7 +17,7 @@ const ChatSchema = z.object({
 
 export function t1Routes(
   claudeClient: AnthropicClaudeClient,
-  auditLogger: InMemoryAuditLogger,
+  auditLogger: IAuditLogger,
   eventPublisher: RabbitMQEventPublisher,
 ) {
   return async function (app: FastifyInstance) {
@@ -71,18 +70,25 @@ export function t1Routes(
       reply.raw.end();
     });
 
-    // GET /api/v1/agents/log — Agent log
+    // GET /api/v1/agents/log — Agent log. Optional ?agentName= narrows to
+    // one agent (e.g. the dashboard's per-card drill-in); ?limit=/?offset=
+    // paginate beyond the default most-recent-50 page.
     app.get('/log', async (request, reply) => {
       const tenantId = request.headers['x-tenant-id'] as string;
       if (!tenantId) return reply.status(401).send({ error: 'x-tenant-id header is required' });
-      const logs = await auditLogger.getByTenant(asTenantId(tenantId));
+      const query = request.query as { agentName?: string; limit?: string; offset?: string };
+      const limit = query.limit ? parseInt(query.limit, 10) : 50;
+      const offset = query.offset ? parseInt(query.offset, 10) : 0;
+      const logs = await auditLogger.getByTenant(asTenantId(tenantId), limit, query.agentName, offset);
       return reply.send(logs);
     });
 
     // GET /api/v1/agents/log/:id — Single log
     app.get('/log/:id', async (request, reply) => {
       const { id } = request.params as { id: string };
-      const log = await auditLogger.getById(id);
+      const tenantId = request.headers['x-tenant-id'] as string;
+      if (!tenantId) return reply.status(401).send({ error: 'x-tenant-id header is required' });
+      const log = await auditLogger.getById(id, tenantId);
       if (!log) return reply.status(404).send({ error: 'Not found' });
       return reply.send(log);
     });
@@ -90,7 +96,9 @@ export function t1Routes(
     // POST /api/v1/agents/log/:id/resolve — Resolve human-required
     app.post('/log/:id/resolve', async (request, reply) => {
       const { id } = request.params as { id: string };
-      await auditLogger.resolveHumanRequired(id);
+      const tenantId = request.headers['x-tenant-id'] as string;
+      if (!tenantId) return reply.status(401).send({ error: 'x-tenant-id header is required' });
+      await auditLogger.resolveHumanRequired(id, tenantId);
       return reply.send({ resolved: true });
     });
   };

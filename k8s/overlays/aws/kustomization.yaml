@@ -1,0 +1,162 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: amacc
+
+resources:
+  - ../../base
+  - migrator-job.yaml
+  - postgres-init-configmap.yaml
+  - ingress-alb-split.yaml
+
+patches:
+  - path: config-secrets-patch.yaml
+  - path: delete-archived-services.yaml
+  - path: postgres-fargate-patch.yaml
+  - target:
+      kind: Ingress
+      name: amacc-ingress
+    patch: |-
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: amacc-ingress
+      $patch: delete
+  - target:
+      kind: StatefulSet
+      name: postgres
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/volumes
+        value:
+          - name: pgdata
+            emptyDir: {}
+          - name: postgres-init-scripts
+            configMap:
+              name: postgres-init-scripts
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value:
+          name: postgres-init-scripts
+          mountPath: /docker-entrypoint-initdb.d
+  - target:
+      kind: Deployment
+      labelSelector: "app.kubernetes.io/part-of=amacc"
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "250m"
+            memory: "512Mi"
+  - target:
+      kind: StatefulSet
+      name: postgres
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "250m"
+            memory: "512Mi"
+
+replicas:
+  - name: agent-apar
+    count: 0
+  - name: agent-eom
+    count: 0
+  - name: agent-gl
+    count: 0
+  - name: agent-payroll
+    count: 0
+  - name: agent-t1
+    count: 0
+  - name: analytics-service
+    count: 0
+  - name: approval-service
+    count: 0
+  - name: audit-service
+    count: 0
+  - name: compliance-service
+    count: 0
+  - name: connector-service
+    count: 0
+  - name: document-service
+    count: 0
+  - name: notification-service
+    count: 0
+  - name: onboarding-service
+    count: 0
+  - name: orchestrator-service
+    count: 0
+  - name: webhook-service
+    count: 0
+  - name: recon-service
+    count: 0
+
+images:
+  - name: amacc/web
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/web
+  - name: amacc/migrator
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/migrator
+  - name: amacc/auth-service
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/auth-service
+  - name: amacc/tenant-service
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/tenant-service
+  - name: amacc/gl-service
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/gl-service
+  - name: amacc/eom-service
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/eom-service
+  - name: amacc/payroll-service
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/payroll-service
+  - name: amacc/apar-service
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/apar-service
+  - name: amacc/recon-service
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/recon-service
+  - name: amacc/fs-service
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/fs-service
+  - name: amacc/coa-service
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/coa-service
+  - name: amacc/cashflow-service
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/cashflow-service
+  - name: amacc/notification-service
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/notification-service
+  - name: amacc/audit-service
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/audit-service
+  - name: amacc/connector-service
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/connector-service
+  - name: amacc/approval-service
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/approval-service
+  - name: amacc/onboarding-service
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/onboarding-service
+  - name: amacc/webhook-service
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/webhook-service
+  - name: amacc/document-service
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/document-service
+  - name: amacc/group-service
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/group-service
+  - name: amacc/agent-gl
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/agent-gl
+  - name: amacc/agent-eom
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/agent-eom
+  - name: amacc/agent-payroll
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/agent-payroll
+  - name: amacc/agent-apar
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/agent-apar
+  - name: amacc/agent-t1
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/agent-t1
+  - name: amacc/user-service
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/user-service
+  - name: amacc/query-service
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/query-service
+  - name: amacc/analytics-service
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/analytics-service
+  - name: amacc/orchestrator-service
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/orchestrator-service
+  - name: amacc/compliance-service
+    newName: 132953790977.dkr.ecr.ap-south-1.amazonaws.com/amacc/compliance-service

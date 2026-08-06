@@ -1,0 +1,480 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/parts-accounting-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// CE-11 / Workstream C+D — Parts movement, valuation, physical, deposits,
+/// returns (S066-S072). Same posting-spine discipline as fixedops-service:
+/// zero direct GL writes; every journal via coa-service's real posting-engine.
+/// PENDING_CE07_TECHNICAL_RECONCILIATION applies identically here (see
+/// fixedops-service/prisma/schema.prisma header for the exact gap).
+
+// ── S072 — Parts valuation config & landed cost (built early; S066 reads it) ─
+model PartsValuationConfig {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  legalEntityId  String   @map("legal_entity_id")
+
+  /// REPLACEMENT | AVERAGE — accepted config scope only, no invented methods.
+  method         String   @map("method")
+  landedCostRules Json?   @map("landed_cost_rules") // freight/duty allocation %, configuration only
+
+  effectiveFrom  DateTime @map("effective_from") @db.Date
+  ceremonyApprovedBy String @map("ceremony_approved_by")
+  revaluationPreviewId String? @map("revaluation_preview_id")
+
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, legalEntityId, effectiveFrom])
+  @@map("parts_valuation_config")
+}
+
+// ── S066 — Parts movement posting & tie-out ─────────────────────────────────
+model PartsMovement {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  legalEntityId  String   @map("legal_entity_id")
+  storeId        String   @map("store_id")
+  partNumber     String   @map("part_number")
+
+  /// RECEIPT | RO_ISSUE | COUNTER_SALE | RETURN_TO_STOCK | RETURN_TO_VENDOR |
+  /// INTERNAL_ISSUE | ADJUSTMENT
+  movementFamily String   @map("movement_family")
+  movementId     String   @map("movement_id") // idempotency identity
+
+  quantity       Decimal  @map("quantity") @db.Decimal(12, 3)
+  unitValue      Decimal  @map("unit_value") @db.Decimal(15, 4)
+  totalValue     Decimal  @map("total_value") @db.Decimal(15, 2)
+
+  sourceDocType  String   @map("source_doc_type")
+  sourceDocId    String   @map("source_doc_id")
+  sourceEventId  String   @map("source_event_id")
+  correlationId  String   @map("correlation_id")
+  businessDate   DateTime @map("business_date") @db.Date
+
+  /// PENDING | POSTED | REJECTED_MAPPING | EXCEPTION
+  status         String   @map("status")
+  journalEntryId String?  @map("journal_entry_id")
+  journalNumber  String?  @map("journal_number")
+
+  /// D-CE11-02 interim: allow-with-exception-flag, never silent, never
+  /// hard-block. True when this movement drove on-hand negative.
+  negativeOnHandFlag Boolean @default(false) @map("negative_on_hand_flag")
+
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, movementId])
+  @@index([tenantId, storeId, partNumber])
+  @@index([tenantId, negativeOnHandFlag])
+  @@map("parts_movement")
+}
+
+/// Running perpetual balance per (tenant, legalEntity, store, part) —
+/// updated transactionally with each movement under row lock
+/// (withSerializableRetry) so it is always the authoritative "perpetual"
+/// side of the tie-out.
+model PartsPerpetualBalance {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  legalEntityId  String   @map("legal_entity_id")
+  storeId        String   @map("store_id")
+  partNumber     String   @map("part_number")
+
+  onHandQty      Decimal  @default(0) @map("on_hand_qty") @db.Decimal(12, 3)
+  onHandValue    Decimal  @default(0) @map("on_hand_value") @db.Decimal(15, 2)
+
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, legalEntityId, storeId, partNumber])
+  @@map("parts_perpetual_balance")
+}
+
+model PartsReconciliationRun {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  legalEntityId   String   @map("legal_entity_id")
+  storeId         String?  @map("store_id")
+  asOfDate        DateTime @map("as_of_date") @db.Date
+
+  perpetualTotal  Decimal  @map("perpetual_total") @db.Decimal(15, 2)
+  glControlTotal  Decimal  @map("gl_control_total") @db.Decimal(15, 2)
+  varianceAmount  Decimal  @map("variance_amount") @db.Decimal(15, 2)
+
+  /// BALANCED | VARIANCE
+  status          String   @map("status")
+  triggeredBy     String   @map("triggered_by") // NIGHTLY | ON_DEMAND
+  runBy           String?  @map("run_by")
+
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  varianceLines PartsReconciliationVarianceLine[]
+
+  @@index([tenantId, legalEntityId, storeId, asOfDate])
+  @@map("parts_reconciliation_run")
+}
+
+model PartsReconciliationVarianceLine {
+  id              String   @id @default(uuid())
+  runId           String   @map("run_id")
+  partNumber      String   @map("part_number")
+  movementId      String?  @map("movement_id")
+  explainedAmount Decimal  @default(0) @map("explained_amount") @db.Decimal(15, 2)
+  unexplainedAmount Decimal @default(0) @map("unexplained_amount") @db.Decimal(15, 2)
+
+  run PartsReconciliationRun @relation(fields: [runId], references: [id])
+
+  @@index([runId])
+  @@map("parts_reconciliation_variance_line")
+}
+
+// ── S067 — OEM Price-Tape revaluation (preview-approve; nothing auto-posts) ─
+model PriceTapeLoad {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  legalEntityId  String   @map("legal_entity_id")
+  loadBatchId    String   @map("load_batch_id")
+
+  /// LOADED | PREVIEWED | APPROVED | REJECTED
+  status         String   @default("LOADED") @map("status")
+  previewTotal   Decimal? @map("preview_total") @db.Decimal(15, 2)
+  approvedTotal  Decimal? @map("approved_total") @db.Decimal(15, 2)
+  approvedBy     String?  @map("approved_by")
+  approvedAt     DateTime? @map("approved_at")
+
+  sourceEventId  String?  @map("source_event_id")
+  journalEntryId String?  @map("journal_entry_id")
+
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  lines PriceTapeLine[]
+
+  @@unique([tenantId, loadBatchId])
+  @@map("price_tape_load")
+}
+
+model PriceTapeLine {
+  id           String   @id @default(uuid())
+  tapeLoadId   String   @map("tape_load_id")
+  partNumber   String   @map("part_number")
+  oldValue     Decimal  @map("old_value") @db.Decimal(15, 4)
+  newValue     Decimal  @map("new_value") @db.Decimal(15, 4)
+  qtyOnHand    Decimal  @map("qty_on_hand") @db.Decimal(12, 3)
+  deltaValue   Decimal  @map("delta_value") @db.Decimal(15, 2)
+  effectiveFrom DateTime @map("effective_from") @db.Date
+
+  tapeLoad PriceTapeLoad @relation(fields: [tapeLoadId], references: [id])
+
+  @@index([tapeLoadId])
+  @@map("price_tape_line")
+}
+
+// ── S068 — Obsolescence provision & scrap ───────────────────────────────────
+model ObsolescenceProvisionRun {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  legalEntityId  String   @map("legal_entity_id")
+  asOfDate       DateTime @map("as_of_date") @db.Date
+
+  bandConfig     Json     @map("band_config") // [SAFE_CONFIGURATION] aging bands -> %
+  previewTotal   Decimal  @map("preview_total") @db.Decimal(15, 2)
+
+  /// PREVIEWED | APPROVED
+  status         String   @default("PREVIEWED") @map("status")
+  approvedBy     String?  @map("approved_by")
+  approvedAt     DateTime? @map("approved_at")
+  sourceEventId  String?  @map("source_event_id")
+  journalEntryId String?  @map("journal_entry_id")
+
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  lines ObsolescenceProvisionLine[]
+
+  @@map("obsolescence_provision_run")
+}
+
+model ObsolescenceProvisionLine {
+  id           String  @id @default(uuid())
+  runId        String  @map("run_id")
+  partNumber   String  @map("part_number")
+  ageBand      String  @map("age_band")
+  qty          Decimal @map("qty") @db.Decimal(12, 3)
+  provisionAmount Decimal @map("provision_amount") @db.Decimal(15, 2)
+
+  run ObsolescenceProvisionRun @relation(fields: [runId], references: [id])
+
+  @@index([runId])
+  @@map("obsolescence_provision_line")
+}
+
+model ScrapDisposal {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  legalEntityId   String   @map("legal_entity_id")
+  storeId         String   @map("store_id")
+  partNumber      String   @map("part_number")
+
+  qty             Decimal  @map("qty") @db.Decimal(12, 3)
+  value           Decimal  @map("value") @db.Decimal(15, 2)
+  reason          String   @map("reason")
+  actor           String   @map("actor")
+
+  thresholdAmount Decimal? @map("threshold_amount") @db.Decimal(15, 2)
+  thresholdExceeded Boolean @default(false) @map("threshold_exceeded")
+
+  /// POSTED | REFUSED_THRESHOLD | REFUSED_PERMISSION
+  status          String   @map("status")
+  sourceEventId   String?  @map("source_event_id")
+  journalEntryId  String?  @map("journal_entry_id")
+
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@map("scrap_disposal")
+}
+
+// ── S069 — Parts physical inventory ─────────────────────────────────────────
+model PhysicalInventorySession {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  legalEntityId   String   @map("legal_entity_id")
+  storeId         String   @map("store_id")
+  scopeDescription String  @map("scope_description")
+  blindCount      Boolean  @default(false) @map("blind_count")
+
+  /// OPEN | FROZEN | COUNTED | VARIANCE_REVIEW | APPROVED | POSTED
+  status          String   @default("OPEN") @map("status")
+
+  varianceThreshold Decimal? @map("variance_threshold") @db.Decimal(15, 2)
+  frozenAt        DateTime? @map("frozen_at")
+  countedAt       DateTime? @map("counted_at")
+  approvedBy      String?  @map("approved_by")
+  approvedAt      DateTime? @map("approved_at")
+
+  sourceEventId   String?  @map("source_event_id")
+  journalEntryId  String?  @map("journal_entry_id")
+
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  lines PhysicalInventoryCountLine[]
+
+  @@map("physical_inventory_session")
+}
+
+model PhysicalInventoryCountLine {
+  id              String   @id @default(uuid())
+  sessionId       String   @map("session_id")
+  partNumber      String   @map("part_number")
+
+  perpetualQtySnapshot Decimal @map("perpetual_qty_snapshot") @db.Decimal(12, 3)
+  perpetualValueSnapshot Decimal @map("perpetual_value_snapshot") @db.Decimal(15, 2)
+  countedQty      Decimal? @map("counted_qty") @db.Decimal(12, 3)
+  varianceQty     Decimal? @map("variance_qty") @db.Decimal(12, 3)
+  varianceValue   Decimal? @map("variance_value") @db.Decimal(15, 2)
+
+  session PhysicalInventorySession @relation(fields: [sessionId], references: [id])
+
+  @@index([sessionId])
+  @@map("physical_inventory_count_line")
+}
+
+// ── S070 — Special-order deposits & escheat ─────────────────────────────────
+model EscheatJurisdictionConfig {
+  id                String   @id @default(uuid())
+  tenantId          String   @map("tenant_id")
+  legalEntityId     String   @map("legal_entity_id")
+  jurisdiction      String   @map("jurisdiction")
+  dormancyPeriodDays Int     @map("dormancy_period_days")
+  effectiveFrom     DateTime @map("effective_from") @db.Date
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, legalEntityId, jurisdiction, effectiveFrom])
+  @@map("escheat_jurisdiction_config")
+}
+
+model SpecialOrderDeposit {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  legalEntityId   String   @map("legal_entity_id")
+  storeId         String   @map("store_id")
+  orderNumber     String   @map("order_number") // applyNumber
+  customerRef     String   @map("customer_ref")
+
+  depositAmount   Decimal  @map("deposit_amount") @db.Decimal(15, 2)
+
+  /// OPEN | APPLIED | REFUND_REFUSED | REFUNDED | ABANDONED | ESCHEATED
+  status          String   @default("OPEN") @map("status")
+
+  depositSourceEventId String @map("deposit_source_event_id")
+  depositJournalEntryId String @map("deposit_journal_entry_id")
+  appliedJournalEntryId String? @map("applied_journal_entry_id")
+  refundJournalEntryId String? @map("refund_journal_entry_id")
+
+  agingSinceDate  DateTime @map("aging_since_date") @db.Date
+  jurisdiction    String?  @map("jurisdiction")
+
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, orderNumber])
+  @@index([tenantId, status, agingSinceDate])
+  @@map("special_order_deposit")
+}
+
+// ── S071 — OEM parts-return pipeline (R5) ───────────────────────────────────
+model OemReturnProgramConfig {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  legalEntityId   String   @map("legal_entity_id")
+  oemCode         String   @map("oem_code")
+  allowancePct    Decimal  @map("allowance_pct") @db.Decimal(5, 2)
+  restockingFeePct Decimal @default(0) @map("restocking_fee_pct") @db.Decimal(5, 2)
+  effectiveFrom   DateTime @map("effective_from") @db.Date
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, legalEntityId, oemCode, effectiveFrom])
+  @@map("oem_return_program_config")
+}
+
+model OemReturnAuthorization {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  legalEntityId   String   @map("legal_entity_id")
+  storeId         String   @map("store_id")
+  oemCode         String   @map("oem_code")
+  returnAuthNumber String  @map("return_auth_number") // applyNumber
+
+  /// AUTHORIZED | SHIPPED | CREDIT_APPLIED | DISPOSITIONED
+  status          String   @default("AUTHORIZED") @map("status")
+
+  shipSourceEventId String? @map("ship_source_event_id")
+  shipJournalEntryId String? @map("ship_journal_entry_id")
+  creditSourceEventId String? @map("credit_source_event_id")
+  creditJournalEntryId String? @map("credit_journal_entry_id")
+  restockingFeeVariance Decimal? @map("restocking_fee_variance") @db.Decimal(15, 2)
+
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  lines OemReturnLine[]
+
+  @@unique([tenantId, returnAuthNumber])
+  @@map("oem_return_authorization")
+}
+
+model OemReturnLine {
+  id           String  @id @default(uuid())
+  returnAuthId String  @map("return_auth_id")
+  partNumber   String  @map("part_number")
+  qty          Decimal @map("qty") @db.Decimal(12, 3)
+  value        Decimal @map("value") @db.Decimal(15, 2)
+
+  returnAuth OemReturnAuthorization @relation(fields: [returnAuthId], references: [id])
+
+  @@index([returnAuthId])
+  @@map("oem_return_line")
+}
+
+// ── Global: account mapping (ACCOUNT_MAPPING_VALUES_PENDING by standing rule) ─
+model PartsAccountMapping {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  legalEntityId String   @map("legal_entity_id")
+  eventFamily   String   @map("event_family")
+  role          String   @map("role")
+
+  accountNumber String?  @map("account_number")
+  status        String   @default("ACCOUNT_MAPPING_VALUES_PENDING") @map("status")
+
+  updatedBy     String?  @map("updated_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, legalEntityId, eventFamily, role])
+  @@map("parts_account_mapping")
+}
+
+// ── S021-aligned exception / recovery queue ─────────────────────────────────
+model PartsPostingException {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  legalEntityId   String   @map("legal_entity_id")
+  storeId         String?  @map("store_id")
+
+  sourceEventId   String   @map("source_event_id")
+  correlationId   String   @map("correlation_id")
+  eventFamily     String   @map("event_family")
+  partNumber      String?  @map("part_number")
+
+  reasonCode      String   @map("reason_code")
+  detail          String?  @map("detail")
+
+  status          String   @default("OPEN") @map("status")
+  resolvedAt      DateTime? @map("resolved_at")
+  resolvedBy      String?  @map("resolved_by")
+
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, status, reasonCode])
+  @@map("parts_posting_exception")
+}
+
+// ── Immutable audit trail (local outbox, drained to audit-service) ─────────
+model AuditOutboxEvent {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  docType   String   @map("doc_type")
+  docId     String   @map("doc_id")
+  action    String   @map("action")
+  before    Json?    @map("before")
+  after     Json?    @map("after")
+  reason    String?  @map("reason")
+  correlationId String? @map("correlation_id")
+  actor     String   @map("actor")
+  retryCount Int     @default(0) @map("retry_count")
+  lastError String?  @map("last_error")
+  createdAt DateTime @default(now()) @map("created_at")
+  publishedAt DateTime? @map("published_at")
+
+  @@index([tenantId, publishedAt])
+  @@map("parts_audit_outbox_event")
+}
+
+// ── D-CE08-02 Integration fix — Scrap threshold config ───────────────────────
+// Tenant/legal-entity-scoped, effective-dated scrap-disposal threshold.
+// When no active row exists the scrap endpoint refuses with
+// SCRAP_THRESHOLD_NOT_CONFIGURED. Never invented/defaulted server-side.
+model ScrapThresholdConfig {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  legalEntityId  String   @map("legal_entity_id")
+  thresholdAmount Decimal @map("threshold_amount") @db.Decimal(15, 2)
+  effectiveFrom  DateTime @map("effective_from") @db.Date
+  createdBy      String   @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, legalEntityId, effectiveFrom])
+  @@index([tenantId, legalEntityId, effectiveFrom(sort: Desc)])
+  @@map("scrap_threshold_config")
+}
+
+// ── D-CE08-03 Integration fix — Obsolescence aging band config ───────────────
+// Tenant/legal-entity-scoped, effective-dated aging band configuration.
+// bandConfig stores [{ label, minDays, maxDays, provisionPct }].
+// When no active row exists the obsolescence preview refuses with
+// AGING_BAND_CONFIG_NOT_CONFIGURED. Never invented/defaulted server-side.
+model ObsolescenceAgingBandConfig {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  legalEntityId  String   @map("legal_entity_id")
+  bandConfig     Json     @map("band_config")
+  effectiveFrom  DateTime @map("effective_from") @db.Date
+  createdBy      String   @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, legalEntityId, effectiveFrom])
+  @@index([tenantId, legalEntityId, effectiveFrom(sort: Desc)])
+  @@map("obsolescence_aging_band_config")
+}

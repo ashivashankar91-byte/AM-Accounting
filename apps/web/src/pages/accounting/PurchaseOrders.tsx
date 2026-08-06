@@ -125,7 +125,22 @@ export default function PurchaseOrders() {
 
   const handleCreatePO = async () => {
     setUiState('loading');
-    createMutation.mutate(newPOForm);
+    const payload = {
+      ...newPOForm,
+      vendorId: newPOForm.vendor_id || undefined,
+      department: newPOForm.department || undefined,
+      requiredDate: newPOForm.required_date || undefined,
+      poType: newPOForm.po_type,
+      roNumber: newPOForm.ro_number || undefined,
+      lines: newPOForm.lines.map((l, i) => ({
+        lineNumber: i + 1,
+        description: l.item,
+        qty: l.qty,
+        unitCost: l.unit_cost,
+        glAccountId: l.gl_account || undefined,
+      })),
+    };
+    createMutation.mutate(payload);
   };
 
   const handleStatusTransition = async (newStatus: PurchaseOrder['status']) => {

@@ -1,6 +1,13 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { goldenPathApi } from '../../api/client';
+import {
+  EmptyState, ErrorState, LoadingState, MoneyTd, UnauthorizedState, formatMoney,
+  ReportShell, FilterBar, FilterField, FILTER_CONTROL_CLASS,
+  FinancialTable, ReportThead, ReportTh, ReportTr, ReportTd, TotalsRow,
+  ExportMenu, RelatedLinks, Banner,
+} from '../../components/report';
+import { Btn } from '../../components/ui';
 
 interface FSRow {
   accountCode: string;
@@ -19,52 +26,64 @@ interface BalanceSheetReport {
   reconciledToTrialBalance: { drSum: number; crSum: number };
 }
 
+// Real, confirmed defect fix (Golden R0 UI convergence, Balance Sheet
+// refinement, 2026-07-28): getBalanceSheet() calls TrialBalanceService
+// .getReport() first -- if the underlying trial balance itself doesn't
+// foot, it throws the TB-level StructuralImbalanceError, shape
+// {drSum,crSum,delta}, a DIFFERENT real error from FSStructuralImbalanceError
+// (assets != liabilities+equity on an already-footed slice), shape
+// {totalAssets,totalLiabilitiesAndEquity,delta} -- confirmed by reading
+// financial-statement-service.ts and routes.ts directly, both share the
+// error code STRUCTURAL_IMBALANCE but never both sets of fields at once.
+// This screen previously assumed only the FS-level shape, so a TB-level
+// imbalance would have rendered "NaN" for both amounts. Both real shapes
+// are now handled explicitly, never assumed.
 interface StructuralImbalance {
   error: 'STRUCTURAL_IMBALANCE';
-  totalAssets: number;
-  totalLiabilitiesAndEquity: number;
+  totalAssets?: number;
+  totalLiabilitiesAndEquity?: number;
+  drSum?: number;
+  crSum?: number;
   delta: number;
 }
 
 interface UnclassifiedError {
   error: 'UNCLASSIFIED_ACCOUNT_TYPE';
-  // FINAL-R0 defect fix (Golden R0 closure, this pass): the real
-  // gl-service UnclassifiedAccountTypeError contract (financial-statement
-  // -service.ts) always returns a plural `accounts` array -- it supports
-  // reporting MULTIPLE unclassified accounts in one response, not a single
-  // top-level accountCode/accountType. The previous single-field shape here
-  // meant this banner ALWAYS rendered blank codes/types on every real
-  // occurrence of this error (verified live: "account  has account type ,
-  // which is not recognized..."), silently hiding which account(s) were
-  // actually the problem. Found live while writing this closure pass's
-  // negative-scenario Playwright coverage.
+  // FINAL-R0 defect fix (Golden R0 closure): the real gl-service
+  // UnclassifiedAccountTypeError contract (financial-statement-service.ts)
+  // always returns a plural `accounts` array -- supports reporting MULTIPLE
+  // unclassified accounts in one response.
   accounts: Array<{ accountCode: string; accountType: string }>;
 }
 
-function fmt(n: number): string {
-  const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return n < 0 ? `(${abs})` : abs;
+// S009/DISTRIBUTION (Product decision, 2026-07-28): a DISTRIBUTION-type
+// account carrying a non-zero resting balance is a posting-expansion
+// invariant violation -- the whole request fails closed, never a partial
+// or misleading statement.
+interface DistributionAnomalyError {
+  error: 'DISTRIBUTION_BALANCE_ANOMALY';
+  accounts: Array<{ accountCode: string; accountName: string; balance: number }>;
 }
 
 function Section({ title, rows, total, testPrefix }: { title: string; rows: FSRow[]; total: number; testPrefix: string }) {
   return (
-    <div style={{ marginTop: 16 }}>
-      <h3 style={{ fontSize: 15, fontWeight: 600 }}>{title}</h3>
-      <table data-testid={`${testPrefix}-table`} style={{ width: '100%', borderCollapse: 'collapse' }}>
+    <div className="mt-4">
+      <h3 className="text-[14px] font-semibold text-slate-900 mb-1.5">{title}</h3>
+      <FinancialTable testId={`${testPrefix}-table`}>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.accountCode} data-testid={`${testPrefix}-row-${r.accountCode}`}>
-              <td>{r.accountCode}</td>
-              <td>{r.accountName}</td>
-              <td style={{ textAlign: 'right', fontFamily: 'JetBrains Mono, monospace' }}>{fmt(r.amount)}</td>
-            </tr>
+            <ReportTr key={r.accountCode} testId={`${testPrefix}-row-${r.accountCode}`}>
+              <ReportTd>{r.accountCode}</ReportTd>
+              <ReportTd>{r.accountName}</ReportTd>
+              <MoneyTd value={r.amount} />
+            </ReportTr>
           ))}
-          <tr data-testid={`${testPrefix}-total`} style={{ fontWeight: 700, borderTop: '1px solid #333' }}>
-            <td colSpan={2}>Total {title}</td>
-            <td style={{ textAlign: 'right', fontFamily: 'JetBrains Mono, monospace' }}>{fmt(total)}</td>
-          </tr>
+          <TotalsRow testId={`${testPrefix}-total`}>
+            <ReportTd colSpan={2}>Total {title}</ReportTd>
+            <MoneyTd value={total} bold />
+          </TotalsRow>
         </tbody>
-      </table>
+      </FinancialTable>
     </div>
   );
 }
@@ -77,7 +96,18 @@ const defaultAsOf = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(
 // and the currentEarnings/A=L+E figures shown are exactly what the API
 // returned; no classification, contra-account sign, or net-income
 // calculation happens client-side (per PO instruction #4/#9 for S227).
+//
+// Golden R0 UI convergence — Phase 3: migrated onto the shared
+// ReportShell/FilterBar/FinancialTable foundation (components/report,
+// Phase 2). All data-testids, API calls and calculations are unchanged,
+// including the bs-balanced-badge element (kept verbatim — its exact
+// "BALANCED"/"NOT BALANCED" text is asserted by
+// tests/e2e/golden-path.spec.ts). Explicitly NOT added: comparative/
+// prior-period columns, a rounding filter, or any client-side
+// recomputation of backend totals -- none of these are supported by the
+// real S227 contract.
 export default function BalanceSheet() {
+  const navigate = useNavigate();
   const [entity, setEntity] = useState('01');
   const [store, setStore] = useState('');
   const [dept, setDept] = useState('');
@@ -85,15 +115,22 @@ export default function BalanceSheet() {
   const [report, setReport] = useState<BalanceSheetReport | null>(null);
   const [imbalance, setImbalance] = useState<StructuralImbalance | null>(null);
   const [unclassified, setUnclassified] = useState<UnclassifiedError | null>(null);
+  const [distributionAnomaly, setDistributionAnomaly] = useState<DistributionAnomalyError | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [unauthorized, setUnauthorized] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [csv, setCsv] = useState<string | null>(null);
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportUnauthorized, setExportUnauthorized] = useState<string | null>(null);
 
   async function runReport() {
     setBusy(true);
     setError(null);
+    setUnauthorized(null);
     setImbalance(null);
     setUnclassified(null);
+    setDistributionAnomaly(null);
     setReport(null);
     setCsv(null);
     try {
@@ -112,8 +149,10 @@ export default function BalanceSheet() {
         setImbalance(err.body);
       } else if (err.status === 500 && err.body?.error === 'UNCLASSIFIED_ACCOUNT_TYPE') {
         setUnclassified(err.body);
+      } else if (err.status === 500 && err.body?.error === 'DISTRIBUTION_BALANCE_ANOMALY') {
+        setDistributionAnomaly(err.body);
       } else if (err.status === 401 || err.status === 403) {
-        setError(err.message);
+        setUnauthorized(err.message);
       } else {
         setError(err.message);
       }
@@ -123,6 +162,10 @@ export default function BalanceSheet() {
   }
 
   async function doExport() {
+    if (exportBusy) return;
+    setExportBusy(true);
+    setExportError(null);
+    setExportUnauthorized(null);
     try {
       const text = await goldenPathApi.exportBalanceSheet({
         entity,
@@ -139,27 +182,59 @@ export default function BalanceSheet() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (err: any) {
-      setError(err.message);
+      // The export route reuses the identical view computation, so it can
+      // fail with the exact same two real error contracts -- reuse the same
+      // banners rather than inventing a third, different message.
+      if (err.status === 500 && err.body?.error === 'STRUCTURAL_IMBALANCE') {
+        setImbalance(err.body);
+      } else if (err.status === 500 && err.body?.error === 'UNCLASSIFIED_ACCOUNT_TYPE') {
+        setUnclassified(err.body);
+      } else if (err.status === 401 || err.status === 403) {
+        setExportUnauthorized(err.message);
+      } else {
+        setExportError(err.message);
+      }
+    } finally {
+      setExportBusy(false);
     }
   }
 
   const balanced = report ? Math.abs(report.assets.total - report.totalLiabilitiesAndEquity) < 0.005 : false;
+  const isEmpty = !!report && report.assets.rows.length === 0 && report.liabilities.rows.length === 0 && report.equity.rows.length === 0;
 
   return (
-    <div style={{ maxWidth: 960, margin: '40px auto', fontFamily: 'Inter, sans-serif' }}>
-      <h1 style={{ fontSize: 20, fontWeight: 600 }}>Balance Sheet</h1>
-      {error && <p data-testid="bs-error" style={{ color: '#b91c1c' }}>{error}</p>}
+    <ReportShell
+      title="Balance Sheet"
+      description="Assets, liabilities and equity for a legal entity, as of a fiscal month."
+      actions={
+        <ExportMenu
+          disabled={exportBusy}
+          formats={[{ key: 'csv', label: exportBusy ? 'Exporting…' : 'Export CSV', onSelect: doExport, testId: 'bs-export' }]}
+        />
+      }
+    >
+      {error && <ErrorState testId="bs-error" message={error} onRetry={runReport} onBack={() => navigate(-1)} />}
+      {unauthorized && <UnauthorizedState testId="bs-unauthorized" message={unauthorized} />}
 
       {imbalance && (
-        <div data-testid="bs-structural-imbalance-banner" style={{ background: '#fef2f2', border: '1px solid #b91c1c', color: '#991b1b', padding: 12, marginTop: 12 }}>
-          <strong>STRUCTURAL_IMBALANCE</strong> — Assets do not equal Liabilities + Equity for this slice; the statement was not rendered.
-          <div>Assets {fmt(imbalance.totalAssets)} vs Liabilities+Equity {fmt(imbalance.totalLiabilitiesAndEquity)} — delta {fmt(imbalance.delta)}</div>
-        </div>
+        <Banner kind="error" testId="bs-structural-imbalance-banner" title="STRUCTURAL_IMBALANCE">
+          {imbalance.totalAssets !== undefined ? (
+            <>
+              Assets do not equal Liabilities + Equity for this slice; the statement was not rendered.
+              <div>Assets {formatMoney(imbalance.totalAssets)} vs Liabilities+Equity {formatMoney(imbalance.totalLiabilitiesAndEquity!)} — delta {formatMoney(imbalance.delta)}</div>
+            </>
+          ) : (
+            <>
+              The underlying trial balance for this slice does not foot; the statement cannot be produced until it does.
+              <div>Debits {formatMoney(imbalance.drSum ?? 0)} vs Credits {formatMoney(imbalance.crSum ?? 0)} — delta {formatMoney(imbalance.delta)}</div>
+            </>
+          )}
+        </Banner>
       )}
 
       {unclassified && (
-        <div data-testid="bs-unclassified-banner" style={{ background: '#fef2f2', border: '1px solid #b91c1c', color: '#991b1b', padding: 12, marginTop: 12 }}>
-          <strong>UNCLASSIFIED_ACCOUNT_TYPE</strong> — {unclassified.accounts.length === 1 ? 'account' : 'accounts'}{' '}
+        <Banner kind="error" testId="bs-unclassified-banner" title="UNCLASSIFIED_ACCOUNT_TYPE">
+          {unclassified.accounts.length === 1 ? 'Account' : 'Accounts'}{' '}
           {unclassified.accounts.map((a, i) => (
             <span key={a.accountCode}>
               {i > 0 && ', '}
@@ -167,30 +242,71 @@ export default function BalanceSheet() {
             </span>
           ))}{' '}
           {unclassified.accounts.length === 1 ? 'is' : 'are'} not recognized by the approved Financial Statement Roll-Up Contract. The statement was not rendered.
-        </div>
+        </Banner>
       )}
 
-      <section style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <label>Entity/Company <input data-testid="bs-entity" value={entity} onChange={(e) => setEntity(e.target.value)} style={{ width: 60 }} /></label>
-        <label>Store <input data-testid="bs-store" value={store} onChange={(e) => setStore(e.target.value)} style={{ width: 70 }} /></label>
-        <label>Dept <input data-testid="bs-dept" value={dept} onChange={(e) => setDept(e.target.value)} style={{ width: 70 }} /></label>
-        <label>As of (YYYY-MM) <input data-testid="bs-asof" value={asOf} onChange={(e) => setAsOf(e.target.value)} style={{ width: 90 }} /></label>
-        <button data-testid="bs-run" onClick={runReport} disabled={busy}>{busy ? 'Loading…' : 'Run Balance Sheet'}</button>
-        {report && <button data-testid="bs-export" onClick={doExport}>Export CSV</button>}
-      </section>
+      {distributionAnomaly && (
+        <Banner kind="error" testId="bs-distribution-anomaly-banner" title="DISTRIBUTION_BALANCE_ANOMALY">
+          DISTRIBUTION-type account{distributionAnomaly.accounts.length === 1 ? '' : 's'}{' '}
+          {distributionAnomaly.accounts.map((a, i) => (
+            <span key={a.accountCode}>
+              {i > 0 && ', '}
+              {a.accountCode} ({a.accountName}) = {formatMoney(a.balance)}
+            </span>
+          ))}{' '}
+          unexpectedly carr{distributionAnomaly.accounts.length === 1 ? 'ies' : 'y'} a non-zero balance. This is a
+          posting-expansion data-integrity issue, not a scope gap — the statement was not rendered. Contact your
+          controller; the anomaly has been recorded for investigation.
+        </Banner>
+      )}
 
-      {report && (
+      <FilterBar>
+        <FilterField label="Entity/Company" width={130}>
+          <input data-testid="bs-entity" value={entity} onChange={(e) => setEntity(e.target.value)} className={FILTER_CONTROL_CLASS} />
+        </FilterField>
+        <FilterField label="Store" width={90}>
+          <input data-testid="bs-store" value={store} onChange={(e) => setStore(e.target.value)} className={FILTER_CONTROL_CLASS} />
+        </FilterField>
+        <FilterField label="Dept" width={90}>
+          <input data-testid="bs-dept" value={dept} onChange={(e) => setDept(e.target.value)} className={FILTER_CONTROL_CLASS} />
+        </FilterField>
+        <FilterField label="As of (YYYY-MM)" width={120}>
+          <input data-testid="bs-asof" value={asOf} onChange={(e) => setAsOf(e.target.value)} className={FILTER_CONTROL_CLASS} />
+        </FilterField>
+        <Btn data-testid="bs-run" size="sm" onClick={runReport} disabled={busy} loading={busy}>
+          {busy ? 'Loading…' : 'Run Balance Sheet'}
+        </Btn>
+      </FilterBar>
+
+      {busy && <LoadingState testId="bs-loading" label="Producing balance sheet…" />}
+      {exportBusy && <LoadingState testId="bs-export-loading" label="Preparing export…" />}
+      {exportError && <ErrorState testId="bs-export-error" message={exportError} />}
+      {exportUnauthorized && <UnauthorizedState testId="bs-export-unauthorized" message={exportUnauthorized} />}
+
+      {report && isEmpty && (
+        <EmptyState
+          testId="bs-empty"
+          title="No balance sheet data for this scope"
+          message="No asset, liability or equity accounts were returned for this entity/store/department/period."
+          action={(store || dept) ? (
+            <Btn size="sm" variant="secondary" onClick={() => { setStore(''); setDept(''); }}>Clear store/dept filters</Btn>
+          ) : undefined}
+        />
+      )}
+
+      {report && !isEmpty && (
         <>
-          <p style={{ marginTop: 12 }}>
+          <p className="text-[13px] text-slate-600 mt-1">
             Entity {report.scope.entity} — As of {report.scope.asOf}
             {report.scope.store ? ` — Store ${report.scope.store}` : ''}
             {report.scope.dept ? ` — Dept ${report.scope.dept}` : ''}
           </p>
           <div
             data-testid="bs-balanced-badge"
+            className="inline-block px-2.5 py-1 rounded font-semibold text-[12.5px] mt-2"
             style={{
-              display: 'inline-block', padding: '4px 10px', borderRadius: 4, fontWeight: 600,
-              background: balanced ? '#dcfce7' : '#fef2f2', color: balanced ? '#166534' : '#991b1b',
+              background: balanced ? '#dcfce7' : '#fef2f2',
+              color: balanced ? '#166534' : '#991b1b',
             }}
           >
             {balanced ? 'BALANCED' : 'NOT BALANCED'}
@@ -200,27 +316,27 @@ export default function BalanceSheet() {
           <Section title="Liabilities" rows={report.liabilities.rows} total={report.liabilities.total} testPrefix="bs-liabilities" />
           <Section title="Equity" rows={report.equity.rows} total={report.equity.total} testPrefix="bs-equity" />
 
-          <table style={{ width: '100%', marginTop: 8 }}>
+          <FinancialTable className="mt-3">
             <tbody>
-              <tr data-testid="bs-current-earnings">
-                <td colSpan={2}>Current-Period Earnings (included in Equity)</td>
-                <td style={{ textAlign: 'right', fontFamily: 'JetBrains Mono, monospace' }}>{fmt(report.equity.currentEarnings)}</td>
-              </tr>
-              <tr data-testid="bs-grand-total" style={{ fontWeight: 700, borderTop: '2px solid #333' }}>
-                <td colSpan={2}>Total Liabilities + Equity</td>
-                <td style={{ textAlign: 'right', fontFamily: 'JetBrains Mono, monospace' }}>{fmt(report.totalLiabilitiesAndEquity)}</td>
-              </tr>
-              <tr data-testid="bs-reconciled-tb" style={{ color: '#555' }}>
-                <td colSpan={2}>Reconciled to Trial Balance (Dr / Cr)</td>
-                <td style={{ textAlign: 'right' }}>{fmt(report.reconciledToTrialBalance.drSum)} / {fmt(report.reconciledToTrialBalance.crSum)}</td>
-              </tr>
+              <ReportTr testId="bs-current-earnings">
+                <ReportTd colSpan={2}>Current-Period Earnings (included in Equity)</ReportTd>
+                <MoneyTd value={report.equity.currentEarnings} />
+              </ReportTr>
+              <TotalsRow testId="bs-grand-total">
+                <ReportTd colSpan={2}>Total Liabilities + Equity</ReportTd>
+                <MoneyTd value={report.totalLiabilitiesAndEquity} bold />
+              </TotalsRow>
+              <ReportTr testId="bs-reconciled-tb" className="text-slate-500">
+                <ReportTd colSpan={2}>Reconciled to Trial Balance (Dr / Cr)</ReportTd>
+                <td className="px-3 text-right font-mono tabular-nums">{formatMoney(report.reconciledToTrialBalance.drSum)} / {formatMoney(report.reconciledToTrialBalance.crSum)}</td>
+              </ReportTr>
             </tbody>
-          </table>
+          </FinancialTable>
 
           {report.excludedAccounts.length > 0 && (
-            <div data-testid="bs-excluded-accounts" style={{ marginTop: 16, border: '1px solid #f59e0b', background: '#fffbeb', padding: 8 }}>
+            <div data-testid="bs-excluded-accounts" className="mt-4 border border-amber-300 bg-amber-50 rounded-md p-3 text-[13px]">
               <strong>Out-of-scope accounts (excluded, not silently absorbed):</strong>
-              <ul>
+              <ul className="mt-1 pl-5 list-disc">
                 {report.excludedAccounts.map((a) => (
                   <li key={a.accountCode}>{a.accountCode} ({a.accountType}) — {a.reason}</li>
                 ))}
@@ -229,22 +345,22 @@ export default function BalanceSheet() {
           )}
 
           {csv && (
-            <pre data-testid="bs-csv-preview" style={{ marginTop: 16, background: '#f8f8f8', padding: 8, fontSize: 11, overflowX: 'auto' }}>{csv}</pre>
+            <pre data-testid="bs-csv-preview" className="mt-4 bg-slate-50 border border-slate-200 rounded-md p-3 text-[11px] overflow-x-auto">{csv}</pre>
           )}
         </>
       )}
 
-      {!report && !error && !imbalance && !unclassified && !busy && (
-        <p data-testid="bs-empty-state" style={{ marginTop: 24, color: '#666' }}>Run a Balance Sheet to see results.</p>
+      {!report && !error && !unauthorized && !imbalance && !unclassified && !distributionAnomaly && !busy && (
+        <EmptyState testId="bs-initial-state" title="Run a Balance Sheet to see results." />
       )}
 
-      <p style={{ marginTop: 24 }}>
-        <Link to="/golden-path/trial-balance">Trial Balance</Link>
-        {' · '}
-        <Link to="/golden-path/income-statement">Income Statement</Link>
-        {' · '}
-        <Link to="/golden-path/journal">Back to Journal Workflow</Link>
-      </p>
-    </div>
+      <RelatedLinks
+        links={[
+          { label: 'Trial Balance', to: '/golden-path/trial-balance' },
+          { label: 'Income Statement', to: '/golden-path/income-statement' },
+          { label: 'Back to Journal Workflow', to: '/golden-path/journal' },
+        ]}
+      />
+    </ReportShell>
   );
 }

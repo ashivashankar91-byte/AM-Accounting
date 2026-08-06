@@ -10,6 +10,12 @@ env:
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/ashivashankar91-byte
 
+# Required for GHCR push to work with GITHUB_TOKEN
+# Also set in repo: Settings → Actions → General → "Read and write permissions"
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
@@ -18,6 +24,7 @@ jobs:
       packages: write
 
     strategy:
+      fail-fast: false   # Don't cancel other services if one fails
       matrix:
         service:
           - agent-apar
@@ -59,14 +66,20 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
+          username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           FILE="services/${{ matrix.service }}/Dockerfile"
           [ -f "$FILE" ] || FILE="apps/${{ matrix.service }}/Dockerfile"
+          if [ ! -f "$FILE" ]; then
+            echo "No Dockerfile found for ${{ matrix.service }}, skipping"
+            exit 0
+          fi
           IMAGE="${{ env.IMAGE_PREFIX }}/${{ matrix.service }}"
-          docker build -t "${IMAGE}:latest" -t "${IMAGE}:main" -f "$FILE" .
+          docker build -t "${IMAGE}:latest" -t "${IMAGE}:${{ github.sha }}" -f "$FILE" .
           docker push "${IMAGE}:latest"
-          docker push "${IMAGE}:main"
+          docker push "${IMAGE}:${{ github.sha }}"

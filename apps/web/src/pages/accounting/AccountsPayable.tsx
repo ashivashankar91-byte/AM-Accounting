@@ -1,3 +1,4 @@
+import React from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { AlertCircle, Check, Loader2, Save, Plus, CheckCircle, XCircle, Clock, Ban } from 'lucide-react';
@@ -1345,7 +1346,7 @@ function APAgingTab() {
               const total = row.current + row.d0_30 + row.d31_60 + row.d61_90 + row.d90plus;
               const isExpanded = expandedVendor === row.vendorCode;
               return (
-                <>
+                <React.Fragment key={row.vendorCode}>
                   <tr
                     key={row.vendorCode}
                     onClick={() => setExpandedVendor(isExpanded ? null : row.vendorCode)}
@@ -1368,7 +1369,7 @@ function APAgingTab() {
                       <td className="px-4 text-right font-mono">{fmt2(Number(inv.balance_due ?? inv.amount ?? 0))}</td>
                     </tr>
                   ))}
-                </>
+                </React.Fragment>
               );
             })}
           </tbody>

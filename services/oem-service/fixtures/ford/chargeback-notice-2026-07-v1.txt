@@ -1,0 +1,4 @@
+HEADER|FORD|CHARGEBACK_NOTICE|FCN-2026-07-001|2.1|F12345
+CHARGEBACK|C-1001|450.00|Warranty audit chargeback against claim C-1001
+CHARGEBACK|C-1002|320.50|Warranty audit chargeback against claim C-1002
+CHARGEBACK|C-1003|210.00|Warranty audit chargeback against claim C-1003

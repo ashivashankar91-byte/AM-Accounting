@@ -2,14 +2,19 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { container } from 'tsyringe';
 import { GLService } from '../application/gl-service';
-import { StructuralImbalanceError, TrialBalanceService } from '../application/trial-balance-service';
-import { FSStructuralImbalanceError, FinancialStatementService, UnclassifiedAccountTypeError } from '../application/financial-statement-service';
+import { StructuralImbalanceError, TrialBalanceService, TrialBalanceRow } from '../application/trial-balance-service';
+import { DistributionBalanceAnomalyError, FSStructuralImbalanceError, FinancialStatementService, UnclassifiedAccountTypeError } from '../application/financial-statement-service';
+import { StatementLineNotFoundError, StatementLineService, StatementMetadataOverlapError } from '../application/statement-line-service';
 import { GLAccountType, authMiddleware, asTenantId } from '@amacc/shared-kernel';
 import { taxRoutes } from './tax-routes';
 import { report1099Routes } from './1099-routes';
 import { floorPlanRoutes } from './floor-plan-routes';
 import { withSerializableRetry } from '../lib/serializable-retry';
-import { attachRouteSecurity, getTenantId, GL_PERMISSIONS } from './security';
+import { attachRouteSecurity, getActor, getTenantId, GL_PERMISSIONS } from './security';
+import { AllocationService } from '../application/allocation-service';
+import { IntercompanyService } from '../application/intercompany-service';
+import { ConsolidationEliminationService } from '../application/consolidation-elimination-service';
+import Decimal from 'decimal.js';
 
 const NORMAL_BALANCE_MAP: Record<string, 'DEBIT' | 'CREDIT'> = {
   ASSET: 'DEBIT',
@@ -84,6 +89,14 @@ const CreateJournalEntrySchema = z.object({
   sourceRef: z.string().max(8).optional(),
   priorPeriodAdjustment: z.boolean().optional(),
   adjustmentReason: z.string().optional(),
+  /** CE-07 — authoritative idempotency identity. See JournalEntry.idempotencyKey (journal-repository.ts). */
+  idempotencyKey: z.string().max(200).optional(),
+  /** CE-09 integration — posting context forwarded from CE-07 posting engine */
+  legalEntityId: z.string().max(36).optional().nullable(),
+  postingExecutionId: z.string().max(36).optional().nullable(),
+  rulePackKey: z.string().max(100).optional().nullable(),
+  rulePackVersion: z.string().max(20).optional().nullable(),
+  sourceEventId: z.string().max(36).optional().nullable(),
   lines: z.array(
     z.object({
       glAccountId: z.string().uuid().optional(),
@@ -108,6 +121,7 @@ const CreateJournalEntrySchema = z.object({
       laborType: z.string().optional(),
       costType: z.string().optional(),
       applyCd: z.string().max(1).optional(),
+      applyNumber: z.string().max(20).optional(),
       controlNumber: z.string().max(20).optional(),
       // S2-05: new JournalLine fields
       companyCode: z.string().max(2).optional(),
@@ -131,13 +145,52 @@ const PeriodSchema = z.object({
   month: z.coerce.number().int().min(1).max(12),
 });
 
-function resolvePermission(method: string, url: string): string | null {
+// S009 — statement-line catalog & effective-dated statement-metadata schemas.
+const CreateStatementLineSchema = z.object({
+  code: z.string().min(1).max(30),
+  name: z.string().min(1).max(200),
+  statement: z.enum(['BS', 'IS']),
+  section: z.string().min(1).max(50),
+  sortOrder: z.number().int().optional(),
+});
+
+const UpdateStatementLineSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  section: z.string().min(1).max(50).optional(),
+  sortOrder: z.number().int().optional(),
+  isActive: z.boolean().optional(),
+});
+
+// BLK-09 (Option 2, approved): every mapping requires effective period,
+// reason, and actor. `actor` defaults to the authenticated caller if omitted.
+const SetStatementMetadataSchema = z.object({
+  statementLineId: z.string().uuid().nullable(),
+  effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'effectiveFrom must be YYYY-MM-DD'),
+  reason: z.string().min(1).max(500),
+  actor: z.string().min(1).max(200).optional(),
+  isBootstrap: z.boolean().optional(),
+});
+
+const BulkSetStatementMetadataSchema = z.object({
+  mappings: z.array(
+    z.object({
+      glAccountId: z.string().uuid(),
+      statementLineId: z.string().uuid().nullable(),
+      effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'effectiveFrom must be YYYY-MM-DD'),
+      reason: z.string().min(1).max(500),
+      actor: z.string().min(1).max(200).optional(),
+      isBootstrap: z.boolean().optional(),
+    }),
+  ).min(1),
+});
+
+export function resolvePermission(method: string, url: string): string | null {
   if (url.startsWith('/admin/')) return GL_PERMISSIONS.ADMIN_MANAGE;
   if (url === '/fs/oem-mappings/:id' && method === 'PUT') return GL_PERMISSIONS.ADMIN_MANAGE;
   if (url === '/fs/oem-mappings/bulk' && method === 'POST') return GL_PERMISSIONS.ADMIN_MANAGE;
   if (url === '/fs/oem-mappings' && method === 'GET') return GL_PERMISSIONS.LEDGER_VIEW;
   if (url === '/fs/oem-statement/generate' && method === 'POST') return GL_PERMISSIONS.LEDGER_VIEW;
-  if (url === '/reports/trial-balance') return GL_PERMISSIONS.REPORT_TB_VIEW;
+  if (url === '/reports/trial-balance' || url === '/reports/trial-balance/export') return GL_PERMISSIONS.REPORT_TB_VIEW;
   if (
     url === '/reports/balance-sheet' ||
     url === '/reports/balance-sheet/export' ||
@@ -150,6 +203,8 @@ function resolvePermission(method: string, url: string): string | null {
   if (url === '/balance-sheet' || url === '/financial-statements/balance-sheet' || url === '/financial-statements/income-statement') return GL_PERMISSIONS.LEDGER_VIEW;
   if (url === '/income-statement' || url === '/cash-flow-statement' || url === '/financial-statements/consolidated') return GL_PERMISSIONS.LEDGER_VIEW;
   if (url === '/reports/expense-trend') return GL_PERMISSIONS.LEDGER_VIEW;
+  if (url === '/accounts/:id/statement-metadata') return GL_PERMISSIONS.STATEMENT_METADATA_MANAGE;
+  if (url === '/accounts/statement-metadata/bulk') return GL_PERMISSIONS.STATEMENT_METADATA_MANAGE;
   if (url.startsWith('/accounts') || url.startsWith('/journal-entries') || url.startsWith('/cash-receipts')) {
     return method === 'GET' ? GL_PERMISSIONS.LEDGER_VIEW : GL_PERMISSIONS.LEDGER_MANAGE;
   }
@@ -165,10 +220,33 @@ function resolvePermission(method: string, url: string): string | null {
   }
   if (url.startsWith('/1099/')) return method === 'GET' ? GL_PERMISSIONS.LEDGER_VIEW : GL_PERMISSIONS.LEDGER_MANAGE;
   if (url.startsWith('/floor-plan/')) return method === 'GET' ? GL_PERMISSIONS.LEDGER_VIEW : GL_PERMISSIONS.LEDGER_MANAGE;
+  if (url === '/statement-lines' && method === 'GET') return GL_PERMISSIONS.REPORT_FS_VIEW;
+  if (url === '/statement-lines' && method === 'POST') return GL_PERMISSIONS.STATEMENT_LINE_MANAGE;
+  if (url === '/statement-lines/:id' && method === 'PATCH') return GL_PERMISSIONS.STATEMENT_LINE_MANAGE;
   return null;
 }
 
-function resolveAudit(method: string, url: string) {
+// S014 audit-metadata correction (Golden R0 UI convergence checkpoint,
+// 2026-07-28): additive fields on top of the generic route/method/params/
+// query/statusCode every audited route already gets -- docType stays
+// GL_LEDGER_REPORT / action stays VIEWED|EXPORTED (the established
+// reporting convention; not a new document type). entityId/asOf are always
+// present (both are required query params); storeId/departmentId are only
+// included when actually supplied, matching the real optional-filter
+// contract. Exported for direct unit testing.
+export function tbAuditMetadata(request: any): Record<string, unknown> {
+  const q = request.query ?? {};
+  const meta: Record<string, unknown> = {
+    reportType: 'TRIAL_BALANCE',
+    entityId: q.entity ?? q.company ?? null,
+    asOf: q.asOf ?? null,
+  };
+  if (q.store) meta.storeId = q.store;
+  if (q.dept) meta.departmentId = q.dept;
+  return meta;
+}
+
+export function resolveAudit(method: string, url: string) {
   if (method !== 'GET' && !(method === 'POST' && url === '/fs/oem-statement/generate')) return null;
   if (url === '/accounts' || url === '/accounts/:id' || url === '/accounts/:accountId/uncleared') {
     return { docType: 'GL_ACCOUNT', docId: (request: any) => String(request.params?.id ?? request.params?.accountId ?? 'accounts') };
@@ -176,11 +254,19 @@ function resolveAudit(method: string, url: string) {
   if (url.startsWith('/journal-entries')) {
     return { docType: 'JOURNAL_ENTRY', docId: (request: any) => String(request.params?.id ?? 'journal-entries') };
   }
-  if (url === '/reports/balance-sheet/export' || url === '/reports/income-statement/export') {
-    return { docType: 'GL_LEDGER_REPORT', docId: () => url, action: 'EXPORTED' as const };
+  if (url === '/reports/trial-balance/export') {
+    return { docType: 'GL_LEDGER_REPORT', docId: () => url, action: 'EXPORTED' as const, metadata: tbAuditMetadata };
   }
   if (
-    url === '/reports/trial-balance' ||
+    url === '/reports/balance-sheet/export' ||
+    url === '/reports/income-statement/export'
+  ) {
+    return { docType: 'GL_LEDGER_REPORT', docId: () => url, action: 'EXPORTED' as const };
+  }
+  if (url === '/reports/trial-balance') {
+    return { docType: 'GL_LEDGER_REPORT', docId: () => url, metadata: tbAuditMetadata };
+  }
+  if (
     url === '/trial-balance' ||
     url === '/balance-sheet' ||
     url === '/reports/balance-sheet' ||
@@ -195,7 +281,57 @@ function resolveAudit(method: string, url: string) {
   ) {
     return { docType: 'GL_LEDGER_REPORT', docId: () => url };
   }
-  return null;
+    if (url === '/statement-lines') {
+      return { docType: 'STATEMENT_LINE', docId: () => 'statement-lines' };
+    }
+    return null;
+  }
+
+// CSV cell serialization for the trial-balance export. Distinct from the
+// toCsv() helper used by balance-sheet/income-statement export (defined
+// inside glRoutes below) rather than extending it, to avoid any risk of
+// changing those two already-certified exports' output as a side effect of
+// this change -- they are explicitly out of scope for this pass. Exported
+// (module-level, not closure-scoped) so it is directly unit-testable.
+export function tbCsvCell(raw: unknown, protectFormulas: boolean): string {
+  let s = String(raw ?? '');
+  // CSV-formula-injection protection: a cell a spreadsheet would interpret
+  // as a formula (=, +, -, @ prefix) is forced to text with a leading
+  // apostrophe. Only applied to free-text columns (account code/name/type)
+  // -- money columns are pre-formatted decimal strings where a leading "-"
+  // is a legitimate negative amount, not an injection risk, and must stay a
+  // real number in the spreadsheet.
+  if (protectFormulas && /^[=+\-@]/.test(s)) {
+    s = `'${s}`;
+  }
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+export function toTrialBalanceCsv(rows: TrialBalanceRow[]): string {
+  const header = ['Account', 'Name', 'Type', 'Opening', 'Activity', 'Ending', 'Debit', 'Credit'];
+  const lines = [header.join(',')];
+  for (const r of rows) {
+    lines.push(
+      [
+        tbCsvCell(r.accountCode, true),
+        tbCsvCell(r.accountName, true),
+        tbCsvCell(r.accountType, true),
+        tbCsvCell(r.priorBalance.toFixed(2), false),
+        tbCsvCell(r.currentAmount.toFixed(2), false),
+        tbCsvCell(r.endingBalance.toFixed(2), false),
+        tbCsvCell(r.debitBalance.toFixed(2), false),
+        tbCsvCell(r.creditBalance.toFixed(2), false),
+      ].join(','),
+    );
+  }
+  return lines.join('\r\n');
+}
+
+// Normalizes a query value into a filename-safe segment -- prevents HTTP
+// response-header injection (CRLF, quotes) via a maliciously-crafted
+// `entity` query parameter reflected into Content-Disposition.
+export function safeFilenameSegment(s: string): string {
+  return s.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 60);
 }
 
 export async function glRoutes(app: FastifyInstance) {
@@ -213,6 +349,7 @@ export async function glRoutes(app: FastifyInstance) {
   const svc = container.resolve<GLService>('GLService');
   const trialBalanceSvc = container.resolve(TrialBalanceService);
   const financialStatementSvc = container.resolve(FinancialStatementService);
+  const statementLineSvc = container.resolve(StatementLineService);
 
   // POST /accounts — Create GL account
   app.post('/accounts', async (request, reply) => {
@@ -327,8 +464,27 @@ export async function glRoutes(app: FastifyInstance) {
     // Resolve accountCode → glAccountId if needed
     const needsCodeResolution = body.lines.some((l: any) => !l.glAccountId && l.accountCode);
     if (needsCodeResolution) {
-      const accounts = await svc.getAccounts(tenantId);
-      const codeMap = new Map(accounts.map((a: any) => [a.code, a.id]));
+      const neededCodes = (body.lines as any[]).filter((l) => !l.glAccountId && l.accountCode).map((l) => l.accountCode);
+      // CE-07 — a short, bounded retry against the SAME documented,
+      // pre-existing RLS-under-connection-pooling limitation
+      // (packages/shared-kernel/src/tenancy/rls-middleware.ts's own
+      // doc-comment: "Prisma's connection pool does not give an ironclad
+      // guarantee" that a SET-before-query lands on the same physical
+      // connection under high concurrency). CE-07's own authoritative
+      // idempotency work is the first caller to legitimately issue truly
+      // concurrent HTTP requests directly against this route (previously
+      // every caller was already serialized upstream by coa-service's own
+      // claim) — under that load a request can transiently see zero/partial
+      // rows for a tenant that genuinely has the account configured. A
+      // GENUINELY missing account still fails every attempt; this only
+      // self-heals the transient case.
+      let codeMap = new Map<string, string>();
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const accounts = await svc.getAccounts(tenantId);
+        codeMap = new Map(accounts.map((a: any) => [a.code, a.id]));
+        if (neededCodes.every((code) => codeMap.has(code))) break;
+        if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 15 * (attempt + 1)));
+      }
       for (const line of body.lines as any[]) {
         if (!line.glAccountId && line.accountCode) {
           const resolved = codeMap.get(line.accountCode);
@@ -409,6 +565,19 @@ export async function glRoutes(app: FastifyInstance) {
     const reverserId = (request as any).user?.sub ?? (request.headers['x-user-id'] as string) ?? 'system';
     const reversalEntry = await svc.reverseJournalEntry(id, tenantId, body.reversalDate, body.reason, reverserId);
     return reply.status(201).send(reversalEntry);
+  });
+
+  // S219 — DELETE /journal-entries/:id — Void/Discard a DRAFT journal entry
+  // Only DRAFT entries may be voided. SoD: actor ≠ creator (per S004B policy).
+  app.delete('/journal-entries/:id', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const body = z.object({
+      reason: z.string().min(1, 'Void reason is required'),
+    }).parse(request.body ?? {});
+    const voidedBy = (request as any).user?.sub ?? (request.headers['x-user-id'] as string) ?? 'system';
+    const entry = await svc.discardDraftJournalEntry(id, tenantId, voidedBy, body.reason);
+    return reply.send(entry);
   });
 
   // ── DMS-native RO ingest endpoint ─────────────────────────────────────────
@@ -644,24 +813,32 @@ export async function glRoutes(app: FastifyInstance) {
     return reply.send(tb);
   });
 
+  // Shared by /reports/trial-balance (view) and /reports/trial-balance/export
+  // -- one query contract for both, so the export can never drift from what
+  // the view accepts.
+  const TBQuerySchema = z.object({
+    entity: z.string().min(1).optional(),
+    company: z.string().min(1).optional(),
+    store: z.string().optional(),
+    dept: z.string().optional(),
+    asOf: z.string().regex(/^\d{4}-\d{2}$/),
+  });
+
+  function requireTbEntity(query: z.infer<typeof TBQuerySchema>, reply: any): string | null {
+    const entity = query.entity ?? query.company;
+    if (!entity) {
+      reply.status(400).send({ error: 'MISSING_ENTITY', message: 'entity query parameter is required' });
+      return null;
+    }
+    return entity;
+  }
+
   // GET /reports/trial-balance — S014 footed trial balance by company/entity slice
   app.get('/reports/trial-balance', async (request, reply) => {
     const tenantId = getTenantId(request);
-    const query = z.object({
-      entity: z.string().min(1).optional(),
-      company: z.string().min(1).optional(),
-      store: z.string().optional(),
-      dept: z.string().optional(),
-      asOf: z.string().regex(/^\d{4}-\d{2}$/),
-    }).parse(request.query);
-
-    const entity = query.entity ?? query.company;
-    if (!entity) {
-      return reply.status(400).send({
-        error: 'MISSING_ENTITY',
-        message: 'entity query parameter is required',
-      });
-    }
+    const query = TBQuerySchema.parse(request.query);
+    const entity = requireTbEntity(query, reply);
+    if (!entity) return;
 
     try {
       const report = await trialBalanceSvc.getReport(tenantId, {
@@ -671,6 +848,44 @@ export async function glRoutes(app: FastifyInstance) {
         asOf: query.asOf,
       });
       return reply.send(report);
+    } catch (error) {
+      if (error instanceof StructuralImbalanceError) {
+        return reply.status(500).send({
+          error: error.code,
+          drSum: error.drSum,
+          crSum: error.crSum,
+          delta: error.delta,
+        });
+      }
+      throw error;
+    }
+  });
+
+  // GET /reports/trial-balance/export — same data, same TrialBalanceService
+  // call, as CSV. No separate calculation path: a StructuralImbalanceError
+  // here means no CSV is ever generated, exactly as the view endpoint
+  // fails closed, and (per attachRouteSecurity) a >=400 response emits no
+  // EXPORTED audit event.
+  app.get('/reports/trial-balance/export', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const query = TBQuerySchema.parse(request.query);
+    const entity = requireTbEntity(query, reply);
+    if (!entity) return;
+
+    try {
+      const report = await trialBalanceSvc.getReport(tenantId, {
+        entity,
+        store: query.store,
+        dept: query.dept,
+        asOf: query.asOf,
+      });
+      const csv = toTrialBalanceCsv(report.accounts);
+      reply.header('Content-Type', 'text/csv; charset=utf-8');
+      reply.header(
+        'Content-Disposition',
+        `attachment; filename="trial-balance-${safeFilenameSegment(entity)}-${safeFilenameSegment(query.asOf)}.csv"`,
+      );
+      return reply.send(csv);
     } catch (error) {
       if (error instanceof StructuralImbalanceError) {
         return reply.status(500).send({
@@ -731,6 +946,9 @@ export async function glRoutes(app: FastifyInstance) {
           delta: error.delta,
         });
       }
+      if (error instanceof DistributionBalanceAnomalyError) {
+        return reply.status(500).send({ error: error.code, accounts: error.accounts });
+      }
       if (error instanceof UnclassifiedAccountTypeError) {
         return reply.status(500).send({ error: error.code, accounts: error.accounts });
       }
@@ -778,8 +996,27 @@ export async function glRoutes(app: FastifyInstance) {
           delta: error.delta,
         });
       }
+      if (error instanceof DistributionBalanceAnomalyError) {
+        return reply.status(500).send({ error: error.code, accounts: error.accounts });
+      }
       if (error instanceof UnclassifiedAccountTypeError) {
         return reply.status(500).send({ error: error.code, accounts: error.accounts });
+      }
+      // Real, confirmed gap found during Balance Sheet refinement (Golden R0
+      // UI convergence checkpoint, 2026-07-28): getBalanceSheet() calls
+      // TrialBalanceService.getReport() first (financial-statement-
+      // service.ts:162), which throws this SAME-code ('STRUCTURAL_IMBALANCE')
+      // but differently-shaped ({drSum,crSum,delta}, not
+      // {totalAssets,totalLiabilitiesAndEquity,delta}) error when the
+      // underlying trial balance itself doesn't foot -- a distinct failure
+      // mode from FSStructuralImbalanceError (assets != liabilities+equity
+      // on an already-footed slice). The view route (GET
+      // /reports/balance-sheet) already catches this; export did not, so an
+      // export of an imbalanced-at-the-TB-level slice would previously fall
+      // through to an uncaught 500, inconsistent with the view's clean
+      // fail-closed response for the identical underlying condition.
+      if (error instanceof StructuralImbalanceError) {
+        return reply.status(500).send({ error: error.code, drSum: error.drSum, crSum: error.crSum, delta: error.delta });
       }
       throw error;
     }
@@ -805,6 +1042,23 @@ export async function glRoutes(app: FastifyInstance) {
       });
       return reply.send(report);
     } catch (error) {
+      // FSStructuralImbalanceError caught here too (Income Statement
+      // refinement, 2026-07-28) for consistency with getBalanceSheet()'s
+      // handling and with this route's own export sibling below — dead
+      // code today (getIncomeStatement() has no independent statement-level
+      // balance check), kept for governed-response-shape parity if that
+      // ever changes, never silently regressing to an uncaught 500.
+      if (error instanceof FSStructuralImbalanceError) {
+        return reply.status(500).send({
+          error: error.code,
+          totalAssets: error.totalAssets,
+          totalLiabilitiesAndEquity: error.totalLiabilitiesAndEquity,
+          delta: error.delta,
+        });
+      }
+      if (error instanceof DistributionBalanceAnomalyError) {
+        return reply.status(500).send({ error: error.code, accounts: error.accounts });
+      }
       if (error instanceof UnclassifiedAccountTypeError) {
         return reply.status(500).send({ error: error.code, accounts: error.accounts });
       }
@@ -832,6 +1086,8 @@ export async function glRoutes(app: FastifyInstance) {
       });
       const rows = [
         ...report.revenue.rows.map((r) => ({ ...r, section: 'REVENUE' })),
+        ...report.costOfSales.rows.map((r) => ({ ...r, section: 'COST_OF_SALES' })),
+        { accountCode: '', accountName: 'Gross Profit', accountType: '', amount: report.grossProfit, section: 'GROSS_PROFIT' },
         ...report.expense.rows.map((r) => ({ ...r, section: 'EXPENSE' })),
         { accountCode: '', accountName: 'Net Income', accountType: '', amount: report.netIncome, section: 'NET_INCOME' },
       ];
@@ -840,8 +1096,121 @@ export async function glRoutes(app: FastifyInstance) {
       reply.header('Content-Disposition', `attachment; filename="income-statement-${query.asOf}.csv"`);
       return reply.send(csv);
     } catch (error) {
+      // Deferred defect corrected (Income Statement refinement, 2026-07-28):
+      // getIncomeStatement() calls TrialBalanceService.getReport() first
+      // (financial-statement-service.ts), which can throw the TB-level
+      // StructuralImbalanceError ({drSum,crSum,delta}) exactly as
+      // getBalanceSheet() can -- this is the SAME latent gap already fixed
+      // for the Balance Sheet export route, just never carried over to
+      // Income Statement's export handler. The FSStructuralImbalanceError
+      // catch is also added for governed consistency with the view route
+      // and getBalanceSheet()'s handling, even though getIncomeStatement()
+      // does not itself compute an independent statement-level balance
+      // check today (no A=L+E-equivalent invariant exists for an Income
+      // Statement) -- this ensures the export route never silently regresses
+      // to an uncaught 500/partial CSV if that ever changes, and keeps the
+      // governed STRUCTURAL_IMBALANCE response shape identical across both
+      // statements and both export/view surfaces.
+      if (error instanceof FSStructuralImbalanceError) {
+        return reply.status(500).send({
+          error: error.code,
+          totalAssets: error.totalAssets,
+          totalLiabilitiesAndEquity: error.totalLiabilitiesAndEquity,
+          delta: error.delta,
+        });
+      }
+      if (error instanceof DistributionBalanceAnomalyError) {
+        return reply.status(500).send({ error: error.code, accounts: error.accounts });
+      }
       if (error instanceof UnclassifiedAccountTypeError) {
         return reply.status(500).send({ error: error.code, accounts: error.accounts });
+      }
+      if (error instanceof StructuralImbalanceError) {
+        return reply.status(500).send({ error: error.code, drSum: error.drSum, crSum: error.crSum, delta: error.delta });
+      }
+      throw error;
+    }
+  });
+
+  // ── S009: Statement-line catalog & effective-dated statement-metadata ─────
+  // gl-service ownership per docs/accounting-modernization/S009_DECISION_MEMO.md.
+
+  // GET /statement-lines — list the BS/IS statement-line catalog.
+  app.get('/statement-lines', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const lines = await statementLineSvc.listStatementLines(tenantId);
+    return reply.send(lines);
+  });
+
+  // POST /statement-lines — create a new statement-line catalog entry.
+  app.post('/statement-lines', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const body = CreateStatementLineSchema.parse(request.body);
+    const actor = getActor(request);
+    const line = await statementLineSvc.createStatementLine(tenantId, body, actor);
+    return reply.status(201).send(line);
+  });
+
+  // PATCH /statement-lines/:id — rename/reorder/activate-deactivate a statement-line entry.
+  app.patch('/statement-lines/:id', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const body = UpdateStatementLineSchema.parse(request.body);
+    const actor = getActor(request);
+    try {
+      const line = await statementLineSvc.updateStatementLine(tenantId, id, body, actor);
+      return reply.send(line);
+    } catch (error) {
+      if (error instanceof StatementLineNotFoundError) {
+        return reply.status(404).send({ error: error.code });
+      }
+      throw error;
+    }
+  });
+
+  // PATCH /accounts/:id/statement-metadata — BLK-09 (Option 2, approved):
+  // create a new effective-dated statement-line mapping for a GL account.
+  // Requires effectiveFrom, reason, and actor (defaults to the authenticated
+  // caller). Non-overlapping ranges are enforced both here and, ultimately,
+  // by the database EXCLUDE constraint.
+  app.patch('/accounts/:id/statement-metadata', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const body = SetStatementMetadataSchema.parse(request.body);
+    const actor = body.actor ?? getActor(request);
+    try {
+      const history = await statementLineSvc.setAccountStatementMetadata(tenantId, {
+        glAccountId: id,
+        statementLineId: body.statementLineId,
+        effectiveFrom: body.effectiveFrom,
+        reason: body.reason,
+        actor,
+        isBootstrap: body.isBootstrap,
+      });
+      return reply.status(201).send(history);
+    } catch (error) {
+      if (error instanceof StatementMetadataOverlapError) {
+        return reply.status(409).send({ error: error.code, glAccountId: error.glAccountId, effectiveFrom: error.effectiveFrom });
+      }
+      throw error;
+    }
+  });
+
+  // POST /accounts/statement-metadata/bulk — same as above, applied to
+  // multiple accounts in one governed request (e.g. bootstrap migration).
+  app.post('/accounts/statement-metadata/bulk', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const body = BulkSetStatementMetadataSchema.parse(request.body);
+    const actor = getActor(request);
+    try {
+      const results = await statementLineSvc.setAccountStatementMetadataBulk(
+        tenantId,
+        body.mappings.map((m) => ({ ...m, actor: m.actor ?? actor })),
+      );
+      return reply.status(201).send(results);
+    } catch (error) {
+      if (error instanceof StatementMetadataOverlapError) {
+        return reply.status(409).send({ error: error.code, glAccountId: error.glAccountId, effectiveFrom: error.effectiveFrom });
       }
       throw error;
     }
@@ -2427,6 +2796,24 @@ export async function glRoutes(app: FastifyInstance) {
 
   // ── S7-02: OEM Financial Statement Mappings ────────────────────────────────
 
+  // NS-005: FS Versions — stub (table not yet provisioned; returns empty list)
+  app.get('/fs/versions', async (_request, reply) => {
+    return reply.send([]);
+  });
+
+  app.post('/fs/versions', async (_request, reply) => {
+    return reply.status(501).send({ error: 'NOT_IMPLEMENTED', message: 'FS version management not yet available' });
+  });
+
+  // NCM20 — stub endpoints (feature gated by system_config.ncm20_enabled)
+  app.get('/fs/ncm20/status', async (_request, reply) => {
+    return reply.send({ enabled: false, lastUpload: null, status: 'NOT_CONFIGURED' });
+  });
+
+  app.post('/fs/ncm20/generate', async (_request, reply) => {
+    return reply.status(501).send({ error: 'NOT_IMPLEMENTED', message: 'NCM20 upload not yet configured for this tenant' });
+  });
+
   app.get('/fs/oem-mappings', async (request, reply) => {
     const tenantId = getTenantId(request);
     const { oemCode, year } = request.query as any;
@@ -2612,5 +2999,107 @@ export async function glRoutes(app: FastifyInstance) {
       icAccounts,
       lines: nonIcLines,
     });
+  });
+
+  // ── S033 — Allocation Entries ─────────────────────────────────────────────
+  const allocationSvc = new AllocationService(prisma as any, svc);
+
+  app.get('/admin/allocation-templates', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    return reply.send(await allocationSvc.listTemplates(tenantId));
+  });
+
+  app.post('/admin/allocation-templates', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = getActor(request);
+    const body = z.object({
+      name: z.string().min(1),
+      description: z.string().optional(),
+      sourceAccountId: z.string().min(1),
+      allocationBasis: z.enum(['PERCENTAGE', 'FIXED_AMOUNT']).default('PERCENTAGE'),
+      journalSource: z.string().optional(),
+      lines: z.array(z.object({
+        targetAccountId: z.string().min(1),
+        allocationPct: z.number().optional(),
+        fixedAmount: z.number().optional(),
+        departmentCode: z.string().optional(),
+        description: z.string().optional(),
+      })).min(1),
+    }).parse(request.body);
+    return reply.status(201).send(await allocationSvc.createTemplate(body as any, tenantId, actor));
+  });
+
+  app.get('/admin/allocation-templates/:id', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    return reply.send(await allocationSvc.getTemplate(id, tenantId));
+  });
+
+  app.post('/admin/allocation-templates/:id/run', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = getActor(request);
+    const { id } = request.params as { id: string };
+    const body = z.object({
+      sourceAmount: z.number(),
+      entryDate: z.string().transform(s => new Date(s)),
+      description: z.string().optional(),
+    }).parse(request.body);
+    const result = await allocationSvc.runAllocation(
+      id, tenantId, new Decimal(body.sourceAmount), body.entryDate, actor, body.description,
+    );
+    return reply.status(201).send(result);
+  });
+
+  // ── S034 — Intercompany Pairing & Net-Zero ────────────────────────────────
+  const icSvc = new IntercompanyService(prisma as any);
+
+  app.get('/admin/intercompany-pairs', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    return reply.send(await icSvc.listPairs(tenantId));
+  });
+
+  app.post('/admin/intercompany-pairs', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = getActor(request);
+    const body = z.object({
+      entityAId: z.string().min(1),
+      entityBId: z.string().min(1),
+      icReceivableAccount: z.string().optional(),
+      icPayableAccount: z.string().optional(),
+      enforcement: z.enum(['NONE', 'WARN', 'BLOCK']).default('WARN'),
+    }).parse(request.body);
+    return reply.status(201).send(await icSvc.createPair(body as any, tenantId, actor));
+  });
+
+  app.get('/admin/intercompany-pairs/net-zero', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const query = z.object({
+      year: z.coerce.number().int(),
+      month: z.coerce.number().int(),
+    }).parse(request.query);
+    return reply.send(await icSvc.checkNetZero(tenantId, query.year, query.month));
+  });
+
+  // ── S035 — Consolidation Eliminations ────────────────────────────────────
+  const elimSvc = new ConsolidationEliminationService(prisma as any, svc);
+
+  app.post('/admin/consolidation/elimination-runs', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = getActor(request);
+    const body = z.object({
+      eliminationEntityId: z.string().min(1),
+      periodYear: z.number().int(),
+      periodMonth: z.number().int().min(1).max(12),
+    }).parse(request.body);
+    const result = await elimSvc.runElimination(body, tenantId, actor);
+    return reply.status(201).send(result);
+  });
+
+  app.get('/admin/consolidation/elimination-runs', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const query = z.object({
+      eliminationEntityId: z.string().optional(),
+    }).parse(request.query ?? {});
+    return reply.send(await elimSvc.getRunHistory(tenantId, query.eliminationEntityId));
   });
 }

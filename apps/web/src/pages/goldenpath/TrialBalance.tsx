@@ -1,7 +1,14 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
 import { goldenPathApi } from '../../api/client';
+import {
+  Banner, EmptyState, ErrorState, LoadingState, MoneyTd, UnauthorizedState, formatMoney,
+  ReportShell, FilterBar, FilterField, FILTER_CONTROL_CLASS,
+  FinancialTable, ReportThead, ReportTh, ReportTr, ReportTd, TotalsRow,
+  ExportMenu, Drawer, DrawerRow, RelatedLinks,
+} from '../../components/report';
+import { Btn } from '../../components/ui';
 
 interface TrialBalanceRow {
   accountId: string;
@@ -31,44 +38,30 @@ interface StructuralImbalance {
   delta: number;
 }
 
-function fmt(n: number): string {
-  const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return n < 0 ? `(${abs})` : abs;
-}
-
-function downloadCsv(report: TrialBalanceReport, rows: TrialBalanceRow[]) {
-  // Client-side formatting of the already-computed S014 response only — no
-  // dr/cr/ending-balance recalculation happens here (BR222-1 requirement:
-  // S222 must not duplicate Trial Balance calculation logic).
-  const header = ['Account', 'Name', 'Type', 'Prior', 'Activity', 'Ending', 'Debit', 'Credit'];
-  const body = rows.map((r) => [
-    r.accountCode, r.accountName, r.accountType,
-    r.priorBalance.toFixed(2), r.currentAmount.toFixed(2), r.endingBalance.toFixed(2),
-    r.debitBalance.toFixed(2), r.creditBalance.toFixed(2),
-  ]);
-  const csv = [header, ...body].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `trial-balance-${report.scope.entity}-${report.scope.asOf}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 const now = new Date();
 const defaultAsOf = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
 // FINAL-R0 / S222 — Trial Balance Screen. Not part of the sequential
 // login->...->audit-history Golden Path (Trial Balance is not one of its
 // steps); reachable directly for the Controller reporting workflow. Consumes
-// the real S014 gl-service API only — every dr/cr/ending-balance value shown
-// is exactly what the API returned. `entity` is gl-service's own companyCode
-// slice, not the tenant-service legalEntityId used elsewhere in the Golden
-// Path (see api/client.ts comment on getTrialBalance) — the Controller
-// enters it directly rather than it being inferred from entity selection.
+// the real S014 gl-service API only — every prior/activity/ending/dr/cr
+// value shown is exactly what the API returned. `entity` is gl-service's own
+// companyCode slice, not the tenant-service legalEntityId used elsewhere in
+// the Golden Path (see api/client.ts comment on getTrialBalance) — the
+// Controller enters it directly rather than it being inferred from entity
+// selection.
+//
+// Golden R0 UI convergence — Phase 2/3 reference migration: rebuilt on the
+// shared ReportShell/FilterBar/FinancialTable/Drawer foundation
+// (components/report). All data-testids, API calls, calculations and the
+// fail-closed structural-imbalance behavior are unchanged from the prior
+// pass — only the surrounding markup changed. The "Balanced"/"Out of
+// balance" status badge is derived purely from client state that already
+// existed (whether the last run threw STRUCTURAL_IMBALANCE) — it is not a
+// new concept and reports nothing the API didn't already tell this screen.
 export default function TrialBalance() {
   const { legalEntityId } = useAuth();
+  const navigate = useNavigate();
   const [entity, setEntity] = useState('01');
   const [store, setStore] = useState('');
   const [dept, setDept] = useState('');
@@ -77,14 +70,20 @@ export default function TrialBalance() {
   const [report, setReport] = useState<TrialBalanceReport | null>(null);
   const [imbalance, setImbalance] = useState<StructuralImbalance | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [unauthorized, setUnauthorized] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [drillAccountCode, setDrillAccountCode] = useState<string | null>(null);
+  const [drillRow, setDrillRow] = useState<TrialBalanceRow | null>(null);
   const [drillResult, setDrillResult] = useState<any>(null);
   const [drillError, setDrillError] = useState<string | null>(null);
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportUnauthorized, setExportUnauthorized] = useState<string | null>(null);
 
   async function runReport() {
     setBusy(true);
     setError(null);
+    setUnauthorized(null);
     setImbalance(null);
     setReport(null);
     try {
@@ -100,6 +99,8 @@ export default function TrialBalance() {
       // surface as a full-width banner, never a silently-unbalanced render.
       if (err.status === 500 && err.body?.error === 'STRUCTURAL_IMBALANCE') {
         setImbalance(err.body);
+      } else if (err.status === 401 || err.status === 403) {
+        setUnauthorized(err.message);
       } else {
         setError(err.message);
       }
@@ -110,6 +111,7 @@ export default function TrialBalance() {
 
   async function drillToInquiry(row: TrialBalanceRow) {
     setDrillAccountCode(row.accountCode);
+    setDrillRow(row);
     setDrillResult(null);
     setDrillError(null);
     if (!legalEntityId) {
@@ -126,10 +128,51 @@ export default function TrialBalance() {
         setDrillError(`No account numbered ${row.accountCode} exists in the current legal entity's Chart of Accounts — cross-service drill-through unavailable for this row.`);
         return;
       }
-      const activity = await goldenPathApi.getAccountActivity(match.id, `preset=CURRENT_MONTH`);
+      // FINAL-R0 closure defect fix (UXMAP-03): real coa-service S220
+      // QuerySchema only implements preset=OPEN_MONTH.
+      const activity = await goldenPathApi.getAccountActivity(match.id, `preset=OPEN_MONTH`);
       setDrillResult(activity);
     } catch (err: any) {
       setDrillError(err.message);
+    }
+  }
+
+  // PRODUCT CHECKPOINT (Golden R0 UI convergence, 2026-07-28) — real
+  // server-side audited export, replacing the previous client-only CSV
+  // generation. Reuses the exact same query params as the view (same
+  // scoping), and surfaces the exact same STRUCTURAL_IMBALANCE banner the
+  // view uses if the slice doesn't foot — the export can never succeed
+  // where the view would fail closed. Duplicate-click prevention: the
+  // button is disabled for the duration of the request.
+  async function doExport() {
+    if (exportBusy) return;
+    setExportBusy(true);
+    setExportError(null);
+    setExportUnauthorized(null);
+    try {
+      const text = await goldenPathApi.exportTrialBalance({
+        entity,
+        store: store || undefined,
+        dept: dept || undefined,
+        asOf,
+      });
+      const blob = new Blob([text], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `trial-balance-${entity}-${asOf}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      if (err.status === 500 && err.body?.error === 'STRUCTURAL_IMBALANCE') {
+        setImbalance(err.body);
+      } else if (err.status === 401 || err.status === 403) {
+        setExportUnauthorized(err.message);
+      } else {
+        setExportError(err.message);
+      }
+    } finally {
+      setExportBusy(false);
     }
   }
 
@@ -145,95 +188,173 @@ export default function TrialBalance() {
     return acc;
   }, {});
 
+  const status = imbalance
+    ? { label: 'Out of balance', variant: 'danger' as const }
+    : report
+      ? { label: 'Balanced', variant: 'success' as const }
+      : undefined;
+
   return (
-    <div style={{ maxWidth: 960, margin: '40px auto', fontFamily: 'Inter, sans-serif' }}>
-      <h1 style={{ fontSize: 20, fontWeight: 600 }}>Trial Balance</h1>
-      {error && <p data-testid="tb-error" style={{ color: '#b91c1c' }}>{error}</p>}
+    <ReportShell
+      title="Trial Balance"
+      description="Working trial balance for a legal entity, as of a fiscal month."
+      status={status}
+      actions={
+        <ExportMenu
+          disabled={exportBusy}
+          formats={[{ key: 'csv', label: exportBusy ? 'Exporting…' : 'Export CSV', onSelect: doExport, testId: 'tb-export' }]}
+        />
+      }
+    >
+      {error && <ErrorState testId="tb-error" message={error} onRetry={runReport} onBack={() => navigate(-1)} />}
+      {unauthorized && <UnauthorizedState testId="tb-unauthorized" message={unauthorized} />}
 
       {imbalance && (
-        <div
-          data-testid="tb-structural-imbalance-banner"
-          style={{ background: '#fef2f2', border: '1px solid #b91c1c', color: '#991b1b', padding: 12, marginTop: 12, width: '100%' }}
-        >
-          <strong>STRUCTURAL_IMBALANCE</strong> — this slice does not foot and was not rendered.
-          <div>Debits {fmt(imbalance.drSum)} vs Credits {fmt(imbalance.crSum)} — delta {fmt(imbalance.delta)}</div>
-        </div>
+        <Banner kind="error" testId="tb-structural-imbalance-banner" title="STRUCTURAL_IMBALANCE — this slice does not foot and was not rendered.">
+          Debits {formatMoney(imbalance.drSum)} vs Credits {formatMoney(imbalance.crSum)} — delta {formatMoney(imbalance.delta)}
+        </Banner>
       )}
 
-      <section style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <label>Entity/Company <input data-testid="tb-entity" value={entity} onChange={(e) => setEntity(e.target.value)} style={{ width: 60 }} /></label>
-        <label>Store <input data-testid="tb-store" value={store} onChange={(e) => setStore(e.target.value)} style={{ width: 70 }} /></label>
-        <label>Dept <input data-testid="tb-dept" value={dept} onChange={(e) => setDept(e.target.value)} style={{ width: 70 }} /></label>
-        <label>As of (YYYY-MM) <input data-testid="tb-asof" value={asOf} onChange={(e) => setAsOf(e.target.value)} style={{ width: 90 }} /></label>
-        <label>
+      <FilterBar>
+        <FilterField label="Entity/Company" width={130}>
+          <input data-testid="tb-entity" value={entity} onChange={(e) => setEntity(e.target.value)} className={FILTER_CONTROL_CLASS} />
+        </FilterField>
+        <FilterField label="Store" width={90}>
+          <input data-testid="tb-store" value={store} onChange={(e) => setStore(e.target.value)} className={FILTER_CONTROL_CLASS} />
+        </FilterField>
+        <FilterField label="Dept" width={90}>
+          <input data-testid="tb-dept" value={dept} onChange={(e) => setDept(e.target.value)} className={FILTER_CONTROL_CLASS} />
+        </FilterField>
+        <FilterField label="As of (YYYY-MM)" width={120}>
+          <input data-testid="tb-asof" value={asOf} onChange={(e) => setAsOf(e.target.value)} className={FILTER_CONTROL_CLASS} />
+        </FilterField>
+        <label className="flex items-center gap-1.5 h-8 text-[13px] text-slate-700">
           <input type="checkbox" checked={zeroSuppression} onChange={(e) => setZeroSuppression(e.target.checked)} data-testid="tb-zero-suppression" />
-          {' '}Suppress zero balances
+          Suppress zero balances
         </label>
-        <button data-testid="tb-run" onClick={runReport} disabled={busy}>Run Trial Balance</button>
-        {report && <button data-testid="tb-export" onClick={() => downloadCsv(report, rows)}>Export CSV</button>}
-      </section>
+        <Btn data-testid="tb-run" size="sm" onClick={runReport} disabled={busy} loading={busy}>
+          {busy ? 'Loading…' : 'Run Trial Balance'}
+        </Btn>
+      </FilterBar>
 
-      {report && (
+      {busy && <LoadingState testId="tb-loading" label="Building trial balance…" />}
+      {exportBusy && <LoadingState testId="tb-export-loading" label="Preparing export…" />}
+      {exportError && <ErrorState testId="tb-export-error" message={exportError} />}
+      {exportUnauthorized && <UnauthorizedState testId="tb-export-unauthorized" message={exportUnauthorized} />}
+
+      {report && rows.length === 0 && (
+        <EmptyState
+          testId="tb-empty"
+          title="No accounts to display"
+          message={zeroSuppression ? 'Every account has a zero balance and zero balances are suppressed. Turn off suppression to see all accounts.' : 'No accounts were returned for this scope.'}
+          action={zeroSuppression ? (
+            // Zero-suppression filters the already-fetched report client-side
+            // (see `rows` above) — no re-fetch needed, so no stale-closure risk.
+            <Btn size="sm" variant="secondary" onClick={() => setZeroSuppression(false)}>Show zero balances</Btn>
+          ) : (store || dept) ? (
+            // Store/dept are query params — clear them and let the user
+            // re-run, rather than re-fetching here with a stale closure.
+            <Btn size="sm" variant="secondary" onClick={() => { setStore(''); setDept(''); }}>Clear store/dept filters</Btn>
+          ) : undefined}
+        />
+      )}
+
+      {report && rows.length > 0 && (
         <>
-          <table data-testid="tb-table" style={{ width: '100%', borderCollapse: 'collapse', marginTop: 16 }}>
-            <thead>
+          <FinancialTable testId="tb-table">
+            <ReportThead>
               <tr>
-                <th style={{ textAlign: 'left' }}>Account</th>
-                <th style={{ textAlign: 'left' }}>Name</th>
-                <th>Type</th>
-                <th>Debit</th>
-                <th>Credit</th>
+                <ReportTh>Account</ReportTh>
+                <ReportTh>Name</ReportTh>
+                <ReportTh>Type</ReportTh>
+                <ReportTh align="right">Opening</ReportTh>
+                <ReportTh align="right">Activity</ReportTh>
+                <ReportTh align="right">Debit</ReportTh>
+                <ReportTh align="right">Credit</ReportTh>
               </tr>
-            </thead>
+            </ReportThead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.accountId} data-testid={`tb-row-${r.accountCode}`} onClick={() => drillToInquiry(r)} style={{ cursor: 'pointer' }}>
-                  <td>{r.accountCode}</td>
-                  <td>{r.accountName}</td>
-                  <td>{r.accountType}</td>
-                  <td style={{ textAlign: 'right', fontFamily: 'JetBrains Mono, monospace' }}>{fmt(r.debitBalance)}</td>
-                  <td style={{ textAlign: 'right', fontFamily: 'JetBrains Mono, monospace' }}>{fmt(r.creditBalance)}</td>
-                </tr>
+                <ReportTr key={r.accountId} testId={`tb-row-${r.accountCode}`} onClick={() => drillToInquiry(r)}>
+                  <ReportTd>{r.accountCode}</ReportTd>
+                  <ReportTd>{r.accountName}</ReportTd>
+                  <ReportTd>{r.accountType}</ReportTd>
+                  <MoneyTd value={r.priorBalance} />
+                  <MoneyTd value={r.currentAmount} />
+                  <MoneyTd value={r.debitBalance || null} />
+                  <MoneyTd value={r.creditBalance || null} />
+                </ReportTr>
               ))}
               {Object.entries(subtotalsByType).map(([type, sub]) => (
-                <tr key={`subtotal-${type}`} data-testid={`tb-subtotal-${type}`} style={{ fontWeight: 600, borderTop: '1px solid #ddd' }}>
-                  <td colSpan={3}>{type} subtotal</td>
-                  <td style={{ textAlign: 'right' }}>{fmt(sub.debit)}</td>
-                  <td style={{ textAlign: 'right' }}>{fmt(sub.credit)}</td>
-                </tr>
+                <TotalsRow key={`subtotal-${type}`} testId={`tb-subtotal-${type}`}>
+                  <ReportTd colSpan={5}>{type} subtotal</ReportTd>
+                  <td className="px-3 text-right font-mono tabular-nums">{formatMoney(sub.debit)}</td>
+                  <td className="px-3 text-right font-mono tabular-nums">{formatMoney(sub.credit)}</td>
+                </TotalsRow>
               ))}
-              <tr data-testid="tb-grand-total" style={{ fontWeight: 700, borderTop: '2px solid #333' }}>
-                <td colSpan={3}>Total</td>
-                <td style={{ textAlign: 'right' }}>{fmt(report.drSum)}</td>
-                <td style={{ textAlign: 'right' }}>{fmt(report.crSum)}</td>
-              </tr>
+              <TotalsRow testId="tb-grand-total" className="border-t-2 border-slate-900">
+                <ReportTd colSpan={5}>Total</ReportTd>
+                <td className="px-3 text-right font-mono tabular-nums">{formatMoney(report.drSum)}</td>
+                <td className="px-3 text-right font-mono tabular-nums">{formatMoney(report.crSum)}</td>
+              </TotalsRow>
             </tbody>
-          </table>
+          </FinancialTable>
 
-          {drillAccountCode && (
-            <div data-testid="tb-drill-panel" style={{ marginTop: 16, border: '1px solid #ddd', padding: 12 }}>
-              <div>Drill-through — account {drillAccountCode} (real S220 GL Inquiry)</div>
-              {drillError && <p data-testid="tb-drill-error" style={{ color: '#92400e' }}>{drillError}</p>}
-              {drillResult && (
-                <div data-testid="tb-drill-result">
-                  Beginning {fmt(drillResult.beginningBalance ?? 0)} — Ending {fmt(drillResult.endingBalance ?? 0)} —{' '}
-                  {(drillResult.lines?.length ?? 0)} activity line(s) in the current legal entity
-                </div>
-              )}
-            </div>
-          )}
+          <Drawer
+            open={Boolean(drillAccountCode)}
+            onClose={() => setDrillAccountCode(null)}
+            title={`Drill-through — account ${drillAccountCode ?? ''}`}
+            subtitle="Real S220 GL Inquiry"
+            testId="tb-drill-panel"
+          >
+            {drillError && <ErrorState testId="tb-drill-error" message={drillError} />}
+            {drillResult && (
+              <div data-testid="tb-drill-result">
+                <DrawerRow
+                  label="Account"
+                  value={<span data-testid="tb-drill-account">{drillResult.account?.accountNumber} — {drillResult.account?.name}</span>}
+                />
+                <DrawerRow
+                  label="Period"
+                  value={<span data-testid="tb-drill-period">{drillResult.range?.preset ?? drillResult.range?.periodCode ?? `${drillResult.range?.startDate} to ${drillResult.range?.endDate}`}</span>}
+                />
+                <DrawerRow label="Beginning balance" value={formatMoney(drillResult.beginningBalance ?? 0)} />
+                <DrawerRow label="Ending balance" value={<span data-testid="tb-drill-ending-balance">{formatMoney(drillResult.endingBalance ?? 0)}</span>} />
+                <DrawerRow label="Period debit" value={<span data-testid="tb-drill-period-debit">{formatMoney(drillResult.periodDebitActivity ?? 0)}</span>} />
+                <DrawerRow label="Period credit" value={<span data-testid="tb-drill-period-credit">{formatMoney(drillResult.periodCreditActivity ?? 0)}</span>} />
+                {drillRow && (
+                  <div data-testid="tb-drill-source-row" className="mt-3 text-[12.5px] text-slate-500">
+                    Trial Balance source row — Debit {formatMoney(drillRow.debitBalance)} — Credit {formatMoney(drillRow.creditBalance)}
+                  </div>
+                )}
+                {(drillResult.lines ?? []).length > 0 && (
+                  <div className="mt-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Activity ({drillResult.lines.length})</div>
+                    {(drillResult.lines ?? []).map((l: any, i: number) => (
+                      <div key={l.journalEntryId ?? i} data-testid={`tb-drill-line-${i}`} className="text-[12.5px] py-1 border-b border-slate-100">
+                        {l.entryDate} — {l.journalNumber} — DR {formatMoney(l.dr)} / CR {formatMoney(l.cr)}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </Drawer>
         </>
       )}
 
-      <p style={{ marginTop: 24 }}>
-        <Link to="/golden-path/gl-search">GL Search</Link>
-        {' · '}
-        <Link to="/golden-path/balance-sheet">Balance Sheet</Link>
-        {' · '}
-        <Link to="/golden-path/income-statement">Income Statement</Link>
-        {' · '}
-        <Link to="/golden-path/journal">Back to Journal Workflow</Link>
-      </p>
-    </div>
+      {!report && !busy && !error && !unauthorized && !imbalance && (
+        <EmptyState testId="tb-initial-state" title="Enter a scope and run the trial balance." />
+      )}
+
+      <RelatedLinks
+        links={[
+          { label: 'GL Search', to: '/golden-path/gl-search' },
+          { label: 'Balance Sheet', to: '/golden-path/balance-sheet' },
+          { label: 'Income Statement', to: '/golden-path/income-statement' },
+          { label: 'Back to Journal Workflow', to: '/golden-path/journal' },
+        ]}
+      />
+    </ReportShell>
   );
 }

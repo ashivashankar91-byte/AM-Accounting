@@ -8,11 +8,27 @@ import type { AuthzClient } from './authz-client';
  * path param can supply it so scope-escalation (BR207-4) is enforced, not
  * just tenant membership.
  */
-export type AuthzScopeExtractor = (request: any) => { entityId?: string | null; storeId?: string | null };
+export type AuthzScopeExtractor = (request: any) =>
+  | { entityId?: string | null; storeId?: string | null }
+  | Promise<{ entityId?: string | null; storeId?: string | null }>;
 
 export interface AuthzGuardOptions {
   getTenantId: (request: any) => string;
   scope?: AuthzScopeExtractor;
+  /**
+   * Optional explicit allowlist of serviceId values that may use a SERVICE
+   * token to bypass the human-RBAC lookup on this route.
+   *
+   * - `undefined` (default) — all SERVICE tokens are allowed (preserves
+   *   existing behaviour for read-only / low-sensitivity cross-service calls).
+   * - `new Set()` (empty set) — no SERVICE token is allowed; every caller
+   *   must hold an authenticated user identity with the required permission.
+   *   Use this on human-intent-only mutation routes (e.g. configureElimination).
+   * - `new Set(['cashflow-service', ...])` — only the listed service identities
+   *   are allowed; all others receive 403 FORBIDDEN with reason
+   *   SERVICE_NOT_IN_ALLOWLIST and an auditable log line.
+   */
+  allowedServiceIds?: ReadonlySet<string>;
 }
 
 /**
@@ -28,8 +44,43 @@ export function createAuthzGuard(client: AuthzClient, options: AuthzGuardOptions
       if (!userId) {
         return reply.status(401).send({ error: 'UNAUTHENTICATED', message: 'No authenticated user on request' });
       }
+      // Trusted service-to-service calls (createServiceToken) carry role
+      // 'SERVICE' and are only issuable by a backend process holding
+      // AMACC_JWT_SECRET -- never reachable from a browser/end user. These
+      // represent internal automation (e.g. cashflow-service reading GL
+      // trial balance, eom-service restoring GL accounts), not a human
+      // acting under a role, so they are not looked up in the per-user RBAC
+      // engine (which has no role assignment for a serviceId and would
+      // always deny with NO_MATCHING_ROLE). authMiddleware/verifyJWT above
+      // this guard already enforced signature + expiry, so this is not a
+      // bypass of authentication -- only of the human-role permission
+      // lookup for already-authenticated internal callers.
+      if (request.user?.role === 'SERVICE') {
+        const allowed = options.allowedServiceIds;
+        if (allowed !== undefined) {
+          const serviceId = request.user?.serviceId as string | undefined;
+          if (!serviceId || !allowed.has(serviceId)) {
+            // Log auditable refusal before responding
+            console.warn(
+              `[authz-guard] SERVICE token denied: serviceId='${serviceId ?? '<missing>'}' is not in the allowedServiceIds for permission '${permission}' on route '${request.routeOptions?.url ?? request.url}'`,
+            );
+            return reply.status(403).send({
+              error: 'FORBIDDEN',
+              message: `Service '${serviceId ?? '<missing>'}' is not authorized for operation '${permission}'`,
+              reason: 'SERVICE_NOT_IN_ALLOWLIST',
+            });
+          }
+        }
+        return;
+      }
       const tenantId = options.getTenantId(request);
-      const extra = options.scope?.(request) ?? {};
+      // CE-07 legal-entity isolation defect — scope may now need to resolve
+      // entityId from an already-persisted resource (e.g. a rule-pack
+      // version's own entityId), not just the request shape, so this
+      // extractor may be async. Awaiting a plain (non-Promise) return value
+      // is a no-op, so every pre-existing synchronous scope extractor is
+      // unaffected.
+      const extra = (await options.scope?.(request)) ?? {};
       const result = await client.check({
         userId,
         permissionKey: permission,

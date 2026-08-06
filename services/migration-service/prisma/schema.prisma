@@ -1,0 +1,548 @@
+// CE-16 Accounting Migration (S129, S130, S131, S132)
+//
+// Migration extraction writes ONLY to controlled staging tables in this
+// schema. There are no models here that map to production GL / schedule
+// tables — financial promotion always travels staged data -> conversion
+// transaction -> CE-07 governed posting -> authoritative conversion journal.
+
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/migration-service-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "darwin-arm64"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Migration runs ────────────────────────────────────────────────────────────
+
+model MigrationRun {
+  id                    String    @id @default(cuid())
+  tenantId              String    @map("tenant_id")
+  legalEntityId         String    @map("legal_entity_id")
+  runId                 String    @map("run_id")
+  mode                  String
+  state                 String    @default("DISCOVERED")
+  sourceSnapshotRef     String?   @map("source_snapshot_ref")
+  transformationVersion String    @map("transformation_version")
+  frozenAt              DateTime? @map("frozen_at")
+  freezeAttestedBy      String?   @map("freeze_attested_by")
+  preparedBy            String?   @map("prepared_by")
+  approvedBy            String?   @map("approved_by")
+  approvalAt            DateTime? @map("approval_at")
+  startedAt             DateTime? @map("started_at")
+  completedAt           DateTime? @map("completed_at")
+  rolledBackAt          DateTime? @map("rolled_back_at")
+  metadata              Json      @default("{}")
+  createdBy             String?   @map("created_by")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  @@unique([tenantId, runId])
+  @@index([tenantId, legalEntityId])
+  @@index([tenantId, state])
+  @@map("migration_runs")
+}
+
+model MigrationRunAudit {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  runId     String   @map("run_id")
+  action    String
+  actor     String
+  fromState String?  @map("from_state")
+  toState   String?  @map("to_state")
+  reason    String?
+  evidence  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, runId])
+  @@map("migration_run_audit")
+}
+
+// ── Source inventory (S130 discovery) ─────────────────────────────────────────
+
+model SourceSystem {
+  id               String   @id @default(cuid())
+  tenantId         String   @map("tenant_id")
+  systemCode       String   @map("system_code")
+  systemName       String   @map("system_name")
+  sourceType       String   @map("source_type")
+  connectionStatus String   @default("NOT_CONFIGURED") @map("connection_status")
+  configuredAt     DateTime? @map("configured_at")
+  configuredBy     String?  @map("configured_by")
+  metadata         Json     @default("{}")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, systemCode])
+  @@map("source_systems")
+}
+
+model SourceSnapshot {
+  id             String   @id @default(cuid())
+  tenantId       String   @map("tenant_id")
+  legalEntityId  String   @map("legal_entity_id")
+  sourceSystemId String   @map("source_system_id")
+  snapshotRef    String   @map("snapshot_ref")
+  extractedAt    DateTime @map("extracted_at")
+  fileCount      Int      @default(0) @map("file_count")
+  totalRows      Int      @default(0) @map("total_rows")
+  checksums      Json     @default("{}")
+  status         String   @default("REGISTERED")
+  isDelta        Boolean  @default(false) @map("is_delta")
+  baseSnapshotId String?  @map("base_snapshot_id")
+  importedBy     String?  @map("imported_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, snapshotRef])
+  @@index([tenantId, sourceSystemId])
+  @@map("source_snapshots")
+}
+
+model SourceFile {
+  id             String    @id @default(cuid())
+  tenantId       String    @map("tenant_id")
+  snapshotId     String    @map("snapshot_id")
+  filename       String
+  filePath       String    @map("file_path")
+  fileSize       Int       @default(0) @map("file_size")
+  checksumSha256 String    @map("checksum_sha256")
+  rowCount       Int       @default(0) @map("row_count")
+  status         String    @default("REGISTERED")
+  importedAt     DateTime? @map("imported_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@unique([tenantId, checksumSha256])
+  @@index([tenantId, snapshotId])
+  @@map("source_files")
+}
+
+model SourceRow {
+  id           String   @id @default(cuid())
+  tenantId     String   @map("tenant_id")
+  sourceFileId String   @map("source_file_id")
+  rowIndex     Int      @map("row_index")
+  rowHash      String   @map("row_hash")
+  rawData      Json     @map("raw_data")
+  status       String   @default("DISCOVERED")
+  errorReason  String?  @map("error_reason")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@unique([sourceFileId, rowHash])
+  @@index([tenantId, sourceFileId])
+  @@index([tenantId, status])
+  @@map("source_rows")
+}
+
+// ── COA mapping workbench (S130) ──────────────────────────────────────────────
+
+model MappingSet {
+  id             String    @id @default(cuid())
+  tenantId       String    @map("tenant_id")
+  legalEntityId  String    @map("legal_entity_id")
+  sourceSystemId String    @map("source_system_id")
+  version        Int       @default(1)
+  status         String    @default("DRAFT")
+  frozenAt       DateTime? @map("frozen_at")
+  frozenBy       String?   @map("frozen_by")
+  approvedAt     DateTime? @map("approved_at")
+  approvedBy     String?   @map("approved_by")
+  usedByRunId    String?   @map("used_by_run_id")
+  evidenceRefs   Json      @default("[]") @map("evidence_refs")
+  createdBy      String?   @map("created_by")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@unique([tenantId, legalEntityId, sourceSystemId, version])
+  @@index([tenantId, status])
+  @@map("mapping_sets")
+}
+
+model MappingEntry {
+  id             String    @id @default(cuid())
+  tenantId       String    @map("tenant_id")
+  mappingSetId   String    @map("mapping_set_id")
+  sourceField    String    @map("source_field")
+  sourceValue    String    @map("source_value")
+  targetField    String?   @map("target_field")
+  targetValue    String?   @map("target_value")
+  classification String?
+  provenanceNote String?   @map("provenance_note")
+  decidedBy      String?   @map("decided_by")
+  decidedAt      DateTime? @map("decided_at")
+  approvedBy     String?   @map("approved_by")
+  approvedAt     DateTime? @map("approved_at")
+  evidenceRef    String?   @map("evidence_ref")
+  status         String    @default("MANUAL_REVIEW_REQUIRED")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@unique([mappingSetId, sourceField, sourceValue])
+  @@index([tenantId, mappingSetId])
+  @@index([tenantId, status])
+  @@map("mapping_entries")
+}
+
+// ── Staging (S129/S130) ───────────────────────────────────────────────────────
+
+model StagingDataset {
+  id                    String   @id @default(cuid())
+  tenantId              String   @map("tenant_id")
+  legalEntityId         String   @map("legal_entity_id")
+  runId                 String   @map("run_id")
+  datasetType           String   @map("dataset_type")
+  state                 String   @default("STAGED")
+  rowCount              Int      @default(0) @map("row_count")
+  acceptedCount         Int      @default(0) @map("accepted_count")
+  rejectedCount         Int      @default(0) @map("rejected_count")
+  skippedCount          Int      @default(0) @map("skipped_count")
+  totalDebit            Decimal  @default(0) @db.Decimal(15, 2) @map("total_debit")
+  totalCredit           Decimal  @default(0) @db.Decimal(15, 2) @map("total_credit")
+  controlChecksum       String?  @map("control_checksum")
+  sourceRef             String?  @map("source_ref")
+  mappingSetId          String?  @map("mapping_set_id")
+  transformationVersion String   @map("transformation_version")
+  promotedAt            DateTime? @map("promoted_at")
+  promotedBy            String?  @map("promoted_by")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, runId, datasetType])
+  @@index([tenantId, runId])
+  @@map("staging_datasets")
+}
+
+model StagingRow {
+  id                String    @id @default(cuid())
+  tenantId          String    @map("tenant_id")
+  stagingDatasetId  String    @map("staging_dataset_id")
+  sourceRowId       String?   @map("source_row_id")
+  rowHash           String    @map("row_hash")
+  stagedData        Json      @map("staged_data")
+  validationErrors  Json      @default("[]") @map("validation_errors")
+  state             String    @default("STAGED")
+  promotedAt        DateTime? @map("promoted_at")
+  promotedRecordId  String?   @map("promoted_record_id")
+  lineageRef        Json      @default("{}") @map("lineage_ref")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  @@unique([stagingDatasetId, rowHash])
+  @@index([tenantId, stagingDatasetId])
+  @@index([tenantId, state])
+  @@map("staging_rows")
+}
+
+// ── Exceptions, gates, control totals ────────────────────────────────────────
+
+model ExceptionQueueItem {
+  id                String    @id @default(cuid())
+  tenantId          String    @map("tenant_id")
+  legalEntityId     String    @map("legal_entity_id")
+  runId             String    @map("run_id")
+  sourceRowId       String?   @map("source_row_id")
+  stagingRowId      String?   @map("staging_row_id")
+  exceptionType     String    @map("exception_type")
+  sourceField       String?   @map("source_field")
+  sourceValue       String?   @map("source_value")
+  reason            String
+  blocking          Boolean   @default(true)
+  evidence          Json      @default("{}")
+  disposition       String    @default("PENDING")
+  dispositionedBy   String?   @map("dispositioned_by")
+  dispositionedAt   DateTime? @map("dispositioned_at")
+  dispositionReason String?   @map("disposition_reason")
+  /// Deterministic identity of the underlying defect, so replaying an
+  /// extraction cannot enqueue the same exception twice.
+  dedupeKey         String    @map("dedupe_key")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  @@unique([runId, dedupeKey])
+  @@index([tenantId, runId])
+  @@index([tenantId, disposition])
+  @@map("exception_queue")
+}
+
+model GateResult {
+  id               String   @id @default(cuid())
+  tenantId         String   @map("tenant_id")
+  runId            String   @map("run_id")
+  stagingDatasetId String?  @map("staging_dataset_id")
+  gateCode         String   @map("gate_code")
+  result           String
+  details          Json     @default("{}")
+  evaluatedAt      DateTime @default(now()) @map("evaluated_at")
+  evaluatedBy      String?  @map("evaluated_by")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, runId])
+  @@map("gate_results")
+}
+
+model ControlTotal {
+  id               String   @id @default(cuid())
+  tenantId         String   @map("tenant_id")
+  runId            String   @map("run_id")
+  stagingDatasetId String?  @map("staging_dataset_id")
+  phase            String
+  rowCount         Int      @default(0) @map("row_count")
+  acceptedCount    Int      @default(0) @map("accepted_count")
+  rejectedCount    Int      @default(0) @map("rejected_count")
+  totalDebit       Decimal  @default(0) @db.Decimal(15, 2) @map("total_debit")
+  totalCredit      Decimal  @default(0) @db.Decimal(15, 2) @map("total_credit")
+  openItemTotal    Decimal  @default(0) @db.Decimal(15, 2) @map("open_item_total")
+  scheduleBalance  Decimal  @default(0) @db.Decimal(15, 2) @map("schedule_balance")
+  documentCount    Int      @default(0) @map("document_count")
+  exceptionCount   Int      @default(0) @map("exception_count")
+  duplicateCount   Int      @default(0) @map("duplicate_count")
+  capturedAt       DateTime @default(now()) @map("captured_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, runId])
+  @@map("control_totals")
+}
+
+// ── Lineage (source row -> ... -> journal -> reconciliation) ──────────────────
+
+model MigrationLineage {
+  id                    String   @id @default(cuid())
+  tenantId              String   @map("tenant_id")
+  runId                 String   @map("run_id")
+  sourceSystemRef       String?  @map("source_system_ref")
+  sourceFileRef         String?  @map("source_file_ref")
+  sourceRowRef          String?  @map("source_row_ref")
+  stagingRecordId       String?  @map("staging_record_id")
+  mappingDecisionRef    String?  @map("mapping_decision_ref")
+  transformationVersion String?  @map("transformation_version")
+  targetRecordId        String?  @map("target_record_id")
+  targetRecordType      String?  @map("target_record_type")
+  postingExecutionRef   String?  @map("posting_execution_ref")
+  journalRef            String?  @map("journal_ref")
+  openItemRef           String?  @map("open_item_ref")
+  reconciliationRef     String?  @map("reconciliation_ref")
+  evidence              Json     @default("{}")
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  @@unique([runId, stagingRecordId])
+  @@index([tenantId, runId])
+  @@index([tenantId, sourceRowRef])
+  @@index([tenantId, journalRef])
+  @@map("migration_lineage")
+}
+
+// ── Parallel-run comparison harness (S131) ───────────────────────────────────
+
+model ComparisonRun {
+  id                String    @id @default(cuid())
+  tenantId          String    @map("tenant_id")
+  legalEntityId     String    @map("legal_entity_id")
+  runId             String    @map("run_id")
+  periodYear        Int       @map("period_year")
+  periodMonth       Int       @map("period_month")
+  legacySnapshotRef String?   @map("legacy_snapshot_ref")
+  comparisonVersion Int       @default(1) @map("comparison_version")
+  state             String    @default("PENDING")
+  operatorId        String?   @map("operator_id")
+  signedOffBy       String?   @map("signed_off_by")
+  signedOffAt       DateTime? @map("signed_off_at")
+  signedOffEvidence Json      @default("{}") @map("signed_off_evidence")
+  totalDiffs        Int       @default(0) @map("total_diffs")
+  unexplainedDiffs  Int       @default(0) @map("unexplained_diffs")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  @@unique([tenantId, runId, periodYear, periodMonth, comparisonVersion])
+  @@index([tenantId, runId])
+  @@map("comparison_runs")
+}
+
+model ComparisonDiff {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  comparisonRunId String    @map("comparison_run_id")
+  diffType        String    @map("diff_type")
+  dimension       String
+  sourceValue     Decimal   @default(0) @db.Decimal(15, 2) @map("source_value")
+  targetValue     Decimal   @default(0) @db.Decimal(15, 2) @map("target_value")
+  variance        Decimal   @default(0) @db.Decimal(15, 2)
+  classification  String    @default("UNEXPLAINED")
+  classifiedBy    String?   @map("classified_by")
+  classifiedAt    DateTime? @map("classified_at")
+  reason          String?
+  disposition     String    @default("PENDING")
+  approvedBy      String?   @map("approved_by")
+  approvedAt      DateTime? @map("approved_at")
+  evidence        Json      @default("{}")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@index([tenantId, comparisonRunId])
+  @@index([tenantId, classification])
+  @@map("comparison_diffs")
+}
+
+// ── Cutover ceremony ─────────────────────────────────────────────────────────
+
+model CutoverCeremony {
+  id                          String    @id @default(cuid())
+  tenantId                    String    @map("tenant_id")
+  legalEntityId               String    @map("legal_entity_id")
+  runId                       String    @map("run_id")
+  sourceSystemIds             Json      @default("[]") @map("source_system_ids")
+  runIds                      Json      @default("[]") @map("run_ids")
+  freezeTimestamp             DateTime? @map("freeze_timestamp")
+  transformationVersions      Json      @default("[]") @map("transformation_versions")
+  targetEnvironment           String    @default("PRODUCTION") @map("target_environment")
+  irreversibleEffectStatement String    @map("irreversible_effect_statement")
+  rollbackBoundary            String?   @map("rollback_boundary")
+  backupEvidence              Json      @default("{}") @map("backup_evidence")
+  rollbackPlanEvidence        Json      @default("{}") @map("rollback_plan_evidence")
+  preparedBy                  String    @map("prepared_by")
+  preparedAt                  DateTime  @default(now()) @map("prepared_at")
+  approverIdentity            String?   @map("approver_identity")
+  approvedAt                  DateTime? @map("approved_at")
+  approvalEvidence            Json      @default("{}") @map("approval_evidence")
+  executionStartedAt          DateTime? @map("execution_started_at")
+  executionCompletedAt        DateTime? @map("execution_completed_at")
+  state                       String    @default("PREPARED")
+  createdAt                   DateTime  @default(now()) @map("created_at")
+  updatedAt                   DateTime  @updatedAt @map("updated_at")
+
+  @@unique([tenantId, runId])
+  @@index([tenantId, legalEntityId])
+  @@map("cutover_ceremonies")
+}
+
+// ── Statement archive import (S132a) ─────────────────────────────────────────
+
+model ArchiveStatement {
+  id             String    @id @default(cuid())
+  tenantId       String    @map("tenant_id")
+  legalEntityId  String    @map("legal_entity_id")
+  periodYear     Int       @map("period_year")
+  periodMonth    Int       @map("period_month")
+  statementType  String    @map("statement_type")
+  sourceSystem   String    @map("source_system")
+  filename       String
+  fileSize       Int       @default(0) @map("file_size")
+  checksumSha256 String    @map("checksum_sha256")
+  importedBy     String    @map("imported_by")
+  importedAt     DateTime  @default(now()) @map("imported_at")
+  wormClass      String    @default("STATUTORY_STATEMENT") @map("worm_class")
+  retentionUntil DateTime? @map("retention_until")
+  metadata       Json      @default("{}")
+  accessCount    Int       @default(0) @map("access_count")
+  lastAccessedAt DateTime? @map("last_accessed_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@unique([tenantId, checksumSha256])
+  @@index([tenantId, legalEntityId, periodYear, periodMonth])
+  @@index([tenantId, statementType])
+  @@map("archive_statements")
+}
+
+// ── Runbooks (S132b) ─────────────────────────────────────────────────────────
+
+model RunbookTemplate {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  name      String
+  version   Int      @default(1)
+  steps     Json     @default("[]")
+  createdBy String?  @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, name, version])
+  @@map("runbook_templates")
+}
+
+model RunbookInstance {
+  id            String   @id @default(cuid())
+  tenantId      String   @map("tenant_id")
+  legalEntityId String   @map("legal_entity_id")
+  templateId    String   @map("template_id")
+  runId         String   @map("run_id")
+  state         String   @default("ACTIVE")
+  steps         Json     @default("[]")
+  createdBy     String?  @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId, runId])
+  @@map("runbook_instances")
+}
+
+// ── Shared outbox tables ─────────────────────────────────────────────────────
+
+// CE-15 readiness evidence — persisted, versioned, immutable after capture.
+// Records every real close-service readiness signal fetched before cutover.
+// Stale evidence (capturedAt older than 1 h) must not authorize cutover.
+model Ce15ReadinessEvidence {
+  id                     String    @id @default(cuid())
+  tenantId               String    @map("tenant_id")
+  legalEntityId          String    @map("legal_entity_id")
+  runId                  String    @map("run_id")
+  periodYear             Int       @map("period_year")
+  periodMonth            Int       @map("period_month")
+  closeState             String    @map("close_state")
+  previousState          String?   @map("previous_state")
+  closeVersion           Int?      @map("close_version")
+  transitionBy           String?   @map("transition_by")
+  transitionAt           DateTime? @map("transition_at")
+  allTasksVerified       Boolean   @default(false) @map("all_tasks_verified")
+  hasUnreconciled        Boolean   @default(true)  @map("has_unreconciled")
+  hasOpenExceptions      Boolean   @default(true)  @map("has_open_exceptions")
+  preliminaryClosed      Boolean   @default(false) @map("preliminary_closed")
+  finallyClosed          Boolean   @default(false) @map("finally_closed")
+  reopenPending          Boolean   @default(false) @map("reopen_pending")
+  approved               Boolean   @default(false)
+  upstreamSignals        Json      @default("[]")  @map("upstream_signals")
+  rawStatePayload        Json      @default("{}")  @map("raw_state_payload")
+  rawReadinessPayload    Json      @default("{}")  @map("raw_readiness_payload")
+  certificationIdentity  String?   @map("certification_identity")
+  evidenceRef            String?   @map("evidence_ref")
+  capturedAt             DateTime  @map("captured_at")
+  capturedBy             String    @map("captured_by")
+  createdAt              DateTime  @default(now()) @map("created_at")
+
+  @@index([tenantId, runId, capturedAt])
+  @@index([tenantId, legalEntityId, periodYear, periodMonth])
+  @@map("ce15_readiness_evidence")
+}
+
+model AuditOutboxEvent {
+  id          String    @id @default(cuid())
+  tenantId    String    @map("tenant_id")
+  docType     String    @map("doc_type")
+  docId       String    @map("doc_id")
+  action      String
+  before      Json?
+  after       Json?
+  actor       String
+  publishedAt DateTime? @map("published_at")
+  retryCount  Int       @default(0) @map("retry_count")
+  lastError   String?   @map("last_error")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@map("audit_outbox")
+}
+
+model MigrationOutboxEvent {
+  id            String    @id @default(cuid())
+  tenantId      String    @map("tenant_id")
+  eventType     String    @map("event_type")
+  payload       Json
+  correlationId String?   @map("correlation_id")
+  publishedAt   DateTime? @map("published_at")
+  retryCount    Int       @default(0) @map("retry_count")
+  lastError     String?   @map("last_error")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@index([publishedAt, retryCount])
+  @@map("migration_outbox")
+}

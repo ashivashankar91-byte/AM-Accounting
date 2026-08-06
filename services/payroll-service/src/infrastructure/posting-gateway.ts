@@ -1,0 +1,325 @@
+// CE-13 gap #2 — Governed posting boundary.
+//
+// Replaces the previous HttpGlPostingClient direct-to-gl-service journal
+// creation with a narrow PostingGateway that submits a canonical payroll
+// accounting event to CE-07 (coa-service's merged S019/S020 posting
+// engine, PostingEngineService.submitEvent(), exposed at
+// POST /api/v1/coa/posting-engine/events). This mirrors the precedent
+// posting-recovery-service already established
+// (services/posting-recovery-service/src/domain/ch01-adapter.ts) rather
+// than inventing a second integration convention.
+//
+// payroll-service no longer constructs GL account codes/debit-credit lines
+// itself for the source-transaction path — that responsibility now belongs
+// entirely to CE-07's rule pack. This gateway only assembles the canonical
+// SourceEventEnvelope (business facts: batch/line references, earnings/
+// deduction/liability distributions, correlation+idempotency ids,
+// tenant/legal-entity/business-date) and submits it.
+//
+// FAIL CLOSED: if coa-service is unreachable, returns a non-fallback
+// PostingRefusedError (or PENDING_CE07_TECHNICAL_RECONCILIATION status for
+// transport-only unavailability) — this gateway NEVER falls back to
+// constructing/posting a journal entry directly against gl-service.
+import crypto from 'crypto';
+
+// fix(integration): payroll-service has no per-transaction physical-store
+// concept, mirroring apar-service's own AP_DEFAULT_STORE_ID precedent
+// (services/apar-service/src/application/invoice-approval-service.ts) for a
+// service in the same position. A single labeled default lets CE-07's
+// debitLineItemsPath/creditLineItemsPath line items carry a non-null
+// storeId without inventing a per-department store dimension payroll data
+// has no source for.
+export const PAYROLL_DEFAULT_STORE_ID = 'PAYROLL-CENTRAL';
+
+export class PostingRefusedError extends Error {
+  readonly status = 422;
+  readonly code = 'POSTING_REFUSED';
+  constructor(message: string, readonly reasonCode: string) {
+    super(message);
+    this.name = 'PostingRefusedError';
+  }
+}
+
+/** Fail-closed: thrown when CE-07 (coa-service posting engine) cannot be reached at all — never a signal to fall back to direct GL write. */
+export class PostingGatewayUnavailableError extends Error {
+  readonly status = 503;
+  readonly code = 'PENDING_CE07_TECHNICAL_RECONCILIATION';
+  constructor(message: string) {
+    super(message);
+    this.name = 'PostingGatewayUnavailableError';
+  }
+}
+
+export class PostingIdentityConflictError extends Error {
+  readonly status = 409;
+  readonly code = 'POSTING_EVENT_IDENTITY_CONFLICT';
+  constructor(message: string) {
+    super(message);
+    this.name = 'PostingIdentityConflictError';
+  }
+}
+
+export interface PayrollDistributionLine {
+  /**
+   * fix(integration): despite this field's original name, payroll-service's
+   * own S025-governed PayrollGLMapping already resolves each pay component
+   * to a real chart-of-accounts NUMBER before this gateway is called (see
+   * payroll-service.ts's postBatch — journalLines[].glAccountCode). CE-07's
+   * rule pack for PAYROLL_BATCH_POSTED is therefore a pass-through
+   * (debitLineItemsPath/creditLineItemsPath), never a second component->
+   * account mapping layer — one authoritative mapping (payroll's own),
+   * never two competing ones.
+   */
+  payComponent: string;
+  department: string;
+  amount: number;
+  direction: 'DEBIT' | 'CREDIT';
+}
+
+/** Raw shape CE-07's posting-engine blueprint resolver requires for `debitLineItemsPath`/`creditLineItemsPath` line items (services/coa-service/.../blueprint.ts's RawDebitLineItem). */
+interface ResolvedGlLine {
+  accountNumber: string;
+  storeId: string;
+  deptCode: string | null;
+  amount: number;
+}
+
+/**
+ * fix(integration): CE-07's line-item DSL requires every debitLineItemsPath/
+ * creditLineItemsPath entry to resolve to a POSITIVE decimal amount
+ * (services/coa-service/.../blueprint.ts's resolveLineItems ->
+ * INVALID_AMOUNT) — a real GL journal never carries a meaningless $0.00
+ * line. payroll-service's own buildJournalLines emits one distribution PER
+ * POSSIBLE pay component regardless of whether this batch actually used it
+ * (e.g. EMPLOYER_FICA_EXPENSE debit 0 when no employer FICA was withheld
+ * this run) — those zero-amount rows are honest bookkeeping placeholders on
+ * the payroll side, never something CE-07's authoritative journal should
+ * ever receive as a "line". Filtered out here, not upstream, so
+ * payroll-service's own register/reporting still sees the full component
+ * breakdown including legitimate zeros.
+ */
+function toResolvedLines(distributions: PayrollDistributionLine[], direction: 'DEBIT' | 'CREDIT'): ResolvedGlLine[] {
+  return distributions
+    .filter((d) => d.direction === direction && Math.abs(d.amount) > 0.005)
+    .map((d) => ({ accountNumber: d.payComponent, storeId: PAYROLL_DEFAULT_STORE_ID, deptCode: d.department || null, amount: d.amount }));
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/**
+ * fix(integration): CE-07's rule-pack validator requires eventType to match
+ * `^[a-z0-9]+(\.[a-z0-9-]+)*\.v[0-9]+$` (services/coa-service/.../validator.ts
+ * EVENT_TYPE_PATTERN) — the same lowercase.dotted.vN convention every other
+ * integrated service's envelope already uses (ap.invoice.accepted.v1,
+ * ap.payment.posted.v1, cash.receipt.applied.v1). PAYROLL_BATCH_POSTED never
+ * matched that pattern, so no rule pack could ever validly be authored to
+ * match it — confirmed live via coa-service's own INVALID_EVENT_TYPE
+ * validation finding. PAYROLL_BATCH_POSTED/PAYROLL_BATCH_REVERSED remain the
+ * canonical payroll-service-internal labels (outbox events, this file's own
+ * PayrollPostingEventInput union); only the wire-level envelope sent to
+ * CE-07 is translated to its required convention.
+ */
+const WIRE_EVENT_TYPE: Record<PayrollPostingEventInput['eventType'], string> = {
+  PAYROLL_BATCH_POSTED: 'payroll.batch.posted.v1',
+  PAYROLL_BATCH_REVERSED: 'payroll.batch.reversed.v1',
+};
+
+export interface PayrollPostingEventInput {
+  tenantId: string;
+  /** Required — the batch's own persisted legal entity. Never defaulted to tenantId; both callers (postBatch/voidBatch) already fail closed with LegalEntityReconciliationRequiredError before this gateway is ever invoked if it's missing. */
+  legalEntityId: string;
+  batchId: string;
+  batchNumber: string;
+  businessDate: string; // YYYY-MM-DD
+  payPeriodStart: string;
+  payPeriodEnd: string;
+  distributions: PayrollDistributionLine[];
+  /** Idempotency: same batchId + eventType always yields the same eventId (deterministic), so re-submission after a crash is a safe no-op, never a duplicate journal. */
+  idempotencyKey: string;
+  correlationId: string;
+  causationId?: string | null;
+  rulePackVersionId?: string | null;
+  actor: string;
+  /** 'PAYROLL_BATCH_POSTED' | 'PAYROLL_BATCH_REVERSED' */
+  eventType: 'PAYROLL_BATCH_POSTED' | 'PAYROLL_BATCH_REVERSED';
+  /** For reversal events: the eventId of the original posting event (original-to-reversal linkage). */
+  reversalOfEventId?: string | null;
+}
+
+export interface PostingGatewayResult {
+  executionId: string;
+  eventId: string;
+  status: 'POSTED' | 'NO_RULE_MATCH' | 'REJECTED' | 'FAILED';
+  idempotent: boolean;
+  journalEntryId?: string | null;
+  journalNumber?: string | null;
+  rulePackVersionId?: string | null;
+  failureReason?: string | null;
+}
+
+export interface IPostingGateway {
+  submitPayrollEvent(input: PayrollPostingEventInput): Promise<PostingGatewayResult>;
+}
+
+/** Deterministic UUID-shaped eventId derived from the idempotency key, so retries of an identical batch action never mint a new identity. */
+function deterministicEventId(idempotencyKey: string): string {
+  const hash = crypto.createHash('sha256').update(idempotencyKey).digest('hex');
+  return [hash.slice(0, 8), hash.slice(8, 12), '4' + hash.slice(13, 16), ((parseInt(hash[16], 16) & 0x3) | 0x8).toString(16) + hash.slice(17, 20), hash.slice(20, 32)].join('-');
+}
+
+/**
+ * Real adapter: HTTP call to coa-service's posting-engine event endpoint.
+ * Fails closed — any transport failure (network error, non-2xx/409 that
+ * isn't a recognized posting-engine outcome) surfaces as
+ * PostingGatewayUnavailableError; the caller (payroll-service.ts) must
+ * treat that as PENDING_CE07_TECHNICAL_RECONCILIATION and MUST NOT post a
+ * journal any other way.
+ */
+export class HttpPostingGateway implements IPostingGateway {
+  private readonly baseUrl: string;
+
+  constructor(
+    private readonly jwtSecret: string = (() => {
+      const secret = process.env['AMACC_JWT_SECRET'];
+      if (!secret) throw new Error('AMACC_JWT_SECRET environment variable is required but not set');
+      return secret;
+    })(),
+    baseUrl = process.env['COA_SERVICE_URL'] ?? 'http://coa-service:3016',
+  ) {
+    this.baseUrl = baseUrl.replace(/\/+$/, '');
+  }
+
+  async submitPayrollEvent(input: PayrollPostingEventInput): Promise<PostingGatewayResult> {
+    const eventId = deterministicEventId(input.idempotencyKey);
+    const nowIso = new Date().toISOString();
+
+    // Canonical business-fact payload — earnings/deduction/liability
+    // distributions as facts, never precomputed GL account ids. The
+    // envelope shape matches coa-service's SourceEventEnvelope contract
+    // exactly (services/coa-service/src/domain/posting-engine/event-envelope.ts).
+    const envelope = {
+      eventId,
+      tenantId: input.tenantId,
+      // fix(integration): CE-07 requires legalEntityId as a top-level,
+      // non-empty envelope field (services/coa-service/.../event-envelope.ts
+      // REQUIRED_ENVELOPE_FIELDS) — the batch's own real, persisted legal
+      // entity, NEVER a tenantId substitution. Both callers of this gateway
+      // (payroll-service.ts's postBatch/voidBatch) already fail closed with
+      // LegalEntityReconciliationRequiredError before reaching here if the
+      // batch has none, so input.legalEntityId is always real by this point.
+      legalEntityId: input.legalEntityId,
+      eventType: WIRE_EVENT_TYPE[input.eventType],
+      eventSchemaVersion: '1.0',
+      occurredAt: nowIso,
+      publishedAt: nowIso,
+      sourceSystem: 'payroll-service',
+      sourceEntityType: 'PayrollBatch',
+      sourceEntityId: input.batchId,
+      correlationId: input.correlationId,
+      causationId: input.causationId ?? null,
+      businessDate: input.businessDate,
+      payload: {
+        batchId: input.batchId,
+        batchNumber: input.batchNumber,
+        legalEntityId: input.legalEntityId,
+        payPeriodStart: input.payPeriodStart,
+        payPeriodEnd: input.payPeriodEnd,
+        // Raw business facts (payComponent/department/direction) — kept for
+        // lineage/audit even though CE-07's rule pack consumes the resolved
+        // debitLines/creditLines below, not this array directly.
+        distributions: input.distributions,
+        // fix(integration): shaped to match CE-07's blueprint resolver
+        // (debitLineItemsPath/creditLineItemsPath — RawDebitLineItem needs
+        // accountNumber/storeId/amount per line, see
+        // services/coa-service/.../blueprint.ts). payroll-service's own
+        // S025-governed PayrollGLMapping already resolved each distribution's
+        // `payComponent` to a real account NUMBER before this gateway runs,
+        // so this is a reshape of already-resolved facts, never a second
+        // account-mapping decision.
+        debitLines: toResolvedLines(input.distributions, 'DEBIT'),
+        creditLines: toResolvedLines(input.distributions, 'CREDIT'),
+        totalAmount: round2(input.distributions.filter((d) => d.direction === 'DEBIT').reduce((sum, d) => sum + d.amount, 0)),
+        rulePackVersionId: input.rulePackVersionId ?? null,
+        reversalOfEventId: input.reversalOfEventId ?? null,
+        actor: input.actor,
+      },
+      metadata: { source: 'ce13-payroll-posting-gateway' },
+    };
+
+    let res: Response;
+    try {
+      const { createServiceToken } = await import('@amacc/shared-kernel');
+      const serviceToken = createServiceToken('payroll-service', this.jwtSecret);
+      res = await fetch(`${this.baseUrl}/api/v1/coa/posting-engine/events`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-tenant-id': input.tenantId,
+          'x-user-id': input.actor,
+          Authorization: 'Bearer ' + serviceToken,
+        },
+        body: JSON.stringify(envelope),
+      });
+    } catch (err: any) {
+      throw new PostingGatewayUnavailableError(
+        `CE-07 posting engine (coa-service) is unreachable: ${err?.message ?? String(err)}. ` +
+          `PENDING_CE07_TECHNICAL_RECONCILIATION — no direct GL write was attempted.`,
+      );
+    }
+
+    let parsed: any = null;
+    try { parsed = await res.json(); } catch { /* no body */ }
+
+    if (res.status === 409) {
+      throw new PostingIdentityConflictError(
+        `Posting event ${eventId} was already submitted with a different payload (EVENT_IDENTITY_CONFLICT). ` +
+          `executionId=${parsed?.executionId ?? 'unknown'}.`,
+      );
+    }
+    if (res.status === 404 || res.status === 502 || res.status === 503) {
+      throw new PostingGatewayUnavailableError(
+        `CE-07 posting engine responded ${res.status} — PENDING_CE07_TECHNICAL_RECONCILIATION. No direct GL write was attempted.`,
+      );
+    }
+    if (!res.ok) {
+      throw new PostingGatewayUnavailableError(
+        `CE-07 posting engine call failed (HTTP ${res.status}): ${parsed?.message ?? 'unknown error'}. PENDING_CE07_TECHNICAL_RECONCILIATION.`,
+      );
+    }
+
+    const status: string = parsed?.status ?? 'FAILED';
+    if (status === 'NO_RULE_MATCH' || status === 'REJECTED') {
+      throw new PostingRefusedError(
+        parsed?.failureReason ?? `CE-07 refused to post this payroll event: ${status}. This is a deterministic missing-mapping/rule refusal, not a partial post.`,
+        status,
+      );
+    }
+
+    return {
+      executionId: parsed.executionId,
+      eventId: parsed.eventId ?? eventId,
+      status: status as 'POSTED' | 'NO_RULE_MATCH' | 'REJECTED' | 'FAILED',
+      idempotent: Boolean(parsed.idempotent),
+      journalEntryId: parsed.journalEntryId ?? null,
+      journalNumber: parsed.journalNumber ?? null,
+      rulePackVersionId: parsed.rulePackVersionId ?? null,
+      failureReason: parsed.failureReason ?? null,
+    };
+  }
+}
+
+/**
+ * Fail-closed placeholder — used only when COA_SERVICE_URL/AMACC_JWT_SECRET
+ * are not configured. Never wired as a silent fallback to direct GL
+ * writes; always throws PostingGatewayUnavailableError.
+ */
+export class UnavailablePostingGateway implements IPostingGateway {
+  async submitPayrollEvent(): Promise<PostingGatewayResult> {
+    throw new PostingGatewayUnavailableError(
+      'CE-07 posting gateway is not configured (COA_SERVICE_URL / AMACC_JWT_SECRET missing). ' +
+        'PENDING_CE07_TECHNICAL_RECONCILIATION — payroll-service will not fall back to a direct GL write.',
+    );
+  }
+}

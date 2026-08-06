@@ -1,0 +1,546 @@
+// CE-12 (Workstream R) — fni-reserve-service. Stories S091 (Finance Reserve &
+// Flat-% Chargeback Reserve), S092 (F&I Product Income & Remit Accrual),
+// S093 (Product Cancellations), S094 (Dealer-Obligor Deferral Mode).
+//
+// Ownership boundary (see CE12_FABLE_EPIC_PACKAGE.md Workstream R + this
+// service's implementation brief): deal-accounting-service's S084 journal
+// books the INITIAL reserve receivable and product income/remit-liability
+// items. This service owns everything AFTER that: remittance receipt
+// processing, chargeback accrual/draw, provider reconciliation,
+// cancellations, and deferral-recognition runs.
+//
+// Every table is tenantId-scoped (RLS, migration
+// 20260802020000_add_rls_policies_fni_reserve_svc). All money is
+// Decimal @db.Decimal(15,2) — never float/double.
+
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/fni-reserve-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// SAFE_CONFIGURATION — tenant/lender-program/provider-program/deferral-mode
+// configuration. No accounting math is invented here; these tables hold
+// entered, tenant-owned parameters only (percentages, pro-rata tables,
+// earning-schedule pattern selection).
+// ---------------------------------------------------------------------------
+
+/// S091(b) — flat-% chargeback reserve accrual rate per lender program.
+/// Flat rate only — no experience-rated/dynamic adjustment (S091B/CE-17,
+/// out of scope, never modeled here).
+model LenderProgramConfig {
+  id                      String    @id @default(cuid())
+  tenantId                String    @map("tenant_id")
+  lenderProgramCode       String    @map("lender_program_code")
+  lenderProgramName       String    @map("lender_program_name")
+  /// Percent of each reserve-income dollar (0-100.00) accrued to the
+  /// chargeback-reserve liability. Flat, entered by an admin — never derived.
+  chargebackReservePercent Decimal  @db.Decimal(5, 2) @map("chargeback_reserve_percent")
+  effectiveFrom           DateTime  @map("effective_from")
+  effectiveTo             DateTime? @map("effective_to")
+  active                  Boolean   @default(true)
+  createdBy               String    @map("created_by")
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
+
+  @@unique([tenantId, lenderProgramCode, effectiveFrom])
+  @@index([tenantId, lenderProgramCode, active])
+  @@map("lender_program_config")
+}
+
+/// S093 — provider refund pro-rata table, used only when no ENTERED provider
+/// quote is supplied for a cancellation. A JSON breakpoint table
+/// (monthsElapsed -> refundPercent), tenant/provider-program entered —
+/// never invented refund math. If neither a quote nor a matching config row
+/// exists, the cancellation request is rejected (never guessed).
+model ProviderProgramConfig {
+  id             String    @id @default(cuid())
+  tenantId       String    @map("tenant_id")
+  providerCode   String    @map("provider_code")
+  productType    String    @map("product_type")
+  /// [{ "monthsElapsed": 0, "refundPercent": "100.00" }, { "monthsElapsed": 12, "refundPercent": "50.00" }, ...]
+  /// Descending applicability: the highest monthsElapsed breakpoint <= actual
+  /// elapsed months applies. Straight-line-remaining-term interpolation is
+  /// NOT performed — table breakpoints are used exactly as entered.
+  proRataTable   Json      @map("pro_rata_table")
+  termMonths     Int       @map("term_months")
+  effectiveFrom  DateTime  @map("effective_from")
+  effectiveTo    DateTime? @map("effective_to")
+  active         Boolean   @default(true)
+  createdBy      String    @map("created_by")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@unique([tenantId, providerCode, productType, effectiveFrom])
+  @@index([tenantId, providerCode, productType, active])
+  @@map("provider_program_config")
+}
+
+/// S094 — dealer-obligor deferral mode election, effective-dated per product
+/// type. Mode changes are PROSPECTIVE ONLY: every DeferralBooking snapshots
+/// the config row (and its pattern) that was effective at that deal's
+/// finalization time — this config row is never mutated after a booking
+/// references it (effective-dated additive rows only; superseding a mode
+/// creates a NEW row with a later effectiveFrom, never updates an old one
+/// in place).
+model DeferralModeConfig {
+  id                     String    @id @default(cuid())
+  tenantId               String    @map("tenant_id")
+  productType            String    @map("product_type")
+  mode                   String    @map("mode") // 'AGENT' | 'OBLIGOR'
+  /// Earning-schedule pattern list is config (SAFE_CONFIGURATION); once
+  /// selected, the per-period math is purely mechanical (domain/deferral.ts).
+  earningPatternType     String    @map("earning_pattern_type") // 'STRAIGHT_LINE_MONTHS'
+  earningPatternMonths   Int?      @map("earning_pattern_months")
+  effectiveFrom          DateTime  @map("effective_from")
+  effectiveTo            DateTime? @map("effective_to")
+  createdBy              String    @map("created_by")
+  createdAt              DateTime  @default(now()) @map("created_at")
+
+  bookings DeferralBooking[]
+
+  @@unique([tenantId, productType, effectiveFrom])
+  @@index([tenantId, productType])
+  @@map("deferral_mode_config")
+}
+
+/// SAFE_CONFIGURATION — tells this service which schedule-service
+/// scheduleNumber/glAccountNumber hold the reserve-receivable and
+/// product-remit-liability items that deal-accounting-service's S084
+/// journal originates, so this service's read-side lookups
+/// (schedule-open-item-client.ts) know where to look. Entered by an admin
+/// once schedule-service's schedule setup is known — never guessed.
+model FniScheduleMapping {
+  id              String   @id @default(cuid())
+  tenantId        String   @map("tenant_id")
+  role            String   @map("role") // 'RESERVE_RECEIVABLE' | 'PRODUCT_REMIT_LIABILITY'
+  scheduleNumber  String   @db.Char(2) @map("schedule_number")
+  glAccountNumber String   @map("gl_account_number")
+  createdBy       String   @map("created_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, role])
+  @@map("fni_schedule_mapping")
+}
+
+// ---------------------------------------------------------------------------
+// S091 — Finance Reserve & Flat-% Chargeback Reserve
+// ---------------------------------------------------------------------------
+
+/// S091(a) — a lender remittance notification relieving the reserve
+/// receivable item (schedule-service, applyNumber=dealNumber). The CE-09
+/// cash-origination linkage is not integrated in this epic; every remittance
+/// carries an explicit, truthful PENDING_UPSTREAM_TECHNICAL_RECONCILIATION
+/// marker rather than fabricating a settled-cash linkage.
+model ReserveRemittance {
+  id                          String   @id @default(cuid())
+  tenantId                    String   @map("tenant_id")
+  dealNumber                  String   @map("deal_number")
+  lenderProgramCode           String   @map("lender_program_code")
+  /// The reserve income recap figure this remittance is measured against —
+  /// ENTERED (carried by the remittance notification payload), never
+  /// re-derived here (S091 AC: "reserve income = recap exactly").
+  expectedAmount               Decimal  @db.Decimal(15, 2) @map("expected_amount")
+  remittedAmount                Decimal  @db.Decimal(15, 2) @map("remitted_amount")
+  shortPayAmount                 Decimal  @db.Decimal(15, 2) @map("short_pay_amount")
+  cashOriginationLinkageStatus String   @default("PENDING_UPSTREAM_TECHNICAL_RECONCILIATION") @map("cash_origination_linkage_status")
+  idempotencyKey              String   @map("idempotency_key")
+  postingExecutionId          String?  @map("posting_execution_id")
+  accrualId                   String?  @map("accrual_id")
+  status                       String   @default("PROCESSED") @map("status") // PROCESSED | POSTING_FAILED
+  createdBy                    String   @map("created_by")
+  createdAt                    DateTime @default(now()) @map("created_at")
+
+  dispositions RemittanceShortPayDisposition[]
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, dealNumber])
+  @@map("reserve_remittance")
+}
+
+/// S091(a) — explicit, audited disposition ceremony for a short-paid
+/// remittance. Reason is mandatory.
+model RemittanceShortPayDisposition {
+  id                  String   @id @default(cuid())
+  tenantId            String   @map("tenant_id")
+  remittanceId        String   @map("remittance_id")
+  dispositionType     String   @map("disposition_type") // 'WRITE_OFF_TO_EXPENSE' | 'FLAG_FOR_FOLLOWUP'
+  amount              Decimal  @db.Decimal(15, 2) @map("amount")
+  reason              String   @map("reason")
+  postingExecutionId  String?  @map("posting_execution_id")
+  idempotencyKey      String   @map("idempotency_key")
+  createdBy           String   @map("created_by")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  remittance ReserveRemittance @relation(fields: [remittanceId], references: [id])
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, remittanceId])
+  @@map("remittance_shortpay_disposition")
+}
+
+/// S091(b) — one flat-% chargeback-reserve accrual row per remittance/reserve
+/// income event. This is this service's OWN new subsidiary ledger item (not
+/// created by deal-accounting-service) — controlNumber is this service's own
+/// convention: `CBR:{lenderProgramCode}:{dealNumber}`.
+model ChargebackReserveAccrual {
+  id                 String   @id @default(cuid())
+  tenantId           String   @map("tenant_id")
+  dealNumber         String   @map("deal_number")
+  lenderProgramCode  String   @map("lender_program_code")
+  reserveIncomeAmount Decimal @db.Decimal(15, 2) @map("reserve_income_amount")
+  accrualPercent     Decimal  @db.Decimal(5, 2) @map("accrual_percent")
+  accrualAmount      Decimal  @db.Decimal(15, 2) @map("accrual_amount")
+  controlNumber      String   @map("control_number")
+  postingExecutionId String?  @map("posting_execution_id")
+  idempotencyKey     String   @map("idempotency_key")
+  createdBy          String   @map("created_by")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, lenderProgramCode])
+  @@index([tenantId, controlNumber])
+  @@map("chargeback_reserve_accrual")
+}
+
+/// S091(c) + S093 (shared draw math) — an actual chargeback draws the
+/// chargeback-reserve liability down by min(chargebackAmount, remaining
+/// balance); any excess posts to expense. sourceType distinguishes an early
+/// payoff notice (S091) from a product cancellation trigger (S093) — the
+/// underlying draw computation (domain/chargeback-draw.ts) is IDENTICAL and
+/// shared, never duplicated/diverged.
+model ChargebackDraw {
+  id                     String   @id @default(cuid())
+  tenantId               String   @map("tenant_id")
+  dealNumber             String   @map("deal_number")
+  lenderProgramCode      String   @map("lender_program_code")
+  controlNumber          String   @map("control_number")
+  chargebackAmount       Decimal  @db.Decimal(15, 2) @map("chargeback_amount")
+  drawFromReserveAmount  Decimal  @db.Decimal(15, 2) @map("draw_from_reserve_amount")
+  excessToExpenseAmount  Decimal  @db.Decimal(15, 2) @map("excess_to_expense_amount")
+  reserveBalanceBefore   Decimal  @db.Decimal(15, 2) @map("reserve_balance_before")
+  sourceType             String   @map("source_type") // 'EARLY_PAYOFF' | 'CANCELLATION'
+  sourceCancellationId   String?  @map("source_cancellation_id")
+  postingExecutionId     String?  @map("posting_execution_id")
+  idempotencyKey         String   @map("idempotency_key")
+  createdBy              String   @map("created_by")
+  createdAt              DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, lenderProgramCode])
+  @@index([tenantId, controlNumber])
+  @@map("chargeback_draw")
+}
+
+// ---------------------------------------------------------------------------
+// S092 — F&I Product Income & Remit Accrual
+// ---------------------------------------------------------------------------
+
+/// S092 — this service's own local tracking mirror of open product
+/// remit-liability items (originated by deal-accounting-service's S084
+/// journal, applyNumber=`${dealNumber}:${productCode}`). Populated/refreshed
+/// by querying schedule-service's generic open-item read API (never
+/// fabricated) — see infrastructure/schedule-open-item-client.ts. The remit
+/// run and the "unremitted liability" tie-out both operate against this
+/// local cache, which by construction always reflects what this service has
+/// itself relieved.
+model RemitLiabilityTracking {
+  id                   String    @id @default(cuid())
+  tenantId             String    @map("tenant_id")
+  dealNumber           String    @map("deal_number")
+  productCode          String    @map("product_code")
+  providerCode         String    @map("provider_code")
+  glAccountNumber      String    @map("gl_account_number")
+  scheduleNumber       String    @map("schedule_number")
+  scheduleOpenItemId   String?   @map("schedule_open_item_id")
+  originalAmount       Decimal   @db.Decimal(15, 2) @map("original_amount")
+  remainingAmount      Decimal   @db.Decimal(15, 2) @map("remaining_amount")
+  status               String    @default("OPEN") @map("status") // OPEN | CLOSED
+  lastSyncedAt         DateTime  @default(now()) @map("last_synced_at")
+  createdAt            DateTime  @default(now()) @map("created_at")
+
+  @@unique([tenantId, dealNumber, productCode])
+  @@index([tenantId, providerCode, status])
+  @@map("remit_liability_tracking")
+}
+
+/// S092 — a remittance run batches multiple products/deals due to a given
+/// provider into one payment event.
+model ProductRemitRun {
+  id                 String   @id @default(cuid())
+  tenantId           String   @map("tenant_id")
+  providerCode       String   @map("provider_code")
+  runDate            DateTime @map("run_date")
+  totalAmount        Decimal  @db.Decimal(15, 2) @map("total_amount")
+  status             String   @default("EXECUTED") @map("status") // EXECUTED | FAILED
+  paymentRailLinkageStatus String @default("PENDING_UPSTREAM_TECHNICAL_RECONCILIATION") @map("payment_rail_linkage_status")
+  idempotencyKey     String   @map("idempotency_key")
+  createdBy          String   @map("created_by")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  items ProductRemitRunItem[]
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, providerCode])
+  @@map("product_remit_run")
+}
+
+model ProductRemitRunItem {
+  id                  String   @id @default(cuid())
+  tenantId            String   @map("tenant_id")
+  runId               String   @map("run_id")
+  dealNumber          String   @map("deal_number")
+  productCode         String   @map("product_code")
+  amount              Decimal  @db.Decimal(15, 2) @map("amount")
+  applyControlNumber  String   @map("apply_control_number")
+  postingExecutionId  String?  @map("posting_execution_id")
+  status              String   @default("RELIEVED") @map("status") // RELIEVED | POSTING_FAILED
+
+  run ProductRemitRun @relation(fields: [runId], references: [id])
+
+  @@index([tenantId, runId])
+  @@index([tenantId, dealNumber, productCode])
+  @@map("product_remit_run_item")
+}
+
+/// S092 — provider-statement reconciliation worklist. Statement figures are
+/// ENTERED evidence only (never invented) — variances are flagged for human
+/// review, never auto-adjusted.
+model ProviderStatementReconciliation {
+  id            String   @id @default(cuid())
+  tenantId      String   @map("tenant_id")
+  providerCode  String   @map("provider_code")
+  statementDate DateTime @map("statement_date")
+  uploadedBy    String   @map("uploaded_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  lines ProviderStatementLine[]
+
+  @@index([tenantId, providerCode])
+  @@map("provider_statement_reconciliation")
+}
+
+model ProviderStatementLine {
+  id                  String   @id @default(cuid())
+  tenantId            String   @map("tenant_id")
+  reconciliationId    String   @map("reconciliation_id")
+  dealNumber          String   @map("deal_number")
+  productCode         String   @map("product_code")
+  statementAmount     Decimal  @db.Decimal(15, 2) @map("statement_amount")
+  ourRemittedAmount   Decimal  @db.Decimal(15, 2) @map("our_remitted_amount")
+  variance            Decimal  @db.Decimal(15, 2) @map("variance")
+  status              String   @default("MATCHED") @map("status") // MATCHED | VARIANCE_FLAGGED | REVIEWED
+  reviewedBy          String?  @map("reviewed_by")
+  reviewNote          String?  @map("review_note")
+  reviewedAt          DateTime? @map("reviewed_at")
+
+  reconciliation ProviderStatementReconciliation @relation(fields: [reconciliationId], references: [id])
+
+  @@index([tenantId, reconciliationId])
+  @@index([tenantId, status])
+  @@map("provider_statement_line")
+}
+
+// ---------------------------------------------------------------------------
+// S093 — Product Cancellations
+// ---------------------------------------------------------------------------
+
+/// S093 — one cancellation ceremony per product. Double-cancellation is
+/// refused (idempotent-refusal, not a duplicate refund) via the partial
+/// unique index below (one non-REVERSED cancellation per deal+product).
+model ProductCancellation {
+  id                     String   @id @default(cuid())
+  tenantId               String   @map("tenant_id")
+  dealNumber             String   @map("deal_number")
+  productCode            String   @map("product_code")
+  cancellationSource     String   @map("cancellation_source") // 'CUSTOMER' | 'LENDER'
+  refundBasis            String   @map("refund_basis") // 'PROVIDER_QUOTE' | 'CONFIG_PRORATA'
+  quoteTotal             Decimal  @db.Decimal(15, 2) @map("quote_total")
+  incomeReversalAmount   Decimal  @db.Decimal(15, 2) @map("income_reversal_amount")
+  remitAdjustmentAmount  Decimal  @db.Decimal(15, 2) @map("remit_adjustment_amount")
+  refundPayableAmount    Decimal  @db.Decimal(15, 2) @map("refund_payable_amount")
+  refundPayableLinkageStatus String @default("PENDING_UPSTREAM_TECHNICAL_RECONCILIATION") @map("refund_payable_linkage_status")
+  chargebackTriggered    Boolean  @default(false) @map("chargeback_triggered")
+  chargebackDrawId       String?  @map("chargeback_draw_id")
+  postingExecutionId     String?  @map("posting_execution_id")
+  status                 String   @default("PROCESSED") @map("status") // PROCESSED | POSTING_FAILED | REVERSED
+  idempotencyKey         String   @map("idempotency_key")
+  createdBy              String   @map("created_by")
+  createdAt              DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, idempotencyKey])
+  // DB-level backstop against the double-cancellation race (two concurrent
+  // requests both passing the application-layer findFirst check before
+  // either commits): at most ONE ProductCancellation row may ever exist per
+  // (tenantId, dealNumber, productCode) — there is no reversal ceremony in
+  // this service's scope (status 'REVERSED' is a documented future value,
+  // never set today), so a full (non-partial) unique constraint is correct
+  // for the current scope and simpler than a partial index.
+  @@unique([tenantId, dealNumber, productCode])
+  @@map("product_cancellation")
+}
+
+// ---------------------------------------------------------------------------
+// S094 — Dealer-Obligor Deferral Mode
+// ---------------------------------------------------------------------------
+
+/// S094 — this service's own record that a product's income was booked
+/// deferred (by deal-accounting-service's S084 journal, per the documented
+/// cross-service contract — see docs/CE12-S094-DEFERRAL-CONTRACT in the
+/// final summary). Registered via POST /api/v1/fni-reserve/deferral-bookings.
+/// Snapshots the deferral-mode config (and its earning pattern) EFFECTIVE AT
+/// BOOKING TIME — immutable thereafter, so a later mode change is provably
+/// prospective-only (this row's classification never changes).
+model DeferralBooking {
+  id                      String    @id @default(cuid())
+  tenantId                String    @map("tenant_id")
+  dealNumber              String    @map("deal_number")
+  productCode             String    @map("product_code")
+  productType             String    @map("product_type")
+  originalAmount          Decimal   @db.Decimal(15, 2) @map("original_amount")
+  recognizedAmount        Decimal   @default(0) @db.Decimal(15, 2) @map("recognized_amount")
+  bookingDate             DateTime  @map("booking_date")
+  deferralModeConfigId    String?   @map("deferral_mode_config_id")
+  earningPatternType      String    @map("earning_pattern_type")
+  earningPatternMonths    Int?      @map("earning_pattern_months")
+  controlNumber           String    @map("control_number") // `${dealNumber}:${productCode}` convention
+  glAccountNumber         String?   @map("gl_account_number")
+  status                  String    @default("OPEN") @map("status") // OPEN | FULLY_RECOGNIZED
+  /// CE-12 gap-closure — schedule-service schedule 96 origination posting
+  /// (ce12.fni-reserve.deferral-booking-origination), submitted at
+  /// registration time. PENDING | POSTED | POSTING_FAILED.
+  originationPostingExecutionId String? @map("origination_posting_execution_id")
+  originationStatus      String    @default("PENDING") @map("origination_status")
+  idempotencyKey          String    @map("idempotency_key")
+  createdBy               String    @map("created_by")
+  createdAt               DateTime  @default(now()) @map("created_at")
+
+  deferralModeConfig DeferralModeConfig? @relation(fields: [deferralModeConfigId], references: [id])
+  recognitionLines   RecognitionRunLine[]
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, dealNumber, productCode])
+  @@index([tenantId, status])
+  @@map("deferral_booking")
+}
+
+/// S094 — preview-approve recognition run batch. Nothing posts until
+/// explicit accountant approval (APPROVED); the posted amount is always
+/// exactly what was computed at PREVIEW time, never re-computed at posting.
+model RecognitionRunBatch {
+  id             String    @id @default(cuid())
+  tenantId       String    @map("tenant_id")
+  asOfDate       DateTime  @map("as_of_date")
+  status         String    @default("PREVIEW") @map("status") // PREVIEW | APPROVED | POSTED | REJECTED
+  computedTotal  Decimal   @db.Decimal(15, 2) @map("computed_total")
+  approvedBy     String?   @map("approved_by")
+  approvedAt     DateTime? @map("approved_at")
+  postedAt       DateTime? @map("posted_at")
+  createdBy      String    @map("created_by")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  lines RecognitionRunLine[]
+
+  @@index([tenantId, status])
+  @@map("recognition_run_batch")
+}
+
+model RecognitionRunLine {
+  id                         String   @id @default(cuid())
+  tenantId                   String   @map("tenant_id")
+  batchId                    String   @map("batch_id")
+  deferralBookingId          String   @map("deferral_booking_id")
+  periodStart                DateTime @map("period_start")
+  periodEnd                  DateTime @map("period_end")
+  cumulativeRecognizedBefore Decimal  @db.Decimal(15, 2) @map("cumulative_recognized_before")
+  earnedAmount               Decimal  @db.Decimal(15, 2) @map("earned_amount")
+  postingExecutionId         String?  @map("posting_execution_id")
+  status                     String   @default("PENDING") @map("status") // PENDING | POSTED | FAILED
+
+  batch           RecognitionRunBatch @relation(fields: [batchId], references: [id])
+  deferralBooking DeferralBooking     @relation(fields: [deferralBookingId], references: [id])
+
+  @@index([tenantId, batchId])
+  @@index([tenantId, deferralBookingId])
+  @@map("recognition_run_line")
+}
+
+// ---------------------------------------------------------------------------
+// Cross-cutting: audit outbox (mirrors coa-service's audit() helper /
+// posting-recovery-service's postingRecoveryAuditReference, drained by the
+// shared AuditOutboxDrainer to the real S007 audit-service).
+//
+// This service is HTTP-endpoint-driven (remittance/chargeback/cancellation/
+// deferral-booking notifications all arrive as synchronous API calls, not
+// consumed domain events), so — unlike schedule-service — it has no need
+// for an inbound RabbitMQ consumer or an outbound domain-event outbox;
+// posting-recovery-service (a closer architectural analog) is the pattern
+// followed here: audit outbox only.
+// ---------------------------------------------------------------------------
+
+// S095 — Portfolio Reserve Accrual
+// Tenant-configurable percent-of-portfolio reserve configuration and
+// per-period accrual runs (idempotent on period key).
+model PortfolioReserveConfig {
+  id               String    @id @default(uuid())
+  tenantId         String    @map("tenant_id")
+  legalEntityId    String    @map("legal_entity_id")
+  portfolioCode    String    @map("portfolio_code")
+  accrualBasisBp   Int       @map("accrual_basis_bp")    // basis points: 100 bp = 1%
+  effectiveFrom    DateTime  @map("effective_from")
+  effectiveTo      DateTime? @map("effective_to")
+  createdBy        String    @map("created_by")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  accruals PortfolioReserveAccrual[]
+
+  @@index([tenantId, legalEntityId, portfolioCode])
+  @@map("portfolio_reserve_config")
+}
+
+model PortfolioReserveAccrual {
+  id               String    @id @default(uuid())
+  tenantId         String    @map("tenant_id")
+  legalEntityId    String    @map("legal_entity_id")
+  portfolioCode    String    @map("portfolio_code")
+  configId         String    @map("config_id")
+  periodYear       Int       @map("period_year")
+  periodMonth      Int       @map("period_month")
+  portfolioBalance Decimal   @db.Decimal(15, 2) @map("portfolio_balance")
+  accrualAmount    Decimal   @db.Decimal(15, 2) @map("accrual_amount")
+  idempotencyKey   String    @map("idempotency_key")
+  postedJournalId  String?   @map("posted_journal_id")
+  actor            String
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  config PortfolioReserveConfig @relation(fields: [configId], references: [id])
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, legalEntityId, portfolioCode, periodYear, periodMonth])
+  @@map("portfolio_reserve_accrual")
+}
+
+model AuditOutboxEvent {
+  id            String    @id @default(uuid())
+  tenantId      String    @map("tenant_id")
+  docType       String    @map("doc_type")
+  docId         String    @map("doc_id")
+  action        String
+  before        Json?
+  after         Json?
+  actor         String
+  correlationId String?   @map("correlation_id")
+  publishedAt   DateTime? @map("published_at")
+  retryCount    Int       @default(0) @map("retry_count")
+  lastError     String?   @map("last_error")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@index([publishedAt, retryCount])
+  @@map("fni_reserve_audit_outbox")
+}

@@ -1,9 +1,15 @@
 import { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { commandCenterApi } from '../api/client';
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from 'recharts';
 import HelpButton from '../components/HelpButton';
 import SCREEN_HELP from '../data/screenHelp';
+import { loadCommandCenterExceptions } from '../metrics/exceptions';
+import { formatCurrencyCompact, formatDays } from '../metrics/format';
+import { resolveDashboardTargets } from '../metrics/targets';
+import { useEntityScope } from '../context/EntityScopeContext';
+import type { ExceptionItem } from '../metrics/types';
 
 // Format currency from raw dollars (command-center endpoints return raw, not cents)
 const fmt$ = (v: number) => `$${Math.round(v).toLocaleString()}`;
@@ -13,33 +19,84 @@ const fmtK = (v: number) =>
 
 const COLORS = ['#1e40af', '#3b82f6', '#60a5fa', '#93c5fd', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899'];
 
+// Accounting data is not real-time; the brief's non-negotiable refresh
+// constraint is "default 5 minutes, user-configurable, off by default on
+// the group/consolidated view." `dashboard.auto_refresh_minutes` (see
+// metrics/targets.ts) is the per-tenant/entity override of the 5-minute
+// default; DEFAULT_REFRESH_MINUTES is only the fallback when that key is
+// unset, never a silent hardcode of the actual interval used.
+const DEFAULT_REFRESH_MINUTES = 5;
+
+// Where each Accounting Intelligence alert's action button should navigate.
+// Keyed on the backend's stable alert `id` (services/gl-service/src/index.ts, GET /command-center/alerts).
+const ALERT_ROUTES: Record<string, string> = {
+  'draft-entries': '/gl/entries',
+  'gl-variance': '/accounting/reports/gl-trial-balance',
+  'ar-aging': '/accounting/ar',
+  'high-activity': '/gl/entries',
+  'agent-reviewed': '/gl/entries',
+  'loss-warning': '/accounting/reports/detailed-gl-pl',
+  'empty-accounts': '/coa',
+};
+
 export default function AccountingCommandCenter() {
+  const navigate = useNavigate();
+  const { entityId, storeId, consolidated } = useEntityScope();
   const [centerTab, setCenterTab] = useState<'gl' | 'charts' | 'kpis'>('gl');
   const [ashleyInput, setAshleyInput] = useState('');
   const [ashleyMessages, setAshleyMessages] = useState<{ role: string; text: string }[]>([]);
   const [ashleyLoading, setAshleyLoading] = useState(false);
   const ashleyRef = useRef<HTMLDivElement>(null);
 
-  // ═══ 5 dedicated command-center queries — auto-refresh 15s ═══
+  // Auto-refresh is opt-in and, per the brief, off by default on a
+  // consolidated (all-entities) scope — a controller viewing the group
+  // roll-up should not have tiles silently changing under them.
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(!consolidated);
+  useEffect(() => {
+    setAutoRefreshEnabled(!consolidated);
+  }, [consolidated]);
+
+  const { data: dashboardTargets } = useQuery({
+    queryKey: ['dashboard-targets', entityId, storeId],
+    queryFn: () => resolveDashboardTargets({ entityId, storeId }),
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+  const refreshMinutes = dashboardTargets?.autoRefreshMinutes ?? DEFAULT_REFRESH_MINUTES;
+  const REFRESH_MS = autoRefreshEnabled ? refreshMinutes * 60 * 1000 : false;
+
+  // ═══ 5 dedicated command-center queries — auto-refresh every 5 minutes ═══
   const { data: liveStats, isLoading } = useQuery({
     queryKey: ['cc-live-stats'], queryFn: commandCenterApi.getLiveStats,
-    retry: false, refetchInterval: 15000,
+    retry: false, refetchInterval: REFRESH_MS,
   });
   const { data: alertsData } = useQuery({
     queryKey: ['cc-alerts'], queryFn: commandCenterApi.getAlerts,
-    retry: false, refetchInterval: 15000,
+    retry: false, refetchInterval: REFRESH_MS,
   });
   const { data: glMonitor } = useQuery({
     queryKey: ['cc-gl-monitor'], queryFn: commandCenterApi.getGLMonitor,
-    retry: false, refetchInterval: 15000,
+    retry: false, refetchInterval: REFRESH_MS,
   });
   const { data: kpiTrends } = useQuery({
     queryKey: ['cc-kpi-trends'], queryFn: commandCenterApi.getKpiTrends,
-    retry: false, refetchInterval: 30000,
+    retry: false, refetchInterval: REFRESH_MS,
   });
   const { data: charts } = useQuery({
     queryKey: ['cc-charts'], queryFn: commandCenterApi.getCharts,
-    retry: false, refetchInterval: 30000,
+    retry: false, refetchInterval: REFRESH_MS,
+  });
+
+  // Dashboard rebuild — Command Center exception queue (real, entity-scoped
+  // work-queue tiles per the build brief's value doctrine: dollar exposure,
+  // oldest age, owner, one-click resolution). Auto-refresh is opt-in, reads
+  // dashboard.auto_refresh_minutes (default 5 min), and is off by default on
+  // the consolidated/group scope — never real-time.
+  const { data: exceptionQueue } = useQuery({
+    queryKey: ['cc-exception-queue'],
+    queryFn: loadCommandCenterExceptions,
+    retry: false,
+    refetchInterval: REFRESH_MS,
   });
 
   // Ashley AI mutation
@@ -81,10 +138,18 @@ export default function AccountingCommandCenter() {
         <div>
           <div><h1 className="text-xl font-bold text-gray-900">Accounting Command Center</h1><p className="text-sm text-gray-500 mt-0.5">Real-time alerts, actionable insights, and Ashley AI assistant. Source: Command Center API.</p></div>
           <p className="text-xs text-gray-500 mt-0.5">
-            Live data &middot; Auto-refresh 15s &middot; {liveStats?.timestamp ? new Date(liveStats.timestamp).toLocaleTimeString() : ''}
+            {liveStats?.timestamp ? `As of ${new Date(liveStats.timestamp).toLocaleTimeString()}` : ''}
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1.5 text-[11px] text-gray-500 select-none">
+            <input
+              type="checkbox"
+              checked={autoRefreshEnabled}
+              onChange={(e) => setAutoRefreshEnabled(e.target.checked)}
+            />
+            Auto-refresh every {refreshMinutes} min{consolidated ? ' (off by default on consolidated view)' : ''}
+          </label>
           {alerts.filter((a: any) => a.priority === 'critical').length > 0 && (
             <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-red-100 text-red-800 rounded-full text-[10px] font-bold animate-pulse">
               🚨 {alerts.filter((a: any) => a.priority === 'critical').length} Critical
@@ -103,6 +168,20 @@ export default function AccountingCommandCenter() {
           <HelpButton help={SCREEN_HELP['command-center'] ?? SCREEN_HELP['dashboard']} />
         </div>
       </div>
+
+      {/* ═══ Exception Queue — value-doctrine tiles (real data, no mocks) ═══
+          Each tile: count, dollar exposure, oldest item age, owner, and a
+          primary action that navigates to the exact pre-filtered record set
+          that resolves it. This is the pattern the whole page should follow
+          per the AMACC 2.0 dashboard-rebuild brief; the "Accounting
+          Intelligence" panel below (Zone 2) is being migrated to it
+          incrementally rather than replaced in one pass ("improve, do not
+          break"). */}
+      <ExceptionQueueRow
+        exceptions={exceptionQueue?.exceptions ?? []}
+        failedCategories={exceptionQueue?.failedCategories ?? []}
+        onDrillThrough={(url) => navigate(url)}
+      />
 
       {/* ═══ ZONE 1: Command Strip — 2 rows × 4 KPI Cards ═══ */}
       <div className="grid grid-cols-4 gap-3">
@@ -139,8 +218,9 @@ export default function AccountingCommandCenter() {
               const bgColor = alert.priority === 'critical' ? 'bg-red-50' : alert.priority === 'review' ? 'bg-amber-50' : 'bg-brand-light';
               const borderColor = alert.priority === 'critical' ? 'border-red-200' : alert.priority === 'review' ? 'border-amber-200' : 'border-brand-border';
               const iconColor = alert.priority === 'critical' ? 'text-red-500' : alert.priority === 'review' ? 'text-amber-500' : 'text-blue-500';
+              const goToAlert = () => navigate(ALERT_ROUTES[alert.id] ?? '/gl');
               return (
-                <div key={alert.id} className={`${bgColor} rounded-xl border ${borderColor} p-3 cursor-pointer hover:shadow-sm transition-shadow`}>
+                <div key={alert.id} onClick={goToAlert} className={`${bgColor} rounded-xl border ${borderColor} p-3 cursor-pointer hover:shadow-sm transition-shadow`}>
                   <div className="flex items-start gap-2">
                     <span className={`text-sm ${iconColor} mt-0.5`}>{alert.priority === 'critical' ? '🚨' : alert.priority === 'review' ? '⚠️' : 'ℹ️'}</span>
                     <div className="flex-1 min-w-0">
@@ -155,7 +235,9 @@ export default function AccountingCommandCenter() {
                       )}
                       <div className="flex items-center justify-between mt-1.5">
                         <span className="text-[8px] text-gray-400">{alert.time}</span>
-                        <button className={`text-[9px] font-semibold px-2.5 py-1 rounded-lg transition-colors ${
+                        <button
+                          onClick={(e) => { e.stopPropagation(); goToAlert(); }}
+                          className={`text-[9px] font-semibold px-2.5 py-1 rounded-lg transition-colors ${
                           alert.actionType === 'approve'
                             ? 'bg-green-100 text-green-700 hover:bg-green-200'
                             : 'bg-brand-light text-brand hover:bg-blue-200'
@@ -514,6 +596,74 @@ export default function AccountingCommandCenter() {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ═══ Exception Queue — value-doctrine tiles ═══
+// Each tile passes the brief's 5 tests: "so what" (a controller can act on
+// it), dollars (a real exposure amount, not just a count), action (a
+// drill-through to the exact filtered record set), and — collapsed to a
+// single "All clear" line when there is nothing wrong — the exception test.
+// Comparator (budget/prior period) does not apply to exception counts, only
+// to performance metrics on the Financial/Group surfaces.
+function ExceptionQueueRow({
+  exceptions,
+  failedCategories,
+  onDrillThrough,
+}: {
+  exceptions: ExceptionItem[];
+  failedCategories: string[];
+  onDrillThrough: (url: string) => void;
+}) {
+  if (exceptions.length === 0 && failedCategories.length === 0) {
+    return (
+      <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-2.5 flex items-center gap-2">
+        <span className="text-green-700 text-sm font-semibold">✓ All clear</span>
+        <span className="text-green-600 text-[11px]">No schedule variances, floorplan trust exceptions, or unposted entries.</span>
+      </div>
+    );
+  }
+
+  const severityStyles: Record<string, { bg: string; border: string; text: string; icon: string }> = {
+    CRITICAL: { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', icon: '🚨' },
+    WARNING: { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', icon: '⚠️' },
+    INFO: { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', icon: 'ℹ️' },
+  };
+
+  return (
+    <div className="grid grid-cols-4 gap-3">
+      {exceptions.map((exc) => {
+        const style = severityStyles[exc.severity] ?? severityStyles.INFO;
+        return (
+          <button
+            key={exc.category}
+            onClick={() => onDrillThrough(exc.drillThroughUrl)}
+            className={`text-left ${style.bg} border ${style.border} rounded-xl p-3 hover:shadow-sm transition-shadow`}
+          >
+            <div className="flex items-center justify-between">
+              <span className={`text-[10px] font-bold uppercase tracking-wider ${style.text}`}>{style.icon} {exc.category.replace(/_/g, ' ')}</span>
+              <span className={`text-[10px] font-bold ${style.text}`}>{exc.count}</span>
+            </div>
+            <p className={`text-lg font-bold mt-1 ${style.text}`}>{formatCurrencyCompact(exc.exposureAmount)}</p>
+            <p className="text-[10px] text-gray-500 mt-0.5 line-clamp-2">{exc.reason}</p>
+            <div className="flex items-center justify-between mt-1.5 text-[9px] text-gray-400">
+              <span>Oldest: {formatDays(exc.oldestAgeDays)}</span>
+              <span>{exc.owner ?? 'Unassigned'}</span>
+            </div>
+            <div className="mt-1 text-[9px] text-gray-400">
+              As of {new Date(exc.asOf).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              {exc.dataFreshness === 'STALE' && <span className="text-amber-600 font-semibold"> · stale</span>}
+            </div>
+          </button>
+        );
+      })}
+      {failedCategories.map((category) => (
+        <div key={category} className="bg-gray-50 border border-gray-200 border-dashed rounded-xl p-3 text-gray-500">
+          <span className="text-[10px] font-bold uppercase tracking-wider">⚠ {category.replace(/_/g, ' ')}</span>
+          <p className="text-[11px] mt-1">Could not load — the source service did not respond. Not shown as $0; retry shortly.</p>
+        </div>
+      ))}
     </div>
   );
 }

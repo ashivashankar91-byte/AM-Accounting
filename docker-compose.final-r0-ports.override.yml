@@ -1,107 +1,122 @@
-# LOCAL ONLY — not committed. Remaps every host port +10000 so this
-# final-r0 worktree's stack can run alongside another already-running
-# am-accounting docker-compose stack on the same host without port conflicts.
+# LOCAL ONLY. Remaps every host port so this final-r0 worktree's stack can
+# run alongside another already-running am-accounting docker-compose stack
+# on the same host without port conflicts.
+#
+# Golden R0 UI convergence — Phase 5 fix: `ports` is a list-type compose
+# attribute, and this Compose version (v5.1.3) MERGES/appends list values
+# across `-f` files by default rather than replacing them -- every service
+# was being published on BOTH its base docker-compose.yml port AND this
+# override's port simultaneously. Since almost every base port collides
+# with the unrelated sibling `am-accounting` stack already running on this
+# host, every service failed to start ("port is already allocated") even
+# though the override port itself was free. Fixed by tagging every `ports`
+# key `!override` (Compose spec merge-control tag), which forces full
+# replacement instead of appending. postgres/redis/rabbitmq are also
+# re-pointed at 45433/46380/45673+55673 -- the ports the long-lived,
+# already-seeded final-r0 infra containers were actually running on before
+# this fix (see KNOWN_LIMITATIONS_REGISTER.md row 9), not the stale
+# +10000 values previously in this file.
 services:
   agent-apar:
-    ports:
+    ports: !override
     - 13023:3023
   agent-eom:
-    ports:
+    ports: !override
     - 13021:3021
   agent-gl:
-    ports:
+    ports: !override
     - 13020:3020
   agent-payroll:
-    ports:
+    ports: !override
     - 13022:3022
   agent-t1:
-    ports:
+    ports: !override
     - 13024:3024
   analytics-service:
-    ports:
+    ports: !override
     - 13046:3046
   apar-service:
-    ports:
+    ports: !override
     - 13013:3013
   api-gateway:
-    ports:
+    ports: !override
     - 13100:3000
   approval-service:
-    ports:
+    ports: !override
     - 13033:3033
   audit-service:
-    ports:
+    ports: !override
     - 13031:3031
   auth-service:
-    ports:
+    ports: !override
     - 13001:3001
   cashflow-service:
-    ports:
+    ports: !override
     - 13037:3037
   coa-service:
-    ports:
+    ports: !override
     - 13016:3016
   compliance-service:
-    ports:
+    ports: !override
     - 13043:3043
   connector-service:
-    ports:
+    ports: !override
     - 13032:3032
   document-service:
-    ports:
+    ports: !override
     - 13038:3038
   eom-service:
-    ports:
+    ports: !override
     - 13011:3011
   fs-service:
-    ports:
+    ports: !override
     - 13015:3015
   gl-service:
-    ports:
+    ports: !override
     - 13010:3010
   group-service:
-    ports:
+    ports: !override
     - 13039:3039
   notification-service:
-    ports:
+    ports: !override
     - 13030:3030
   onboarding-service:
-    ports:
+    ports: !override
     - 13035:3035
   orchestrator-service:
-    ports:
+    ports: !override
     - 13048:3048
   payroll-service:
-    ports:
+    ports: !override
     - 13012:3012
   postgres:
-    ports:
-    - 15433:5432
+    ports: !override
+    - 45433:5432
   query-service:
-    ports:
+    ports: !override
     - 13045:3045
   rabbitmq:
-    ports:
-    - 15673:5672
-    - 25673:15672
+    ports: !override
+    - 45673:5672
+    - 55673:15672
   recon-service:
-    ports:
+    ports: !override
     - 13014:3014
   redis:
-    ports:
-    - 16380:6379
+    ports: !override
+    - 46380:6379
   schedule-service:
-    ports:
+    ports: !override
     - 13018:3018
   tenant-service:
-    ports:
+    ports: !override
     - 13002:3002
   user-service:
-    ports:
+    ports: !override
     - 13040:3040
   web:
-    ports:
+    ports: !override
     - 15174:5174
   webhook-service:
-    ports:
+    ports: !override
     - 13036:3036

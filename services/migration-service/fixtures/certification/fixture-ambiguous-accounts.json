@@ -1,0 +1,15 @@
+{
+  "$label": "CERTIFICATION-ONLY: synthetic non-production data",
+  "$description": "Legacy accounts whose meaning cannot be determined from the extract. These must land in the exception queue as AMBIGUOUS / UNMAPPED and must never be guessed into a target account.",
+  "legalEntityId": "LE-CERT-001",
+  "rows": [
+    { "accountCode": "9999", "accountName": "MISC / SUSPENSE", "debit": 412.55, "credit": 0, "description": "Unclassified legacy suspense" },
+    { "accountCode": "", "accountName": "(blank)", "debit": 0, "credit": 88.10, "description": "Row with no account code at all" },
+    { "accountCode": "1200-A", "accountName": "AR (old scheme?)", "debit": 2200.00, "credit": 0, "description": "Account code from a retired numbering scheme" }
+  ],
+  "mappingEntries": [
+    { "sourceField": "accountCode", "sourceValue": "9999", "status": "MANUAL_REVIEW_REQUIRED", "classification": null },
+    { "sourceField": "accountCode", "sourceValue": "1200-A", "status": "MANUAL_REVIEW_REQUIRED", "classification": null }
+  ],
+  "expected": { "exceptionTypes": ["AMBIGUOUS", "UNMAPPED"], "coverageComplete": false, "freezeRefused": true }
+}

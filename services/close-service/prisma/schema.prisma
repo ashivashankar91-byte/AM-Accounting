@@ -1,0 +1,355 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/close-service-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "darwin-arm64"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model ClosePeriodState {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  legalEntityId   String    @map("legal_entity_id")
+  periodYear      Int       @map("period_year")
+  periodMonth     Int       @map("period_month")
+  state           String
+  previousState   String?   @map("previous_state")
+  transitionBy    String    @map("transition_by")
+  transitionAt    DateTime  @map("transition_at")
+  transitionReason String?  @map("transition_reason")
+  version         Int       @default(0)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@unique([tenantId, legalEntityId, periodYear, periodMonth])
+  @@map("close_period_states")
+}
+
+model CloseTask {
+  id               String    @id @default(cuid())
+  tenantId         String    @map("tenant_id")
+  legalEntityId    String    @map("legal_entity_id")
+  periodYear       Int       @map("period_year")
+  periodMonth      Int       @map("period_month")
+  templateCode     String    @map("template_code")
+  title            String
+  ownerId          String    @map("owner_id")
+  dueOffset        Int?      @map("due_offset")
+  dueDateActual    DateTime? @map("due_date_actual")
+  status           String    @default("PENDING")
+  priority         String    @default("NORMAL")
+  dependsOnIds     Json      @default("[]") @map("depends_on_ids")
+  evidenceRefs     Json      @default("[]") @map("evidence_refs")
+  escalationConfig Json?     @map("escalation_config")
+  completedAt      DateTime? @map("completed_at")
+  completedBy      String?   @map("completed_by")
+  verifiedAt       DateTime? @map("verified_at")
+  verifiedBy       String?   @map("verified_by")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  @@map("close_tasks")
+}
+
+model CloseTaskEvidence {
+  id          String   @id @default(cuid())
+  tenantId    String   @map("tenant_id")
+  closeTaskId String   @map("close_task_id")
+  fileName    String   @map("file_name")
+  fileRef     String   @map("file_ref")
+  uploadedBy  String   @map("uploaded_by")
+  uploadedAt  DateTime @default(now()) @map("uploaded_at")
+  contentHash String   @map("content_hash")
+
+  @@map("close_task_evidence")
+}
+
+model ExceptionOverride {
+  id            String   @id @default(cuid())
+  tenantId      String   @map("tenant_id")
+  legalEntityId String   @map("legal_entity_id")
+  periodYear    Int      @map("period_year")
+  periodMonth   Int      @map("period_month")
+  findingId     String   @map("finding_id")
+  overriddenBy  String   @map("overridden_by")
+  reason        String
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("exception_overrides")
+}
+
+
+model ReconciliationRegister {
+  id             String    @id @default(cuid())
+  tenantId       String    @map("tenant_id")
+  legalEntityId  String    @map("legal_entity_id")
+  periodYear     Int       @map("period_year")
+  periodMonth    Int       @map("period_month")
+  moduleCode     String    @map("module_code")
+  accountCode    String    @map("account_code")
+  status         String    @default("UNRECONCILED")
+  preparerId     String?   @map("preparer_id")
+  reviewerId     String?   @map("reviewer_id")
+  tieEvidenceRef String?   @map("tie_evidence_ref")
+  signedAt       DateTime? @map("signed_at")
+  preparedAt     DateTime? @map("prepared_at")
+  reviewedAt     DateTime? @map("reviewed_at")
+  notes          String?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@unique([tenantId, legalEntityId, periodYear, periodMonth, moduleCode, accountCode])
+  @@map("reconciliation_register")
+}
+
+model ScrubRun {
+  id            String   @id @default(cuid())
+  tenantId      String   @map("tenant_id")
+  legalEntityId String   @map("legal_entity_id")
+  periodYear    Int      @map("period_year")
+  periodMonth   Int      @map("period_month")
+  runAt         DateTime @default(now()) @map("run_at")
+  runBy         String   @map("run_by")
+  status        String   @default("RUNNING")
+  findingsCount Int      @default(0) @map("findings_count")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  findings ScrubFinding[]
+
+  @@map("scrub_runs")
+}
+
+model ScrubFinding {
+  id             String    @id @default(cuid())
+  tenantId       String    @map("tenant_id")
+  scrubRunId     String    @map("scrub_run_id")
+  ruleCode       String    @map("rule_code")
+  severity       String
+  description    String
+  sourceRef      String?   @map("source_ref")
+  status         String    @default("OPEN")
+  overriddenBy   String?   @map("overridden_by")
+  overrideReason String?   @map("override_reason")
+  deferredUntil  DateTime? @map("deferred_until")
+  resolvedAt     DateTime? @map("resolved_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  scrubRun ScrubRun @relation(fields: [scrubRunId], references: [id])
+
+  @@map("scrub_findings")
+}
+
+model YearEndRun {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  legalEntityId   String    @map("legal_entity_id")
+  fiscalYear      Int       @map("fiscal_year")
+  status          String    @default("PENDING")
+  previewData     Json?     @map("preview_data")
+  postedJournalId String?   @map("posted_journal_id")
+  postedAt        DateTime? @map("posted_at")
+  postedBy        String?   @map("posted_by")
+  idempotencyKey  String    @unique @map("idempotency_key")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  initiatedBy     String    @map("initiated_by")
+
+  @@map("year_end_runs")
+}
+
+model KpiFormulaVersion {
+  id            String    @id @default(cuid())
+  tenantId      String    @map("tenant_id")
+  formulaCode   String    @map("formula_code")
+  version       Int
+  definition    Json
+  effectiveFrom DateTime  @map("effective_from")
+  effectiveTo   DateTime? @map("effective_to")
+  createdBy     String    @map("created_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@unique([tenantId, formulaCode, version])
+  @@map("kpi_formula_versions")
+}
+
+model KpiComputedResult {
+  id             String   @id @default(cuid())
+  tenantId       String   @map("tenant_id")
+  legalEntityId  String   @map("legal_entity_id")
+  periodYear     Int      @map("period_year")
+  periodMonth    Int      @map("period_month")
+  formulaCode    String   @map("formula_code")
+  formulaVersion Int      @map("formula_version")
+  result         Decimal  @db.Decimal(15, 2)
+  sourceLabels   Json     @default("{}") @map("source_labels")
+  computedAt     DateTime @map("computed_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@map("kpi_computed_results")
+}
+
+model StatementSnapshot {
+  id                   String    @id @default(cuid())
+  tenantId             String    @map("tenant_id")
+  legalEntityId        String    @map("legal_entity_id")
+  periodYear           Int       @map("period_year")
+  periodMonth          Int       @map("period_month")
+  statementType        String    @map("statement_type")
+  definitionVersion    String    @map("definition_version")
+  sourceTbHash         String    @map("source_tb_hash")
+  journalLineage       Json      @default("[]") @map("journal_lineage")
+  renderedContent      String    @map("rendered_content")
+  renderedHash         String    @map("rendered_hash")
+  primarySignerId      String?   @map("primary_signer_id")
+  primarySignedAt      DateTime? @map("primary_signed_at")
+  primaryAttestation   String?   @map("primary_attestation")
+  secondarySignerId    String?   @map("secondary_signer_id")
+  secondarySignedAt    DateTime? @map("secondary_signed_at")
+  secondaryAttestation String?   @map("secondary_attestation")
+  isVerified           Boolean   @default(false) @map("is_verified")
+  integrityAlertAt     DateTime? @map("integrity_alert_at")
+  version              Int       @default(0)
+  createdAt            DateTime  @default(now()) @map("created_at")
+
+  @@map("statement_snapshots")
+}
+
+model ArchiveObject {
+  id             String    @id @default(cuid())
+  tenantId       String    @map("tenant_id")
+  objectKey      String    @unique @map("object_key")
+  objectClass    String    @map("object_class")
+  contentHash    String    @map("content_hash")
+  sizeBytes      BigInt    @map("size_bytes")
+  retentionClass String    @map("retention_class")
+  holdUntil      DateTime? @map("hold_until")
+  isHeld         Boolean   @default(true) @map("is_held")
+  heldBy         String?   @map("held_by")
+  heldAt         DateTime? @map("held_at")
+  deletedAt      DateTime? @map("deleted_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  createdBy      String    @map("created_by")
+
+  @@map("archive_objects")
+}
+
+model RetentionSchedule {
+  id            String   @id @default(cuid())
+  tenantId      String   @map("tenant_id")
+  recordClass   String   @map("record_class")
+  retentionDays Int      @map("retention_days")
+  effectiveFrom DateTime @map("effective_from")
+  createdBy     String   @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, recordClass])
+  @@map("retention_schedules")
+}
+
+model CurrencyConfig {
+  id                  String    @id @default(cuid())
+  tenantId            String    @map("tenant_id")
+  legalEntityId       String    @map("legal_entity_id")
+  functionalCurrency  String    @map("functional_currency")
+  policyElection      String    @default("TRANSLATE") @map("policy_election")
+  policyElectedBy     String?   @map("policy_elected_by")
+  policyElectedAt     DateTime? @map("policy_elected_at")
+  rateSourceStatus    String    @default("NOT_CONFIGURED") @map("rate_source_status")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  @@unique([tenantId, legalEntityId])
+  @@map("currency_configs")
+}
+
+model TranslationRate {
+  id           String   @id @default(cuid())
+  tenantId     String   @map("tenant_id")
+  fromCurrency String   @map("from_currency")
+  toCurrency   String   @map("to_currency")
+  rateDate     DateTime @map("rate_date")
+  rate         Decimal  @db.Decimal(18, 6)
+  sourceRef    String?  @map("source_ref")
+  version      Int      @default(1)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, fromCurrency, toCurrency, rateDate, version])
+  @@map("translation_rates")
+}
+
+model TranslationRun {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  legalEntityId   String    @map("legal_entity_id")
+  periodYear      Int       @map("period_year")
+  periodMonth     Int       @map("period_month")
+  status          String    @default("PREVIEW")
+  ctaAmount       Decimal   @db.Decimal(15, 2) @map("cta_amount")
+  postedJournalId String?   @map("posted_journal_id")
+  idempotencyKey  String    @unique @map("idempotency_key")
+  previewData     Json?     @map("preview_data")
+  approvedBy      String?   @map("approved_by")
+  approvedAt      DateTime? @map("approved_at")
+  postedAt        DateTime? @map("posted_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@map("translation_runs")
+}
+
+model CloseAuditLog {
+  id            String   @id @default(cuid())
+  tenantId      String   @map("tenant_id")
+  legalEntityId String   @map("legal_entity_id")
+  periodYear    Int      @map("period_year")
+  periodMonth   Int      @map("period_month")
+  action        String
+  actor         String
+  before        Json?
+  after         Json?
+  metadata      Json?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("close_audit_logs")
+}
+
+model PbcExport {
+  id            String   @id @default(cuid())
+  tenantId      String   @map("tenant_id")
+  legalEntityId String   @map("legal_entity_id")
+  periodYear    Int      @map("period_year")
+  periodMonth   Int      @map("period_month")
+  exportedBy    String   @map("exported_by")
+  exportedAt    DateTime @default(now()) @map("exported_at")
+  contentHash   String   @map("content_hash")
+  objectRef     String   @map("object_ref")
+  status        String   @default("PENDING")
+
+  @@map("pbc_exports")
+}
+
+model OutboxEvent {
+  id          String    @id @default(cuid())
+  tenantId    String    @map("tenant_id")
+  eventType   String    @map("event_type")
+  payload     Json
+  publishedAt DateTime? @map("published_at")
+  retryCount  Int       @default(0) @map("retry_count")
+  lastError   String?   @map("last_error")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@map("close_outbox_events")
+}
+
+model AuditOutboxEvent {
+  id          String    @id @default(cuid())
+  tenantId    String    @map("tenant_id")
+  payload     Json
+  publishedAt DateTime? @map("published_at")
+  retryCount  Int       @default(0) @map("retry_count")
+  lastError   String?   @map("last_error")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@map("audit_outbox")
+}

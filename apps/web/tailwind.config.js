@@ -8,13 +8,27 @@ export default {
         mono: ['"JetBrains Mono"', '"Fira Code"', '"SF Mono"', 'Consolas', 'monospace'],
       },
       colors: {
-        // Brand — single source of truth for primary actions
+        // Brand — single source of truth for primary actions.
+        // Golden R0 Phase — token alignment: routed through CSS custom
+        // properties so the approved Claude Design palette (#0B5CAB primary)
+        // can be applied ONLY inside the golden-path report/journal
+        // foundation (the `.gr0-scope` wrapper in index.css defines the
+        // --gr0-* overrides) without recoloring the many unrelated
+        // pages/accounting/* screens that already use Btn/Badge/PageHeader
+        // with this same `brand` token. Each fallback is the exact
+        // pre-existing value, so anywhere `.gr0-scope` isn't present renders
+        // byte-identical to before this change.
         brand: {
-          DEFAULT: '#1D4ED8',
-          hover:   '#1E40AF',
-          light:   '#EFF6FF',
-          border:  '#BFDBFE',
-          ring:    '#93C5FD',
+          DEFAULT: 'var(--gr0-primary, #1D4ED8)',
+          hover:   'var(--gr0-primary-hover, #1E40AF)',
+          light:   'var(--gr0-primary-light, #EFF6FF)',
+          border:  'var(--gr0-primary-border, #BFDBFE)',
+          ring:    'var(--gr0-primary-ring, #93C5FD)',
+        },
+        // Golden R0 Phase — approved design's navy "section head" colour
+        // (#1E3A5C), additive token, scoped the same way via --gr0-navy.
+        navy: {
+          DEFAULT: 'var(--gr0-navy, #1E3A5C)',
         },
         // Surface hierarchy
         surface: {

@@ -6,6 +6,7 @@ import {
   PostingService,
   PostingInputError,
   PostingViolationError,
+  AnalysisTagViolationError,
 } from '../application/posting-service';
 import { JournalViewService, JournalNotFoundError } from '../application/journal-view-service';
 import {
@@ -62,6 +63,9 @@ function handleError(error: unknown, reply: any) {
   if (error instanceof PostingViolationError) {
     return reply.status(422).send({ error: error.code, message: error.message, violations: error.violations });
   }
+  if (error instanceof AnalysisTagViolationError) {
+    return reply.status(422).send({ error: error.code, message: error.message, violations: error.violations });
+  }
   if (error instanceof PostingInputError) {
     return reply.status(400).send({ error: error.code, message: error.message });
   }
@@ -83,6 +87,12 @@ const LineSchema = z.object({
   dr: z.union([z.number(), z.string()]).nullable().optional(),
   cr: z.union([z.number(), z.string()]).nullable().optional(),
   memo: z.string().max(500).nullable().optional(),
+  // S011 P01-SCR-05 — optional line-level analysis tags, validated fail-closed
+  // (cap/active/type-match, BR011-1/BR011-4) before the journal is posted.
+  analysisTags: z
+    .array(z.object({ typeId: z.string().min(1), valueId: z.string().min(1) }))
+    .nullable()
+    .optional(),
 });
 
 const PostSchema = z.object({

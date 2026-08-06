@@ -41,6 +41,8 @@ import { journalRoutes, JE_PERMISSIONS } from '../src/http/journal-routes';
 import { draftRoutes, JE_DRAFT_PERMISSIONS } from '../src/http/draft-routes';
 import { glInquiryRoutes, INQUIRY_PERMISSIONS } from '../src/http/gl-inquiry-routes';
 import { glSearchRoutes, SEARCH_PERMISSIONS } from '../src/http/gl-search-routes';
+import { recurringTemplateRoutes, TEMPLATE_PERMISSIONS } from '../src/http/recurring-template-routes';
+import { postingEngineRoutes, POSTING_ENGINE_PERMISSIONS } from '../src/http/posting-engine-routes';
 
 const JWT_SECRET = 'coa-authz-test-secret';
 
@@ -80,6 +82,10 @@ const ROLE_GRANTS: Record<string, ReadonlySet<string>> = {
     CONFIG_PERMISSIONS.VIEW, CONFIG_PERMISSIONS.MANAGE,
     FISCAL_PERMISSIONS.VIEW, FISCAL_PERMISSIONS.MANAGE,
     PERIOD_PERMISSIONS.VIEW, PERIOD_PERMISSIONS.OPEN,
+    // S008 — ADMIN holds every period-close permission, including the two
+    // elevated, ADMIN-only tiers (reopen_hard_closed, lock).
+    PERIOD_PERMISSIONS.SOFT_CLOSE, PERIOD_PERMISSIONS.HARD_CLOSE, PERIOD_PERMISSIONS.REOPEN,
+    PERIOD_PERMISSIONS.REOPEN_HARD_CLOSED, PERIOD_PERMISSIONS.LOCK,
     SEED_PERMISSIONS.RUN,
     SEQUENCE_PERMISSIONS.GAP_REPORT, SEQUENCE_PERMISSIONS.ALLOCATE,
     SOURCE_PERMISSIONS.VIEW, SOURCE_PERMISSIONS.MANAGE,
@@ -88,6 +94,14 @@ const ROLE_GRANTS: Record<string, ReadonlySet<string>> = {
     JE_DRAFT_PERMISSIONS.VOID, JE_DRAFT_PERMISSIONS.VOID_ANY,
     INQUIRY_PERMISSIONS.VIEW,
     SEARCH_PERMISSIONS.SEARCH,
+    // S032 — ADMIN holds all three recurring-template permissions.
+    TEMPLATE_PERMISSIONS.MANAGE, TEMPLATE_PERMISSIONS.GENERATE, TEMPLATE_PERMISSIONS.VIEW,
+    // S019/S020 — ADMIN holds every posting-engine permission, including the
+    // ADMIN-only activation tier (matches the period-close reopen_hard_closed/
+    // lock precedent: the highest-risk, hardest-to-reverse transition).
+    POSTING_ENGINE_PERMISSIONS.VIEW_RULE_PACK, POSTING_ENGINE_PERMISSIONS.EDIT_RULE_PACK,
+    POSTING_ENGINE_PERMISSIONS.VALIDATE_RULE_PACK, POSTING_ENGINE_PERMISSIONS.ACTIVATE_RULE_PACK,
+    POSTING_ENGINE_PERMISSIONS.VIEW_EXECUTION, POSTING_ENGINE_PERMISSIONS.VIEW_EXCEPTION,
   ]),
   ACCOUNTANT: new Set([
     ACCOUNT_PERMISSIONS.VIEW, CONFIG_PERMISSIONS.VIEW, FISCAL_PERMISSIONS.VIEW,
@@ -96,6 +110,34 @@ const ROLE_GRANTS: Record<string, ReadonlySet<string>> = {
     JE_DRAFT_PERMISSIONS.CREATE, JE_DRAFT_PERMISSIONS.EDIT, JE_DRAFT_PERMISSIONS.VOID,
     INQUIRY_PERMISSIONS.VIEW,
     SEARCH_PERMISSIONS.SEARCH,
+    // S032 — ACCOUNTANT may view the registry and generate journals from a
+    // template, but (per the certified authorization matrix / db411c9's
+    // corrective pass) does NOT hold MANAGE — deliberately excluded here;
+    // see the dedicated "S032 — Accountant may generate but not manage
+    // templates" describe block below for the differentiated proof.
+    TEMPLATE_PERMISSIONS.GENERATE, TEMPLATE_PERMISSIONS.VIEW,
+    // S019/S020 — ACCOUNTANT: read-only/non-destructive posting-engine
+    // actions only (no edit, no activate — matches the migration's grants).
+    POSTING_ENGINE_PERMISSIONS.VIEW_RULE_PACK, POSTING_ENGINE_PERMISSIONS.VALIDATE_RULE_PACK,
+    POSTING_ENGINE_PERMISSIONS.VIEW_EXECUTION, POSTING_ENGINE_PERMISSIONS.VIEW_EXCEPTION,
+  ]),
+  // S008 — CONTROLLER: soft-close/hard-close/reopen (SOFT_CLOSED->OPEN) per
+  // the auth-service migration's ADMIN+CONTROLLER grant. Deliberately does
+  // NOT include reopen_hard_closed or lock — those are the ADMIN-only tier;
+  // their absence here is what the dedicated two-tier-separation test below
+  // proves (a role with SOME period-close permissions but not the elevated
+  // ones is still denied on those two, not just a role with none at all).
+  CONTROLLER: new Set([
+    PERIOD_PERMISSIONS.VIEW,
+    PERIOD_PERMISSIONS.SOFT_CLOSE, PERIOD_PERMISSIONS.HARD_CLOSE, PERIOD_PERMISSIONS.REOPEN,
+    // S032 — CONTROLLER holds the same recurring-template grants as ADMIN
+    // (view/manage/generate), per the certified authorization matrix.
+    TEMPLATE_PERMISSIONS.MANAGE, TEMPLATE_PERMISSIONS.GENERATE, TEMPLATE_PERMISSIONS.VIEW,
+    // S019/S020 — CONTROLLER holds rule-pack authoring but NOT activation
+    // (the dedicated two-tier test below proves that negative).
+    POSTING_ENGINE_PERMISSIONS.VIEW_RULE_PACK, POSTING_ENGINE_PERMISSIONS.EDIT_RULE_PACK,
+    POSTING_ENGINE_PERMISSIONS.VALIDATE_RULE_PACK,
+    POSTING_ENGINE_PERMISSIONS.VIEW_EXECUTION, POSTING_ENGINE_PERMISSIONS.VIEW_EXCEPTION,
   ]),
   CLERK: new Set([JE_PERMISSIONS.VIEW, JE_DRAFT_PERMISSIONS.CREATE, JE_DRAFT_PERMISSIONS.EDIT, JE_DRAFT_PERMISSIONS.VOID]),
 };
@@ -143,6 +185,11 @@ describe('coa-service route-level authorization (R0 Stabilization Phase 3)', () 
     { story: 'S208', permission: FISCAL_PERMISSIONS.MANAGE, routeFn: fiscalRoutes, serviceToken: 'FiscalCalendarService', prefix: '/fiscal', method: 'POST', path: '/fiscal/entities/e1/fiscal-calendar', grantedRole: 'ADMIN', payload: { fyStartMonth: 1, structure: 'TWELVE' } },
     { story: 'S209', permission: PERIOD_PERMISSIONS.VIEW, routeFn: periodRoutes, serviceToken: 'PeriodService', prefix: '/fiscal', method: 'GET', path: '/fiscal/periods', grantedRole: 'ACCOUNTANT' },
     { story: 'S209', permission: PERIOD_PERMISSIONS.OPEN, routeFn: periodRoutes, serviceToken: 'PeriodService', prefix: '/fiscal', method: 'POST', path: '/fiscal/periods/p1/open', grantedRole: 'ADMIN', payload: {} },
+    { story: 'S008', permission: PERIOD_PERMISSIONS.SOFT_CLOSE, routeFn: periodRoutes, serviceToken: 'PeriodService', prefix: '/fiscal', method: 'POST', path: '/fiscal/periods/p1/soft-close', grantedRole: 'CONTROLLER', payload: { reason: 'x' } },
+    { story: 'S008', permission: PERIOD_PERMISSIONS.HARD_CLOSE, routeFn: periodRoutes, serviceToken: 'PeriodService', prefix: '/fiscal', method: 'POST', path: '/fiscal/periods/p1/hard-close', grantedRole: 'CONTROLLER', payload: { reason: 'x' } },
+    { story: 'S008', permission: PERIOD_PERMISSIONS.REOPEN, routeFn: periodRoutes, serviceToken: 'PeriodService', prefix: '/fiscal', method: 'POST', path: '/fiscal/periods/p1/reopen', grantedRole: 'CONTROLLER', payload: { reason: 'x' } },
+    { story: 'S008', permission: PERIOD_PERMISSIONS.REOPEN_HARD_CLOSED, routeFn: periodRoutes, serviceToken: 'PeriodService', prefix: '/fiscal', method: 'POST', path: '/fiscal/periods/p1/reopen-hard-closed', grantedRole: 'ADMIN', payload: { reason: 'x', confirm: true } },
+    { story: 'S008', permission: PERIOD_PERMISSIONS.LOCK, routeFn: periodRoutes, serviceToken: 'PeriodService', prefix: '/fiscal', method: 'POST', path: '/fiscal/periods/p1/lock', grantedRole: 'ADMIN', payload: { reason: 'x', confirm: true } },
     { story: 'S010', permission: SEED_PERMISSIONS.RUN, routeFn: seedRoutes, serviceToken: 'SeedService', prefix: '/coa', method: 'POST', path: '/coa/seed', grantedRole: 'ADMIN', payload: {} },
     { story: 'S213', permission: SEQUENCE_PERMISSIONS.GAP_REPORT, routeFn: sequenceRoutes, serviceToken: 'SequenceService', prefix: '/coa', method: 'GET', path: '/coa/journals/gap-report', grantedRole: 'ACCOUNTANT' },
     { story: 'S213', permission: SEQUENCE_PERMISSIONS.ALLOCATE, routeFn: sequenceRoutes, serviceToken: 'SequenceService', prefix: '/coa', method: 'POST', path: '/coa/journal-sequences/allocate', grantedRole: 'ADMIN', payload: { sourceCode: 'GJ', periodCode: '2026-01' } },
@@ -155,6 +202,14 @@ describe('coa-service route-level authorization (R0 Stabilization Phase 3)', () 
     { story: 'S214', permission: JE_DRAFT_PERMISSIONS.EDIT, routeFn: draftRoutes, serviceToken: 'DraftService', prefix: '/coa', method: 'PUT', path: '/coa/manual-journals/drafts/d1', grantedRole: 'ACCOUNTANT', payload: {} },
     { story: 'S220', permission: INQUIRY_PERMISSIONS.VIEW, routeFn: glInquiryRoutes, serviceToken: 'GLInquiryService', prefix: '/coa', method: 'GET', path: '/coa/inquiry/accounts/acc-1/activity?periodCode=2026-08', grantedRole: 'ACCOUNTANT' },
     { story: 'S221', permission: SEARCH_PERMISSIONS.SEARCH, routeFn: glSearchRoutes, serviceToken: 'GLSearchService', prefix: '/coa', method: 'GET', path: '/coa/inquiry/search?sourceCode=GJ', grantedRole: 'ACCOUNTANT' },
+    { story: 'S032', permission: TEMPLATE_PERMISSIONS.MANAGE, routeFn: recurringTemplateRoutes, serviceToken: 'RecurringTemplateService', prefix: '/coa', method: 'POST', path: '/coa/journal-templates', grantedRole: 'ADMIN', payload: { entityId: 'e1', code: 'RENT', name: 'Rent', lines: [{ accountId: 'a1', storeId: 's1', dr: 100 }, { accountId: 'a2', storeId: 's1', cr: 100 }] } },
+    { story: 'S032', permission: TEMPLATE_PERMISSIONS.GENERATE, routeFn: recurringTemplateRoutes, serviceToken: 'RecurringTemplateService', prefix: '/coa', method: 'POST', path: '/coa/journal-templates:generate', grantedRole: 'ACCOUNTANT', payload: { entityId: 'e1', periodId: 'p1' } },
+    { story: 'S019', permission: POSTING_ENGINE_PERMISSIONS.VIEW_RULE_PACK, routeFn: postingEngineRoutes, serviceToken: 'PostingEngineService', prefix: '/coa', method: 'GET', path: '/coa/posting-engine/rule-packs', grantedRole: 'ACCOUNTANT' },
+    { story: 'S019', permission: POSTING_ENGINE_PERMISSIONS.EDIT_RULE_PACK, routeFn: postingEngineRoutes, serviceToken: 'PostingEngineService', prefix: '/coa', method: 'POST', path: '/coa/posting-engine/rule-packs', grantedRole: 'CONTROLLER', payload: { packKey: 'cert', sourceText: '{}' } },
+    { story: 'S019', permission: POSTING_ENGINE_PERMISSIONS.VALIDATE_RULE_PACK, routeFn: postingEngineRoutes, serviceToken: 'PostingEngineService', prefix: '/coa', method: 'POST', path: '/coa/posting-engine/rule-packs/validate', grantedRole: 'ACCOUNTANT', payload: { sourceText: '{}' } },
+    { story: 'S019', permission: POSTING_ENGINE_PERMISSIONS.ACTIVATE_RULE_PACK, routeFn: postingEngineRoutes, serviceToken: 'PostingEngineService', prefix: '/coa', method: 'POST', path: '/coa/posting-engine/rule-pack-versions/v1/activate', grantedRole: 'ADMIN', payload: {} },
+    { story: 'S020', permission: POSTING_ENGINE_PERMISSIONS.VIEW_EXECUTION, routeFn: postingEngineRoutes, serviceToken: 'PostingEngineService', prefix: '/coa', method: 'GET', path: '/coa/posting-engine/executions', grantedRole: 'ACCOUNTANT' },
+    { story: 'S020', permission: POSTING_ENGINE_PERMISSIONS.VIEW_EXCEPTION, routeFn: postingEngineRoutes, serviceToken: 'PostingEngineService', prefix: '/coa', method: 'GET', path: '/coa/posting-engine/exceptions', grantedRole: 'ACCOUNTANT' },
   ];
 
   for (const c of cases) {
@@ -207,6 +262,131 @@ describe('coa-service route-level authorization (R0 Stabilization Phase 3)', () 
     });
   }
 
+  // ── S008 — two-tier reopen/lock separation ──────────────────────────────────
+  // The generic loop above proves each permission is enforced against a role
+  // with NO period-close permissions at all. That's not the same as proving
+  // the two-TIER split is real: CONTROLLER genuinely holds three of the five
+  // S008 permissions (soft_close/hard_close/reopen) yet must still be denied
+  // on the two elevated, ADMIN-only ones (reopen_hard_closed, lock) — a
+  // stronger negative than "holds nothing".
+  describe('S008 — reopen-hard-closed and lock are ADMIN-only, not CONTROLLER (two-tier reopen model)', () => {
+    let app: FastifyInstance;
+
+    beforeEach(async () => {
+      container.registerInstance('PeriodService', permissiveFakeService());
+      registerFakeAuthz();
+      app = await buildApp(periodRoutes, '/fiscal');
+    });
+
+    afterEach(async () => {
+      await app.close();
+    });
+
+    it('CONTROLLER (holds soft_close/hard_close/reopen) is denied reopen-hard-closed', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/fiscal/periods/p1/reopen-hard-closed',
+        headers: authed('CONTROLLER'),
+        payload: { reason: 'x', confirm: true },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({ error: 'FORBIDDEN', reason: 'NO_MATCHING_ROLE' });
+    });
+
+    it('CONTROLLER (holds soft_close/hard_close/reopen) is denied lock', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/fiscal/periods/p1/lock',
+        headers: authed('CONTROLLER'),
+        payload: { reason: 'x', confirm: true },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({ error: 'FORBIDDEN', reason: 'NO_MATCHING_ROLE' });
+    });
+
+    it('CONTROLLER can still soft-close, hard-close, and reopen (the ordinary tier is unaffected)', async () => {
+      for (const path of ['/fiscal/periods/p1/soft-close', '/fiscal/periods/p1/hard-close', '/fiscal/periods/p1/reopen']) {
+        const res = await app.inject({ method: 'POST', url: path, headers: authed('CONTROLLER'), payload: { reason: 'x' } });
+        expect(res.statusCode, `expected ${path} to allow CONTROLLER`).not.toBe(403);
+      }
+    });
+
+    it('ADMIN holds both elevated permissions', async () => {
+      for (const path of ['/fiscal/periods/p1/reopen-hard-closed', '/fiscal/periods/p1/lock']) {
+        const res = await app.inject({ method: 'POST', url: path, headers: authed('ADMIN'), payload: { reason: 'x', confirm: true } });
+        expect(res.statusCode, `expected ${path} to allow ADMIN`).not.toBe(403);
+      }
+    });
+  });
+
+  // ── S019/S020 — activation is ADMIN-only, not CONTROLLER (two-tier model,
+  // same shape as the S008 reopen-hard-closed/lock split above) ────────────
+  describe('S019 — rule_pack.activate is ADMIN-only, not CONTROLLER (CONTROLLER holds edit/validate but not activate)', () => {
+    let app: FastifyInstance;
+
+    beforeEach(async () => {
+      container.registerInstance('PostingEngineService', permissiveFakeService());
+      registerFakeAuthz();
+      app = await buildApp(postingEngineRoutes, '/coa');
+    });
+
+    afterEach(async () => {
+      await app.close();
+    });
+
+    it('CONTROLLER (holds edit/validate) is denied activate', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/coa/posting-engine/rule-pack-versions/v1/activate',
+        headers: authed('CONTROLLER'),
+        payload: {},
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({ error: 'FORBIDDEN', reason: 'NO_MATCHING_ROLE' });
+    });
+
+    it('CONTROLLER can still edit and validate rule packs (the ordinary tier is unaffected)', async () => {
+      const edit = await app.inject({ method: 'POST', url: '/coa/posting-engine/rule-packs', headers: authed('CONTROLLER'), payload: { packKey: 'cert', sourceText: '{}' } });
+      expect(edit.statusCode).not.toBe(403);
+      const validate = await app.inject({ method: 'POST', url: '/coa/posting-engine/rule-packs/validate', headers: authed('CONTROLLER'), payload: { sourceText: '{}' } });
+      expect(validate.statusCode).not.toBe(403);
+    });
+
+    it('ADMIN holds activate', async () => {
+      const res = await app.inject({ method: 'POST', url: '/coa/posting-engine/rule-pack-versions/v1/activate', headers: authed('ADMIN'), payload: {} });
+      expect(res.statusCode).not.toBe(403);
+    });
+  });
+
+  // ── S020 — POST /posting-engine/events is an internal application
+  // boundary, not gated by a posting_engine.* business permission (see the
+  // route file's header comment). It still requires an authenticated tenant
+  // context — proving that distinction is deliberate, not a gap.
+  describe('S020 — POST /posting-engine/events requires authentication but no specific business permission', () => {
+    let app: FastifyInstance;
+
+    beforeEach(async () => {
+      container.registerInstance('PostingEngineService', permissiveFakeService());
+      registerFakeAuthz();
+      app = await buildApp(postingEngineRoutes, '/coa');
+    });
+
+    afterEach(async () => {
+      await app.close();
+    });
+
+    it('rejects an unauthenticated request with 401', async () => {
+      const res = await app.inject({ method: 'POST', url: '/coa/posting-engine/events', headers: { 'x-tenant-id': 'tenant-a' }, payload: {} });
+      expect(res.statusCode).toBe(401);
+    });
+
+    it('allows an authenticated role with NO posting_engine.* grants at all (no business permission required)', async () => {
+      const res = await app.inject({ method: 'POST', url: '/coa/posting-engine/events', headers: authed('NO_PERMISSIONS_ROLE'), payload: {} });
+      expect(res.statusCode).not.toBe(401);
+      expect(res.statusCode).not.toBe(403);
+    });
+  });
+
   // ── draft-routes.ts special cases: requireDraftReader (any-of) + actorOf flags ──
 
   describe('S214/S219 — requireDraftReader (any granted draft permission may list/view)', () => {
@@ -231,6 +411,107 @@ describe('coa-service route-level authorization (R0 Stabilization Phase 3)', () 
     it('allows CLERK (granted CREATE/EDIT/VOID, though not VIEW_ALL) to hit the reader-gated list endpoint', async () => {
       const res = await app.inject({ method: 'GET', url: '/coa/manual-journals/drafts', headers: authed('CLERK') });
       expect(res.statusCode).not.toBe(403);
+    });
+  });
+
+  // ── S032 — Accountant generate-yes/manage-no separation ─────────────────────
+  // The generic loop above proves MANAGE is enforced against a role with NO
+  // template permissions at all. That's not the same as proving the
+  // GENERATE/MANAGE split is real: ACCOUNTANT genuinely holds
+  // je.template.generate and je.template.view (per the certified
+  // authorization matrix / db411c9's corrective pass) yet must still be
+  // denied on every MANAGE-gated action — a stronger negative than "holds
+  // nothing", the same shape as the S008 two-tier proof above.
+  describe('S032 — Accountant may generate but not manage recurring journal templates', () => {
+    let app: FastifyInstance;
+
+    beforeEach(async () => {
+      container.registerInstance('RecurringTemplateService', permissiveFakeService());
+      registerFakeAuthz();
+      app = await buildApp(recurringTemplateRoutes, '/coa');
+    });
+
+    afterEach(async () => {
+      await app.close();
+    });
+
+    it('Accountant create template -> 403', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/coa/journal-templates',
+        headers: authed('ACCOUNTANT'),
+        payload: { entityId: 'e1', code: 'RENT', name: 'Rent', lines: [{ accountId: 'a1', storeId: 's1', dr: 100 }, { accountId: 'a2', storeId: 's1', cr: 100 }] },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({ error: 'FORBIDDEN', reason: 'NO_MATCHING_ROLE' });
+    });
+
+    it('Accountant update template -> 403', async () => {
+      const res = await app.inject({
+        method: 'PUT',
+        url: '/coa/journal-templates/t1',
+        headers: authed('ACCOUNTANT'),
+        payload: { name: 'Rent (revised)' },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({ error: 'FORBIDDEN', reason: 'NO_MATCHING_ROLE' });
+    });
+
+    it('Accountant deactivate template -> 403', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/coa/journal-templates/t1/deactivate',
+        headers: authed('ACCOUNTANT'),
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({ error: 'FORBIDDEN', reason: 'NO_MATCHING_ROLE' });
+    });
+
+    it('Accountant activate template -> 403 (also MANAGE-gated)', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/coa/journal-templates/t1/activate',
+        headers: authed('ACCOUNTANT'),
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({ error: 'FORBIDDEN', reason: 'NO_MATCHING_ROLE' });
+    });
+
+    it('Accountant generate journal -> allowed', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/coa/journal-templates:generate',
+        headers: authed('ACCOUNTANT'),
+        payload: { entityId: 'e1', periodId: 'p1' },
+      });
+      expect(res.statusCode).not.toBe(401);
+      expect(res.statusCode).not.toBe(403);
+    });
+
+    it('Accountant can list/view templates (requireTemplateReader — any-of MANAGE/GENERATE/VIEW)', async () => {
+      const res = await app.inject({ method: 'GET', url: '/coa/journal-templates', headers: authed('ACCOUNTANT') });
+      expect(res.statusCode).not.toBe(403);
+    });
+
+    it('a role with NO template permissions is denied the reader-gated list endpoint too', async () => {
+      const res = await app.inject({ method: 'GET', url: '/coa/journal-templates', headers: authed('NO_PERMISSIONS_ROLE') });
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({ error: 'FORBIDDEN', message: 'No recurring-template permissions' });
+    });
+
+    it('Controller and Admin (holders of MANAGE) can create/update/deactivate (the manage tier is unaffected)', async () => {
+      for (const role of ['ADMIN', 'CONTROLLER']) {
+        // Only ADMIN is granted MANAGE per the certified matrix; CONTROLLER
+        // is included here to prove it too is denied (matches the S032
+        // matrix: CONTROLLER holds view/manage/generate exactly like ADMIN).
+        const res = await app.inject({
+          method: 'POST',
+          url: '/coa/journal-templates',
+          headers: authed(role),
+          payload: { entityId: 'e1', code: 'RENT', name: 'Rent', lines: [{ accountId: 'a1', storeId: 's1', dr: 100 }, { accountId: 'a2', storeId: 's1', cr: 100 }] },
+        });
+        expect(res.statusCode, `expected create to allow ${role}`).not.toBe(403);
+      }
     });
   });
 });

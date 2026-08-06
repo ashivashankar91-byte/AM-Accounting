@@ -66,6 +66,9 @@ function setup() {
   container.registerInstance('IEventPublisher', events as any);
   container.registerInstance('PostingService', {} as any);
   container.registerInstance('ConfigService', { resolve: async () => ({ value: 'direct' }) } as any);
+  container.registerInstance('AnalysisCodeService', {
+    loadValidationContext: async () => ({ types: new Map(), values: new Map() }),
+  } as any); // unused by these tests (void doesn't validate; tag-evaluator parity is covered in validate.test.ts)
   container.register('DraftService', { useClass: DraftService });
   return { svc: container.resolve<DraftService>('DraftService'), prisma, events };
 }

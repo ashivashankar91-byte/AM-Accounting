@@ -34,6 +34,14 @@ export const RESERVED_SOURCES: ReservedSource[] = [
   { code: 'PART', numericAlias: 32, name: 'Parts Sales', sourceClass: 'SYSTEM', flags: { ...noFlags, autoPost: true } },
   { code: 'WARR', numericAlias: 40, name: 'Warranty Remittances', sourceClass: 'SYSTEM', flags: { ...noFlags, autoPost: true } },
   { code: 'PAY', numericAlias: 95, name: 'Payroll', sourceClass: 'SYSTEM', flags: { ...noFlags, autoPost: true } },
+  // S032/BLK-20 — dedicated recurring-journal template source (PO-ratified:
+  // a dedicated code, never GJ/88). Verified against this table: 'RT' is a
+  // 2-char code (fits VarChar(6) + CODE_RE ^[A-Z0-9]{2,6}$) and is not used by
+  // any code above; numericAlias 50 is not used by any numericAlias above
+  // (88/3/90/91/30/32/40/95). MANUAL, not SYSTEM: generated journals flow
+  // through the S214 manual-draft path (a human still posts them) — S212's
+  // assertUsableByManual() gate would otherwise reject a SYSTEM source here.
+  { code: 'RT', numericAlias: 50, name: 'Recurring Journal Template', sourceClass: 'MANUAL', flags: { ...noFlags } },
 ];
 
 // ── Validators ─────────────────────────────────────────────────────────────────

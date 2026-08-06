@@ -59,8 +59,12 @@ model ScheduleDetail {
   amount         Decimal   @db.Decimal(15, 2)
   // DE-REFNO: PIC X(12)
   referenceNumber String?  @db.VarChar(12) @map("reference_number")
-  // DE-SOURCE: PIC XX — 2-char journal source code
-  journalSource  String?   @db.Char(2) @map("journal_source")
+  // DE-SOURCE: PIC XX — 2-char journal source code for legacy gl-service-
+  // sourced details. CE-12 (coa-service posting-engine bridge) journal
+  // source codes are 3-6 chars (coa-service's JournalSource.code is
+  // VarChar(6)) — widened from CHAR(2) so those don't hard-fail on insert.
+  // Purely additive: existing 2-char values are unaffected.
+  journalSource  String?   @db.VarChar(10) @map("journal_source")
   // DE-DATE1: YYYYMMDD
   transactionDate DateTime? @map("transaction_date")
   // DE-ACCTNO: PIC X(20) — which of the schedule's GLs this line belongs to
@@ -84,11 +88,17 @@ model ScheduleDetail {
 
   // Source journal entry (populated from JOURNAL_ENTRY_POSTED event)
   journalEntryId String?   @map("journal_entry_id")
+  // @wave S026 — per-line idempotency key (outbox event correlationId). Replaces the
+  // old journalEntryId-only dedup, which silently dropped a second schedule-relevant
+  // line on the same journal entry. Nullable: manually-created details (POST
+  // /details) have no source event.
+  sourceCorrelationId String? @map("source_correlation_id")
 
   createdAt      DateTime  @default(now()) @map("created_at")
 
   schedule Schedule @relation(fields: [tenantId, scheduleNumber], references: [tenantId, scheduleNumber])
 
+  @@unique([tenantId, sourceCorrelationId])
   @@map("schedule_details")
   @@index([tenantId, scheduleNumber])
   @@index([tenantId, scheduleNumber, controlNumber])
@@ -114,6 +124,368 @@ model SchedulePermission {
   @@map("schedule_permissions")
   @@index([tenantId, userId])
   @@index([tenantId, scheduleNumber])
+}
+
+// @trace-cobol komdetail.cbl DE-APPLYNO/DE-APPLY-CD generalized into a real
+// open-item balance ledger. @wave S026 — Schedule Open-Item Core.
+// schedule_key = (tenantId, scheduleNumber, controlNumber) — UQ-18 interim resolution
+// (docs/accounting-modernization/S026_S027_IMPLEMENTATION_CONTRACT.md).
+// Open-item identity = schedule_key + itemNumber (referenceNumber, falling back to
+// journalEntryId). A posted line with no applyNumber opens a new item; a line whose
+// applyNumber matches an existing item's itemNumber applies against it.
+model ScheduleOpenItem {
+  id             String  @id @default(cuid())
+  tenantId       String  @map("tenant_id")
+  scheduleNumber String  @db.Char(2) @map("schedule_number")
+  controlNumber  String  @db.VarChar(10) @map("control_number")
+  // Targetable business reference a later application's applyNumber must match.
+  itemNumber     String  @db.VarChar(20) @map("item_number")
+  glAccountNumber String? @db.VarChar(20) @map("gl_account_number")
+  // Widened from CHAR(2) — see the identical ScheduleDetail.journalSource
+  // comment above; same CE-12 bridge-compatibility reasoning applies here.
+  journalSource  String? @db.VarChar(10) @map("journal_source")
+
+  originalAmount   Decimal @db.Decimal(15, 2) @map("original_amount")
+  appliedAmount    Decimal @default(0) @db.Decimal(15, 2) @map("applied_amount")
+  // Denormalized (= originalAmount - appliedAmount) for query speed; DB CHECK
+  // constraint (migration 20260730010000) enforces it stays sign/magnitude-consistent
+  // with originalAmount — over-application protection at the storage layer, not just
+  // in application code.
+  remainingBalance Decimal @db.Decimal(15, 2) @map("remaining_balance")
+  // OPEN | PARTIALLY_APPLIED | CLOSED | WRITTEN_OFF
+  // @wave S029 — WRITTEN_OFF added: a distinct terminal state from CLOSED so
+  // tie-out/aging/reporting can tell "settled by application" apart from
+  // "settled by write-off ceremony" without inspecting ceremony history.
+  status           String  @default("OPEN")
+
+  transactionDate DateTime? @map("transaction_date")
+  // Drives S027 aging; falls back to transactionDate when null.
+  dueDate         DateTime? @map("due_date")
+  description     String?   @db.VarChar(200)
+
+  // Traceability back to the originating posted transaction.
+  journalEntryId      String @map("journal_entry_id")
+  scheduleDetailId    String? @map("schedule_detail_id")
+  // Idempotency key: the outbox event's correlationId for the specific posted line
+  // that created this item (gl-service.ts: `${entryCorrelationId}-line-${lineNumber}`).
+  sourceCorrelationId String @map("source_correlation_id")
+
+  // @wave S029 — Split lineage (Fable §3-S029: "each part carries lineage to
+  // parent"). Null for items not produced by a split. No FK constraint (self
+  // reference across a table with composite tenant scoping) — parentItemId is
+  // the parent ScheduleOpenItem.id, validated in application code.
+  parentItemId String? @map("parent_item_id")
+  // @wave S029 — set only when status = WRITTEN_OFF; distinct permission
+  // (schedule.open_item.writeoff) and journal-posted (never subledger-only
+  // deletion) per Fable §3-S029/§4.
+  writeOffReason         String? @db.VarChar(500) @map("write_off_reason")
+  writeOffJournalEntryId String? @map("write_off_journal_entry_id")
+
+  closedAt  DateTime? @map("closed_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  applications ScheduleApplication[]
+
+  @@unique([tenantId, sourceCorrelationId])
+  @@map("schedule_open_items")
+  @@index([tenantId, scheduleNumber, controlNumber, itemNumber])
+  @@index([tenantId, scheduleNumber, status])
+  @@index([tenantId, glAccountNumber])
+  @@index([tenantId, dueDate])
+  @@index([tenantId, parentItemId])
+}
+
+// @wave S029 — generic idempotent ceremony ledger for split / transfer /
+// write-off. One row per ceremony invocation, keyed by caller-supplied
+// idempotencyKey (client token) per Fable §10: "every ceremony idempotent
+// (client token); optimistic concurrency on items." A replay with the same
+// idempotencyKey returns the original result rather than re-executing.
+model ScheduleCeremony {
+  id             String @id @default(cuid())
+  tenantId       String @map("tenant_id")
+  // SPLIT | TRANSFER | WRITEOFF
+  ceremonyType   String @map("ceremony_type")
+  openItemId     String @map("open_item_id")
+  idempotencyKey String @map("idempotency_key")
+  reason         String @db.VarChar(500)
+  actor          String
+  // Populated only for WRITEOFF (the posted journal reference) — split/
+  // transfer never post a journal themselves (they only move/divide the
+  // open-item ledger; conservation is enforced in application code).
+  journalEntryId String? @map("journal_entry_id")
+  // Result payload for replay responses (e.g. created child item ids for a
+  // split, or the new control identity for a transfer).
+  result         Json?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, idempotencyKey])
+  @@map("schedule_ceremonies")
+  @@index([tenantId, openItemId])
+}
+
+// @wave S029 — D-CE08-02 (write-off authority threshold) is
+// APPROVED_IN_PRINCIPLE with no exact value stated in the Fable package.
+// SAFE_CONFIGURATION pattern (same as ScheduleAgingBucketConfig for
+// D-CE08-03): a per-tenant configurable threshold, defaulting to null (no
+// threshold enforced) rather than inventing a specific dollar amount. When
+// set, write-offs above the threshold are refused pending higher authority
+// (§3-S029, §14 AC3) until raised or a distinct approval path is added.
+model ScheduleWriteOffConfig {
+  id             String    @id @default(cuid())
+  tenantId       String    @unique @map("tenant_id")
+  thresholdAmount Decimal? @db.Decimal(15, 2) @map("threshold_amount")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  updatedBy      String?   @map("updated_by")
+
+  @@map("schedule_write_off_configs")
+}
+
+// @wave S027 completion — exception rule evaluation config. Fable §3-S027
+// requires "exception rules evaluated on schedule (stale > N days, credit
+// balance on debit-class account, missing references, over control-limit
+// where defined)" — this was documented but not implemented in the S026/S027
+// certified code (verified in this worktree: no ScheduleException model or
+// rule engine existed prior to CE-08). SAFE_CONFIGURATION defaults below are
+// derived from the aging engine's own existing default (staleDays=90 matches
+// the "90+" bucket already in DEFAULT_AGING_BUCKETS); controlLimitAmount
+// null = not evaluated ("where defined" per source).
+model ScheduleExceptionRuleConfig {
+  id                String   @id @default(cuid())
+  tenantId          String   @unique @map("tenant_id")
+  staleDays         Int      @default(90) @map("stale_days")
+  controlLimitAmount Decimal? @db.Decimal(15, 2) @map("control_limit_amount")
+  // DEBIT | CREDIT — the schedule's expected normal balance sign, used to
+  // flag "credit balance on debit-class account" (and the mirror case).
+  normalBalance     String   @default("DEBIT") @map("normal_balance")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  updatedBy         String?  @map("updated_by")
+
+  @@map("schedule_exception_rule_configs")
+}
+
+// @wave S027 completion — exception worklist. One row per detected rule
+// breach per open item per evaluation run; disposition is tracked (never
+// silently cleared) per Fable §3-S027/§14 AC2.
+model ScheduleException {
+  id             String  @id @default(cuid())
+  tenantId       String  @map("tenant_id")
+  openItemId     String  @map("open_item_id")
+  scheduleNumber String  @db.Char(2) @map("schedule_number")
+  controlNumber  String  @db.VarChar(10) @map("control_number")
+  // STALE | CREDIT_BALANCE_ON_DEBIT_ACCOUNT | MISSING_REFERENCE | OVER_CONTROL_LIMIT
+  ruleType       String  @map("rule_type")
+  detail         String  @db.VarChar(500)
+  // OPEN | DISPOSITIONED
+  status         String  @default("OPEN")
+  dispositionNote String? @db.VarChar(500) @map("disposition_note")
+  dispositionedBy String? @map("dispositioned_by")
+  dispositionedAt DateTime? @map("dispositioned_at")
+  detectedAt     DateTime @default(now()) @map("detected_at")
+  runId          String   @map("run_id")
+
+  @@map("schedule_exceptions")
+  // One open exception per (item, rule) at a time — re-evaluation updates
+  // rather than duplicates an already-open exception of the same rule type.
+  @@unique([tenantId, openItemId, ruleType, status])
+  @@index([tenantId, scheduleNumber, status])
+  @@index([tenantId, runId])
+}
+
+// @wave S030 — retained evidence for every generated AR schedule statement.
+// Read-only over the subledger at generation time (Fable §14 AC3: "Generation
+// posts nothing and mutates nothing") — content is a frozen snapshot, never
+// regenerated in place.
+model ScheduleStatementRun {
+  id              String   @id @default(cuid())
+  tenantId        String   @map("tenant_id")
+  scheduleNumber  String   @db.Char(2) @map("schedule_number")
+  controlNumber   String   @db.VarChar(10) @map("control_number")
+  asOfDate        DateTime @map("as_of_date")
+  generatedAt     DateTime @default(now()) @map("generated_at")
+  generatedBy     String   @map("generated_by")
+  // D-CE08-06 approved: print/PDF only for v1 — content is a structured,
+  // print-ready snapshot (header/lines/totals); no e-delivery transport is
+  // implemented (explicitly excluded, Fable §13).
+  deliveryChannel String   @default("PRINT_PDF") @map("delivery_channel")
+  totalAmount     Decimal  @db.Decimal(15, 2) @map("total_amount")
+  itemCount       Int      @map("item_count")
+  content         Json
+
+  @@map("schedule_statement_runs")
+  @@index([tenantId, scheduleNumber, controlNumber])
+  @@index([tenantId, asOfDate])
+}
+
+// @wave S030 — D-CE08-05 (statement/dunning content, branding, escalation
+// timing) is APPROVED_IN_PRINCIPLE with no exact content/branding/timing
+// stated in the Fable package. SAFE_CONFIGURATION pattern: generic,
+// tenant-overridable dunning levels with neutral placeholder labels — not a
+// specific brand voice or legal collections copy, which would be inventing
+// accounting/legal behavior absent from the source.
+model ScheduleDunningConfig {
+  id        String   @id @default(cuid())
+  tenantId  String   @unique @map("tenant_id")
+  // Ordered JSON array of {level, afterDays, label, bodyTemplate}.
+  levels    Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedBy String?  @map("updated_by")
+
+  @@map("schedule_dunning_configs")
+}
+
+// @wave S030 — retained evidence for every generated dunning notice.
+model ScheduleDunningRun {
+  id             String   @id @default(cuid())
+  tenantId       String   @map("tenant_id")
+  scheduleNumber String   @db.Char(2) @map("schedule_number")
+  controlNumber  String   @db.VarChar(10) @map("control_number")
+  level          Int
+  generatedAt    DateTime @default(now()) @map("generated_at")
+  generatedBy    String   @map("generated_by")
+  statementRunId String?  @map("statement_run_id")
+  content        Json
+
+  @@map("schedule_dunning_runs")
+  @@index([tenantId, scheduleNumber, controlNumber])
+}
+
+// @wave S028 — Fable §3-S028: "unapplied receipts route to governed customer
+// credit per the approved S023 flow (no orphan cash)". S023's customer-credit
+// consumption lives in apar-service/CE-09 (outside CE-08's five stories,
+// §12 dependency boundary) — this table + the SCHEDULE_UNAPPLIED_RECEIPT
+// outbox event are schedule-service's (CE-08-owned) half of that contract: a
+// posted line that could not be matched to any open item via the D-CE08-01
+// auto-application sweep is recorded here and published, rather than
+// silently absorbed or fabricated as a new open item.
+model ScheduleUnappliedReceipt {
+  id                  String   @id @default(cuid())
+  tenantId            String   @map("tenant_id")
+  scheduleNumber      String   @db.Char(2) @map("schedule_number")
+  controlNumber       String   @db.VarChar(10) @map("control_number")
+  amount              Decimal  @db.Decimal(15, 2)
+  journalEntryId      String   @map("journal_entry_id")
+  sourceCorrelationId String   @map("source_correlation_id")
+  // PENDING_CE09_CREDIT_ROUTE — awaiting the CE-09/S023 consumer. No
+  // schedule-service code transitions this status; it exists so the
+  // condition is visible/queryable rather than silently dropped.
+  status              String   @default("PENDING_CE09_CREDIT_ROUTE")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, sourceCorrelationId])
+  @@map("schedule_unapplied_receipts")
+  @@index([tenantId, scheduleNumber, controlNumber])
+  @@index([tenantId, status])
+}
+
+// One row per application of a settling transaction (or manual operator action)
+// against a ScheduleOpenItem. Append-only — a reversal is a new negating row, never
+// a mutation of the original (matches komdetail's "amount immutable once posted"
+// convention and this repo's APPayment void-by-new-row pattern).
+model ScheduleApplication {
+  id             String  @id @default(cuid())
+  tenantId       String  @map("tenant_id")
+  openItemId     String  @map("open_item_id")
+  scheduleNumber String  @db.Char(2) @map("schedule_number")
+  controlNumber  String  @db.VarChar(10) @map("control_number")
+  // Positive = reduces the open item's remaining balance toward zero (same sign
+  // convention as originalAmount); a reversal posts the negated amount.
+  amount         Decimal @db.Decimal(15, 2)
+
+  journalEntryId      String  @map("journal_entry_id")
+  // Idempotency key — see ScheduleOpenItem.sourceCorrelationId. For manual
+  // (operator-initiated) applications, this is the caller-supplied idempotency key.
+  sourceCorrelationId String  @map("source_correlation_id")
+  isManual            Boolean @default(false) @map("is_manual")
+  appliedBy           String? @map("applied_by")
+  note                String? @db.VarChar(500)
+
+  appliedAt    DateTime  @default(now()) @map("applied_at")
+  reversedAt   DateTime? @map("reversed_at")
+  reversalOfId String?   @map("reversal_of_id")
+
+  openItem ScheduleOpenItem @relation(fields: [openItemId], references: [id])
+
+  @@unique([tenantId, sourceCorrelationId])
+  @@map("schedule_applications")
+  @@index([tenantId, openItemId])
+  @@index([tenantId, scheduleNumber, controlNumber])
+}
+
+// Nightly (or on-demand) reconciliation of schedule-service's own open-item
+// balances against gl-service's GL control-account ending balance. Discrepancies
+// are persisted and exposed — never silently corrected on either side.
+model ScheduleGlTieOut {
+  id              String   @id @default(cuid())
+  tenantId        String   @map("tenant_id")
+  scheduleNumber  String   @db.Char(2) @map("schedule_number")
+  glAccountNumber String   @db.VarChar(20) @map("gl_account_number")
+  asOfDate        DateTime @map("as_of_date")
+
+  scheduleBalance Decimal @db.Decimal(15, 2) @map("schedule_balance")
+  glBalance       Decimal? @db.Decimal(15, 2) @map("gl_balance")
+  variance        Decimal? @db.Decimal(15, 2)
+
+  // MATCHED | DISCREPANCY | GL_UNAVAILABLE
+  status       String  @default("MATCHED")
+  glQueryError String? @map("gl_query_error")
+  // Groups every row produced by one tie-out run.
+  runId        String  @map("run_id")
+  triggeredBy  String? @map("triggered_by")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("schedule_gl_tie_outs")
+  @@unique([tenantId, scheduleNumber, glAccountNumber, asOfDate, runId])
+  @@index([tenantId, asOfDate])
+  @@index([tenantId, status])
+  @@index([tenantId, runId])
+}
+
+// @wave S027 — Schedule Aging Engine.
+// Per-tenant configurable aging bucket definitions — not hard-coded.
+// `buckets` is an ordered JSON array of {label, upperBoundDays} where
+// upperBoundDays is the inclusive day-count boundary for that bucket (an
+// item ages into the first bucket whose upperBoundDays >= its age in days);
+// the last bucket's upperBoundDays MUST be null (catch-all, e.g. "90+").
+// Default (applied when a tenant has no row here — see domain/aging.ts
+// DEFAULT_AGING_BUCKETS): Current(<=0) / 1-30 / 31-60 / 61-90 / 90+,
+// extending the legacy CUR/OVR30/OVR60/OVR90 convention
+// (komdetail.extraction.md) with the standard AR 1-30 split since the
+// legacy extraction did not document exact day boundaries.
+model ScheduleAgingBucketConfig {
+  id        String   @id @default(cuid())
+  tenantId  String   @unique @map("tenant_id")
+  buckets   Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedBy String?  @map("updated_by")
+
+  @@map("schedule_aging_bucket_configs")
+}
+
+/// S026: schedule-service had no audit mechanism at all before this (matches
+/// the R0 Stabilization Phase 4 AuditPort pattern already shipped in
+/// tenant-service/auth-service/coa-service/apar-service). Every open-item
+/// create/apply/reverse and tie-out run writes a before/after record here;
+/// AuditOutboxDrainer (wired in src/index.ts) drains unpublished rows to the
+/// real S007 audit-service.
+model AuditOutboxEvent {
+  id            String    @id @default(uuid())
+  tenantId      String    @map("tenant_id")
+  docType       String    @map("doc_type")
+  docId         String    @map("doc_id")
+  action        String
+  before        Json?
+  after         Json?
+  actor         String
+  correlationId String?   @map("correlation_id")
+  publishedAt   DateTime? @map("published_at")
+  retryCount    Int       @default(0) @map("retry_count")
+  lastError     String?   @map("last_error")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@index([publishedAt, retryCount])
+  @@map("audit_outbox")
 }
 
 /// Outbox pattern for reliable event publishing from schedule-service.

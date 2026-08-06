@@ -1,0 +1,160 @@
+story_id,epic,title,release,service,status,gap_or_evidence
+S200,CE-01,Create & Maintain Legal Entity,R0,tenant-service,CERTIFIED,
+S201,CE-01,Create & Maintain Store (Rooftop),R0,tenant-service,CERTIFIED,
+S202,CE-01,Dealer Group Hierarchy View & Maintenance,R0,tenant-service,CERTIFIED,
+S203,CE-01,Department Code Maintenance,R0,tenant-service,CERTIFIED,
+S204,CE-01,Franchise Maintenance,R0,tenant-service,CERTIFIED,
+S205,CE-01,User Account Lifecycle,R0,tenant-service,CERTIFIED,
+S206,CE-01,Basic Role Management,R0,tenant-service,CERTIFIED,
+S207,CE-01,Permission Catalog & Check API,R0,tenant-service,CERTIFIED,
+S004A,CE-01,Dealership Position Role Templates,R0,tenant-service,CERTIFIED,
+S007,CE-01,Immutable Audit Log,R0,tenant-service,CERTIFIED,
+S224,CE-01,Document Audit History View,R0,tenant-service,CERTIFIED,
+S223,CE-01,Configuration Framework,R0,tenant-service,CERTIFIED,
+S208,CE-02,Fiscal Calendar Definition,R0,tenant-service,CERTIFIED,
+S209,CE-02,Accounting Period Open & Status,R0,tenant-service,CERTIFIED,
+S210,CE-03,Basic Chart of Accounts CRUD,R0,coa-service,CERTIFIED,
+S211,CE-03,Account Hierarchy & Totaling Groups,R0,coa-service,CERTIFIED,
+S010,CE-03,Seed Canonical COA Skeleton,R0,coa-service,CERTIFIED,
+S212,CE-03,Journal Source Registry,R0,coa-service,CERTIFIED,
+S213,CE-03,Journal Numbering Sequences,R0,coa-service,CERTIFIED,
+S013,CE-03,Balanced Journal Posting API,R0,coa-service,CERTIFIED,
+S014,CE-03,Trial Balance API,R0,coa-service,CERTIFIED,
+S214,CE-04,Create & Save Draft Manual JE,R0,gl-service,CERTIFIED,
+S215,CE-04,Validate Manual JE,R0,gl-service,CERTIFIED,
+S216,CE-04,Post Manual JE (Direct-Post Mode),R0,gl-service,CERTIFIED,
+S217,CE-04,View Journal Entry,R0,gl-service,CERTIFIED,
+S218,CE-04,Reverse Posted Journal Entry,R0,gl-service,CERTIFIED,
+S219,CE-04,Void/Delete Draft JE,R0,gl-service,BLOCKED_WITH_EXACT_GAP,"SoD Matrix (S004B equivalent) — SoD validator exists in close-service/src/domain/sod-validator.ts but as embedded close-logic, not a standalone story-level persistent SoD enforcement service."
+S220,CE-05,GL Account Activity Inquiry,R0,gl-service,CERTIFIED,
+S221,CE-05,GL Search,R0,gl-service,CERTIFIED,
+S222,CE-05,Trial Balance Screen & Export,R0,gl-service,CERTIFIED,
+S227,CE-05,Basic Balance Sheet & Income Statement,R0,gl-service,CERTIFIED,
+S008,CE-06,Period Soft/Hard Close Enforcement,R1,tenant-service,CERTIFIED,
+S031,CE-06,Manual JE Approval Governance,R1,tenant-service,BLOCKED_WITH_EXACT_GAP,InMemoryApprovalWorkflow — approval-service holds approvals in-memory only; no persistent DB-backed state table; CE-07 contract satisfied but S031 approval-state persistence is unverified.
+S032,CE-06,Recurring & Auto-Reversing JE Templates,R1,tenant-service,CERTIFIED,
+S004B,CE-06,SoD Matrix & Mitigating Controls,R1,tenant-service,CERTIFIED,
+S009,CE-06,COA Statement Metadata & Franchise Packs,R1,tenant-service,CERTIFIED,
+S011,CE-03,Analysis Codes,R1,coa-service,CERTIFIED,
+S012,CE-06,COA Change Governance,R1,tenant-service,CERTIFIED,
+S019,CE-07,Posting DSL Parser & Validator,R1,posting-recovery-service/gl-service,CERTIFIED,
+S020,CE-07,Posting Rule Evaluator & Orchestration,R1,posting-recovery-service/gl-service,CERTIFIED,
+S021,CE-07,Posting Dead-Letter Queue & Replay,R1,posting-recovery-service/gl-service,CERTIFIED,
+S023,CE-07,Rule Pack v1 (AP/AR/Cash),R1,posting-recovery-service/gl-service,CERTIFIED,
+S026,CE-08,Schedule Open-Item Core,R1,gl-service,CERTIFIED,
+S027,CE-08,Schedule Aging Engine,R1,gl-service,CERTIFIED,
+S028,CE-08,Schedule Exception Rules & Escalation,R1,gl-service,CERTIFIED,
+S029,CE-08,Schedule Item Split/Transfer/Writeoff,R1,gl-service,CERTIFIED,
+S003,CE-06,Elimination Entity Attributes,R1,tenant-service,CERTIFIED,
+S036A,CE-09,Vendor Master CRUD,R2,cash-service/apar-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S036B,CE-09,Vendor Verification Integrations,R2,cash-service/apar-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S039,CE-09,AP Invoice Entry & 2/3-Way Match,R2,cash-service/apar-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S041,CE-09,AP Approval Matrix,R2,cash-service/apar-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S042,CE-09,Use-Tax Self-Assessment,R2,cash-service/apar-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S043A,CE-09,Manual Single Payment,R2,cash-service/apar-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S043B,CE-09,Payment Runs & Rails,R2,cash-service/apar-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S044,CE-09,Trade-Payoff Fast Lane,R2,cash-service/apar-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S045,CE-09,Void/Stop/Reissue & Check Escheat,R2,cash-service/apar-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S046,CE-09,"Customer AR Master, Credit & Statements",R2,cash-service/apar-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S048,CE-09,Wholesale Vehicle AR & Title Gate,R2,cash-service/apar-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S050,CE-09,AR Write-offs & Allowance Model,R2,cash-service/apar-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S051,CE-09,NSF Handling,R2,cash-service/apar-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S052,CE-09,Receipting POS & Drawers,R2,cash-service/apar-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S053,CE-09,Deposit Workflow & Bank Feed Match,R2,cash-service/apar-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S054A,CE-09,Manual Bank Reconciliation Workbench,R2,cash-service/apar-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S055,CE-09,Merchant Settlement Reconciliation,R2,cash-service/apar-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S057,CE-09,Daily Cash Position Dashboard,R2,cash-service/apar-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S030,CE-08,Schedule Statements & Dunning,R2,gl-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S124,CE-10,Certified Tax Engine Adapter,R2,fixedops-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S125,CE-10,Regulatory Fee Tables,R2,fixedops-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R2 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S059,CE-11,RO Close Posting (All Pay Types),R3,parts-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S060,CE-11,RO Reopen/Void Auto-Reversal,R3,parts-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S061,CE-11,Labor WIP Mode & Open-RO Report,R3,parts-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S062,CE-11,Sublet PO Lifecycle,R3,parts-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S064,CE-11,Deferred Maintenance Contracts v1,R3,parts-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S065,CE-11,Warranty Claim Receivable Lifecycle,R3,parts-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S066,CE-11,Parts Movement Posting & Tie-Out,R3,parts-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S067,CE-11,OEM Price-Tape Revaluation,R3,parts-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S068,CE-11,Obsolescence Provision & Scrap,R3,parts-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S069,CE-11,Parts Physical Inventory,R3,parts-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S070,CE-11,Special-Order Deposits & Escheat,R3,parts-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S049,CE-09,Insurance AR (Body Shop),R3,cash-service/apar-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S054B,CE-09,Rule-Based Bank Auto-Match,R3,cash-service/apar-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R3 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S074,CE-12,Vehicle Unit Ledger & Stock-In,R4,deal-accounting-service/vehicle-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S075,CE-12,Demo Reclass & Depreciation,R4,deal-accounting-service/vehicle-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S076,CE-12,Used LCNRV Write-downs,R4,deal-accounting-service/vehicle-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S077,CE-12,Dealer Trades,R4,deal-accounting-service/vehicle-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S079,CE-12,Floorplan Lender Feed Adapters,R4,deal-accounting-service/vehicle-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S080,CE-12,Floorplan VIN Match & Breaks,R4,deal-accounting-service/vehicle-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S081,CE-12,SOT Monitor,R4,deal-accounting-service/vehicle-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S082,CE-12,Floorplan Interest & Curtailments,R4,deal-accounting-service/vehicle-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S024,CE-12,Vehicle+F&I Rule Pack,R4,deal-accounting-service/vehicle-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S084,CE-12,Deal JE Generator,R4,deal-accounting-service/vehicle-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S085,CE-12,Biller Review Workbench,R4,deal-accounting-service/vehicle-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S086,CE-12,Deal Unwind,R4,deal-accounting-service/vehicle-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S087,CE-12,Recontract Delta Posting,R4,deal-accounting-service/vehicle-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S088,CE-12,CIT Funding Match,R4,deal-accounting-service/vehicle-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S089,CE-12,Trade Payoff Issuance & Variance,R4,deal-accounting-service/vehicle-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S090,CE-12,Wholesale Disposition & Arbitration,R4,deal-accounting-service/vehicle-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S091,CE-12,Finance Reserve & Flat-% Chargeback Reserve,R4,deal-accounting-service/vehicle-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S092,CE-12,F&I Product Income & Remit Accrual,R4,deal-accounting-service/vehicle-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S093,CE-12,Product Cancellations,R4,deal-accounting-service/vehicle-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S094,CE-12,Dealer-Obligor Deferral Mode,R4,deal-accounting-service/vehicle-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S108,CE-13,Payroll Run GL Posting,R4,payroll-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S109,CE-13,Commission Engine,R4,payroll-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S110,CE-13,Chargeback Clawback Consumption,R4,payroll-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S111,CE-13,Compensation Accruals,R4,payroll-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S112,CE-13,Tech Flag-to-Payroll Bridge,R4,payroll-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S025,CE-13,Payroll+Close Rule Pack,R4,payroll-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S047,CE-09,Fleet AR Consolidated Billing,R4,cash-service/apar-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S056,CE-09,ZBA Sweeps & FP-Offset Allocation,R4,cash-service/apar-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S063,CE-11,Unapplied Time & Tech Guarantee,R4,parts-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R4 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S098,CE-14,OEM Adapter Framework & Diff Alerts,R5,eom-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S099,CE-14,Ford Feed Adapter,R5,eom-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S100,CE-14,GM Feed Adapter,R5,eom-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S101A,CE-14,Manual OEM Statement Match Workbench,R5,eom-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S103A,CE-14,Incentive Registry & Flat RDR Accruals,R5,eom-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S104,CE-14,OEM Financial Statement Renderer,R5,eom-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S105,CE-14,Warranty Audit Chargeback & Reserve,R5,eom-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S106,CE-14,Co-op Advertising Claims,R5,eom-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S113,CE-15,Close Calendar Task Engine,R5,migration-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S114,CE-15,Reconciliation Module & PBC Export,R5,migration-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S115,CE-15,Pre-Close Scrub Reports,R5,migration-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S116,CE-15,Year-End Close,R5,migration-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S117,CE-15,Year-End Tax Pack,R5,migration-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S119,CE-15,Daily Operating Control (DOC),R5,migration-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S120,CE-15,Statement-Format Financial Packages,R5,migration-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S121,CE-15,Fixed Ops KPI Pack,R5,migration-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S122,CE-15,Variable Ops KPI Pack,R5,migration-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S123,CE-15,Compliance Reporting Pack,R5,migration-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S015,CE-15,Multi-Currency & CTA,R5,migration-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S016,CE-15,Signed Statement Snapshots,R5,migration-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S017,CE-15,WORM Archive & PII Crypto-Shredding,R5,migration-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S033,CE-06,Allocation Entries,R5,tenant-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S034,CE-06,Intercompany Pairing & Net-Zero,R5,tenant-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S035,CE-06,Consolidation Eliminations,R5,tenant-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S005,CE-06,HR-Event Provisioning Hooks,R5,tenant-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S006,CE-06,MFA & Safeguards Evidence,R5,tenant-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S037,CE-09,1099/T4A Flag Rules & Preview,R5,cash-service/apar-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S038,CE-09,Vendor Insurance-Cert Tracking,R5,cash-service/apar-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S071,CE-11,OEM Parts-Return Pipeline,R5,parts-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S072,CE-11,Parts Valuation Config & Landed Cost,R5,parts-accounting-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R5 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S129,CE-16,Item-Level Schedule Migration & Gates,R6,approval-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R6 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S130,CE-16,TB Conversion & COA Mapping Workbench,R6,approval-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R6 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S131,CE-16,Parallel-Run Comparison Harness,R6,approval-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R6 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S132,CE-16,Statement Archive Import & Runbooks,R6,approval-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R6 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S022,CE-17,Rule Simulation Sandbox,R6,orchestrator-service/automation-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R6 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S040,CE-17,OCR/EDI Invoice Ingestion,R7,orchestrator-service/automation-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S058,CE-17,Lockbox AI Remittance Matching,R7,orchestrator-service/automation-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S073,CE-17,LIFO Overlay,R7,orchestrator-service/automation-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S091B,CE-17,Experience-Rated Chargeback Model,R7,orchestrator-service/automation-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S095,CE-17,Retro/Portfolio Reserve Accrual,R7,orchestrator-service/automation-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S096,CE-17,Reinsurance/DOWC Cession,R7,orchestrator-service/automation-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S101B,CE-17,OEM Statement Auto-Matcher,R7,orchestrator-service/automation-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S102,CE-14,Phase-2 OEM Adapters,R7,eom-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S103B,CE-17,Probability-Weighted Incentive Accruals,R7,orchestrator-service/automation-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S107,CE-17,NCM/NADA Composite Export,R7,orchestrator-service/automation-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S118,CE-17,GAAP Bridge Memo Generator,R7,orchestrator-service/automation-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S126,CE-17,DSAR Automation,R7,orchestrator-service/automation-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S127,CE-17,Unclaimed Property Module,R7,orchestrator-service/automation-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.
+S128,CE-17,SOX Evidence Automation,R7,orchestrator-service/automation-service,PACKAGE_AUTHORIZED_DEFERRED,Deferred to R7 per AutoMate2 Accounting Backlog Package v1.1. Implementation is out of scope for R1 release candidate.

@@ -18,6 +18,8 @@ import {
   PeriodNotFoundError,
   InvalidTransitionError,
   MaxOpenReachedError,
+  PeriodReasonRequiredError,
+  HardCloseBlockedByDraftsError,
 } from '../src/application/period-service';
 import {
   canTransition,
@@ -36,10 +38,12 @@ function makePrisma(seed: any[] = []) {
   const periods: any[] = [...seed];
   const audits: any[] = [];
   const outbox: any[] = [];
+  const drafts: any[] = [];
   const client: any = {
     _periods: periods,
     _audits: audits,
     _outbox: outbox,
+    _drafts: drafts,
     fiscalPeriod: {
       findUnique: async ({ where }: any) => periods.find((p) => p.id === where.id) ?? null,
       findMany: async ({ where }: any) =>
@@ -63,9 +67,56 @@ function makePrisma(seed: any[] = []) {
         Object.assign(row, data);
         return row;
       },
+      // S008 — CAS guard used by applyTransition(): only updates when the row
+      // still matches the expected `status` (the concurrency backstop).
+      updateMany: async ({ where, data }: any) => {
+        const matches = periods.filter(
+          (p) =>
+            p.id === where.id &&
+            p.tenantId === where.tenantId &&
+            (where.status === undefined || p.status === where.status),
+        );
+        for (const row of matches) Object.assign(row, data);
+        return { count: matches.length };
+      },
     },
-    auditOutboxEvent: { create: async ({ data }: any) => (audits.push(data), data) },
+    // S008 — open-draft worklist source (board + findBlockingDrafts).
+    manualJeDraft: {
+      findMany: async ({ where }: any) =>
+        drafts.filter((d) => {
+          if (d.tenantId !== where.tenantId) return false;
+          if (where.entityId !== undefined && d.entityId !== where.entityId) return false;
+          if (where.status?.in && !where.status.in.includes(d.status)) return false;
+          if (where.entryDate) {
+            if (where.entryDate.not === null && d.entryDate === null) return false;
+            if (where.entryDate.gte && !(d.entryDate && d.entryDate >= where.entryDate.gte)) return false;
+            if (where.entryDate.lte && !(d.entryDate && d.entryDate <= where.entryDate.lte)) return false;
+          }
+          return true;
+        }),
+    },
+    // S008 — most-recent transition summary per period (board), sourced from
+    // the audit outbox (see period-service.ts board() comment: the DB-owned
+    // fiscal_period_transition ledger carries no `reason`, so the board reads
+    // the S007 audit event instead, matching production behavior exactly).
+    auditOutboxEvent: {
+      create: async ({ data }: any) => {
+        const row = { createdAt: new Date(), ...data };
+        audits.push(row);
+        return row;
+      },
+      findMany: async ({ where }: any) =>
+        audits
+          .filter(
+            (a) =>
+              a.tenantId === where.tenantId &&
+              a.docType === where.docType &&
+              (!where.docId?.in || where.docId.in.includes(a.docId)),
+          )
+          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()),
+    },
     coaOutboxEvent: { create: async ({ data }: any) => (outbox.push(data), data) },
+    $executeRawUnsafe: async () => undefined,
   };
   client.$transaction = async (arg: any) =>
     typeof arg === 'function' ? arg(client) : Promise.all(arg);
@@ -131,11 +182,18 @@ describe('S209 domain — status vocabulary + transitions', () => {
     expect(PERIOD_STATUSES).toEqual(['FUTURE', 'OPEN', 'SOFT_CLOSED', 'HARD_CLOSED', 'LOCKED']);
   });
 
-  it('only FUTURE->OPEN is legal in this story (BR209-1)', () => {
+  it('the full S008 6-pair transition allowlist is legal; everything else is not', () => {
     expect(canTransition('FUTURE', 'OPEN')).toBe(true);
-    expect(canTransition('OPEN', 'SOFT_CLOSED')).toBe(false); // S008/R1
+    expect(canTransition('OPEN', 'SOFT_CLOSED')).toBe(true);
+    expect(canTransition('SOFT_CLOSED', 'OPEN')).toBe(true);
+    expect(canTransition('SOFT_CLOSED', 'HARD_CLOSED')).toBe(true);
+    expect(canTransition('HARD_CLOSED', 'OPEN')).toBe(true);
+    expect(canTransition('HARD_CLOSED', 'LOCKED')).toBe(true);
+    // LOCKED is terminal in S008 v1 -- no transition out, including back to OPEN.
     expect(canTransition('LOCKED', 'OPEN')).toBe(false);
     expect(canTransition('FUTURE', 'LOCKED')).toBe(false);
+    expect(canTransition('OPEN', 'HARD_CLOSED')).toBe(false);
+    expect(canTransition('FUTURE', 'SOFT_CLOSED')).toBe(false);
   });
 
   it('eligibility is postable only when OPEN', () => {
@@ -260,3 +318,160 @@ describe('S209 service — negative paths', () => {
     ).rejects.toBeInstanceOf(PeriodNotFoundError);
   });
 });
+
+// ── S008 — close / reopen / lock lifecycle ──────────────────────────────────────
+
+function draft(overrides: Partial<any> = {}) {
+  return {
+    id: overrides.id ?? `d-${Math.random().toString(36).slice(2, 8)}`,
+    tenantId: TENANT,
+    entityId: ENTITY,
+    preparer: overrides.preparer ?? 't.chen',
+    status: overrides.status ?? 'DRAFT',
+    entryDate: overrides.entryDate ?? new Date('2026-08-15'),
+    lines: overrides.lines ?? [{ dr: '450.00', cr: null }, { dr: null, cr: '450.00' }],
+    ...overrides,
+  };
+}
+
+describe('S008 service — soft-close (OPEN -> SOFT_CLOSED)', () => {
+  it('soft-closes an OPEN period with a reason, writes the transition audit', async () => {
+    const { svc, prisma } = setup([period({ id: 'p-8', periodNumber: 8, status: 'OPEN' })]);
+    const r = await svc.softClose({ tenantId: TENANT, periodId: 'p-8', actor: ACTOR, reason: 'ops cutoff' });
+    expect(r).toMatchObject({ transitioned: true, status: 'SOFT_CLOSED' });
+    expect(prisma._periods[0].status).toBe('SOFT_CLOSED');
+    expect(prisma._audits.some((a) => a.action === 'SOFT_CLOSE')).toBe(true);
+  });
+
+  it('400 PERIOD_REASON_REQUIRED when no reason is supplied', async () => {
+    const { svc } = setup([period({ id: 'p-8', periodNumber: 8, status: 'OPEN' })]);
+    await expect(
+      svc.softClose({ tenantId: TENANT, periodId: 'p-8', actor: ACTOR, reason: '   ' }),
+    ).rejects.toBeInstanceOf(PeriodReasonRequiredError);
+  });
+
+  it('422 INVALID_TRANSITION when soft-closing a FUTURE period', async () => {
+    const { svc } = setup([period({ id: 'p-8', periodNumber: 8, status: 'FUTURE' })]);
+    await expect(
+      svc.softClose({ tenantId: TENANT, periodId: 'p-8', actor: ACTOR, reason: 'x' }),
+    ).rejects.toBeInstanceOf(InvalidTransitionError);
+  });
+
+  it('idempotent: soft-closing an already SOFT_CLOSED period is a no-op success', async () => {
+    const { svc, prisma } = setup([period({ id: 'p-8', periodNumber: 8, status: 'SOFT_CLOSED' })]);
+    const r = await svc.softClose({ tenantId: TENANT, periodId: 'p-8', actor: ACTOR, reason: 'x' });
+    expect(r).toMatchObject({ transitioned: true, status: 'SOFT_CLOSED' });
+    expect(prisma._audits).toHaveLength(0);
+  });
+});
+
+describe('S008 service — hard-close (SOFT_CLOSED -> HARD_CLOSED) + drafts block (AC008-4)', () => {
+  it('hard-closes a SOFT_CLOSED period with zero blocking drafts', async () => {
+    const { svc, prisma } = setup([period({ id: 'p-8', periodNumber: 8, status: 'SOFT_CLOSED' })]);
+    const r = await svc.hardClose({ tenantId: TENANT, periodId: 'p-8', actor: ACTOR, reason: 'month locked' });
+    expect(r).toMatchObject({ transitioned: true, status: 'HARD_CLOSED' });
+    expect(prisma._periods[0].status).toBe('HARD_CLOSED');
+  });
+
+  it('422 HARD_CLOSE_BLOCKED_BY_DRAFTS lists each in-period open draft (id, date, amount, preparer)', async () => {
+    const { svc, prisma } = setup([period({ id: 'p-8', periodNumber: 8, status: 'SOFT_CLOSED' })]);
+    prisma._drafts.push(
+      draft({ id: 'd-1', status: 'DRAFT', entryDate: new Date('2026-08-10'), preparer: 't.chen', lines: [{ dr: '450.00' }] }),
+      draft({ id: 'd-2', status: 'VALIDATED', entryDate: new Date('2026-08-20'), preparer: 'm.rivera', lines: [{ dr: '86.40' }] }),
+      // out-of-period + already-posted/voided drafts must NOT block:
+      draft({ id: 'd-3', status: 'DRAFT', entryDate: new Date('2026-09-05') }),
+      draft({ id: 'd-4', status: 'POSTED_LINKED', entryDate: new Date('2026-08-11') }),
+      draft({ id: 'd-5', status: 'VOIDED', entryDate: new Date('2026-08-12') }),
+    );
+    try {
+      await svc.hardClose({ tenantId: TENANT, periodId: 'p-8', actor: ACTOR, reason: 'x' });
+      throw new Error('expected HardCloseBlockedByDraftsError');
+    } catch (err) {
+      expect(err).toBeInstanceOf(HardCloseBlockedByDraftsError);
+      const blockers = (err as HardCloseBlockedByDraftsError).blockingDrafts;
+      expect(blockers.map((b) => b.draftId).sort()).toEqual(['d-1', 'd-2']);
+      expect(blockers.find((b) => b.draftId === 'd-1')).toMatchObject({ amount: '450.00', preparer: 't.chen', entryDate: '2026-08-10' });
+      expect(blockers.find((b) => b.draftId === 'd-2')).toMatchObject({ amount: '86.40', preparer: 'm.rivera' });
+    }
+    expect(prisma._periods[0].status).toBe('SOFT_CLOSED'); // no transition occurred
+  });
+
+  it('400 PERIOD_REASON_REQUIRED when hard-closing without a reason', async () => {
+    const { svc } = setup([period({ id: 'p-8', periodNumber: 8, status: 'SOFT_CLOSED' })]);
+    await expect(
+      svc.hardClose({ tenantId: TENANT, periodId: 'p-8', actor: ACTOR }),
+    ).rejects.toBeInstanceOf(PeriodReasonRequiredError);
+  });
+});
+
+describe('S008 service — reopen (SOFT_CLOSED -> OPEN) + reopen-hard-closed', () => {
+  it('reopens a SOFT_CLOSED period with a reason, records it verbatim (AC008-3)', async () => {
+    const { svc, prisma } = setup([period({ id: 'p-8', periodNumber: 8, status: 'SOFT_CLOSED' })]);
+    const r = await svc.reopen({ tenantId: TENANT, periodId: 'p-8', actor: ACTOR, reason: 'late vendor invoice #A-118' });
+    expect(r).toMatchObject({ transitioned: true, status: 'OPEN' });
+    const evt = prisma._audits.find((a) => a.action === 'REOPEN');
+    expect(evt.after).toMatchObject({ reason: 'late vendor invoice #A-118' });
+  });
+
+  it('reopen refuses a HARD_CLOSED period (must use the elevated reopen-hard-closed path)', async () => {
+    const { svc } = setup([period({ id: 'p-8', periodNumber: 8, status: 'HARD_CLOSED' })]);
+    await expect(
+      svc.reopen({ tenantId: TENANT, periodId: 'p-8', actor: ACTOR, reason: 'x' }),
+    ).rejects.toBeInstanceOf(InvalidTransitionError);
+  });
+
+  it('reopen-hard-closed requires explicit confirm before it transitions', async () => {
+    const { svc, prisma } = setup([period({ id: 'p-8', periodNumber: 8, status: 'HARD_CLOSED' })]);
+    const pending = await svc.reopenHardClosed({ tenantId: TENANT, periodId: 'p-8', actor: ACTOR, reason: 'audit request' });
+    expect(pending).toMatchObject({ transitioned: false, requiresConfirmation: true });
+    expect(prisma._periods[0].status).toBe('HARD_CLOSED');
+    const done = await svc.reopenHardClosed({ tenantId: TENANT, periodId: 'p-8', actor: ACTOR, reason: 'audit request', confirm: true });
+    expect(done).toMatchObject({ transitioned: true, status: 'OPEN' });
+  });
+});
+
+describe('S008 service — lock (HARD_CLOSED -> LOCKED, terminal)', () => {
+  it('requires confirm, then locks; LOCKED is terminal', async () => {
+    const { svc, prisma } = setup([period({ id: 'p-8', periodNumber: 8, status: 'HARD_CLOSED' })]);
+    const pending = await svc.lock({ tenantId: TENANT, periodId: 'p-8', actor: ACTOR, reason: 'year sealed' });
+    expect(pending).toMatchObject({ transitioned: false, requiresConfirmation: true });
+    const done = await svc.lock({ tenantId: TENANT, periodId: 'p-8', actor: ACTOR, reason: 'year sealed', confirm: true });
+    expect(done).toMatchObject({ transitioned: true, status: 'LOCKED' });
+    // Terminal: no further transition (soft/hard/reopen/lock) is legal.
+    await expect(
+      svc.softClose({ tenantId: TENANT, periodId: 'p-8', actor: ACTOR, reason: 'x' }),
+    ).rejects.toBeTruthy();
+  });
+
+  it('400 PERIOD_REASON_REQUIRED when locking without a reason', async () => {
+    const { svc } = setup([period({ id: 'p-8', periodNumber: 8, status: 'HARD_CLOSED' })]);
+    await expect(
+      svc.lock({ tenantId: TENANT, periodId: 'p-8', actor: ACTOR, confirm: true }),
+    ).rejects.toBeInstanceOf(PeriodReasonRequiredError);
+  });
+});
+
+describe('S008 service — board enrichment (open drafts + last transition)', () => {
+  it('reports per-period open-draft counts and the most-recent transition', async () => {
+    const { svc, prisma } = setup([
+      period({ id: 'p-8', periodNumber: 8, status: 'SOFT_CLOSED' }),
+      period({ id: 'p-9', periodNumber: 9, status: 'OPEN' }),
+    ]);
+    prisma._drafts.push(
+      draft({ id: 'd-1', status: 'DRAFT', entryDate: new Date('2026-09-10') }),
+      draft({ id: 'd-2', status: 'VALIDATED', entryDate: new Date('2026-09-12') }),
+      draft({ id: 'd-3', status: 'VOIDED', entryDate: new Date('2026-09-15') }), // ignored
+    );
+    prisma._audits.push({
+      tenantId: TENANT, docType: 'fiscal_period', docId: 'p-8', action: 'SOFT_CLOSE',
+      before: { status: 'OPEN' }, after: { status: 'SOFT_CLOSED', reason: 'ops cutoff' },
+      actor: 'm.rivera', createdAt: new Date('2026-09-03T10:00:00Z'),
+    });
+    const board = await svc.board(TENANT, ENTITY);
+    const p9 = board.find((b) => b.periodCode === '2026-09')!;
+    const p8 = board.find((b) => b.periodCode === '2026-08')!;
+    expect(p9.openDrafts).toBe(2);
+    expect(p8.lastTransition).toMatchObject({ toStatus: 'SOFT_CLOSED', reason: 'ops cutoff', actor: 'm.rivera' });
+  });
+});
+

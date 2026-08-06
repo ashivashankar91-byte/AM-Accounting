@@ -1,0 +1,14 @@
+{
+  "$label": "CERTIFICATION-ONLY: synthetic non-production data",
+  "$description": "Open AP and AR items for gate G2 subledger conservation. The sum of staged items per control account equals the converted TB control balance produced by the same run.",
+  "legalEntityId": "LE-CERT-001",
+  "convertedControlBalances": { "1200": 48250.75, "2000": -61300.25 },
+  "openItems": [
+    { "controlAccount": "1200", "sourceIdentity": "AR-CUST-001-INV-8801", "documentRef": "INV-8801", "documentDate": "2025-10-02", "dueDate": "2025-11-01", "amount": 18000.00, "partyRef": "CUST-001" },
+    { "controlAccount": "1200", "sourceIdentity": "AR-CUST-002-INV-8802", "documentRef": "INV-8802", "documentDate": "2025-10-18", "dueDate": "2025-11-17", "amount": 21250.75, "partyRef": "CUST-002" },
+    { "controlAccount": "1200", "sourceIdentity": "AR-CUST-003-INV-8803", "documentRef": "INV-8803", "documentDate": "2025-11-20", "dueDate": "2025-12-20", "amount": 9000.00, "partyRef": "CUST-003" },
+    { "controlAccount": "2000", "sourceIdentity": "AP-VEND-010-BILL-5501", "documentRef": "BILL-5501", "documentDate": "2025-09-15", "dueDate": "2025-10-15", "amount": -35000.00, "partyRef": "VEND-010" },
+    { "controlAccount": "2000", "sourceIdentity": "AP-VEND-011-BILL-5502", "documentRef": "BILL-5502", "documentDate": "2025-10-30", "dueDate": "2025-11-29", "amount": -26300.25, "partyRef": "VEND-011" }
+  ],
+  "expected": { "g2Pass": true, "arSum": 48250.75, "apSum": -61300.25 }
+}

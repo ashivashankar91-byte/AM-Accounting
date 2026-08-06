@@ -2,15 +2,24 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { TenantId } from '@amacc/shared-kernel';
 import { PrismaClient } from '../node_modules/.prisma/gl-client';
 
-describe('Sales Tax Accrual API', () => {
+// Live-DB guard: this suite requires a real PostgreSQL database with the full
+// GL schema (including taxJurisdiction, taxAccrualEntry, taxExemption tables).
+// Set DATABASE_URL to the owner-role connection string before running.
+const DATABASE_URL = process.env['DATABASE_URL'];
+
+describe.skipIf(!DATABASE_URL)('Sales Tax Accrual API', () => {
   let prisma: PrismaClient;
   let tenantId: TenantId;
   let payableAccountId: string;
   let receivableAccountId: string;
 
   beforeEach(async () => {
-    prisma = new PrismaClient();
-    tenantId = 'test-tenant-001' as TenantId;
+    // Use a UUID-shaped tenantId to satisfy JWT/RLS tenant constraints.
+    tenantId = 'aaaaaaaa-0000-4000-a000-000000000099' as TenantId;
+    prisma = new PrismaClient({ datasources: { db: { url: DATABASE_URL! + '?connection_limit=1' } } });
+    // Set app.current_tenant_id so RLS policies on all GL tables allow test writes.
+    // connection_limit=1 ensures the SET persists on the same reused connection.
+    await prisma.$executeRawUnsafe(`SET app.current_tenant_id = '${tenantId}'`);
     await (prisma as any).taxAccrualEntry.deleteMany({ where: { tenantId } });
     await (prisma as any).taxExemption.deleteMany({ where: { tenantId } });
     await (prisma as any).taxJurisdiction.deleteMany({ where: { tenantId } });

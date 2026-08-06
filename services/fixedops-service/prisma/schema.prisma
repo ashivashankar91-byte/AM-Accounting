@@ -1,0 +1,536 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/fixedops-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// CE-11 / Workstream A+B — Repair-Order accounting (S059-S065).
+///
+/// Ownership boundaries (see docs/accounting-modernization/CE11_FABLE_EPIC_PACKAGE.md):
+/// fixedops-service computes NO GL posting itself — every journal is produced
+/// by submitting a canonical SourceEventEnvelope to coa-service's real
+/// posting-engine (POST /posting-engine/events, the single S013/S019/S020
+/// door). This service owns Fixed-Ops BUSINESS state only (RO close
+/// lifecycle, claim/deposit/contract lifecycle) plus a narrow schedule-effect
+/// PROJECTION (see FixedOpsScheduleEffect) — never a second ledger.
+/// coa-service's outbox event ('acct.je.posted') does not yet carry the
+/// scheduleNumber/applyNumber/applyCd shape schedule-service subscribes to
+/// (JOURNAL_ENTRY_POSTED) — this is a genuine CE-07<->CE-08 event-contract
+/// gap, not something this service papers over; see
+/// PENDING_CE07_TECHNICAL_RECONCILIATION markers below.
+
+// ── S061 — WIP mode election [SAFE_CONFIGURATION], effective-dated ─────────
+model WipModeElection {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  legalEntityId String   @map("legal_entity_id")
+  storeId       String?  @map("store_id")
+
+  /// WIP_MODE | DIRECT_MODE
+  mode          String   @map("mode")
+  effectiveFrom DateTime @map("effective_from") @db.Date
+
+  impactPreview Json?    @map("impact_preview")
+  approvedBy    String   @map("approved_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, legalEntityId, storeId, effectiveFrom])
+  @@map("wip_mode_election")
+}
+
+// ── S059/S060 — Repair Order aggregate + close/reversal lifecycle ──────────
+model RepairOrder {
+  id              String    @id @default(uuid())
+  tenantId        String    @map("tenant_id")
+  legalEntityId   String    @map("legal_entity_id")
+  storeId         String    @map("store_id")
+  roNumber        String    @map("ro_number")
+
+  /// OPEN | CLOSED | REOPENED | VOIDED
+  status          String    @default("OPEN") @map("status")
+  currentCloseVersion Int   @default(0) @map("current_close_version")
+
+  wipMode         String?   @map("wip_mode")
+  openedAt        DateTime  @default(now()) @map("opened_at")
+  closedAt        DateTime? @map("closed_at")
+
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  closeSubmissions RoCloseSubmission[]
+  reversals        RoReversal[]
+
+  @@unique([tenantId, storeId, roNumber])
+  @@map("repair_order")
+}
+
+/// One row per RO-close attempt. Idempotent per (tenantId, roNumber,
+/// closeVersion) — S059 AC "one RO close = exactly one journal".
+model RoCloseSubmission {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  legalEntityId   String   @map("legal_entity_id")
+  storeId         String   @map("store_id")
+  repairOrderId   String   @map("repair_order_id")
+  roNumber        String   @map("ro_number")
+  closeVersion    Int      @map("close_version")
+
+  sourceEventId   String   @map("source_event_id")
+  correlationId   String   @map("correlation_id")
+  businessDate    DateTime @map("business_date") @db.Date
+
+  payTypeMix      String   @map("pay_type_mix") // e.g. "C", "W", "I", "C+W+I"
+  totalSaleAmount   Decimal @map("total_sale_amount") @db.Decimal(15, 2)
+  totalCostAmount   Decimal @map("total_cost_amount") @db.Decimal(15, 2)
+  totalTaxAmount    Decimal @default(0) @map("total_tax_amount") @db.Decimal(15, 2)
+
+  /// PENDING | POSTED | BLOCKED_TAX_UNAVAILABLE | REJECTED_MAPPING | EXCEPTION
+  status          String   @map("status")
+  journalEntryId  String?  @map("journal_entry_id")
+  journalNumber   String?  @map("journal_number")
+  rulePackVersionId String? @map("rule_pack_version_id")
+  failureReason   String?  @map("failure_reason")
+
+  actor           String   @map("actor")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  repairOrder     RepairOrder @relation(fields: [repairOrderId], references: [id])
+  lines           RoDistributionLine[]
+
+  @@unique([tenantId, roNumber, closeVersion])
+  @@index([tenantId, storeId, status])
+  @@map("ro_close_submission")
+}
+
+/// Per-line pay-type/category distribution — mixed-pay conservation AC:
+/// sum of these = RoCloseSubmission totals to the cent.
+model RoDistributionLine {
+  id                  String  @id @default(uuid())
+  tenantId            String  @map("tenant_id")
+  roCloseSubmissionId String  @map("ro_close_submission_id")
+  lineId              String  @map("line_id")
+
+  /// C | W | I
+  payType             String  @map("pay_type")
+  /// LABOR | PARTS | SUBLET | MISC | FEE
+  category            String  @map("category")
+  opcode              String? @map("opcode")
+  techId              String? @map("tech_id")
+  partNumber          String? @map("part_number")
+
+  saleAmount          Decimal @map("sale_amount") @db.Decimal(15, 2)
+  costAmount          Decimal @default(0) @map("cost_amount") @db.Decimal(15, 2)
+  taxResultId         String? @map("tax_result_id")
+  taxAmount           Decimal @default(0) @map("tax_amount") @db.Decimal(15, 2)
+
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  submission RoCloseSubmission @relation(fields: [roCloseSubmissionId], references: [id])
+
+  @@index([tenantId, roCloseSubmissionId])
+  @@map("ro_distribution_line")
+}
+
+/// S060 — deterministic reopen/void auto-reversal. Idempotent on
+/// (tenantId, roNumber, closeVersionReversed).
+model RoReversal {
+  id                    String   @id @default(uuid())
+  tenantId              String   @map("tenant_id")
+  repairOrderId         String   @map("repair_order_id")
+  roNumber              String   @map("ro_number")
+  closeVersionReversed  Int      @map("close_version_reversed")
+
+  /// REOPEN | VOID
+  action                String   @map("action")
+  originalJournalEntryId String  @map("original_journal_entry_id")
+  reversalJournalEntryId String? @map("reversal_journal_entry_id")
+  sourceEventId         String   @map("source_event_id")
+  correlationId         String   @map("correlation_id")
+
+  /// COMPLETED | REFUSED
+  status                String   @map("status")
+  /// CLAIM_CASH_APPLIED | PAYMENT_APPLIED — set only when status=REFUSED
+  refusalCode           String?  @map("refusal_code")
+  reason                String?  @map("reason")
+
+  actor                 String   @map("actor")
+  createdAt              DateTime @default(now()) @map("created_at")
+
+  repairOrder RepairOrder @relation(fields: [repairOrderId], references: [id])
+
+  @@unique([tenantId, roNumber, closeVersionReversed, action])
+  @@map("ro_reversal")
+}
+
+// ── S063 — Unapplied time & tech guarantee (absorption booking only) ───────
+/// Gap-closure: this model previously had NO write path anywhere in the
+/// service (read-only in tech-time-service.ts's absorb()) — a real
+/// technician guarantee could never be configured, so shortfallHours was
+/// always 0 for every absorption ever posted. setGuaranteeConfig() below
+/// closes that governed-config gap, mirroring LaborRateConfig's
+/// upsert-by-natural-key ceremony.
+model TechGuaranteeConfig {
+  id                   String   @id @default(uuid())
+  tenantId             String   @map("tenant_id")
+  legalEntityId        String   @map("legal_entity_id")
+  techId               String   @map("tech_id")
+  guaranteedHoursPerPeriod Decimal @map("guaranteed_hours_per_period") @db.Decimal(8, 2)
+  effectiveFrom        DateTime @map("effective_from") @db.Date
+  createdAt            DateTime @default(now()) @map("created_at")
+  createdBy            String?  @map("created_by")
+
+  @@unique([tenantId, legalEntityId, techId, effectiveFrom])
+  @@map("tech_guarantee_config")
+}
+
+/// S063 gap-closure — approved unapplied-time absorption policy: an
+/// effective-dated, tenant-configured BURDENED labor-cost rate (never the
+/// customer labor selling rate, never hardcoded) that converts unapplied /
+/// guarantee-shortfall hours into a dollar amount. Resolution order is
+/// technician-specific (scope=TECHNICIAN, subjectKey=techId) then
+/// department-default (scope=DEPARTMENT, subjectKey=deptCode) — no
+/// dealership-wide/global fallback; a technician+date with neither a
+/// technician row nor a department row is a RATE_GAP.
+///
+/// subjectKey unifies techId/deptCode into one NOT NULL column so the
+/// natural-key unique constraint below is real (Postgres unique indexes do
+/// not enforce uniqueness across rows where any indexed column is NULL).
+model LaborRateConfig {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  legalEntityId  String   @map("legal_entity_id")
+  /// TECHNICIAN | DEPARTMENT
+  scope          String   @map("scope")
+  /// techId when scope=TECHNICIAN, deptCode when scope=DEPARTMENT
+  subjectKey     String   @map("subject_key")
+  burdenedRate   Decimal  @map("burdened_rate") @db.Decimal(10, 4)
+  effectiveFrom  DateTime @map("effective_from") @db.Date
+  createdAt      DateTime @default(now()) @map("created_at")
+  createdBy      String   @map("created_by")
+
+  @@unique([tenantId, legalEntityId, scope, subjectKey, effectiveFrom])
+  @@index([tenantId, legalEntityId, scope, subjectKey])
+  @@map("labor_rate_config")
+}
+
+/// One row per (tenantId, techId, payrollPeriodId) — period idempotency AC.
+model TechTimeAbsorption {
+  id                String   @id @default(uuid())
+  tenantId          String   @map("tenant_id")
+  legalEntityId     String   @map("legal_entity_id")
+  techId            String   @map("tech_id")
+  /// Nullable: additive column — rows posted before the labor-rate policy
+  /// existed have no captured department. Required for every NEW row (see
+  /// tech-time-service.ts), never backfilled onto historical rows.
+  deptCode          String?  @map("dept_code")
+  payrollPeriodId   String   @map("payroll_period_id")
+
+  clockedHours      Decimal  @map("clocked_hours") @db.Decimal(8, 2)
+  flaggedAppliedHours Decimal @map("flagged_applied_hours") @db.Decimal(8, 2)
+  unappliedHours    Decimal  @map("unapplied_hours") @db.Decimal(8, 2)
+  guaranteedHours   Decimal  @map("guaranteed_hours") @db.Decimal(8, 2)
+  shortfallHours    Decimal  @map("shortfall_hours") @db.Decimal(8, 2)
+
+  /// Captured at absorption time — a reversal MUST reuse these verbatim
+  /// rather than re-resolving the (possibly since-changed) rate. Nullable
+  /// for the same additive-migration reason as deptCode above; required for
+  /// every NEW row.
+  rateId            String?  @map("rate_id")
+  /// TECHNICIAN | DEPARTMENT — which scope actually resolved the rate.
+  rateSource        String?  @map("rate_source")
+  rateAmount        Decimal? @map("rate_amount") @db.Decimal(10, 4)
+  rateEffectiveFrom DateTime? @map("rate_effective_from") @db.Date
+  unappliedAmount   Decimal? @map("unapplied_amount") @db.Decimal(15, 2)
+  shortfallAmount   Decimal? @map("shortfall_amount") @db.Decimal(15, 2)
+
+  sourceEventId     String   @map("source_event_id")
+  correlationId     String   @map("correlation_id")
+  status            String   @map("status")
+  journalEntryId    String?  @map("journal_entry_id")
+
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  reversal TechTimeAbsorptionReversal?
+
+  @@unique([tenantId, techId, payrollPeriodId])
+  @@map("tech_time_absorption")
+}
+
+/// Correction/reversal of a posted TechTimeAbsorption — byte-symmetric,
+/// reuses the ORIGINAL absorption's captured rate/amounts verbatim (never
+/// re-resolves the current rate), mirroring RoReversal's shape/discipline.
+model TechTimeAbsorptionReversal {
+  id                    String   @id @default(uuid())
+  tenantId              String   @map("tenant_id")
+  techTimeAbsorptionId  String   @unique @map("tech_time_absorption_id")
+  techId                String   @map("tech_id")
+  payrollPeriodId       String   @map("payroll_period_id")
+
+  originalJournalEntryId String  @map("original_journal_entry_id")
+  reversalJournalEntryId String? @map("reversal_journal_entry_id")
+  sourceEventId         String   @map("source_event_id")
+  correlationId          String   @map("correlation_id")
+
+  /// COMPLETED | REFUSED
+  status                String   @map("status")
+  reason                String?  @map("reason")
+  actor                 String   @map("actor")
+  createdAt              DateTime @default(now()) @map("created_at")
+
+  absorption TechTimeAbsorption @relation(fields: [techTimeAbsorptionId], references: [id])
+
+  @@unique([tenantId, techId, payrollPeriodId])
+  @@map("tech_time_absorption_reversal")
+}
+
+// ── S064 — Deferred maintenance contracts v1 (redemption-based only) ───────
+model DeferredMaintenanceContract {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  legalEntityId   String   @map("legal_entity_id")
+  storeId         String   @map("store_id")
+  contractNumber  String   @map("contract_number") // applyNumber
+
+  soldAmount      Decimal  @map("sold_amount") @db.Decimal(15, 2)
+  deferredBalance Decimal  @map("deferred_balance") @db.Decimal(15, 2)
+
+  /// ACTIVE | FULLY_REDEEMED | EXPIRED_UNREDEEMED_BALANCE_DEFERRED
+  /// D-CE11-01 interim: expiry NEVER auto-recognizes income; balance stays
+  /// deferred until an approved breakage policy exists.
+  status          String   @default("ACTIVE") @map("status")
+
+  saleSourceEventId String @map("sale_source_event_id")
+  saleJournalEntryId String @map("sale_journal_entry_id")
+
+  soldAt          DateTime @default(now()) @map("sold_at")
+  expiresAt       DateTime? @map("expires_at") @db.Date
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  redemptions     DeferredMaintenanceRedemption[]
+
+  @@unique([tenantId, contractNumber])
+  @@map("deferred_maintenance_contract")
+}
+
+model DeferredMaintenanceRedemption {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  contractId      String   @map("contract_id")
+  roNumber        String   @map("ro_number")
+
+  redeemedAmount  Decimal  @map("redeemed_amount") @db.Decimal(15, 2)
+  sourceEventId   String   @map("source_event_id")
+  journalEntryId  String?  @map("journal_entry_id")
+  status          String   @map("status")
+
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  contract DeferredMaintenanceContract @relation(fields: [contractId], references: [id])
+
+  @@unique([tenantId, contractId, roNumber, sourceEventId])
+  @@map("deferred_maintenance_redemption")
+}
+
+// ── S062 — Sublet PO lifecycle ──────────────────────────────────────────────
+model SubletPurchaseOrder {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  legalEntityId   String   @map("legal_entity_id")
+  storeId         String   @map("store_id")
+  roNumber        String   @map("ro_number")
+  poNumber        String   @map("po_number") // applyNumber
+  vendorId        String   @map("vendor_id")
+
+  estimatedCost   Decimal  @map("estimated_cost") @db.Decimal(15, 2)
+
+  /// OPEN | ACCRUED | INVOICE_MATCHED_PRE_CLOSE | CLOSED
+  status          String   @default("OPEN") @map("status")
+
+  accrualSourceEventId String? @map("accrual_source_event_id")
+  accrualJournalEntryId String? @map("accrual_journal_entry_id")
+  accrualAmount   Decimal? @map("accrual_amount") @db.Decimal(15, 2)
+
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  invoiceMatches  SubletInvoiceMatch[]
+
+  @@unique([tenantId, poNumber])
+  @@map("sublet_purchase_order")
+}
+
+model SubletInvoiceMatch {
+  id                String   @id @default(uuid())
+  tenantId          String   @map("tenant_id")
+  subletPoId        String   @map("sublet_po_id")
+  invoiceId         String   @map("invoice_id") // apar-service S039 reference
+
+  invoiceAmount     Decimal  @map("invoice_amount") @db.Decimal(15, 2)
+  varianceAmount    Decimal  @default(0) @map("variance_amount") @db.Decimal(15, 2)
+
+  sourceEventId     String   @map("source_event_id")
+  reliefJournalEntryId String? @map("relief_journal_entry_id")
+  status            String   @map("status")
+
+  matchedAt         DateTime @default(now()) @map("matched_at")
+
+  subletPo SubletPurchaseOrder @relation(fields: [subletPoId], references: [id])
+
+  @@unique([tenantId, subletPoId, invoiceId])
+  @@map("sublet_invoice_match")
+}
+
+// ── S065 — Warranty claim receivable lifecycle ──────────────────────────────
+model WarrantyClaimItem {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  legalEntityId   String   @map("legal_entity_id")
+  storeId         String   @map("store_id")
+  roNumber        String   @map("ro_number")
+  claimNumber     String   @map("claim_number") // applyNumber
+
+  saleAmount      Decimal  @map("sale_amount") @db.Decimal(15, 2)
+  remainingAmount Decimal  @map("remaining_amount") @db.Decimal(15, 2)
+
+  /// BORN | SUBMITTED | PARTIALLY_REMITTED | SHORT_PAY_DISPOSITIONED | DENIED | CLOSED
+  status          String   @default("BORN") @map("status")
+
+  birthSourceEventId String @map("birth_source_event_id")
+  birthJournalEntryId String @map("birth_journal_entry_id")
+
+  factoryAgeBand  String?  @map("factory_age_band")
+
+  /// PENDING_CE07_TECHNICAL_RECONCILIATION: true until coa-service emits the
+  /// JOURNAL_ENTRY_POSTED shape schedule-service consumes; until then this
+  /// row IS the governed schedule-effect projection for the warranty
+  /// receivable inquiry/aging screens (not a duplicate ledger — no GL
+  /// balances are computed here, only claim lifecycle state referencing the
+  /// authoritative journal).
+  scheduleProjectionPending Boolean @default(true) @map("schedule_projection_pending")
+
+  submittedAt     DateTime? @map("submitted_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  remittances     WarrantyClaimRemittance[]
+  dispositions    WarrantyClaimDisposition[]
+
+  @@unique([tenantId, claimNumber])
+  @@index([tenantId, storeId, status])
+  @@map("warranty_claim_item")
+}
+
+model WarrantyClaimRemittance {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  claimId         String   @map("claim_id")
+
+  remittedAmount  Decimal  @map("remitted_amount") @db.Decimal(15, 2)
+  sourceReceiptId String   @map("source_receipt_id") // CE-09 receipt reference
+  sourceEventId   String   @map("source_event_id")
+
+  remittedAt      DateTime @default(now()) @map("remitted_at")
+
+  claim WarrantyClaimItem @relation(fields: [claimId], references: [id])
+
+  @@unique([tenantId, claimId, sourceEventId])
+  @@map("warranty_claim_remittance")
+}
+
+model WarrantyClaimDisposition {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  claimId         String   @map("claim_id")
+
+  /// WRITE_DOWN | TRANSFER_TO_CUSTOMER_RESPONSIBILITY | DENIAL | ADJUSTMENT
+  type            String   @map("type")
+  amount          Decimal  @map("amount") @db.Decimal(15, 2)
+  reason          String   @map("reason")
+  actor           String   @map("actor")
+
+  sourceEventId   String   @map("source_event_id")
+  journalEntryId  String?  @map("journal_entry_id")
+
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  claim WarrantyClaimItem @relation(fields: [claimId], references: [id])
+
+  @@unique([tenantId, claimId, sourceEventId])
+  @@map("warranty_claim_disposition")
+}
+
+// ── Global: account mapping (ACCOUNT_MAPPING_VALUES_PENDING by standing rule) ─
+/// One row per (tenantId, legalEntityId, eventFamily, role) — always created
+/// blank; only the labeled certification tenant may carry a resolved,
+/// still-opaque fixture value. Never a real production account number here.
+model FixedOpsAccountMapping {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  legalEntityId String   @map("legal_entity_id")
+  eventFamily   String   @map("event_family")
+  role          String   @map("role")
+
+  accountNumber String?  @map("account_number")
+  /// ACCOUNT_MAPPING_VALUES_PENDING | RESOLVED | TEST_FIXTURE_RESOLVED
+  status        String   @default("ACCOUNT_MAPPING_VALUES_PENDING") @map("status")
+
+  updatedBy     String?  @map("updated_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, legalEntityId, eventFamily, role])
+  @@map("fixedops_account_mapping")
+}
+
+// ── S021-aligned exception / recovery queue ─────────────────────────────────
+model FixedOpsPostingException {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  legalEntityId   String   @map("legal_entity_id")
+  storeId         String?  @map("store_id")
+
+  sourceEventId   String   @map("source_event_id")
+  correlationId   String   @map("correlation_id")
+  eventFamily     String   @map("event_family")
+  roNumber        String?  @map("ro_number")
+
+  /// EVENT_CONTRACT_INVALID | RULE_NOT_FOUND | ACCOUNTING_MAPPING_UNRESOLVED |
+  /// TAX_RESULT_UNAVAILABLE | AUTHORIZATION_FAILURE | NEGATIVE_ON_HAND |
+  /// DOWNSTREAM_TRANSIENT | DOWNSTREAM_PERMANENT — mirrors
+  /// posting-recovery-service's closed taxonomy (src/domain/taxonomy.ts) for
+  /// consistency across the unified exception queue.
+  reasonCode      String   @map("reason_code")
+  detail          String?  @map("detail")
+
+  /// OPEN | RESOLVED | REPLAYED
+  status          String   @default("OPEN") @map("status")
+  resolvedAt      DateTime? @map("resolved_at")
+  resolvedBy      String?  @map("resolved_by")
+
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, status, reasonCode])
+  @@map("fixedops_posting_exception")
+}
+
+// ── Immutable audit trail (local outbox, drained to audit-service) ─────────
+model AuditOutboxEvent {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  docType   String   @map("doc_type")
+  docId     String   @map("doc_id")
+  action    String   @map("action")
+  before    Json?    @map("before")
+  after     Json?    @map("after")
+  reason    String?  @map("reason")
+  correlationId String? @map("correlation_id")
+  actor     String   @map("actor")
+  createdAt DateTime @default(now()) @map("created_at")
+  publishedAt DateTime? @map("published_at")
+
+  @@index([tenantId, publishedAt])
+  @@map("fixedops_audit_outbox_event")
+}

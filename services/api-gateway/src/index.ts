@@ -32,7 +32,8 @@ const PORT = parseInt(process.env['PORT'] ?? '3000', 10);
 //   onboarding-service:3035, webhook-service:3036, cashflow-service:3037
 //   document-service:3038, group-service:3039, user-service:3040
 //   compliance-service:3043, query-service:3045, analytics-service:3046
-//   orchestrator-service:3048
+//   orchestrator-service:3048, cash-service:3050, tax-service:3051,
+//   fixedops-service:3060, parts-accounting-service:3061
 
 const SERVICES: Array<{ prefix: string; upstream: string; rateLimit?: number; rewritePrefix?: string }> = [
   { prefix: '/api/v1/auth',           upstream: process.env['AUTH_SERVICE_URL']           ?? 'http://auth-service:3001' },
@@ -82,12 +83,57 @@ const SERVICES: Array<{ prefix: string; upstream: string; rateLimit?: number; re
   // Intelligence layer — agent-t1 handles copilot and agents HTTP
   { prefix: '/api/v1/copilot',        upstream: process.env['AGENT_T1_URL']               ?? 'http://agent-t1:3024' },
   { prefix: '/api/v1/agents',         upstream: process.env['AGENT_T1_URL']               ?? 'http://agent-t1:3024' },
-  // Cash receipts — proxied to apar-service (AR domain); /deposits sub-routes handled there
+  // Legacy cash receipts (gl-service/apar-service prototype track) — proxied
+  // to apar-service (AR domain); /deposits sub-routes handled there. See
+  // S052 for the current-generation cashier-window/drawer-reconciliation
+  // slice, a separate service/route prefix (/api/v1/cash below).
   { prefix: '/api/v1/cash-receipts',  upstream: process.env['APAR_SERVICE_URL']           ?? 'http://apar-service:3013', rewritePrefix: '/api/v1/apar' },
+  // S052 — POS cash receipts, cashier drawers, blind close and over/short.
+  { prefix: '/api/v1/cash',           upstream: process.env['CASH_SERVICE_URL']           ?? 'http://cash-service:3050' },
   // ESG sustainability reporting — GL service provides stubs from live GL data
   { prefix: '/api/v1/esg',            upstream: process.env['GL_SERVICE_URL']             ?? 'http://gl-service:3010' },
   // Vendor shorthand (same as /apar/vendors)
   { prefix: '/api/v1/vendors',        upstream: process.env['APAR_SERVICE_URL']           ?? 'http://apar-service:3013', rewritePrefix: '/api/v1/apar/vendors' },
+  // CE-10 S124/S125 — certified tax engine adapter + regulatory fee tables.
+  // tax-service has zero direct GL writes; results only travel inside a
+  // consuming transaction's own envelope (owned by CE-07/CE-09/CE-11).
+  { prefix: '/api/v1/tax',            upstream: process.env['TAX_SERVICE_URL']            ?? 'http://tax-service:3051' },
+  // CE-11 S059-S065 — Fixed Ops (Service) accounting: RO close posting,
+  // reopen/void reversal, WIP, sublet, unapplied time, deferred maintenance,
+  // warranty claim receivables. Zero direct GL writes — posts exclusively
+  // through coa-service's posting-engine (see fixedops-service/src/infrastructure/posting-client.ts).
+  { prefix: '/api/v1/fixedops',       upstream: process.env['FIXEDOPS_SERVICE_URL']        ?? 'http://fixedops-service:3060' },
+  // CE-11 S066-S072 — Parts accounting: movement posting & tie-out, price-tape
+  // revaluation, obsolescence/scrap, physical inventory, special-order
+  // deposits, OEM returns, valuation config. Zero direct GL writes.
+  { prefix: '/api/v1/parts-accounting', upstream: process.env['PARTS_ACCOUNTING_SERVICE_URL'] ?? 'http://parts-accounting-service:3061' },
+  // CE-12 — Vehicle, Deals & F&I Integrations. All four post exclusively
+  // through coa-service's posting engine (/api/v1/coa/posting-engine) —
+  // zero direct GL writes, same as tax-service above.
+  { prefix: '/api/v1/vehicle-accounting', upstream: process.env['VEHICLE_ACCOUNTING_SERVICE_URL'] ?? 'http://vehicle-accounting-service:3090' },
+  { prefix: '/api/v1/floorplan',          upstream: process.env['FLOORPLAN_SERVICE_URL']          ?? 'http://floorplan-service:3091' },
+  { prefix: '/api/v1/deal-accounting',    upstream: process.env['DEAL_ACCOUNTING_SERVICE_URL']    ?? 'http://deal-accounting-service:3092' },
+  { prefix: '/api/v1/fni-reserve',        upstream: process.env['FNI_RESERVE_SERVICE_URL']        ?? 'http://fni-reserve-service:3093' },
+  // CE-14 S098-S106 — OEM integrations (adapter framework, statement match
+  // workbench, incentive/co-op/warranty-chargeback receivables, OEM
+  // financial statement renderer). oem-service has zero direct GL writes;
+  // postings travel through the standard matrix-row/envelope path (CE-07/
+  // CE-09) same as every other epic.
+  { prefix: '/api/v1/oem',            upstream: process.env['OEM_SERVICE_URL']            ?? 'http://oem-service:3052' },
+  // CE-15 S113-S123 S015-S017 — Close & Statutory (close calendar,
+  // reconciliation module, pre-close scrub, year-end, tax pack, DOC,
+  // statement packages, KPI packs, compliance reporting, multi-currency,
+  // signed snapshots, WORM archive). close-service has zero direct GL
+  // writes; all postings travel through the CE-07 governed posting path.
+  { prefix: '/api/v1/close',          upstream: process.env['CLOSE_SERVICE_URL']          ?? 'http://close-service:3095' },
+  // CE-16 S129/S130/S131/S132 — accounting migration. migration-service writes
+  // only to its own controlled staging; every financial effect leaves staging
+  // through CE-07 governed posting, never through this proxy.
+  { prefix: '/api/v1/migration',      upstream: process.env['MIGRATION_SERVICE_URL']      ?? 'http://migration-service:3062' },
+  // CE-17 — accounting automation. Every capability starts at OBSERVE_ONLY and
+  // automation-service never writes the GL itself: approved effects are handed
+  // to CE-07 governed posting, so nothing behind this prefix can post directly.
+  { prefix: '/api/v1/automation',     upstream: process.env['AUTOMATION_SERVICE_URL']     ?? 'http://automation-service:3056' },
 ];
 
 // ── Request logging hook ──────────────────────────────────────────────────────
@@ -102,10 +148,14 @@ async function bootstrap() {
   const app = Fastify({ logger: true, disableRequestLogging: true });
   await app.register(cors, { origin: true });
 
-  // Global rate limit: 300/min per tenant, override per-service as needed
+  // Global rate limit: 300/min per tenant, override per-service as needed.
+  // fix(integration): GATEWAY_RATE_LIMIT_MAX/_WINDOW let an isolated
+  // non-production certification run (e.g. CE-13's own gateway instance)
+  // raise this limit for its own process only — unset in every production
+  // deployment, so the 300/1-minute production default is unchanged.
   await app.register(rateLimit, {
-    max: 300,
-    timeWindow: '1 minute',
+    max: process.env['GATEWAY_RATE_LIMIT_MAX'] ? parseInt(process.env['GATEWAY_RATE_LIMIT_MAX'], 10) : 300,
+    timeWindow: process.env['GATEWAY_RATE_LIMIT_WINDOW'] ?? '1 minute',
     keyGenerator: tenantKeyGenerator,
     errorResponseBuilder: (_req, context) => ({
       statusCode: 429,

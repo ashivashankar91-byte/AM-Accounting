@@ -123,6 +123,12 @@ function fakeSequence(opts: { failSequence?: boolean } = {}) {
   };
 }
 
+function fakeAnalysisCodes() {
+  return {
+    loadValidationContext: async (_tenantId: string) => ({ types: new Map(), values: new Map() }),
+  };
+}
+
 function setup(opts: { mode?: string; failSequence?: boolean } = {}) {
   container.reset();
   const prisma = makePrisma({ failSequence: opts.failSequence });
@@ -131,6 +137,7 @@ function setup(opts: { mode?: string; failSequence?: boolean } = {}) {
   container.registerInstance('IEventPublisher', events as any);
   container.registerInstance('FiscalCalendarService', fakeFiscal() as any);
   container.registerInstance('SequenceService', fakeSequence({ failSequence: opts.failSequence }) as any);
+  container.registerInstance('AnalysisCodeService', fakeAnalysisCodes() as any);
   container.register('PostingService', { useClass: PostingService });
   container.registerInstance('ConfigService', { resolve: async () => ({ value: opts.mode ?? 'direct' }) } as any);
   container.register('DraftService', { useClass: DraftService });

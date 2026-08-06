@@ -1,0 +1,4 @@
+HEADER|GM|REMITTANCE|GS-2026-07-001|1.4|G54321
+REMIT|C-5001|610.00|Warranty claim 5001 remittance
+CHARGEBACK|CB-6001|150.00|Audit chargeback line 6001
+RETURN|R-7001|95.25|Parts return credit 7001

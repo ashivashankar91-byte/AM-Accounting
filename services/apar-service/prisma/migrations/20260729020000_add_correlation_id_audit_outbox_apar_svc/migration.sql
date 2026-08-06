@@ -1,0 +1,15 @@
+-- AMACC-CH04 S036A certification: audit trail requirement E ("correlation
+-- ID") is not satisfiable with the audit_outbox shape as it exists today —
+-- shared physically across every service (tenant-service/auth-service/
+-- coa-service/apar-service all `CREATE TABLE IF NOT EXISTS audit_outbox`
+-- with the identical id/tenant_id/doc_type/doc_id/action/before/after/actor/
+-- published_at/retry_count/last_error/created_at shape; whichever service's
+-- migration runs first in a given environment is the one that actually
+-- creates the table), and none of them include a correlation_id column.
+--
+-- ADD COLUMN IF NOT EXISTS (not CREATE TABLE) so this safely extends the
+-- table regardless of which service created it first, and is a no-op-safe
+-- additive change for every other service that also writes to this table —
+-- nullable, so their existing inserts (which don't populate it) are
+-- unaffected.
+ALTER TABLE audit_outbox ADD COLUMN IF NOT EXISTS correlation_id TEXT;

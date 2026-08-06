@@ -1,0 +1,17 @@
+{
+  "$label": "CERTIFICATION-ONLY: synthetic non-production data",
+  "$description": "Controlled schedule accounts with aging data for gate G4 aging integrity. One item deliberately carries a due date before its document date so G4 has something real to fail on when the bad row is included.",
+  "legalEntityId": "LE-CERT-001",
+  "agingAsOf": "2025-12-31",
+  "validItems": [
+    { "controlAccount": "1300", "sourceIdentity": "SCH-1300-0001", "documentRef": "WIP-0001", "documentDate": "2025-12-20", "dueDate": "2026-01-19", "amount": 4200.00, "agingBucket": "CURRENT" },
+    { "controlAccount": "1300", "sourceIdentity": "SCH-1300-0002", "documentRef": "WIP-0002", "documentDate": "2025-11-20", "dueDate": "2025-12-20", "amount": 1800.00, "agingBucket": "1_30" },
+    { "controlAccount": "1300", "sourceIdentity": "SCH-1300-0003", "documentRef": "WIP-0003", "documentDate": "2025-10-01", "dueDate": "2025-10-31", "amount": 900.00, "agingBucket": "31_60" },
+    { "controlAccount": "1300", "sourceIdentity": "SCH-1300-0004", "documentRef": "WIP-0004", "documentDate": "2025-08-01", "dueDate": "2025-08-31", "amount": 650.00, "agingBucket": "OVER_90" }
+  ],
+  "invalidItems": [
+    { "controlAccount": "1300", "sourceIdentity": "SCH-1300-9001", "documentRef": "WIP-9001", "documentDate": "2025-12-20", "dueDate": "2025-12-01", "amount": 100.00, "agingBucket": "CURRENT", "defect": "dueDate precedes documentDate" },
+    { "controlAccount": "1300", "sourceIdentity": "SCH-1300-9002", "documentRef": "WIP-9002", "documentDate": "2025-06-01", "dueDate": "2025-07-01", "amount": 250.00, "agingBucket": "CURRENT", "defect": "declared bucket contradicts computed bucket" }
+  ],
+  "expected": { "g4PassOnValid": true, "g4FailOnInvalid": true }
+}

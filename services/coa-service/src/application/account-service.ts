@@ -1,5 +1,5 @@
 import { inject, injectable } from 'tsyringe';
-import { IEventPublisher } from '@amacc/shared-kernel';
+import { IEventPublisher, setTenantContextOnConnection } from '@amacc/shared-kernel';
 import { PrismaClient } from '.prisma/coa-client';
 import crypto from 'crypto';
 import {
@@ -128,6 +128,8 @@ export interface UpdateAccountDTO {
   normalBalance?: string;
   postable?: boolean;
   contraReason?: string;
+  /** CE-12 — optional schedule-service linkage; null/undefined leaves it unset/unchanged. */
+  scheduleCode?: string | null;
 }
 
 export interface ReparentAccountDTO {
@@ -179,6 +181,7 @@ export class AccountService {
     // swallowed: an audit-write failure rolls back the account creation
     // rather than silently losing the audit trail.
     const created = await this.prisma.$transaction(async (tx) => {
+      await setTenantContextOnConnection(tx, dto.tenantId);
       const c = await tx.glAccount.create({
         data: {
           id: crypto.randomUUID(),
@@ -260,9 +263,16 @@ export class AccountService {
       changes['postable'] = { from: account.postable, to: postable };
     }
 
+    let scheduleCode = (account as any).scheduleCode as string | null | undefined;
+    if (dto.scheduleCode !== undefined && dto.scheduleCode !== scheduleCode) {
+      changes['scheduleCode'] = { from: scheduleCode ?? null, to: dto.scheduleCode };
+      scheduleCode = dto.scheduleCode;
+    }
+
     if (Object.keys(changes).length === 0) return account; // no-op
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      await setTenantContextOnConnection(tx, dto.tenantId);
       const u = await tx.glAccount.update({
         where: { id: account.id },
         data: {
@@ -272,6 +282,7 @@ export class AccountService {
           isContra: isContra(type, normalBalance),
           contraReason,
           postable,
+          scheduleCode,
           version: { increment: 1 },
         },
       });
@@ -296,6 +307,7 @@ export class AccountService {
 
     const before = this.snapshot(account);
     const updated = await this.prisma.$transaction(async (tx) => {
+      await setTenantContextOnConnection(tx, tenantId);
       const u = await tx.glAccount.update({
         where: { id: account.id },
         data: { status: 'INACTIVE', version: { increment: 1 } },
@@ -361,6 +373,7 @@ export class AccountService {
     // in any of the three rolls back the whole reparent, never a partial
     // silent write.
     const updated = await this.prisma.$transaction(async (tx) => {
+      await setTenantContextOnConnection(tx, dto.tenantId);
       const u = await tx.glAccount.update({
         where: { id: account.id },
         data: { parentId: newParentId, parentEffectiveFrom: effectiveFrom, version: { increment: 1 } },
@@ -444,6 +457,7 @@ export class AccountService {
       postable: a.postable,
       status: a.status,
       version: a.version,
+      scheduleCode: a.scheduleCode ?? null,
     };
   }
 

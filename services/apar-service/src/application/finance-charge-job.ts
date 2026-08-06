@@ -10,9 +10,12 @@
  * @trace-improvement
  *   COBOL ran as a daily/monthly batch job on the file server.
  *   TypeScript: HTTP-callable job that can be triggered by a cron or admin endpoint.
- *   Service boundaries: reads schedules from schedule-service, posts journals to gl-service.
+ *   Service boundaries: reads schedules from schedule-service, submits to CE-07 posting engine.
  *   No direct Prisma — apar-service does not own GL or schedule data.
+ *   CE-09 integration: direct GL writes replaced with governed posting engine path.
  */
+
+// @cert-only: rule-pack fixture for certification is in tests/fixtures/finance-charge-rule-pack.json
 
 import { Decimal } from '@prisma/client/runtime/library';
 
@@ -21,14 +24,12 @@ export interface FinanceChargeConfig {
   annualRatePercent: number;
   /** Minimum balance subject to finance charge, e.g. 0.01 */
   minimumBalance: number;
-  /** GL account code for the Finance Charge Receivable (DR) */
-  chargeReceivableCode: string;
-  /** GL account code for the Finance Charge Revenue (CR) */
-  chargeRevenueCode: string;
   /** Journal source code for the GL entry, e.g. "FC" */
   journalSource: string;
   /** Grace period in days — balances aged ≤ this number are exempt */
   gracePeriodDays: number;
+  /** Legal entity scope for this run — required for CE-07 posting engine */
+  legalEntityId?: string | null;
 }
 
 export interface FinanceChargeResult {
@@ -38,6 +39,8 @@ export interface FinanceChargeResult {
   controlNumbersCharged: number;
   totalFinanceCharge: number;
   journalEntryId: string | null;
+  postingExecutionId?: string | null;
+  eventId?: string | null;
   errors: string[];
 }
 
@@ -48,14 +51,14 @@ export interface FinanceChargeResult {
  */
 export class FinanceChargeJob {
   private scheduleServiceUrl: string;
-  private glServiceUrl: string;
+  private postingEngineUrl: string;  // coa-service endpoint
 
   constructor(
     scheduleServiceUrl?: string,
-    glServiceUrl?: string,
+    postingEngineUrl?: string,
   ) {
     this.scheduleServiceUrl = scheduleServiceUrl ?? process.env['SCHEDULE_SERVICE_URL'] ?? 'http://schedule-service:3020';
-    this.glServiceUrl = glServiceUrl ?? process.env['GL_SERVICE_URL'] ?? 'http://gl-service:3010';
+    this.postingEngineUrl = postingEngineUrl ?? process.env['COA_SERVICE_URL'] ?? 'http://coa-service:3030';
   }
 
   /**
@@ -154,7 +157,7 @@ export class FinanceChargeJob {
     // Step 3: Calculate finance charges
     // @cobol-origin finchg.cbl: FC-AMT = BALANCE * (ANNUAL-RATE / 1200)  (monthly rate)
     const monthlyRate = new Decimal(config.annualRatePercent).dividedBy(1200);
-    const journalLines: Array<{ accountCode: string; debit: string; credit: string; memo: string }> = [];
+    const journalLines: Array<{ controlNumber: string; chargeAmount: string; memo: string }> = [];
     let totalFinanceCharge = new Decimal(0);
 
     for (const [controlNumber, data] of chargesByControlNumber) {
@@ -163,16 +166,9 @@ export class FinanceChargeJob {
 
       totalFinanceCharge = totalFinanceCharge.plus(fcAmount);
       journalLines.push({
-        accountCode: config.chargeReceivableCode,
-        debit: fcAmount.toFixed(2),
-        credit: '0.00',
+        controlNumber,
+        chargeAmount: fcAmount.toFixed(2),
         memo: `Finance charge — control ${controlNumber}`,
-      });
-      journalLines.push({
-        accountCode: config.chargeRevenueCode,
-        debit: '0.00',
-        credit: fcAmount.toFixed(2),
-        memo: `Finance charge revenue — control ${controlNumber}`,
       });
     }
 
@@ -184,36 +180,77 @@ export class FinanceChargeJob {
       };
     }
 
-    // Step 4: Post the GL journal entry
+    // Step 4: Submit FINANCE_CHARGE_CALCULATED event to the CE-07 governed posting engine.
     // @cobol-origin finchg.cbl POST-FC-JOURNAL paragraph
-    const jeResp = await fetch(`${this.glServiceUrl}/api/v1/gl/journal-entries`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        entryDate: asOfDate.toISOString(),
-        description: `Finance charges — ${asOfDate.toISOString().substring(0, 7)} run`,
-        source: config.journalSource,
-        sourceRef: `FC-${asOfDate.toISOString().substring(0, 10)}`,
+    // Account resolution is now owned by the posting engine rule pack — zero direct GL writes.
+    const legalEntityId = config.legalEntityId ?? null;
+    const eventId = `fc-${tenantId}-${legalEntityId ?? 'nole'}-${asOfDate.toISOString().substring(0, 10)}-${config.journalSource}`;
+    const financeChargeEvent = {
+      eventId,
+      eventType: 'FINANCE_CHARGE_CALCULATED',
+      eventSchemaVersion: '1',
+      sourceSystem: 'apar-service',
+      sourceEntityType: 'FinanceChargeRun',
+      sourceEntityId: `${tenantId}-${asOfDate.toISOString().substring(0, 10)}`,
+      tenantId,
+      legalEntityId,
+      correlationId: `fc-run-${tenantId}-${asOfDate.toISOString().substring(0, 10)}`,
+      occurredAt: new Date().toISOString(),
+      businessDate: asOfDate.toISOString().substring(0, 10),
+      payload: {
+        tenantId,
+        legalEntityId,
+        runDate: asOfDate.toISOString().substring(0, 10),
+        totalFinanceCharge: totalFinanceCharge.toFixed(2),
+        controlNumbers: [...chargesByControlNumber.keys()],
+        ratePercent: config.annualRatePercent,
+        gracePeriodDays: config.gracePeriodDays,
+        journalSource: config.journalSource,
         lines: journalLines,
-      }),
+      },
+    };
+
+    const postingResp = await fetch(`${this.postingEngineUrl}/api/v1/coa/posting-engine/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId, Authorization: `Bearer ${serviceToken}` },
+      body: JSON.stringify(financeChargeEvent),
     });
 
-    if (!jeResp.ok) {
-      const errText = await jeResp.text();
-      errors.push(`Failed to post finance charge journal entry: ${errText}`);
+    if (!postingResp.ok) {
+      const errBody = await postingResp.json().catch(() => ({})) as any;
+      // Missing rule-pack mapping (400/422/NO_RULE_MATCH): zero GL mutation — return error, no journal created.
+      errors.push(`Posting engine rejected FINANCE_CHARGE_CALCULATED: HTTP ${postingResp.status} ${JSON.stringify(errBody)}`);
       return {
         tenantId, runDate, schedulesProcessed,
         controlNumbersCharged: chargesByControlNumber.size,
-        totalFinanceCharge: totalFinanceCharge.toNumber(), journalEntryId: null, errors,
+        totalFinanceCharge: totalFinanceCharge.toNumber(), journalEntryId: null,
+        postingExecutionId: errBody?.executionId ?? null,
+        eventId,
+        errors,
       };
     }
 
-    const je = await jeResp.json() as { id: string };
+    const postingResult = await postingResp.json() as { status?: string; journalEntryId?: string | null; executionId?: string | null };
+    if (postingResult.status === 'REJECTED' || postingResult.status === 'NO_RULE_MATCH' || postingResult.status === 'FAILED') {
+      errors.push(`Posting engine returned ${postingResult.status} for FINANCE_CHARGE_CALCULATED — no GL mutation`);
+      return {
+        tenantId, runDate, schedulesProcessed,
+        controlNumbersCharged: chargesByControlNumber.size,
+        totalFinanceCharge: totalFinanceCharge.toNumber(), journalEntryId: null,
+        postingExecutionId: (postingResult as any).executionId ?? null,
+        eventId,
+        errors,
+      };
+    }
 
     return {
       tenantId, runDate, schedulesProcessed,
       controlNumbersCharged: chargesByControlNumber.size,
-      totalFinanceCharge: totalFinanceCharge.toNumber(), journalEntryId: je.id, errors,
+      totalFinanceCharge: totalFinanceCharge.toNumber(),
+      journalEntryId: postingResult.journalEntryId ?? null,
+      postingExecutionId: (postingResult as any).executionId ?? null,
+      eventId,
+      errors,
     };
   }
 }

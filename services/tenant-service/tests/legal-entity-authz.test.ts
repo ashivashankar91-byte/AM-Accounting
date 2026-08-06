@@ -42,8 +42,8 @@ function authed(role: string, tenantId = 'tenant-a') {
 // migration); used here to drive the fake AuthzClient so this test still
 // proves the same grant matrix, just resolved through the real guard shape.
 const ROLE_GRANTS: Record<string, ReadonlySet<string>> = {
-  ADMIN:      new Set([LEGAL_ENTITY_PERMISSIONS.VIEW, LEGAL_ENTITY_PERMISSIONS.MANAGE]),
-  CONTROLLER: new Set([LEGAL_ENTITY_PERMISSIONS.VIEW, LEGAL_ENTITY_PERMISSIONS.MANAGE]),
+  ADMIN:      new Set([LEGAL_ENTITY_PERMISSIONS.VIEW, LEGAL_ENTITY_PERMISSIONS.MANAGE, LEGAL_ENTITY_PERMISSIONS.ELIMINATION_CONFIGURE]),
+  CONTROLLER: new Set([LEGAL_ENTITY_PERMISSIONS.VIEW, LEGAL_ENTITY_PERMISSIONS.MANAGE, LEGAL_ENTITY_PERMISSIONS.ELIMINATION_CONFIGURE]),
   ACCOUNTANT: new Set([LEGAL_ENTITY_PERMISSIONS.VIEW]),
   SERVICE:    new Set([LEGAL_ENTITY_PERMISSIONS.VIEW, LEGAL_ENTITY_PERMISSIONS.MANAGE]),
 };
@@ -63,6 +63,7 @@ function fakeService() {
     update:                 async () => ({ entity: FAKE_ENTITY, warnDuplicateStatutoryId: false }),
     deactivate:             async () => ({ ...FAKE_ENTITY, status: 'INACTIVE' }),
     markHasPostedJournals:  async () => undefined,
+    configureElimination:   async () => ({ ...FAKE_ENTITY, isElimination: true }),
   };
 }
 
@@ -180,6 +181,29 @@ describe('Legal Entity route authorization (PRM200-1: deny-by-default acct.entit
     expect(res.statusCode).toBe(403);
   });
 
+  // ACC-S003: elimination_configure is a distinct, narrower permission than
+  // acct.entity.manage — SERVICE (which has manage) must still be denied.
+  it('denies PATCH /:id/elimination (elimination_configure) to a manage-only role (SERVICE)', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/legal-entities/le-1/elimination',
+      headers: authed('SERVICE'),
+      payload: { version: 1, isElimination: true },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().message).toContain('acct.entity.elimination_configure');
+  });
+
+  it('denies PATCH /:id/elimination (elimination_configure) to a view-only role (ACCOUNTANT)', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/legal-entities/le-1/elimination',
+      headers: authed('ACCOUNTANT'),
+      payload: { version: 1, isElimination: true },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
   it('allows GET / (view) for a view-only role (ACCOUNTANT)', async () => {
     const res = await app.inject({
       method: 'GET',
@@ -217,6 +241,17 @@ describe('Legal Entity route authorization (PRM200-1: deny-by-default acct.entit
       payload: {},
     });
     expect(res.statusCode).toBe(204);
+  });
+
+  it('allows PATCH /:id/elimination (elimination_configure) for CONTROLLER', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/legal-entities/le-1/elimination',
+      headers: authed('CONTROLLER'),
+      payload: { version: 1, isElimination: true },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().isElimination).toBe(true);
   });
 
   it('still enforces tenant isolation: a permitted role without x-tenant-id gets 400, not data', async () => {

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, FileText, LayoutTemplate, Check, Printer, Trash2, RefreshCw, Filter } from 'lucide-react';
 import { glApi } from '../../api/client';
 import PageLoader from '../../components/PageLoader';
@@ -31,12 +31,16 @@ type SortCol = 'entryDate' | 'source' | 'sourceRef' | 'status';
 export default function JournalEntryList() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
 
-  // Filter state
-  const [sourceFilter, setSourceFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  // Filter state — initialized from the URL so drill-through links from
+  // Command Center exception tiles (e.g. "?status=DRAFT") land on the exact
+  // pre-filtered record set, per the value-doctrine "action test", not a
+  // generic unfiltered list.
+  const [sourceFilter, setSourceFilter] = useState(searchParams.get('source') ?? '');
+  const [statusFilter, setStatusFilter] = useState(searchParams.get('status') ?? '');
+  const [dateFrom, setDateFrom] = useState(searchParams.get('dateFrom') ?? '');
+  const [dateTo, setDateTo] = useState(searchParams.get('dateTo') ?? '');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sortCol, setSortCol] = useState<SortCol>('entryDate');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');

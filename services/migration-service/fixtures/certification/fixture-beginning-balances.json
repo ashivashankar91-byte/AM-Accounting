@@ -1,0 +1,24 @@
+{
+  "$label": "CERTIFICATION-ONLY: synthetic non-production data",
+  "$description": "Beginning balances plus one prior comparative period, for S130 conversion. Both sets are individually balanced so each promotes as its own conversion journal.",
+  "legalEntityId": "LE-CERT-001",
+  "beginningBalances": {
+    "asOf": "2025-12-31",
+    "rows": [
+      { "accountCode": "1000", "debit": 125000.00, "credit": 0 },
+      { "accountCode": "1200", "debit": 48250.75, "credit": 0 },
+      { "accountCode": "2000", "debit": 0, "credit": 61300.25 },
+      { "accountCode": "3000", "debit": 0, "credit": 111950.50 }
+    ]
+  },
+  "comparative": {
+    "periodYear": 2024,
+    "rows": [
+      { "accountCode": "1000", "debit": 98000.00, "credit": 0 },
+      { "accountCode": "1200", "debit": 40000.00, "credit": 0 },
+      { "accountCode": "2000", "debit": 0, "credit": 52000.00 },
+      { "accountCode": "3000", "debit": 0, "credit": 86000.00 }
+    ]
+  },
+  "expected": { "beginningBalanced": true, "comparativeBalanced": true }
+}

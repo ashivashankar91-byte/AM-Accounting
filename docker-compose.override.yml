@@ -1,18 +1,19 @@
 # Local dev override:
 # 1. Remaps api-gateway to port 3100 (3000 is taken by automate-20-frontend)
-# 2. Stubs rabbitmq — automate-20-rabbitmq-1 is connected to this network with alias 'rabbitmq'
+#
+# Previously also stubbed `rabbitmq` with a fake busybox container on the
+# assumption an external `automate-20-rabbitmq-1` container (on this same
+# docker network, aliased `rabbitmq`) would provide real AMQP. That container
+# does not actually exist in this environment (verified via `docker ps -a` —
+# no such container, running or stopped). The stub silently faked a healthy
+# status while providing no real broker, so every service's
+# RabbitMQEventPublisher.connect() failed and fell back to an in-process
+# in-memory event bus — meaning ALL cross-service event flows (including the
+# AI agent triggers like JOURNAL_ENTRY_SUBMITTED -> GL Integrity Agent review,
+# per PO-DEC-001) were silently broken for every local run. Removed the stub
+# so docker-compose.yml's own real `rabbitmq:3-management-alpine` service is
+# used instead.
 services:
   api-gateway:
     ports:
       - "3100:3000"
-
-  rabbitmq:
-    image: busybox
-    entrypoint: ["sh", "-c", "echo 'using external rabbitmq'; sleep infinity"]
-    ports: []
-    healthcheck:
-      test: ["CMD", "echo", "ok"]
-      interval: 5s
-      timeout: 3s
-      retries: 1
-      start_period: 2s

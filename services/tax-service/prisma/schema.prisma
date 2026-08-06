@@ -1,0 +1,402 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/tax-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// CE-10 / S124 — Certified Tax Engine Adapter.
+///
+/// Ownership boundaries (see docs/accounting-modernization/CE10_FABLE_EPIC_PACKAGE.md):
+/// tax-service computes NO tax law (no rates/nexus/taxability rules in
+/// code) — every rate/amount here is either (a) verbatim from a
+/// certified/fixture tax engine response, stored as evidence, or (b)
+/// jurisdiction-sourced configuration entered by an authorized user
+/// (fee tables). tax-service NEVER posts to GL (zero direct GL writes —
+/// see tests/zero-gl-writes.test.ts) and NEVER decides which GL account a
+/// tax/fee line posts to (S023 governed matrix — TaxAccountMappingRef is an
+/// opaque reference only, resolved elsewhere).
+
+/// Effective-dated tax engine connection configuration. One active row per
+/// (tenantId, legalEntityId) at any businessDate. NullEngine is the
+/// truthful default when no row is configured for a date.
+model TaxEngineConfig {
+  id            String  @id @default(uuid())
+  tenantId      String  @map("tenant_id")
+  legalEntityId String  @map("legal_entity_id")
+
+  /// NULL_ENGINE | TEST_FIXTURE_ENGINE — no production vendor is certified
+  /// by this package (see README.md).
+  engineType    String  @map("engine_type")
+  engineVersion String? @map("engine_version")
+  contentVersion String? @map("content_version")
+  /// Opaque connection config (credentials/endpoints) — never tax content.
+  connectionConfig Json? @map("connection_config")
+
+  effectiveFrom DateTime @map("effective_from") @db.Date
+  effectiveTo   DateTime? @map("effective_to") @db.Date
+
+  version   Int      @default(1)
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId, legalEntityId, effectiveFrom])
+  @@map("tax_engine_config")
+}
+
+/// Effective-dated jurisdiction registrations this tenant/entity holds.
+/// jurisdictionRef is browsed from the engine's own reference data — never
+/// free-typed tax law.
+model JurisdictionRegistration {
+  id            String  @id @default(uuid())
+  tenantId      String  @map("tenant_id")
+  legalEntityId String  @map("legal_entity_id")
+
+  jurisdictionRef      String  @map("jurisdiction_ref")
+  jurisdictionLevel    String? @map("jurisdiction_level")
+  registrationNumber   String? @map("registration_number")
+
+  effectiveFrom DateTime  @map("effective_from") @db.Date
+  effectiveTo   DateTime? @map("effective_to") @db.Date
+  active        Boolean   @default(true)
+
+  version   Int      @default(1)
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId, legalEntityId, jurisdictionRef, effectiveFrom])
+  @@map("jurisdiction_registration")
+}
+
+/// Exemption certificates — configuration + evidence, not tax law. The
+/// adapter passes the exemption ref; the engine decides applicability.
+model ExemptionCertificate {
+  id            String  @id @default(uuid())
+  tenantId      String  @map("tenant_id")
+  legalEntityId String  @map("legal_entity_id")
+
+  partyRef            String  @map("party_ref")
+  jurisdictionScope    String  @map("jurisdiction_scope")
+  exemptionTypeCode    String  @map("exemption_type_code")
+  certificateDocumentMetadata Json? @map("certificate_document_metadata")
+
+  effectiveFrom DateTime  @map("effective_from") @db.Date
+  effectiveTo   DateTime? @map("effective_to") @db.Date
+
+  /// ACTIVE | EXPIRING | EXPIRED | REVOKED — EXPIRING/EXPIRED are derived at
+  /// query time from effectiveTo, but `status` also carries REVOKED which is
+  /// an explicit lifecycle action.
+  status String @default("ACTIVE")
+
+  version   Int      @default(1)
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId, legalEntityId, partyRef])
+  @@index([tenantId, legalEntityId, effectiveTo])
+  @@map("exemption_certificate")
+}
+
+/// Immutable result store. INSERT-only from the application layer —
+/// recalculation always creates a NEW row linked via previousResultId.
+model TaxResult {
+  id            String  @id @default(uuid())
+  tenantId      String  @map("tenant_id")
+  legalEntityId String  @map("legal_entity_id")
+
+  documentType String  @map("document_type")
+  documentId   String  @map("document_id")
+  documentVersion Int  @map("document_version")
+
+  /// Idempotency identity: documentId + version, scoped per tenant. TRUE
+  /// uniqueness is enforced only for terminal/proceedable statuses
+  /// (CALCULATED, EXEMPT_APPLIED) via a partial unique index added in
+  /// 20260801010003_add_partial_unique_idempotency_tax_svc — NOT_CONFIGURED/
+  /// ENGINE_REJECTED/ENGINE_UNAVAILABLE evidence rows may accumulate one
+  /// per re-request attempt (chained via previousResultId) without
+  /// violating uniqueness, since recalculation always inserts a NEW row
+  /// and never updates an existing one.
+  idempotencyKey String @map("idempotency_key")
+
+  /// CALCULATED | EXEMPT_APPLIED | ENGINE_UNAVAILABLE | ENGINE_REJECTED | NOT_CONFIGURED
+  status String @map("status")
+
+  engineType     String  @map("engine_type")
+  engineVersion  String? @map("engine_version")
+  contentVersion String? @map("content_version")
+  engineResultId String? @map("engine_result_id")
+  engineRejectReason String? @map("engine_reject_reason")
+
+  currency String @default("USD")
+  totalTaxableBase Decimal @default(0) @db.Decimal(15, 2) @map("total_taxable_base")
+  totalTax         Decimal @default(0) @db.Decimal(15, 2) @map("total_tax")
+
+  /// Verbatim request snapshot, stored as evidence.
+  requestSnapshot Json @map("request_snapshot")
+  /// Verbatim engine response, stored as evidence (null when the engine
+  /// never answered — ENGINE_UNAVAILABLE/NOT_CONFIGURED).
+  responseSnapshot Json? @map("response_snapshot")
+
+  correlationId String  @map("correlation_id")
+  businessDate  DateTime @map("business_date") @db.Date
+
+  /// Recalculation lineage — never edited, only superseded.
+  previousResultId String? @map("previous_result_id")
+
+  calculatedAt DateTime @default(now()) @map("calculated_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  lines TaxResultLine[]
+
+  /// Query-perf index only — true uniqueness for terminal statuses is a
+  /// partial unique index added in a later migration (Prisma schema
+  /// cannot express partial unique indexes without a preview feature this
+  /// repo hasn't opted into, so it is managed directly in raw SQL).
+  @@index([tenantId, idempotencyKey])
+  @@index([tenantId, legalEntityId, documentType, documentId])
+  @@index([tenantId, businessDate])
+  @@map("tax_result")
+}
+
+/// Immutable, append-only per-jurisdiction tax lines for a TaxResult.
+model TaxResultLine {
+  id           String @id @default(uuid())
+  tenantId     String @map("tenant_id")
+  taxResultId  String @map("tax_result_id")
+
+  lineId            String  @map("line_id")
+  jurisdictionId     String  @map("jurisdiction_id")
+  jurisdictionLevel  String? @map("jurisdiction_level")
+  taxType            String  @map("tax_type")
+  /// Rate AS RETURNED by the engine — never computed locally.
+  rate               Decimal? @db.Decimal(9, 6)
+  taxableBase        Decimal  @db.Decimal(15, 2) @map("taxable_base")
+  taxAmount          Decimal  @db.Decimal(15, 2) @map("tax_amount")
+  engineResultLineId String?  @map("engine_result_line_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  taxResult TaxResult @relation(fields: [taxResultId], references: [id])
+
+  @@index([tenantId, taxResultId])
+  @@index([tenantId, jurisdictionId])
+  @@map("tax_result_line")
+}
+
+/// Divergent-response integrity alert — same idempotencyKey, different
+/// engine answer. Never overwrites the stored result.
+model TaxIntegrityAlert {
+  id             String @id @default(uuid())
+  tenantId       String @map("tenant_id")
+  idempotencyKey String @map("idempotency_key")
+
+  originalResultId String @map("original_result_id")
+  divergentRequestSnapshot Json @map("divergent_request_snapshot")
+  divergentResponseSnapshot Json? @map("divergent_response_snapshot")
+
+  detectedAt DateTime @default(now()) @map("detected_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, idempotencyKey])
+  @@map("tax_integrity_alert")
+}
+
+/// Append-only log — every engine call attempt (including retries).
+model TaxEngineAttemptLog {
+  id       String @id @default(uuid())
+  tenantId String @map("tenant_id")
+
+  idempotencyKey String  @map("idempotency_key")
+  attemptNumber  Int     @map("attempt_number")
+  /// CALCULATED | EXEMPT_APPLIED | ENGINE_UNAVAILABLE | ENGINE_REJECTED | NOT_CONFIGURED
+  outcome        String
+  errorMessage   String? @map("error_message")
+  durationMs     Int?    @map("duration_ms")
+
+  occurredAt DateTime @map("occurred_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, idempotencyKey])
+  @@map("tax_engine_attempt_log")
+}
+
+/// Exception/outage queue. Lifecycle: PARKED -> (re-request) -> RESOLVED.
+model TaxException {
+  id       String @id @default(uuid())
+  tenantId String @map("tenant_id")
+  legalEntityId String @map("legal_entity_id")
+
+  idempotencyKey String @map("idempotency_key")
+  documentType   String @map("document_type")
+  documentId     String @map("document_id")
+
+  /// ENGINE_UNAVAILABLE | ENGINE_REJECTED | NOT_CONFIGURED | ACCOUNT_MAPPING_PENDING
+  reasonCode String @map("reason_code")
+  reasonDetail String? @map("reason_detail")
+
+  /// PARKED | RE_REQUEST_IN_PROGRESS | RESOLVED
+  status String @default("PARKED")
+
+  requestSnapshot Json @map("request_snapshot")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  version   Int      @default(1)
+
+  dispositions TaxExceptionDisposition[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, idempotencyKey])
+  @@map("tax_exception")
+}
+
+/// Append-only disposition history for a TaxException.
+model TaxExceptionDisposition {
+  id           String @id @default(uuid())
+  tenantId     String @map("tenant_id")
+  exceptionId  String @map("exception_id")
+
+  fromStatus String? @map("from_status")
+  toStatus   String  @map("to_status")
+  action     String  @map("action")
+  actor      String
+  note       String?
+
+  occurredAt DateTime @default(now()) @map("occurred_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  exception TaxException @relation(fields: [exceptionId], references: [id])
+
+  @@index([tenantId, exceptionId])
+  @@map("tax_exception_disposition")
+}
+
+/// S023 boundary — opaque tax/fee account-mapping reference lookup by
+/// (tenantId, legalEntityId, eventType/feeCode). New rows always start
+/// blank (mappingStatus = ACCOUNT_MAPPING_VALUES_PENDING). Only the labeled
+/// TEST-TENANT fixture may carry a resolved (still-opaque) status.
+model TaxAccountMappingRef {
+  id            String @id @default(uuid())
+  tenantId      String @map("tenant_id")
+  legalEntityId String @map("legal_entity_id")
+
+  eventType String  @map("event_type")
+  feeCode   String? @map("fee_code")
+
+  /// ACCOUNT_MAPPING_VALUES_PENDING | TEST-FIXTURE-MAPPING-RESOLVED — never
+  /// a real GL account number.
+  mappingStatus String  @default("ACCOUNT_MAPPING_VALUES_PENDING") @map("mapping_status")
+  mappingRef    String? @map("mapping_ref")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, legalEntityId, eventType, feeCode])
+  @@map("tax_account_mapping_ref")
+}
+
+/// S125 — Regulatory fee tables. Amounts/rates AS ENTERED — never shipped
+/// as code defaults.
+model FeeTable {
+  id            String @id @default(uuid())
+  tenantId      String @map("tenant_id")
+  legalEntityId String @map("legal_entity_id")
+
+  jurisdictionRef String @map("jurisdiction_ref")
+  feeCode         String @map("fee_code")
+  name            String
+
+  /// FIXED_PER_UNIT | FIXED_PER_DOCUMENT | PERCENT_OF_BASE
+  basis String
+
+  /// Exactly one of amount/ratePercent is set, validated per basis at the
+  /// application layer (never Float/Double — NUMERIC only).
+  amount      Decimal? @db.Decimal(15, 2)
+  ratePercent Decimal? @db.Decimal(7, 4) @map("rate_percent")
+
+  /// Passed to S124's request — tax-on-fee interaction is answered by the
+  /// tax engine/config, never computed locally.
+  taxabilityFlag Boolean @default(false) @map("taxability_flag")
+
+  effectiveFrom DateTime  @map("effective_from") @db.Date
+  effectiveTo   DateTime? @map("effective_to") @db.Date
+  active        Boolean   @default(true)
+
+  version   Int      @default(1)
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  applicabilityTags FeeTableApplicabilityTag[]
+  usageReferences   FeeTableUsageReference[]
+
+  @@index([tenantId, legalEntityId, feeCode, effectiveFrom])
+  @@map("fee_table")
+}
+
+/// Applicability tags consumed by resolveApplicableFees.
+model FeeTableApplicabilityTag {
+  id             String @id @default(uuid())
+  tenantId       String @map("tenant_id")
+  feeTableId     String @map("fee_table_id")
+  itemClassCode    String? @map("item_class_code")
+  documentTypeCode String? @map("document_type_code")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  feeTable FeeTable @relation(fields: [feeTableId], references: [id])
+
+  @@index([tenantId, feeTableId])
+  @@map("fee_table_applicability_tag")
+}
+
+/// Append-only reference-count evidence — populated whenever
+/// resolveApplicableFees is invoked for a real (non-preview) transaction
+/// context. Backs the deactivate-with-references 409 (real count, not
+/// guessed).
+model FeeTableUsageReference {
+  id         String @id @default(uuid())
+  tenantId   String @map("tenant_id")
+  feeTableId String @map("fee_table_id")
+
+  documentType String @map("document_type")
+  documentId   String @map("document_id")
+
+  resolvedAt DateTime @default(now()) @map("resolved_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  feeTable FeeTable @relation(fields: [feeTableId], references: [id])
+
+  @@index([tenantId, feeTableId])
+  @@map("fee_table_usage_reference")
+}
+
+/// This service's audit outbox — drained by the shared
+/// @amacc/shared-kernel AuditOutboxDrainer to audit-service, exactly like
+/// every other service's audit outbox. Excluded from RLS (background
+/// drainer runs outside tenant context) — see the RLS migration.
+model TaxAuditReference {
+  id           String    @id @default(uuid())
+  tenantId     String    @map("tenant_id")
+  entityType   String?   @map("entity_type")
+  entityId     String?   @map("entity_id")
+  eventType    String    @map("event_type")
+  actor        String
+  before       Json?
+  after        Json?
+  publishedAt  DateTime? @map("published_at")
+  retryCount   Int       @default(0) @map("retry_count")
+  lastError    String?   @map("last_error")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  @@index([publishedAt, retryCount])
+  @@index([tenantId, entityType, entityId])
+  @@map("tax_audit_reference")
+}

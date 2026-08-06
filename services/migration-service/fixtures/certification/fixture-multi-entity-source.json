@@ -1,0 +1,18 @@
+{
+  "$label": "CERTIFICATION-ONLY: synthetic non-production data",
+  "$description": "Two legal entities (rooftops) extracted from one legacy source system. Proves entity scoping is carried on every row and that a run scoped to one entity never stages the other's rows.",
+  "sourceSystem": { "systemCode": "LEGACY-AUTOMATE-01", "systemName": "Synthetic Automate (certification)", "sourceType": "AUTOMATE" },
+  "legalEntities": [
+    { "legalEntityId": "LE-CERT-001", "name": "Certification Motors North" },
+    { "legalEntityId": "LE-CERT-002", "name": "Certification Motors South" }
+  ],
+  "rows": [
+    { "legalEntityId": "LE-CERT-001", "accountCode": "1000", "accountName": "Cash In Bank", "department": "00", "debit": 125000.00, "credit": 0, "description": "TB opening cash" },
+    { "legalEntityId": "LE-CERT-001", "accountCode": "1200", "accountName": "Accounts Receivable", "department": "00", "debit": 48250.75, "credit": 0, "description": "TB opening AR" },
+    { "legalEntityId": "LE-CERT-001", "accountCode": "2000", "accountName": "Accounts Payable", "department": "00", "debit": 0, "credit": 61300.25, "description": "TB opening AP" },
+    { "legalEntityId": "LE-CERT-001", "accountCode": "3000", "accountName": "Owners Equity", "department": "00", "debit": 0, "credit": 111950.50, "description": "TB opening equity" },
+    { "legalEntityId": "LE-CERT-002", "accountCode": "1000", "accountName": "Cash In Bank", "department": "00", "debit": 87400.00, "credit": 0, "description": "TB opening cash" },
+    { "legalEntityId": "LE-CERT-002", "accountCode": "2000", "accountName": "Accounts Payable", "department": "00", "debit": 0, "credit": 32100.00, "description": "TB opening AP" },
+    { "legalEntityId": "LE-CERT-002", "accountCode": "3000", "accountName": "Owners Equity", "department": "00", "debit": 0, "credit": 55300.00, "description": "TB opening equity" }
+  ]
+}

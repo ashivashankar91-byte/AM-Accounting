@@ -93,6 +93,7 @@ const UpdateSchema = z.object({
   normalBalance: z.string().optional(),
   postable: z.boolean().optional(),
   contraReason: z.string().optional(),
+  scheduleCode: z.string().nullable().optional(),
   actor: z.string().min(1).optional(),
 });
 

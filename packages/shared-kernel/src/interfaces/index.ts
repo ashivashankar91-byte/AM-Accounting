@@ -176,9 +176,18 @@ export interface IAPEntryRepository {
 
 export interface IAuditLogger {
   log(entry: AuditEntry): Promise<void>;
-  getByTenant(tenantId: TenantId, limit?: number): Promise<import('../types').AgentLogEntry[]>;
-  getById(id: string): Promise<import('../types').AgentLogEntry | null>;
-  resolveHumanRequired(id: string): Promise<void>;
+  // agentName narrows to one agent's entries (e.g. the Agents dashboard's
+  // per-card drill-in); offset paginates beyond the first page. Both
+  // optional and additive — existing callers passing only (tenantId, limit)
+  // are unaffected.
+  getByTenant(tenantId: TenantId, limit?: number, agentName?: string, offset?: number): Promise<import('../types').AgentLogEntry[]>;
+  // tenantId is optional here for backward compatibility with older
+  // implementations, but RLS-backed implementations (e.g.
+  // services/agent-*/src/infrastructure/audit-logger.ts's
+  // PostgresAuditLogger) require it to return/modify anything at all —
+  // callers should always pass it through when available.
+  getById(id: string, tenantId?: string): Promise<import('../types').AgentLogEntry | null>;
+  resolveHumanRequired(id: string, tenantId?: string): Promise<void>;
 }
 
 // ── DMS Adapter Interface ──────────────────────────────

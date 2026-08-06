@@ -41,7 +41,7 @@ export class PrismaBankTransactionRepository implements IBankTransactionReposito
     return {
       id: row.id, bankReconId: row.bankReconId,
       transactionDate: row.transactionDate, description: row.description,
-      amount: row.amount, matchedJournalLineId: row.matchedJournalLineId,
+      amount: row.amount.toNumber(), matchedJournalLineId: row.matchedJournalLineId,
       status: row.status as BankTransactionStatus,
     };
   }

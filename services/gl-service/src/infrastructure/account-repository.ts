@@ -111,6 +111,11 @@ export class PrismaGLAccountRepository implements IGLAccountRepository {
       subtotalGroup3: (row as any).subtotalGroup3 ?? undefined,
       reqControlNumber: (row as any).reqControlNumber ?? undefined,
       printCode: (row as any).printCode ?? 'D',
+      // S009 — denormalized "current" statement-line pointer (see
+      // statement-line-service.ts); the history table is the source of
+      // truth, this is a fast-path read exposed here so the account list
+      // can show each account's current mapping without a second call.
+      statementLineId: (row as any).statementLineId ?? undefined,
     } as unknown as GLAccount;
   }
 }

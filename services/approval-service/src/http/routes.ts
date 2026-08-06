@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { InMemoryApprovalWorkflow } from '../application/approval-workflow';
-import { asTenantId, asUserId, authMiddleware } from '@amacc/shared-kernel';
+import { IApprovalWorkflow, asTenantId, asUserId, authMiddleware } from '@amacc/shared-kernel';
+import { ApprovalError } from '../application/errors';
 
 function getTenantId(request: any) {
   const id = request.headers['x-tenant-id'] as string;
@@ -24,16 +24,25 @@ const DecisionSchema = z.object({
   note: z.string().optional(),
 });
 
-export function approvalRoutes(workflow: InMemoryApprovalWorkflow) {
+export function approvalRoutes(workflow: IApprovalWorkflow) {
   return async function (app: FastifyInstance) {
     const JWT_SECRET = process.env['AMACC_JWT_SECRET'] ?? 'amacc-dev-secret-change-in-production';
     app.addHook('preHandler', authMiddleware(JWT_SECRET));
+
+    app.setErrorHandler((error, request, reply) => {
+      if (error instanceof ApprovalError) {
+        return reply.status(error.statusCode).send({ error: error.code });
+      }
+      return reply.status(500).send({ error: 'INTERNAL_ERROR' });
+    });
 
     // POST /approvals/request
     app.post('/request', async (request, reply) => {
       const tenantId = getTenantId(request);
       const body = RequestApprovalSchema.parse(request.body);
-      const result = await workflow.requestApproval(
+      const requesterId = request.headers['x-requester-id'] as string | undefined;
+      const idempotencyKey = request.headers['x-idempotency-key'] as string | undefined;
+      const result = await (workflow as any).requestApproval(
         {
           id: '', tenantId, agentName: body.agentName, actionType: body.actionType as any,
           entityRef: body.entityRef, reasoning: body.reasoning, evidence: body.evidence,
@@ -42,6 +51,7 @@ export function approvalRoutes(workflow: InMemoryApprovalWorkflow) {
         body.requiredRole as any,
         tenantId,
         body.timeoutMinutes,
+        { requesterId, idempotencyKey },
       );
       return reply.status(201).send(result);
     });
@@ -58,7 +68,8 @@ export function approvalRoutes(workflow: InMemoryApprovalWorkflow) {
       const { id } = request.params as { id: string };
       const { note } = (request.body as any) ?? {};
       const userId = (request.headers['x-user-id'] as string) ?? 'unknown';
-      await workflow.processDecision(id, asUserId(userId), 'APPROVE', note);
+      const tenantIdOpt = request.headers['x-tenant-id'] as string | undefined;
+      await (workflow as any).processDecision(id, asUserId(userId), 'APPROVE', note, { tenantId: tenantIdOpt });
       return reply.send({ approved: true });
     });
 
@@ -67,8 +78,18 @@ export function approvalRoutes(workflow: InMemoryApprovalWorkflow) {
       const { id } = request.params as { id: string };
       const { note } = DecisionSchema.parse(request.body ?? { decision: 'REJECT' });
       const userId = (request.headers['x-user-id'] as string) ?? 'unknown';
-      await workflow.processDecision(id, asUserId(userId), 'REJECT', note);
+      const tenantIdOpt = request.headers['x-tenant-id'] as string | undefined;
+      await (workflow as any).processDecision(id, asUserId(userId), 'REJECT', note, { tenantId: tenantIdOpt });
       return reply.send({ rejected: true });
+    });
+
+    // POST /approvals/:id/cancel
+    app.post('/:id/cancel', async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const { reason } = (request.body as any) ?? {};
+      const userId = (request.headers['x-user-id'] as string) ?? 'unknown';
+      await (workflow as any).cancelRequest(id, userId, reason);
+      return reply.send({ cancelled: true });
     });
 
     // GET /approvals/history/:tenantId

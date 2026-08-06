@@ -11,7 +11,7 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['src/tests/test-*.ts', 'src/**/*.{test,spec}.ts'],
+    include: ['src/tests/test-*.ts', 'src/**/*.{test,spec}.ts', 'tests/*.{test,spec}.ts'],
     setupFiles: ['reflect-metadata'],
   },
 });

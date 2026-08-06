@@ -5,7 +5,7 @@ import { PrismaClient } from '.prisma/cashflow-client';
 import { CashFlowService } from './application/cashflow-service';
 import { cashflowRoutes } from './http/routes';
 import { RabbitMQEventPublisher } from './infrastructure/event-publisher';
-import { DomainEvent } from '@amacc/shared-kernel';
+import { DomainEvent, createTenantRlsMiddleware, tenantContextHook, RlsTenantContext } from '@amacc/shared-kernel';
 import pino from 'pino';
 
 const logger = pino({ name: 'cashflow-service' });
@@ -16,11 +16,19 @@ async function bootstrap() {
 
   const prisma = new PrismaClient();
   await prisma.$connect();
+  // Sets app.current_tenant_id on every query, enforced by RLS policies
+  // (migration 20260730000001_add_rls_policies_cashflow_svc) — previously
+  // absent entirely, unlike every other Prisma-backed service in this
+  // codebase, leaving cashflow_forecasts/daily_cash_actuals with app-level
+  // WHERE-clause scoping only and no DB-level defense-in-depth.
+  (prisma as any).$use(createTenantRlsMiddleware(prisma));
+  app.addHook('preHandler', tenantContextHook);
 
   const cashflowService = new CashFlowService(prisma);
 
   const eventPublisher = new RabbitMQEventPublisher({
     url: process.env['RABBITMQ_URL'] ?? 'amqp://localhost:5672',
+    serviceName: 'cashflow-service',
   });
   await eventPublisher.connect();
 
@@ -35,6 +43,11 @@ async function bootstrap() {
   for (const eventType of triggerEvents) {
     eventPublisher.subscribe(eventType, async (event: DomainEvent) => {
       try {
+        // Event-driven forecast recalculation has no HTTP request/preHandler
+        // to run tenantContextHook, so app.current_tenant_id must be set
+        // explicitly here for the RLS-enforced queries inside
+        // generateForecast() to see any rows at all.
+        RlsTenantContext.set(event.tenantId);
         await cashflowService.generateForecast(event.tenantId);
         logger.info({ eventType, tenantId: event.tenantId }, 'Cash flow forecast updated');
       } catch (err) {

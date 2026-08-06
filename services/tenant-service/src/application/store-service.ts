@@ -138,6 +138,15 @@ export class StoreService {
       );
     }
 
+    // ACC-S003 BR003-2: an elimination entity cannot own stores (guards the
+    // direction opposite the elimination-configure 422 OWNS_STORES check).
+    if (entity.isElimination) {
+      throw new StoreConflictError(
+        'ELIMINATION_ENTITY_CANNOT_OWN_STORES',
+        `Legal entity '${dto.entityId}' is an elimination entity and cannot own stores`,
+      );
+    }
+
     // Check store code uniqueness within entity (BR201-1)
     const existing = await this.prisma.store.findFirst({
       where: { entityId: dto.entityId, storeCode: dto.storeCode.toUpperCase() },

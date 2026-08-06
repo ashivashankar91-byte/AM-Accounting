@@ -1,28 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
-import { esgApi } from '../api/client';
-
-const tenantId = () => localStorage.getItem('tenantId') ?? 'tenant-kunes';
-
-async function fetchGroups() {
-  const resp = await fetch('/api/v1/groups', { headers: { 'x-tenant-id': tenantId() } });
-  return resp.json();
-}
-
-async function fetchGroupDashboard(groupId: string) {
-  const resp = await fetch(`/api/v1/groups/${groupId}/dashboard`, { headers: { 'x-tenant-id': tenantId() } });
-  return resp.json();
-}
+import { esgApi, groupsApi } from '../api/client';
 
 const fmt = (cents: number) => `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 0 })}`;
 const fmtDollars = (v: number) => `$${v.toLocaleString('en-US', { minimumFractionDigits: 0 })}`;
 
 export default function GroupDashboard() {
-  const { data: groups } = useQuery({ queryKey: ['dealer-groups'], queryFn: fetchGroups, retry: false });
+  const { data: groups } = useQuery({ queryKey: ['dealer-groups'], queryFn: groupsApi.list, retry: false });
   const groupId = (groups ?? [])[0]?.id;
   const { data: dashboard, isLoading } = useQuery({
     queryKey: ['group-dashboard', groupId],
-    queryFn: () => fetchGroupDashboard(groupId),
+    queryFn: () => groupsApi.getDashboard(groupId),
     enabled: !!groupId,
     retry: false,
   });

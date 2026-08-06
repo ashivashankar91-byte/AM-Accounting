@@ -1,0 +1,695 @@
+// CE-14 — OEM Integrations epic (S098-S106, Pass-1 = 8 R5 stories).
+// See docs/accounting-modernization/CE14_FABLE_EPIC_PACKAGE.md for the
+// authoritative story contracts this schema implements.
+//
+// The OEM boundary (package section "THE OEM BOUNDARY"): live connectivity,
+// certification, and statement-spec content are external truth this schema
+// does not fabricate. connectionStatus is the truthful enum
+// (NOT_CONFIGURED/TEST_ONLY/CERTIFICATION_PENDING/CERTIFIED); CERTIFIED is
+// only ever set alongside a certificationEvidenceRef.
+
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/oem-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OemConnectionStatus {
+  NOT_CONFIGURED
+  TEST_ONLY
+  CERTIFICATION_PENDING
+  CERTIFIED
+}
+
+enum OemStagedSourceType {
+  FEED
+  MANUAL
+}
+
+enum OemStagedDocumentKind {
+  REMITTANCE
+  CHARGEBACK_NOTICE
+  INCENTIVE_STATEMENT
+  PARTS_RETURN_CREDIT
+  COOP_STATEMENT
+  OTHER
+}
+
+enum OemRowParseStatus {
+  PARSED
+  UNPARSED
+}
+
+// S101A — CE-11 S065 claim items / S071 return-credit items / S103A
+// incentive accruals / S106 co-op claims are the four open-item families a
+// match session row can relieve (PUTR: item-type filters per package line 20).
+enum OemOpenItemType {
+  WARRANTY_CLAIM
+  PARTS_RETURN_CREDIT
+  INCENTIVE_ACCRUAL
+  COOP_CLAIM
+}
+
+enum OemMatchDisposition {
+  PENDING
+  MATCHED
+  SHORT_PAID
+  DISPUTED
+  INVESTIGATION
+}
+
+enum OemMatchSessionStatus {
+  OPEN
+  COMPLETE
+}
+
+enum OemIncentiveAmountType {
+  FLAT
+  TABLE
+}
+
+enum OemIncentiveAccrualStatus {
+  ACCRUED
+  TRUED_UP
+}
+
+enum OemStatementMappingStatus {
+  DRAFT
+  ACTIVE
+}
+
+enum OemChargebackDisposition {
+  PENDING
+  ACCEPTED
+  DISPUTED
+}
+
+enum OemReserveEntryStatus {
+  PREVIEW
+  APPROVED
+  POSTED
+}
+
+enum OemCoopClaimStatus {
+  DRAFT
+  EXPORTED
+  RESPONSE_RECORDED
+}
+
+enum OemCoopLineResponseStatus {
+  PENDING
+  APPROVED
+  DENIED
+  PARTIAL
+}
+
+enum OemCoopAccrualStatus {
+  PREVIEW
+  APPROVED
+  TRUED_UP
+}
+
+enum OemCoopAccrualBasis {
+  PERCENT_OF_SALES
+  ENTERED_TERMS
+}
+
+// ---------------------------------------------------------------------------
+// S098 — OEM Adapter Framework & Diff Alerts
+// ---------------------------------------------------------------------------
+
+model OemIntegrationProfile {
+  id                      String              @id @default(cuid())
+  tenantId                String              @map("tenant_id")
+  make                    String              @db.VarChar(40)
+  programName             String?             @db.VarChar(120) @map("program_name")
+  connectionStatus        OemConnectionStatus @default(NOT_CONFIGURED) @map("connection_status")
+  statementSpecVersion    String?             @db.VarChar(40) @map("statement_spec_version")
+  // Only ever non-null when connectionStatus = CERTIFIED — enforced at the
+  // application layer (no code path flips status to CERTIFIED without one).
+  certificationEvidenceRef String?            @db.VarChar(200) @map("certification_evidence_ref")
+  notes                   String?
+  createdAt               DateTime            @default(now()) @map("created_at")
+  updatedAt               DateTime            @updatedAt @map("updated_at")
+
+  dealerCodes    OemDealerCode[]
+  stagedDocuments OemStagedDocument[]
+  diffAlerts     OemDiffAlert[]
+  incentivePrograms OemIncentiveProgram[]
+  statementProfiles OemStatementProfile[]
+  coopPrograms   OemCoopProgram[]
+
+  @@unique([tenantId, make])
+  @@map("oem_integration_profiles")
+  @@index([tenantId])
+}
+
+model OemDealerCode {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  profileId String   @map("profile_id")
+  storeId   String   @map("store_id")
+  dealerCode String  @db.VarChar(40) @map("dealer_code")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  profile OemIntegrationProfile @relation(fields: [profileId], references: [id])
+
+  @@unique([tenantId, profileId, storeId])
+  @@map("oem_dealer_codes")
+  @@index([tenantId])
+}
+
+// Immutable: raw + parsed rows are never mutated after import. A
+// re-delivered/updated document is a NEW row (supersedesDocumentId links the
+// chain); diff alerts compare the two rather than overwriting.
+model OemStagedDocument {
+  id                  String                @id @default(cuid())
+  tenantId            String                @map("tenant_id")
+  storeId             String?               @map("store_id")
+  profileId           String                @map("profile_id")
+  make                String                @db.VarChar(40)
+  sourceType          OemStagedSourceType   @map("source_type")
+  kind                OemStagedDocumentKind
+  // Identity key: hash of make+kind+natural document key (statement id/date/
+  // dealer code) — content-independent, deliberately NOT unique. Every
+  // version of the "same" natural document (fed once, re-delivered N times)
+  // shares one documentIdentity; the LATEST row per (tenantId,
+  // documentIdentity) — by importedAt — is the current staged version, the
+  // rest are immutable history reachable via supersedesDocumentId.
+  documentIdentity    String                @db.VarChar(200) @map("document_identity")
+  // Hash of rawContent — the actual byte-identical-redelivery dedupe check
+  // (contentHash unchanged from the latest same-documentIdentity row ⇒ pure
+  // re-delivery, no new row created; contentHash changed ⇒ new row +
+  // diff alert, never silently overwritten).
+  contentHash         String                @db.VarChar(64) @map("content_hash")
+  specVersion         String?               @db.VarChar(40) @map("spec_version")
+  rawContent          String                @map("raw_content")
+  supersedesDocumentId String?              @map("supersedes_document_id")
+  importedAt          DateTime              @default(now()) @map("imported_at")
+  importedBy          String                @map("imported_by")
+
+  profile  OemIntegrationProfile             @relation(fields: [profileId], references: [id])
+  rows     OemStagedDocumentRow[]
+  diffAlertsAsPrior OemDiffAlert[] @relation("PriorDocument")
+  diffAlertsAsNew   OemDiffAlert[] @relation("NewDocument")
+  matchSessions     OemMatchSession[]
+  chargebackNotices OemWarrantyChargebackNotice[]
+
+  @@map("oem_staged_documents")
+  @@index([tenantId, profileId])
+  @@index([tenantId, documentIdentity, importedAt])
+}
+
+model OemStagedDocumentRow {
+  id           String            @id @default(cuid())
+  tenantId     String            @map("tenant_id")
+  documentId   String            @map("document_id")
+  rowIndex     Int               @map("row_index")
+  parseStatus  OemRowParseStatus @map("parse_status")
+  // Canonical row type per package line 18 (S099/S100 AC): RECEIVABLE_
+  // REMITTANCE, CHARGEBACK_LINE, INCENTIVE_LINE, PARTS_RETURN_CREDIT,
+  // COOP_LINE — null when UNPARSED (unknown segment, staged untyped).
+  canonicalType String?          @db.VarChar(40) @map("canonical_type")
+  fields       Json
+  rawLine      String?           @map("raw_line")
+  createdAt    DateTime          @default(now()) @map("created_at")
+
+  document OemStagedDocument @relation(fields: [documentId], references: [id])
+  matchSessionRows OemMatchSessionRow[]
+
+  @@map("oem_staged_document_rows")
+  @@index([tenantId, documentId])
+}
+
+// Field-level diff when a re-delivered document differs from its staged
+// predecessor (amounts, line counts, spec version) — package line 16.
+model OemDiffAlert {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  profileId       String    @map("profile_id")
+  priorDocumentId String    @map("prior_document_id")
+  newDocumentId   String    @map("new_document_id")
+  fieldDiffs      Json      @map("field_diffs")
+  raisedAt        DateTime  @default(now()) @map("raised_at")
+  resolvedAt      DateTime? @map("resolved_at")
+  resolvedBy      String?   @map("resolved_by")
+
+  profile       OemIntegrationProfile        @relation(fields: [profileId], references: [id])
+  priorDocument OemStagedDocument @relation("PriorDocument", fields: [priorDocumentId], references: [id])
+  newDocument   OemStagedDocument @relation("NewDocument", fields: [newDocumentId], references: [id])
+
+  @@map("oem_diff_alerts")
+  @@index([tenantId, profileId])
+}
+
+// ---------------------------------------------------------------------------
+// S101A — Manual OEM Statement Match Workbench
+// ---------------------------------------------------------------------------
+
+model OemMatchSession {
+  id                 String                @id @default(cuid())
+  tenantId           String                @map("tenant_id")
+  storeId            String                @map("store_id")
+  statementDocumentId String               @map("statement_document_id")
+  status             OemMatchSessionStatus @default(OPEN)
+  openedAt           DateTime              @default(now()) @map("opened_at")
+  openedBy           String                @map("opened_by")
+  completedAt        DateTime?             @map("completed_at")
+  completedBy        String?               @map("completed_by")
+
+  statementDocument OemStagedDocument   @relation(fields: [statementDocumentId], references: [id])
+  rows              OemMatchSessionRow[]
+
+  @@map("oem_match_sessions")
+  @@index([tenantId, storeId])
+}
+
+model OemMatchSessionRow {
+  id               String              @id @default(cuid())
+  tenantId         String              @map("tenant_id")
+  sessionId        String              @map("session_id")
+  // Null only for a system-added "ours-not-on-statement" exception row
+  // (package line 20) — every factory-side row has a staged row.
+  stagedRowId      String?             @map("staged_row_id")
+  isSystemGenerated Boolean            @default(false) @map("is_system_generated")
+  // PUTR: CE-11 S065 claim-item / S071 return-credit-item API and type
+  // filters are not yet wired in this worktree (CE-11 not implemented
+  // here) — see src/domain/upstream-items.ts UnwiredOpenItemSource.
+  openItemRef      String?             @map("open_item_ref")
+  openItemType     OemOpenItemType?    @map("open_item_type")
+  disposition      OemMatchDisposition @default(PENDING)
+  statementAmount  Decimal             @db.Decimal(15, 2) @map("statement_amount")
+  appliedAmount    Decimal?            @db.Decimal(15, 2) @map("applied_amount")
+  writeDownAmount  Decimal?            @db.Decimal(15, 2) @map("write_down_amount")
+  applyNumber      String?             @db.VarChar(40) @map("apply_number")
+  note             String?
+  dispositionedAt  DateTime?           @map("dispositioned_at")
+  dispositionedBy  String?             @map("dispositioned_by")
+
+  session   OemMatchSession       @relation(fields: [sessionId], references: [id])
+  stagedRow OemStagedDocumentRow? @relation(fields: [stagedRowId], references: [id])
+
+  @@map("oem_match_session_rows")
+  @@index([tenantId, sessionId])
+}
+
+// ---------------------------------------------------------------------------
+// S103A — Incentive Registry & Flat RDR Accruals
+// ---------------------------------------------------------------------------
+
+model OemIncentiveProgram {
+  id                 String                 @id @default(cuid())
+  tenantId           String                 @map("tenant_id")
+  profileId          String                 @map("profile_id")
+  make               String                 @db.VarChar(40)
+  programId          String                 @db.VarChar(60) @map("program_id")
+  termsSummary       String?
+  amountType         OemIncentiveAmountType @map("amount_type")
+  // Only populated / accruable for amountType = FLAT (Pass-1 scope). TABLE
+  // programs are registered for visibility but never auto-accrue — package
+  // line 22: "unregistered program => no accrual + visibility flag" extends
+  // to TABLE programs pending CE-17/Pass-2 attainment data.
+  flatAmountPerUnit  Decimal?               @db.Decimal(15, 2) @map("flat_amount_per_unit")
+  effectiveFrom      DateTime               @map("effective_from")
+  effectiveTo        DateTime?              @map("effective_to")
+  active             Boolean                @default(true)
+  createdAt          DateTime               @default(now()) @map("created_at")
+
+  profile  OemIntegrationProfile           @relation(fields: [profileId], references: [id])
+  accruals OemIncentiveAccrual[]
+
+  @@unique([tenantId, make, programId])
+  @@map("oem_incentive_programs")
+  @@index([tenantId])
+}
+
+model OemIncentiveAccrual {
+  id            String                    @id @default(cuid())
+  tenantId      String                    @map("tenant_id")
+  storeId       String                    @map("store_id")
+  programId     String                    @map("program_id")
+  dealNumber    String                    @db.VarChar(40) @map("deal_number")
+  applyNumber   String                    @db.VarChar(60) @map("apply_number")
+  accruedAmount Decimal                   @db.Decimal(15, 2) @map("accrued_amount")
+  status        OemIncentiveAccrualStatus @default(ACCRUED)
+  // PUTR: CE-12 deal.finalized RDR/incentive fields — not wired in this
+  // worktree (CE-12 not implemented here); see
+  // src/domain/upstream-deal-events.ts UnwiredDealFinalizedSource.
+  sourceDealFinalizedRef String           @map("source_deal_finalized_ref")
+  createdAt     DateTime                  @default(now()) @map("created_at")
+
+  program  OemIncentiveProgram    @relation(fields: [programId], references: [id])
+  trueUps  OemIncentiveTrueUp[]
+
+  @@unique([tenantId, programId, dealNumber])
+  @@map("oem_incentive_accruals")
+  @@index([tenantId, storeId])
+}
+
+model OemIncentiveTrueUp {
+  id                String   @id @default(cuid())
+  tenantId          String   @map("tenant_id")
+  accrualId         String   @map("accrual_id")
+  statementRowRef   String?  @map("statement_row_ref")
+  adjustmentAmount  Decimal  @db.Decimal(15, 2) @map("adjustment_amount")
+  reason            String
+  createdAt         DateTime @default(now()) @map("created_at")
+  createdBy         String   @map("created_by")
+
+  accrual OemIncentiveAccrual @relation(fields: [accrualId], references: [id])
+
+  @@map("oem_incentive_true_ups")
+  @@index([tenantId, accrualId])
+}
+
+// ---------------------------------------------------------------------------
+// S104 — OEM Financial Statement Renderer
+// ---------------------------------------------------------------------------
+
+model OemStatementProfile {
+  id                     String    @id @default(cuid())
+  tenantId               String    @map("tenant_id")
+  profileRefId           String    @map("profile_ref_id")
+  make                   String    @db.VarChar(40)
+  version                String    @db.VarChar(40)
+  // Versioned page/line/column definitions — Accounting-authored /
+  // factory-doc-sourced configuration, never invented (package line 24).
+  pageLineDefinitions    Json      @map("page_line_definitions")
+  effectiveFrom          DateTime  @map("effective_from")
+  effectiveTo            DateTime? @map("effective_to")
+  active                 Boolean   @default(true)
+  createdAt              DateTime  @default(now()) @map("created_at")
+
+  profile   OemIntegrationProfile                   @relation(fields: [profileRefId], references: [id])
+  mappings  OemStatementAccountMapping[]
+  renders   OemStatementRender[]
+
+  @@unique([tenantId, make, version])
+  @@map("oem_statement_profiles")
+  @@index([tenantId])
+}
+
+// Author != activator enforced at the application layer (S009 extension
+// per package line 24: "authored, versioned, activated author!=activator").
+model OemStatementAccountMapping {
+  id               String                     @id @default(cuid())
+  tenantId         String                     @map("tenant_id")
+  statementProfileId String                   @map("statement_profile_id")
+  glAccountId      String                     @db.VarChar(40) @map("gl_account_id")
+  statementLineRef String                     @db.VarChar(60) @map("statement_line_ref")
+  status           OemStatementMappingStatus  @default(DRAFT)
+  authoredBy       String                     @map("authored_by")
+  authoredAt       DateTime                   @default(now()) @map("authored_at")
+  activatedBy      String?                    @map("activated_by")
+  activatedAt      DateTime?                  @map("activated_at")
+
+  statementProfile OemStatementProfile @relation(fields: [statementProfileId], references: [id])
+
+  @@map("oem_statement_account_mappings")
+  @@index([tenantId, statementProfileId])
+}
+
+model OemStatementRender {
+  id               String    @id @default(cuid())
+  tenantId         String    @map("tenant_id")
+  storeId          String    @map("store_id")
+  statementProfileId String  @map("statement_profile_id")
+  period           String    @db.VarChar(7) @map("period")
+  cellValues       Json      @map("cell_values")
+  crossFootOk      Boolean   @map("cross_foot_ok")
+  tbTieOk          Boolean   @map("tb_tie_ok")
+  varianceAmount   Decimal?  @db.Decimal(15, 2) @map("variance_amount")
+  renderedAt       DateTime  @default(now()) @map("rendered_at")
+  renderedBy       String    @map("rendered_by")
+
+  statementProfile OemStatementProfile   @relation(fields: [statementProfileId], references: [id])
+  exports          OemStatementExport[]
+
+  @@map("oem_statement_renders")
+  @@index([tenantId, storeId, period])
+}
+
+model OemStatementExport {
+  id           String   @id @default(cuid())
+  tenantId     String   @map("tenant_id")
+  renderId     String   @map("render_id")
+  specVersion  String   @db.VarChar(40) @map("spec_version")
+  format       String   @db.VarChar(20)
+  content      String
+  exportedAt   DateTime @default(now()) @map("exported_at")
+  exportedBy   String   @map("exported_by")
+  retained     Boolean  @default(true)
+
+  render OemStatementRender @relation(fields: [renderId], references: [id])
+
+  @@map("oem_statement_exports")
+  @@index([tenantId, renderId])
+}
+
+// ---------------------------------------------------------------------------
+// S105 — Warranty Audit Chargeback & Reserve
+// ---------------------------------------------------------------------------
+
+model OemWarrantyChargebackNotice {
+  id               String    @id @default(cuid())
+  tenantId         String    @map("tenant_id")
+  storeId          String    @map("store_id")
+  make             String    @db.VarChar(40)
+  sourceDocumentId String?   @map("source_document_id")
+  noticeDate       DateTime  @map("notice_date")
+  receivedAt       DateTime  @default(now()) @map("received_at")
+  receivedBy       String    @map("received_by")
+
+  sourceDocument OemStagedDocument?              @relation(fields: [sourceDocumentId], references: [id])
+  lines          OemWarrantyChargebackLine[]
+
+  @@map("oem_warranty_chargeback_notices")
+  @@index([tenantId, storeId])
+}
+
+model OemWarrantyChargebackLine {
+  id                    String                    @id @default(cuid())
+  tenantId              String                    @map("tenant_id")
+  noticeId              String                    @map("notice_id")
+  // PUTR: CE-11 S065 original warranty claim item — not wired in this
+  // worktree (CE-11 not implemented here); see
+  // src/domain/upstream-items.ts UnwiredOpenItemSource.
+  originalClaimItemRef  String                    @map("original_claim_item_ref")
+  amount                Decimal                   @db.Decimal(15, 2)
+  disposition           OemChargebackDisposition  @default(PENDING)
+  // Set only when disposition=ACCEPTED and the original claim item was
+  // already relieved — never mutates the original applied history (standing
+  // conservation boundary, package line 26).
+  contraItemRef         String?                   @map("contra_item_ref")
+  dispositionedAt       DateTime?                 @map("dispositioned_at")
+  dispositionedBy       String?                   @map("dispositioned_by")
+
+  notice   OemWarrantyChargebackNotice      @relation(fields: [noticeId], references: [id])
+  evidence OemWarrantyDisputeEvidence[]
+  draws    OemWarrantyReserveDraw[]
+
+  @@map("oem_warranty_chargeback_lines")
+  @@index([tenantId, noticeId])
+}
+
+model OemWarrantyDisputeEvidence {
+  id               String   @id @default(cuid())
+  tenantId         String   @map("tenant_id")
+  chargebackLineId String   @map("chargeback_line_id")
+  evidenceRef      String   @map("evidence_ref")
+  note             String?
+  uploadedAt       DateTime @default(now()) @map("uploaded_at")
+  uploadedBy       String   @map("uploaded_by")
+
+  chargebackLine OemWarrantyChargebackLine @relation(fields: [chargebackLineId], references: [id])
+
+  @@map("oem_warranty_dispute_evidence")
+  @@index([tenantId, chargebackLineId])
+}
+
+model OemWarrantyReserveConfig {
+  id            String    @id @default(cuid())
+  tenantId      String    @map("tenant_id")
+  storeId       String    @map("store_id")
+  ratePercent   Decimal   @db.Decimal(7, 4) @map("rate_percent")
+  effectiveFrom DateTime  @map("effective_from")
+  effectiveTo   DateTime? @map("effective_to")
+  active        Boolean   @default(true)
+  createdAt     DateTime  @default(now()) @map("created_at")
+  createdBy     String    @map("created_by")
+
+  @@map("oem_warranty_reserve_configs")
+  @@index([tenantId, storeId])
+}
+
+model OemWarrantyReservePreview {
+  id                  String                @id @default(cuid())
+  tenantId            String                @map("tenant_id")
+  storeId             String                @map("store_id")
+  period              String                @db.VarChar(7)
+  paidWarrantyVolume  Decimal               @db.Decimal(15, 2) @map("paid_warranty_volume")
+  computedAccrual     Decimal               @db.Decimal(15, 2) @map("computed_accrual")
+  status              OemReserveEntryStatus @default(PREVIEW)
+  previewedAt         DateTime              @default(now()) @map("previewed_at")
+  approvedAt          DateTime?             @map("approved_at")
+  approvedBy          String?               @map("approved_by")
+
+  @@unique([tenantId, storeId, period])
+  @@map("oem_warranty_reserve_previews")
+  @@index([tenantId, storeId])
+}
+
+model OemWarrantyReserveDraw {
+  id               String   @id @default(cuid())
+  tenantId         String   @map("tenant_id")
+  storeId          String   @map("store_id")
+  chargebackLineId String   @map("chargeback_line_id")
+  drawAmount       Decimal  @db.Decimal(15, 2) @map("draw_amount")
+  excessToExpense  Decimal  @default(0) @db.Decimal(15, 2) @map("excess_to_expense")
+  drawnAt          DateTime @default(now()) @map("drawn_at")
+  drawnBy          String   @map("drawn_by")
+
+  chargebackLine OemWarrantyChargebackLine @relation(fields: [chargebackLineId], references: [id])
+
+  @@map("oem_warranty_reserve_draws")
+  @@index([tenantId, storeId])
+}
+
+// ---------------------------------------------------------------------------
+// S106 — Co-op Advertising Claims
+// ---------------------------------------------------------------------------
+
+model OemCoopProgram {
+  id              String               @id @default(cuid())
+  tenantId        String               @map("tenant_id")
+  profileId       String               @map("profile_id")
+  make            String               @db.VarChar(40)
+  programId       String               @db.VarChar(60) @map("program_id")
+  accrualBasis    OemCoopAccrualBasis  @map("accrual_basis")
+  ratePercent     Decimal?             @db.Decimal(7, 4) @map("rate_percent")
+  termsSummary    String?
+  active          Boolean              @default(true)
+  createdAt       DateTime             @default(now()) @map("created_at")
+
+  profile  OemIntegrationProfile        @relation(fields: [profileId], references: [id])
+  claims   OemCoopClaim[]
+  previews OemCoopAccrualPreview[]
+
+  @@unique([tenantId, make, programId])
+  @@map("oem_coop_programs")
+  @@index([tenantId])
+}
+
+model OemCoopClaim {
+  id          String            @id @default(cuid())
+  tenantId    String            @map("tenant_id")
+  storeId     String            @map("store_id")
+  programId   String            @map("program_id")
+  status      OemCoopClaimStatus @default(DRAFT)
+  totalSpend  Decimal           @default(0) @db.Decimal(15, 2) @map("total_spend")
+  exportedAt  DateTime?         @map("exported_at")
+  exportedBy  String?           @map("exported_by")
+  createdAt   DateTime          @default(now()) @map("created_at")
+  createdBy   String            @map("created_by")
+
+  program OemCoopProgram    @relation(fields: [programId], references: [id])
+  lines   OemCoopClaimLine[]
+
+  @@map("oem_coop_claims")
+  @@index([tenantId, storeId])
+}
+
+model OemCoopClaimLine {
+  id               String                     @id @default(cuid())
+  tenantId         String                     @map("tenant_id")
+  claimId          String                     @map("claim_id")
+  // PUTR: CE-09 AP document reference for qualifying spend — not wired in
+  // this worktree (CE-09 finalizing per package line 12); see
+  // src/domain/upstream-ap-docs.ts UnwiredApDocumentSource.
+  spendItemRef     String                     @map("spend_item_ref")
+  description      String
+  amount           Decimal                    @db.Decimal(15, 2)
+  evidenceRef      String                     @map("evidence_ref")
+  responseStatus   OemCoopLineResponseStatus  @default(PENDING) @map("response_status")
+  approvedAmount   Decimal?                   @db.Decimal(15, 2) @map("approved_amount")
+  receivableItemRef String?                   @map("receivable_item_ref")
+  writeOffAmount   Decimal?                   @db.Decimal(15, 2) @map("write_off_amount")
+  respondedAt      DateTime?                  @map("responded_at")
+  respondedBy      String?                    @map("responded_by")
+
+  claim OemCoopClaim @relation(fields: [claimId], references: [id])
+
+  @@map("oem_coop_claim_lines")
+  @@index([tenantId, claimId])
+}
+
+model OemCoopAccrualPreview {
+  id             String               @id @default(cuid())
+  tenantId       String               @map("tenant_id")
+  storeId        String               @map("store_id")
+  programId      String               @map("program_id")
+  period         String               @db.VarChar(7)
+  computedAmount Decimal              @db.Decimal(15, 2) @map("computed_amount")
+  status         OemCoopAccrualStatus @default(PREVIEW)
+  previewedAt    DateTime             @default(now()) @map("previewed_at")
+  approvedAt     DateTime?            @map("approved_at")
+  approvedBy     String?              @map("approved_by")
+
+  program OemCoopProgram @relation(fields: [programId], references: [id])
+
+  @@unique([tenantId, storeId, programId, period])
+  @@map("oem_coop_accrual_previews")
+  @@index([tenantId, storeId])
+}
+
+// ---------------------------------------------------------------------------
+// Cross-cutting: idempotency per envelope (package "GLOBAL RULES" line 12)
+// ---------------------------------------------------------------------------
+
+model OemIdempotencyRecord {
+  id            String   @id @default(cuid())
+  tenantId      String   @map("tenant_id")
+  operationType String   @db.VarChar(60) @map("operation_type")
+  idempotencyKey String  @db.VarChar(120) @map("idempotency_key")
+  resultRef     Json     @map("result_ref")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, operationType, idempotencyKey])
+  @@map("oem_idempotency_records")
+  @@index([tenantId])
+}
+
+/// CE-14: oem-service had no audit mechanism at all before this (same
+/// AuditPort pattern as tenant-service/auth-service/coa-service/apar-service
+/// /schedule-service). Every mutating ceremony (profile/status change,
+/// import, match disposition, session completion, incentive accrual/true-up,
+/// statement mapping author/activate, chargeback disposition, reserve
+/// preview/approve/draw, co-op claim/response/write-off/accrual) writes a
+/// before/after record here; AuditOutboxDrainer (wired in src/index.ts)
+/// drains unpublished rows to the real S007 audit-service. Physically the
+/// same shared "audit_outbox" table every other service writes to (see
+/// migration 20260801182438_add_audit_outbox_oem_svc) — excluded from RLS
+/// (background drainer runs outside tenant context).
+model AuditOutboxEvent {
+  id            String    @id @default(uuid())
+  tenantId      String    @map("tenant_id")
+  docType       String    @map("doc_type")
+  docId         String    @map("doc_id")
+  action        String
+  before        Json?
+  after         Json?
+  actor         String
+  correlationId String?   @map("correlation_id")
+  publishedAt   DateTime? @map("published_at")
+  retryCount    Int       @default(0) @map("retry_count")
+  lastError     String?   @map("last_error")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@index([publishedAt, retryCount])
+  @@map("audit_outbox")
+}

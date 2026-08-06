@@ -6,6 +6,20 @@ import PageLoader from '../components/PageLoader';
 import PageError from '../components/PageError';
 import SCREEN_HELP from '../data/screenHelp';
 
+// Maps each dashboard card to the exact `agentName` value each backend agent
+// service actually writes (see services/agent-*/src/infrastructure/agent-tools.ts).
+// Previously this derived a fuzzy match from the display label (e.g.
+// "AP/AR Recon" -> "ap/ar"), which could never match the real value the
+// AP/AR agent logs ("apar-recon" has no slash) — that card was always stuck
+// at 0 regardless of real activity.
+const AGENT_CARDS: { label: string; agentName: string }[] = [
+  { label: 'GL Integrity', agentName: 'gl-integrity' },
+  { label: 'EOM Orchestration', agentName: 'eom-orchestration' },
+  { label: 'Payroll Integrity', agentName: 'payroll-integrity' },
+  { label: 'AP/AR Recon', agentName: 'apar-recon' },
+  { label: 'T1 Copilot', agentName: 't1-copilot' },
+];
+
 export default function Agents() {
   const queryClient = useQueryClient();
   const { data: logs, isLoading, error, refetch } = useQuery({ queryKey: ['agent-logs'], queryFn: agentApi.getLog, retry: false });
@@ -82,12 +96,12 @@ export default function Agents() {
         </div><HelpButton help={SCREEN_HELP['agents']} /></div>
 
       <div className="grid grid-cols-5 gap-3">
-        {['GL Integrity', 'EOM Orchestration', 'Payroll Integrity', 'AP/AR Recon', 'T1 Copilot'].map((name) => (
-          <div key={name} className="bg-white rounded-lg shadow p-3 text-center">
+        {AGENT_CARDS.map(({ label, agentName }) => (
+          <div key={label} className="bg-white rounded-lg shadow p-3 text-center">
             <div className="text-2xl">🤖</div>
-            <div className="text-sm font-medium mt-1">{name}</div>
+            <div className="text-sm font-medium mt-1">{label}</div>
             <div className="text-xs text-gray-500 mt-1">
-              {(logs ?? []).filter((l: any) => l.agentName?.includes(name.toLowerCase().split(' ')[0])).length} actions
+              {(logs ?? []).filter((l: any) => l.agentName === agentName).length} actions
             </div>
           </div>
         ))}

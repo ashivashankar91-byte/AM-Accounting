@@ -164,6 +164,15 @@ export async function floorPlanRoutes(app: FastifyInstance, prisma: PrismaClient
           accrued_interest: Number(u.accruedInterest),
           days_on_floor: Math.floor((Date.now() - u.floorDate.getTime()) / (1000 * 60 * 60 * 24)),
           status: u.status,
+          // Dashboard rebuild — Command Center floorplan-trust exception needs
+          // vehicle_status + payoff_date to detect units sold/delivered while
+          // still on an open floorplan payable ("out of trust", a covenant and
+          // legal event per the brief — never suppress it). Previously omitted
+          // from this response even though both columns already existed on
+          // FloorPlanUnit; additive-only change, no existing consumer breaks.
+          vehicle_status: u.vehicleStatus,
+          floor_date: u.floorDate.toISOString().substring(0, 10),
+          payoff_date: u.payoffDate ? u.payoffDate.toISOString().substring(0, 10) : null,
         })),
         total_balance: totalBalance,
       });
@@ -286,7 +295,7 @@ export async function floorPlanRoutes(app: FastifyInstance, prisma: PrismaClient
 
       const units = await (prisma as any).floorPlanUnit.findMany({
         where,
-        orderBy: { lenderId: 'asc', floorDate: 'asc' },
+        orderBy: [{ lenderId: 'asc' }, { floorDate: 'asc' }],
       });
 
       // Group by lender

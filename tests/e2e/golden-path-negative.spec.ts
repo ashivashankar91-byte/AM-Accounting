@@ -12,6 +12,7 @@
  *   - invalid reversal              (real 409 ALREADY_REVERSED)
  *   - unclassified account type     (real UNCLASSIFIED_ACCOUNT_TYPE hard error)
  *   - structural Trial Balance imbalance (real STRUCTURAL_IMBALANCE hard error)
+ *   - DISTRIBUTION posting-expansion anomaly (real DISTRIBUTION_BALANCE_ANOMALY hard error, S009)
  *   - expired/revoked session       (real session-token revocation, GET /auth/session)
  *
  * IMPORTANT — two scenarios below (unclassified account, structural TB
@@ -38,14 +39,27 @@ import { test, expect } from '@playwright/test';
 import { execSync } from 'node:child_process';
 
 const BASE = '/amacc';
-const API = 'http://localhost:13100';
+// Golden R0 UI convergence — Phase 5 (isolated cert environment) fix: was
+// hardcoded to the long-lived amacc-final-r0 stack's gateway port, so this
+// suite silently exercised the WRONG stack whenever run against any other
+// isolated/disposable environment (e.g. a fresh-ports cert stack) even with
+// BASE_URL correctly pointed at that environment's frontend. API_BASE lets
+// the gateway target travel with BASE_URL instead of being pinned to one
+// specific long-lived environment.
+const API = process.env['API_BASE'] ?? 'http://localhost:13100';
 const TENANT_A = '1cf31f14-cb0b-4261-a41d-f79953594c86';
 const ADMIN_EMAIL = 'admin@kunes-final-r0.test';
 const PASSWORD = 'FinalR0-Evidence-2026!';
 const CLERK_EMAIL = 'clerk@kunes-final-r0.test';
 const GL_ENTITY = '01';
 const GL_AS_OF = '2026-02';
-const PG_CONTAINER = 'amacc-final-r0-postgres-1';
+// Golden R0 UI convergence — Phase 5 (isolated cert environment) fix: was
+// hardcoded to the long-lived amacc-final-r0 stack's Postgres container, so
+// these direct-SQL scratch fixtures would silently mutate the WRONG
+// database when this suite runs against a different isolated stack. This
+// generic PG_CONTAINER var (rather than a story-specific PG_CONTAINER_S009)
+// already covers the S009 certification use case.
+const PG_CONTAINER = process.env['PG_CONTAINER'] ?? 'amacc-final-r0-postgres-1';
 
 function psql(sql: string): string {
   return execSync(
@@ -87,7 +101,7 @@ test.describe('Golden R0 — journal control-plane negatives (coa-service)', () 
     await expect(page.getByTestId('journal-line-0-account')).toBeVisible({ timeout: 10_000 });
     await page.getByTestId('journal-entry-date').fill('2026-01-20');
     await page.getByTestId('journal-memo').fill(`E2E-unbalanced-${Date.now()}`);
-    await page.getByTestId('journal-line-0-account').selectOption({ label: '60000 Office Supplies Expense' });
+    await page.getByTestId('journal-line-0-account').selectOption({ label: '60050 Office Supplies Expense' });
     await page.getByTestId('journal-line-0-store').selectOption({ index: 1 });
     await page.getByTestId('journal-line-0-dept').fill('20');
     await page.getByTestId('journal-line-0-dr').fill('50');
@@ -97,7 +111,7 @@ test.describe('Golden R0 — journal control-plane negatives (coa-service)', () 
     await page.getByTestId('journal-create-draft').click();
     await expect(page.getByTestId('journal-draft-status')).toBeVisible({ timeout: 10_000 });
     await page.getByTestId('journal-validate').click();
-    await expect(page.getByTestId('journal-validation-result')).toContainText('false', { timeout: 10_000 });
+    await expect(page.getByTestId('journal-validation-result')).toContainText('Validation failed', { timeout: 10_000 });
     // BR013-1 fix (Phase 3 full release certification): JournalWorkflow.tsx
     // now renders the real backend-provided validation failure reason and
     // amounts (rule/message per error, plus the real deltaDr/deltaCr) --
@@ -119,7 +133,7 @@ test.describe('Golden R0 — journal control-plane negatives (coa-service)', () 
     await expect(page.getByTestId('journal-line-0-account')).toBeVisible({ timeout: 10_000 });
     await page.getByTestId('journal-entry-date').fill('2026-01-20');
     await page.getByTestId('journal-memo').fill(`E2E-duppost-${Date.now()}`);
-    await page.getByTestId('journal-line-0-account').selectOption({ label: '60000 Office Supplies Expense' });
+    await page.getByTestId('journal-line-0-account').selectOption({ label: '60050 Office Supplies Expense' });
     await page.getByTestId('journal-line-0-store').selectOption({ index: 1 });
     await page.getByTestId('journal-line-0-dept').fill('20');
     await page.getByTestId('journal-line-0-dr').fill('15');
@@ -129,7 +143,7 @@ test.describe('Golden R0 — journal control-plane negatives (coa-service)', () 
     await page.getByTestId('journal-create-draft').click();
     await expect(page.getByTestId('journal-draft-status')).toBeVisible({ timeout: 10_000 });
     await page.getByTestId('journal-validate').click();
-    await expect(page.getByTestId('journal-validation-result')).toContainText('true', { timeout: 10_000 });
+    await expect(page.getByTestId('journal-validation-result')).toContainText('Validation passed', { timeout: 10_000 });
 
     await page.getByTestId('journal-post').click();
     await expect(page.getByTestId('journal-view')).toBeVisible({ timeout: 10_000 });
@@ -156,7 +170,7 @@ test.describe('Golden R0 — journal control-plane negatives (coa-service)', () 
     await expect(page.getByTestId('journal-line-0-account')).toBeVisible({ timeout: 10_000 });
     await page.getByTestId('journal-entry-date').fill('2026-01-20');
     await page.getByTestId('journal-memo').fill(`E2E-doublereverse-${Date.now()}`);
-    await page.getByTestId('journal-line-0-account').selectOption({ label: '60000 Office Supplies Expense' });
+    await page.getByTestId('journal-line-0-account').selectOption({ label: '60050 Office Supplies Expense' });
     await page.getByTestId('journal-line-0-store').selectOption({ index: 1 });
     await page.getByTestId('journal-line-0-dept').fill('20');
     await page.getByTestId('journal-line-0-dr').fill('10');
@@ -166,7 +180,7 @@ test.describe('Golden R0 — journal control-plane negatives (coa-service)', () 
     await page.getByTestId('journal-create-draft').click();
     await expect(page.getByTestId('journal-draft-status')).toBeVisible({ timeout: 10_000 });
     await page.getByTestId('journal-validate').click();
-    await expect(page.getByTestId('journal-validation-result')).toContainText('true', { timeout: 10_000 });
+    await expect(page.getByTestId('journal-validation-result')).toContainText('Validation passed', { timeout: 10_000 });
     await page.getByTestId('journal-post').click();
     await expect(page.getByTestId('journal-view')).toBeVisible({ timeout: 10_000 });
 
@@ -217,6 +231,97 @@ test.describe('Golden R0 — gl-service structural/classification hard errors (d
     await page.getByTestId('tb-asof').fill(GL_AS_OF);
     await page.getByTestId('tb-run').click();
     await expect(page.getByTestId('tb-structural-imbalance-banner')).toBeVisible({ timeout: 10_000 });
+
+    // Trial Balance export failure behavior: the same real, still-imbalanced
+    // slice must fail the export exactly as it failed the view -- no
+    // downloaded file, the same real STRUCTURAL_IMBALANCE contract, no
+    // partial/best-effort CSV.
+    let downloadFired = false;
+    page.once('download', () => { downloadFired = true; });
+    const [exportResponse] = await Promise.all([
+      page.waitForResponse((r) => /\/api\/v1\/gl\/reports\/trial-balance\/export\?/.test(r.url())),
+      page.getByTestId('tb-export').click(),
+    ]);
+    expect(exportResponse.status()).toBe(500);
+    const exportBody = await exportResponse.json();
+    expect(exportBody.error).toBe('STRUCTURAL_IMBALANCE');
+    expect(downloadFired).toBe(false);
+    // The view's imbalance banner is still the one shown -- the export
+    // failure reuses it rather than replacing it with a different message.
+    await expect(page.getByTestId('tb-structural-imbalance-banner')).toBeVisible();
+
+    // Balance Sheet: the same real, still one-sided slice must surface
+    // through FinancialStatementService.getBalanceSheet(), which calls
+    // TrialBalanceService.getReport() first -- so this exercises the
+    // TB-level StructuralImbalanceError (drSum/crSum/delta shape), NOT the
+    // FS-level FSStructuralImbalanceError (totalAssets/totalLiabilitiesAndEquity
+    // shape). Proves live, in the browser, the fix to routes.ts's BS export
+    // catch clause and to BalanceSheet.tsx's banner shape-branching are both
+    // reachable and correct for a real backend response, not just unit-mocked.
+    await page.goto(`${BASE}/golden-path/balance-sheet`);
+    await page.getByTestId('bs-entity').fill(GL_ENTITY);
+    await page.getByTestId('bs-asof').fill(GL_AS_OF);
+    await page.getByTestId('bs-run').click();
+    await expect(page.getByTestId('bs-structural-imbalance-banner')).toBeVisible({ timeout: 10_000 });
+    // TB-level shape rendered (drSum/crSum), not the FS-level fields --
+    // if the frontend still assumed the FS-level shape this would render
+    // "NaN" instead of the real 75/0 figures from the seeded fixture.
+    await expect(page.getByTestId('bs-structural-imbalance-banner')).toContainText('75');
+    await expect(page.getByTestId('bs-structural-imbalance-banner')).not.toContainText('NaN');
+
+    // Balance Sheet export failure behavior mirrors the Trial Balance export
+    // proof above: same real STRUCTURAL_IMBALANCE contract, no download, no
+    // partial/best-effort file, banner stays the one already shown.
+    let bsDownloadFired = false;
+    page.once('download', () => { bsDownloadFired = true; });
+    const [bsExportResponse] = await Promise.all([
+      page.waitForResponse((r) => /\/api\/v1\/gl\/reports\/balance-sheet\/export\?/.test(r.url())),
+      page.getByTestId('bs-export').click(),
+    ]);
+    expect(bsExportResponse.status()).toBe(500);
+    const bsExportBody = await bsExportResponse.json();
+    expect(bsExportBody.error).toBe('STRUCTURAL_IMBALANCE');
+    expect(bsDownloadFired).toBe(false);
+    await expect(page.getByTestId('bs-structural-imbalance-banner')).toBeVisible();
+
+    // Income Statement refinement (Golden R0 UI convergence, 2026-07-28):
+    // the same real, still one-sided slice must surface through
+    // FinancialStatementService.getIncomeStatement(), which ALSO calls
+    // TrialBalanceService.getReport() first -- the exact deferred defect
+    // corrected this pass (routes.ts's income-statement export route
+    // previously only caught UnclassifiedAccountTypeError, so a TB-level
+    // imbalance fell through to an uncaught 500; IncomeStatement.tsx had no
+    // structural-imbalance banner at all). Proves live, in the browser, that
+    // the fix to routes.ts's IS view/export catch clauses and to
+    // IncomeStatement.tsx's banner are both reachable and correct for a
+    // real backend response, not just unit-mocked.
+    await page.goto(`${BASE}/golden-path/income-statement`);
+    await page.getByTestId('is-entity').fill(GL_ENTITY);
+    await page.getByTestId('is-asof').fill(GL_AS_OF);
+    await page.getByTestId('is-run').click();
+    await expect(page.getByTestId('is-structural-imbalance-banner')).toBeVisible({ timeout: 10_000 });
+    // TB-level shape rendered (drSum/crSum), not the FS-level fields --
+    // if the frontend assumed the FS-level shape this would render "NaN"
+    // instead of the real 75/0 figures from the seeded fixture.
+    await expect(page.getByTestId('is-structural-imbalance-banner')).toContainText('75');
+    await expect(page.getByTestId('is-structural-imbalance-banner')).not.toContainText('NaN');
+
+    // Income Statement export failure behavior mirrors the Trial
+    // Balance/Balance Sheet export proofs above: same real
+    // STRUCTURAL_IMBALANCE contract, no download, no partial/best-effort
+    // file, banner stays the one already shown. This is the exact route
+    // (previously uncaught) fixed this pass.
+    let isDownloadFired = false;
+    page.once('download', () => { isDownloadFired = true; });
+    const [isExportResponse] = await Promise.all([
+      page.waitForResponse((r) => /\/api\/v1\/gl\/reports\/income-statement\/export\?/.test(r.url())),
+      page.getByTestId('is-export').click(),
+    ]);
+    expect(isExportResponse.status()).toBe(500);
+    const isExportBody = await isExportResponse.json();
+    expect(isExportBody.error).toBe('STRUCTURAL_IMBALANCE');
+    expect(isDownloadFired).toBe(false);
+    await expect(page.getByTestId('is-structural-imbalance-banner')).toBeVisible();
   });
 
   test('unclassified account type: real MEMO-type account (balanced ledger) hard-fails BS/IS', async ({ page }) => {
@@ -262,6 +367,82 @@ test.describe('Golden R0 — gl-service structural/classification hard errors (d
     await page.getByTestId('is-asof').fill(GL_AS_OF);
     await page.getByTestId('is-run').click();
     await expect(page.getByTestId('is-unclassified-banner')).toBeVisible({ timeout: 10_000 });
+  });
+});
+
+test.describe('Golden R0 — S009 DISTRIBUTION posting-expansion anomaly (direct-SQL scratch fixture)', () => {
+  test.setTimeout(60_000);
+
+  test.afterAll(async () => {
+    // Same rationale/cleanup discipline as the UNCLASSIFIED_ACCOUNT_TYPE
+    // suite above: restore the certified S014/S222/S227 evidence scope
+    // (entity 01 / 2026-02) exactly, even if a test above failed mid-way.
+    try {
+      psql("DELETE FROM gl_account_period_balances WHERE id IN ('g0-distribution-scratch-bal','g0-distribution-offset-bal');");
+      psql("DELETE FROM gl_accounts WHERE id IN ('g0-distribution-scratch-acct','g0-distribution-offset-acct');");
+    } catch {
+      // best-effort cleanup; a failure here is surfaced by the "evidence
+      // scope restored" check every other test in this repository relies on.
+    }
+  });
+
+  test('non-zero DISTRIBUTION balance fails BS/IS closed with DISTRIBUTION_BALANCE_ANOMALY (S009/DISTRIBUTION decision)', async ({ page }) => {
+    // A real posting flow always expands DISTRIBUTION-type postings into
+    // concrete target-account lines before save (gl-service.ts
+    // expandLines()), so a resting DISTRIBUTION balance can never be
+    // produced through any real user-facing API -- this is seeded via
+    // direct SQL for the same reason the UNCLASSIFIED/STRUCTURAL_IMBALANCE
+    // scratch fixtures above are: it proves the fail-closed guard exists and
+    // fires, not that this state is reachable in normal operation.
+    psql(
+      "INSERT INTO gl_accounts (id, tenant_id, code, name, type, normal_balance, allow_posting, print_code) " +
+      `VALUES ('g0-distribution-scratch-acct', '${TENANT_A}', '9600', 'E2E Distribution Test', 'DISTRIBUTION', 'DEBIT', true, 'D');`,
+    );
+    psql(
+      "INSERT INTO gl_account_period_balances (id, tenant_id, gl_account_id, period_year, period_month, journal_source, company_code, store_id, department_code, running_balance, updated_at) " +
+      `VALUES ('g0-distribution-scratch-bal', '${TENANT_A}', 'g0-distribution-scratch-acct', 2026, 2, 'ADJ', '01', '', '', 40.00, now());`,
+    );
+    // Offsetting real LIABILITY-type balance so the ledger still foots
+    // (drSum=crSum), isolating the DISTRIBUTION_BALANCE_ANOMALY proof from
+    // any STRUCTURAL_IMBALANCE noise.
+    psql(
+      "INSERT INTO gl_accounts (id, tenant_id, code, name, type, normal_balance, allow_posting, print_code) " +
+      `VALUES ('g0-distribution-offset-acct', '${TENANT_A}', '9601', 'E2E Distribution Offset Liability', 'LIABILITY', 'CREDIT', true, 'D');`,
+    );
+    psql(
+      "INSERT INTO gl_account_period_balances (id, tenant_id, gl_account_id, period_year, period_month, journal_source, company_code, store_id, department_code, running_balance, updated_at) " +
+      `VALUES ('g0-distribution-offset-bal', '${TENANT_A}', 'g0-distribution-offset-acct', 2026, 2, 'ADJ', '01', '', '', -40.00, now());`,
+    );
+
+    await login(page, TENANT_A, ADMIN_EMAIL, PASSWORD);
+    await page.waitForURL(/\/golden-path\/select-entity/, { timeout: 15_000 });
+    await page.getByTestId('select-entity-KUNES-01').click();
+    await page.waitForURL(/\/golden-path\/org-hierarchy/, { timeout: 10_000 });
+
+    await page.goto(`${BASE}/golden-path/trial-balance`);
+    await page.getByTestId('tb-entity').fill(GL_ENTITY);
+    await page.getByTestId('tb-asof').fill(GL_AS_OF);
+    await page.getByTestId('tb-run').click();
+    // Ledger foots -- Trial Balance itself is unaffected (S014 never
+    // classifies/excludes anything); DISTRIBUTION is a BS/IS-layer concern.
+    await expect(page.getByTestId('tb-grand-total')).toBeVisible({ timeout: 10_000 });
+
+    await page.goto(`${BASE}/golden-path/balance-sheet`);
+    await page.getByTestId('bs-entity').fill(GL_ENTITY);
+    await page.getByTestId('bs-asof').fill(GL_AS_OF);
+    await page.getByTestId('bs-run').click();
+    await expect(page.getByTestId('bs-distribution-anomaly-banner')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId('bs-distribution-anomaly-banner')).toContainText('9600');
+    // Never folded into Expense, never silently excluded -- no BS content renders at all.
+    await expect(page.getByTestId('bs-balanced-badge')).toHaveCount(0);
+
+    await page.goto(`${BASE}/golden-path/income-statement`);
+    await page.getByTestId('is-entity').fill(GL_ENTITY);
+    await page.getByTestId('is-asof').fill(GL_AS_OF);
+    await page.getByTestId('is-run').click();
+    await expect(page.getByTestId('is-distribution-anomaly-banner')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId('is-distribution-anomaly-banner')).toContainText('9600');
+    await expect(page.getByTestId('is-net-income')).toHaveCount(0);
   });
 });
 

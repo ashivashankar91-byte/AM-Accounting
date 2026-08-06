@@ -12,7 +12,7 @@ async function bootstrap() {
   const app = Fastify({ logger: true });
   await app.register(cors, { origin: true });
 
-  const eventPublisher = new RabbitMQEventPublisher({ url: process.env['RABBITMQ_URL'] ?? 'amqp://localhost:5672' });
+  const eventPublisher = new RabbitMQEventPublisher({ url: process.env['RABBITMQ_URL'] ?? 'amqp://localhost:5672', serviceName: 'onboarding-service' });
   await eventPublisher.connect();
 
   const service = new InMemoryOnboardingService(eventPublisher);

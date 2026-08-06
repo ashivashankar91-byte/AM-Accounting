@@ -12,31 +12,50 @@ import {
   InvalidSessionError,
 } from '../application/user-service';
 
-const JWT_SECRET = process.env['JWT_SECRET'];
-if (!JWT_SECRET) throw new Error('FATAL: JWT_SECRET environment variable is required. auth-service cannot start without it.');
+// Golden R0 UI convergence — Phase 5 defect fix: this file used to sign/verify
+// with JWT_SECRET while every consumer of the shared-kernel authMiddleware
+// (tenant-service, gl-service, coa-service, audit-service, and this same
+// service's own role/user/role-template routes) verifies with
+// AMACC_JWT_SECRET — two different values in .env, so every token this route
+// issued failed signature verification everywhere except here. Unified to
+// AMACC_JWT_SECRET, matching every other consumer. The same split recurred
+// in the internal audit outbox drainer's service-token signing
+// (packages/shared-kernel/src/audit/audit-client.ts) and was fixed there
+// too. JWT_SECRET remains a required env var (kept as a documented fallback
+// only) but no longer drives any signature verification path.
+const JWT_SECRET = process.env['AMACC_JWT_SECRET'];
+if (!JWT_SECRET) throw new Error('FATAL: AMACC_JWT_SECRET environment variable is required. auth-service cannot start without it.');
 const JWT_ISSUER = process.env['JWT_ISSUER'] ?? 'amacc';
 const ADMIN_API_KEY = process.env['ADMIN_API_KEY'];
 if (!ADMIN_API_KEY) throw new Error('FATAL: ADMIN_API_KEY environment variable is required. auth-service cannot start without it.');
 
+// Runtime stabilization: tenantId is a plain non-empty identifier, not a
+// UUID. Every real tenant_id value seeded/used across every service
+// (tenant-kunes, tenant-kunes-ford in dealer_group_tenants, gl_accounts,
+// role, user, authz_role_assignment, etc.) is a human-readable slug, and
+// none of the auth flows below actually join against tenant-service's
+// Tenant.id (UUID) column. The previous `.uuid()` constraint made login,
+// logout, token-exchange and API-key creation unusable for every seeded
+// tenant (VALIDATION_ERROR before the request ever reached user lookup).
 const LoginSchema = z.object({
-  tenantId: z.string().uuid(),
+  tenantId: z.string().min(1),
   apiKey: z.string().min(1),
 });
 
 // FINAL-R0 S205: real user login/session issuance (email + password).
 const UserLoginSchema = z.object({
-  tenantId: z.string().uuid(),
+  tenantId: z.string().min(1),
   email:    z.string().min(1).max(254),
   password: z.string().min(1).max(200),
 });
 
 const LogoutSchema = z.object({
-  tenantId:     z.string().uuid(),
+  tenantId:     z.string().min(1),
   sessionToken: z.string().min(1),
 });
 
 const CreateApiKeySchema = z.object({
-  tenantId: z.string().uuid(),
+  tenantId: z.string().min(1),
   name: z.string().min(1),
   scopes: z.array(z.string()).default(['read', 'write']),
 });

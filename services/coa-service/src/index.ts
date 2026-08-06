@@ -12,8 +12,11 @@ import { sourceRoutes } from './http/source-routes';
 import { sequenceRoutes } from './http/sequence-routes';
 import { journalRoutes } from './http/journal-routes';
 import { draftRoutes } from './http/draft-routes';
+import { recurringTemplateRoutes } from './http/recurring-template-routes';
 import { glInquiryRoutes } from './http/gl-inquiry-routes';
 import { glSearchRoutes } from './http/gl-search-routes';
+import { analysisCodeRoutes } from './http/analysis-code-routes';
+import { postingEngineRoutes } from './http/posting-engine-routes';
 import { CoAService } from './application/coa-service';
 import { ConfigService } from './application/config-service';
 import { FiscalCalendarService } from './application/fiscal-service';
@@ -26,8 +29,13 @@ import { PostingService } from './application/posting-service';
 import { JournalViewService } from './application/journal-view-service';
 import { ReversalService } from './application/reversal-service';
 import { DraftService } from './application/draft-service';
+import { RecurringTemplateService } from './application/recurring-template-service';
 import { GLInquiryService } from './application/gl-inquiry-service';
 import { GLSearchService } from './application/gl-search-service';
+import { AnalysisCodeService } from './application/analysis-code-service';
+import { PostingEngineService } from './application/posting-engine-service';
+import { PostingRecoveryPort, HttpPostingRecoveryPort, NoopPostingRecoveryPort } from './application/posting-recovery-port';
+import { GlPostingBridge, HttpGlPostingBridge } from './application/gl-posting-bridge';
 import { RabbitMQEventPublisher } from './infrastructure/event-publisher';
 import {
   IEventPublisher, HttpAuthzClient, AuthzClient,
@@ -98,10 +106,43 @@ async function bootstrap() {
   // S214: draft manual JE scratchpad (create/save any state + attachments).
   container.register('DraftService', { useClass: DraftService });
 
+  // S032: recurring journal template registry + manual generation (a client
+  // of the S214 draft path, never a second posting path).
+  container.register('RecurringTemplateService', { useClass: RecurringTemplateService });
+
   // S220: read-only GL account activity inquiry (beginning/period/ending
   // balance, drill-down to S217, CSV export). Depends on AccountService.
   container.register('GLInquiryService', { useClass: GLInquiryService });
   container.register('GLSearchService', { useClass: GLSearchService });
+  container.register('AnalysisCodeService', { useClass: AnalysisCodeService });
+
+  // CE-07/S023 (D-S023-23): outbound seam to posting-recovery-service
+  // (S021). Falls back to a no-op when AMACC_JWT_SECRET isn't configured
+  // (e.g. local dev without posting-recovery-service running) — the
+  // posting_exception row remains the durable record either way.
+  const recoveryJwtSecret = process.env['AMACC_JWT_SECRET'];
+  container.registerInstance<PostingRecoveryPort>(
+    'PostingRecoveryPort',
+    recoveryJwtSecret ? new HttpPostingRecoveryPort(recoveryJwtSecret) : new NoopPostingRecoveryPort(),
+  );
+
+  // CE-07 (single authoritative ledger decision): the posting engine's
+  // outbound seam to gl-service's existing, certified posting door. Unlike
+  // PostingRecoveryPort, there is no safe no-op fallback here — posting is
+  // the engine's core function, so a missing AMACC_JWT_SECRET fails loudly
+  // at startup rather than silently accepting events it can never post.
+  if (!recoveryJwtSecret) {
+    throw new Error('FATAL: AMACC_JWT_SECRET environment variable is required for the posting engine\'s gl-service bridge.');
+  }
+  container.registerInstance<GlPostingBridge>('GlPostingBridge', new HttpGlPostingBridge(recoveryJwtSecret));
+
+  // S019/S020: Posting Engine — DSL rule packs + idempotent event-driven
+  // posting orchestration. SINGLE AUTHORITATIVE LEDGER: a client of
+  // GlPostingBridge (gl-service's existing posting door), never a second
+  // GL implementation. coa-service's own PostingService remains registered
+  // above for its other, unrelated callers (draft/reversal/recurring-template
+  // services) — the posting engine itself no longer depends on it.
+  container.register('PostingEngineService', { useClass: PostingEngineService });
 
   // Cache invalidation on config.changed (belt-and-braces; put() also invalidates
   // in-process). Keeps propagation within the <=60s target across replicas.
@@ -132,8 +173,13 @@ async function bootstrap() {
 
   await app.register(draftRoutes, { prefix: '/api/v1/coa' });
 
+  await app.register(recurringTemplateRoutes, { prefix: '/api/v1/coa' });
+
   await app.register(glInquiryRoutes, { prefix: '/api/v1/coa' });
   await app.register(glSearchRoutes, { prefix: '/api/v1/coa' });
+  await app.register(analysisCodeRoutes, { prefix: '/api/v1/coa' });
+
+  await app.register(postingEngineRoutes, { prefix: '/api/v1/coa' });
 
   await app.register(configRoutes, { prefix: '/api/v1/config' });
 

@@ -87,17 +87,17 @@ export default function BankReconciliation() {
     let adjusted = parseFloat(glBalance || '0');
 
     // Subtract outstanding checks
-    recon.outstandingChecks
+    (recon.outstandingChecks ?? [])
       .filter((c: OutstandingCheck) => !selectedCheckIds.has(c.checkId))
       .forEach((c: OutstandingCheck) => { adjusted -= c.amount; });
 
     // Add outstanding deposits
-    recon.outstandingDeposits
+    (recon.outstandingDeposits ?? [])
       .filter((d: OutstandingDeposit) => !selectedDepositIds.has(d.depositId))
       .forEach((d: OutstandingDeposit) => { adjusted += d.amount; });
 
     // Apply adjustments
-    recon.adjustments.forEach((adj: Adjustment) => {
+    (recon.adjustments ?? []).forEach((adj: Adjustment) => {
       adjusted += (adj.type === 'debit' ? adj.amount : -adj.amount);
     });
 
@@ -128,7 +128,7 @@ export default function BankReconciliation() {
       setUiState('matching');
       // Simulate AI matching with confidence levels
       const matched: MatchedTransaction[] = [];
-      recon.outstandingChecks.forEach((check: OutstandingCheck, idx: number) => {
+      (recon.outstandingChecks ?? []).forEach((check: OutstandingCheck, idx: number) => {
         if (idx % 3 === 0) {
           matched.push({
             bankTxnId: `bank-${check.checkId}`,
@@ -471,19 +471,19 @@ export default function BankReconciliation() {
           {/* Outstanding Checks */}
           <div className="mb-8">
             <h2 className="text-xl font-bold text-gray-900 mb-4">Outstanding Checks</h2>
-            <DataTable columns={checksColumns} data={recon.outstandingChecks} keyField="checkId" />
+            <DataTable columns={checksColumns} data={recon.outstandingChecks ?? []} keyField="checkId" />
           </div>
 
           {/* Outstanding Deposits */}
           <div className="mb-8">
             <h2 className="text-xl font-bold text-gray-900 mb-4">Outstanding Deposits</h2>
-            <DataTable columns={depositsColumns} data={recon.outstandingDeposits} keyField="depositId" />
+            <DataTable columns={depositsColumns} data={recon.outstandingDeposits ?? []} keyField="depositId" />
           </div>
 
           {/* Adjustments */}
           <div className="mb-8">
             <h2 className="text-xl font-bold text-gray-900 mb-4">Adjustments</h2>
-            <DataTable columns={adjustmentsColumns} data={recon.adjustments} keyField="adjustmentId" />
+            <DataTable columns={adjustmentsColumns} data={recon.adjustments ?? []} keyField="adjustmentId" />
           </div>
         </>
       )}

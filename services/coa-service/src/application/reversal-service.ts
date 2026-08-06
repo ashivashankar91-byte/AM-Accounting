@@ -128,6 +128,19 @@ export class ReversalService {
       memo: l.memo ?? null,
     }));
 
+    // BR013-3: PostingService.post() requires callerClass to EXACTLY match
+    // the journal source's own sourceClass. Reversing always re-posts under
+    // the ORIGINAL entry's own sourceCode (line above), so the caller class
+    // must match THAT source's class too — not be hardcoded to MANUAL. A
+    // SYSTEM-sourced entry (e.g. any CE-12 rule-pack-driven posting) can
+    // only ever be reversed as a SYSTEM-class post; hardcoding MANUAL here
+    // made every such reversal deterministically fail BR013-3 (found via a
+    // real CE-12 live-db reversal proof, not by inspection).
+    const source = await this.prisma.journalSource.findUnique({
+      where: { tenantId_code: { tenantId, code: original.sourceCode } },
+    });
+    const callerClass = (source?.sourceClass as 'MANUAL' | 'SYSTEM' | undefined) ?? 'MANUAL';
+
     // Post the reversal through the ONE door. Own number, reversalOf linkage,
     // idempotency key reverse:{id} (belt-and-suspenders reverse-once at the ledger).
     const postingDate = target.startDate.toISOString().slice(0, 10);
@@ -138,7 +151,7 @@ export class ReversalService {
       sourceCode: original.sourceCode,
       memo: `Reversal of ${original.journalNumber}: ${reason}`,
       idempotencyKey: `reverse:${original.id}`,
-      callerClass: 'MANUAL',
+      callerClass,
       postedBy: actor.userId,
       reversalOf: original.id,
       reversalReason: reason,

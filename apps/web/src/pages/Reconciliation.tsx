@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { reconApi } from '../api/client';
 import HelpButton from '../components/HelpButton';
 import PageLoader from '../components/PageLoader';
@@ -8,7 +9,12 @@ import SCREEN_HELP from '../data/screenHelp';
 import FloorPlanFinancing from '../components/FloorPlanFinancing';
 
 export default function Reconciliation() {
-  const [tab, setTab] = useState<'bank' | 'floor-plan'>('bank');
+  const [searchParams] = useSearchParams();
+  // Honors ?tab=floor-plan so Command Center's floorplan-trust exception
+  // tile lands directly on the floor-plan sub-tab, not the default bank-recon
+  // view — per the value-doctrine "action test".
+  const initialTab = searchParams.get('tab') === 'floor-plan' ? 'floor-plan' : 'bank';
+  const [tab, setTab] = useState<'bank' | 'floor-plan'>(initialTab);
   const queryClient = useQueryClient();
   const { data: recons, isLoading, error, refetch } = useQuery({ queryKey: ['recons'], queryFn: reconApi.list, retry: false });
 

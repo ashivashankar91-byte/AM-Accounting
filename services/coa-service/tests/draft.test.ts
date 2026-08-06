@@ -73,6 +73,9 @@ function setup() {
   container.registerInstance('IEventPublisher', events as any);
   container.registerInstance('PostingService', {} as any); // unused by these tests (validate lives in validate.test.ts)
   container.registerInstance('ConfigService', { resolve: async () => ({ value: 'direct' }) } as any); // unused here (post lives in post.test.ts)
+  container.registerInstance('AnalysisCodeService', {
+    loadValidationContext: async () => ({ types: new Map(), values: new Map() }),
+  } as any); // unused by these tests (tag-evaluator parity is covered in validate.test.ts)
   container.register('DraftService', { useClass: DraftService });
   return { svc: container.resolve<DraftService>('DraftService'), prisma, events };
 }
@@ -126,6 +129,26 @@ describe('DraftService.get — BR214-1 reload fidelity', () => {
     expect(reloaded.lines[0].dr).toBe(250.55);
     expect(reloaded.lines[1].deptCode).toBe('SVC');
     expect(reloaded.attachments).toEqual([]);
+  });
+
+  // S011 — a draft's per-line analysisTags are opaque JSON at draft time
+  // (BR214-1: save in ANY state, no registry validation until post); this
+  // only proves faithful save/reload roundtrip, not tag validity.
+  it('reloads a draft carrying line-level analysisTags exactly as saved (S011)', async () => {
+    const { svc } = setup();
+    const created = await svc.create({
+      tenantId: TENANT,
+      preparer: 'alice',
+      entryDate: '2026-01-15',
+      sourceCode: 'GJ',
+      lines: [
+        { accountId: 'a-cash', storeId: '01', dr: 100, analysisTags: [{ typeId: 't-project', valueId: 'v-alpha' }] },
+        { accountId: 'a-rev', storeId: '01', deptCode: 'SVC', cr: 100 },
+      ],
+    });
+    const reloaded = await svc.get(created.id, alice);
+    expect(reloaded.lines[0].analysisTags).toEqual([{ typeId: 't-project', valueId: 'v-alpha' }]);
+    expect(reloaded.lines[1].analysisTags).toBeNull();
   });
 });
 

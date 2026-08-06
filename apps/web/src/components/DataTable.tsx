@@ -17,10 +17,12 @@ interface DataTableProps<T> {
   emptyTitle?: string;
   emptySubtitle?: string;
   keyField?: string;
+  /** Prefix used to build a `data-testid="{rowTestIdPrefix}-{row[keyField]}"` on each row, for e2e targeting. */
+  rowTestIdPrefix?: string;
 }
 
 export default function DataTable<T extends Record<string, any>>({
-  columns, data, onRowClick, emptyIcon = '📋', emptyTitle = 'No data', emptySubtitle, keyField = 'id',
+  columns, data, onRowClick, emptyIcon = '📋', emptyTitle = 'No data', emptySubtitle, keyField = 'id', rowTestIdPrefix,
 }: DataTableProps<T>) {
   if (data.length === 0) {
     return (
@@ -54,6 +56,7 @@ export default function DataTable<T extends Record<string, any>>({
           {data.map((row, i) => (
             <tr
               key={row[keyField] ?? i}
+              data-testid={rowTestIdPrefix ? `${rowTestIdPrefix}-${row[keyField] ?? i}` : undefined}
               className="transition-colors duration-150"
               style={{ borderBottom: '1px solid #F1F5F9', cursor: onRowClick ? 'pointer' : undefined }}
               onMouseEnter={(e) => (e.currentTarget.style.background = '#F8FAFC')}

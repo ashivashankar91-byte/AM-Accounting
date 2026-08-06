@@ -10,7 +10,9 @@ import {
 } from '../domain/draft';
 import { PostingService } from './posting-service';
 import { ConfigService } from './config-service';
+import { AnalysisCodeService } from './analysis-code-service';
 import { evaluate, PostingHeaderInput, PostingLineInput } from '../domain/journal-posting';
+import { validateLineTags } from '../domain/analysis-code';
 
 // ── Errors ───────────────────────────────────────────────────────────────────
 
@@ -129,6 +131,26 @@ export class DraftVoidReasonRequiredError extends Error {
   }
 }
 
+/** S008 — only a preparer holding fiscal.je.mark_adjusting may set isAdjusting=true. */
+export class AdjustingEntryPermissionError extends Error {
+  readonly status = 403;
+  readonly code = 'ADJUSTING_ENTRY_FORBIDDEN';
+  constructor() {
+    super('fiscal.je.mark_adjusting is required to mark a draft as an adjusting entry');
+    this.name = 'AdjustingEntryPermissionError';
+  }
+}
+
+/** S008 — a reason and correction reference are mandatory whenever isAdjusting=true. */
+export class AdjustingEntryReasonRequiredError extends Error {
+  readonly status = 422;
+  readonly code = 'ADJUSTING_ENTRY_REASON_REQUIRED';
+  constructor() {
+    super('adjustingReason and adjustingCorrectionRef are required when isAdjusting=true');
+    this.name = 'AdjustingEntryReasonRequiredError';
+  }
+}
+
 // ── DTOs ──────────────────────────────────────────────────────────────────────
 
 export interface DraftPayload {
@@ -137,11 +159,24 @@ export interface DraftPayload {
   sourceCode?: string | null;
   memo?: string | null;
   lines?: DraftLineInput[];
+  // S008 — per-draft adjusting-entry attribute (not inferred from the
+  // period). Setting isAdjusting=true requires actor.canMarkAdjusting and a
+  // mandatory reason + correction reference (PO decision).
+  isAdjusting?: boolean | null;
+  adjustingReason?: string | null;
+  adjustingCorrectionRef?: string | null;
 }
 
 export interface SaveDraftDTO extends DraftPayload {
   tenantId: string;
   preparer: string;
+  canMarkAdjusting?: boolean;
+  // S032 — additive, optional linkage set only by RecurringTemplateService's
+  // generate()/handlePosted() paths. Undefined for every hand-typed draft;
+  // behavior is byte-identical to pre-S032 when omitted.
+  generatedFromTemplateId?: string | null;
+  generationBatchId?: string | null;
+  reversalOfJournalId?: string | null;
 }
 
 export interface DraftActor {
@@ -150,6 +185,9 @@ export interface DraftActor {
   canViewAll: boolean;
   canVoidOwn?: boolean;
   canVoidAny?: boolean;
+  // S008 — resolved from a real fiscal.je.mark_adjusting check at the route
+  // layer (draft-routes.ts actorOf()), same pattern as canViewAll/canVoidAny.
+  canMarkAdjusting?: boolean;
 }
 
 /** S215 validation outcome — same shape §9 mandates; deltas come from the shared engine. */
@@ -182,12 +220,14 @@ export class DraftService {
     @inject('IEventPublisher') private readonly events: IEventPublisher,
     @inject('PostingService') private readonly posting: PostingService,
     @inject('ConfigService') private readonly config: ConfigService,
+    @inject('AnalysisCodeService') private readonly analysisCodes: AnalysisCodeService,
   ) {}
 
   /** BR214-1 — save a draft in ANY state (no validation on save). */
   async create(dto: SaveDraftDTO): Promise<any> {
     if (!dto.tenantId) throw new DraftInputError('tenantId is required');
     if (!dto.preparer) throw new DraftInputError('preparer is required');
+    this.assertAdjustingAllowed(dto, dto.canMarkAdjusting ?? false);
 
     const id = crypto.randomUUID();
     const lines = (dto.lines ?? []).map(normalizeLine);
@@ -206,8 +246,17 @@ export class DraftService {
           memo: dto.memo ?? null,
           lines: lines as any,
           version: 1,
+          isAdjusting: dto.isAdjusting ?? false,
+          adjustingReason: dto.adjustingReason ?? null,
+          adjustingCorrectionRef: dto.adjustingCorrectionRef ?? null,
+          generatedFromTemplateId: dto.generatedFromTemplateId ?? null,
+          generationBatchId: dto.generationBatchId ?? null,
+          reversalOfJournalId: dto.reversalOfJournalId ?? null,
         },
       });
+      if (dto.isAdjusting) {
+        await this.writeAttestation(tx, dto.tenantId, id, dto.preparer, dto.adjustingReason!, dto.adjustingCorrectionRef ?? null);
+      }
       await tx.manualJeDraftRevision.create({
         data: {
           id: crypto.randomUUID(),
@@ -232,7 +281,9 @@ export class DraftService {
 
   /** BR214-1 — full-fidelity replace of an editable draft; retains history (BR214-3).
    *  An edit to a VALIDATED draft resets it to DRAFT and clears the prior validation
-   *  (S215 — "revalidated on edit"). */
+   *  (S215 — "revalidated on edit"). S008: changing isAdjusting/adjustingReason also
+   *  falls under this same "any edit resets to DRAFT" rule — no special-casing
+   *  needed, since update() already unconditionally resets validation below. */
   async update(id: string, payload: DraftPayload, actor: DraftActor): Promise<any> {
     const existing = await this.load(id, actor);
     if (existing.status !== 'DRAFT' && existing.status !== 'VALIDATED') {
@@ -241,6 +292,14 @@ export class DraftService {
 
     const lines = (payload.lines ?? (existing.lines as DraftLineInput[]) ?? []).map(normalizeLine);
     const nextVersion = existing.version + 1;
+    const nextIsAdjusting = payload.isAdjusting !== undefined ? !!payload.isAdjusting : existing.isAdjusting;
+    const nextReason = payload.adjustingReason !== undefined ? payload.adjustingReason : existing.adjustingReason;
+    const nextCorrectionRef =
+      payload.adjustingCorrectionRef !== undefined ? payload.adjustingCorrectionRef : existing.adjustingCorrectionRef;
+    this.assertAdjustingAllowed(
+      { isAdjusting: nextIsAdjusting, adjustingReason: nextReason, adjustingCorrectionRef: nextCorrectionRef },
+      actor.canMarkAdjusting ?? false,
+    );
 
     const updated = await this.prisma.$transaction(async (tx: any) => {
       await setTenantContextOnConnection(tx, actor.tenantId);
@@ -258,8 +317,14 @@ export class DraftService {
           memo: payload.memo !== undefined ? payload.memo : existing.memo,
           lines: lines as any,
           version: nextVersion,
+          isAdjusting: nextIsAdjusting,
+          adjustingReason: nextReason,
+          adjustingCorrectionRef: nextCorrectionRef,
         },
       });
+      if (nextIsAdjusting) {
+        await this.writeAttestation(tx, actor.tenantId, id, actor.userId, nextReason!, nextCorrectionRef ?? null);
+      }
       await tx.manualJeDraftRevision.create({
         data: {
           id: crypto.randomUUID(),
@@ -367,6 +432,7 @@ export class DraftService {
       sourceCode: draft.sourceCode ?? '',
       memo: draft.memo ?? null,
       idempotencyKey: `validate:${id}`,
+      isAdjusting: draft.isAdjusting ?? false,
     };
     const lines: PostingLineInput[] = ((draft.lines as any[]) ?? []).map((l) => ({
       accountId: l.accountId ?? '',
@@ -377,6 +443,11 @@ export class DraftService {
       dr: l.dr ?? null,
       cr: l.cr ?? null,
       memo: l.memo ?? null,
+      // S011 P1-F1 — carry tags into validation too (see below): they are still
+      // NEVER passed to evaluate() (BR011-3 — tags never affect posting math,
+      // balancing, or the S013 gate), only to the separate tag evaluator so
+      // Validate and Post share the exact same tag rules (BR215-2 parity).
+      analysisTags: l.analysisTags ?? null,
     }));
 
     let evalResult;
@@ -390,14 +461,29 @@ export class DraftService {
       throw new DraftEngineUnavailableError(); // BR215 negative — blocking, never silent pass
     }
 
+    // S011 P1-F1 — evaluate analysis tags with the SAME evaluator (validateLineTags)
+    // that PostingService.post uses, so a draft that passes Validate cannot later
+    // fail Post on tag data that hasn't changed since (BR215-2 parity extended to
+    // BR011-1/BR011-2/BR011-4). Fail-closed: unknown, inactive, mismatched, over-cap
+    // or duplicate-type tags are surfaced here, before Post is ever attempted.
+    const tagCtx = await this.analysisCodes.loadValidationContext(actor.tenantId);
+    const tagViolations = lines.flatMap((line, i) => validateLineTags(line.analysisTags ?? undefined, tagCtx, i));
+
     const result: ValidationResult = {
-      pass: evalResult.pass,
-      errors: evalResult.violations.map((v) => ({
-        ...(v.lineIndex !== undefined ? { lineIndex: v.lineIndex } : {}),
-        rule: v.rule,
-        message: v.diagnostic,
-        ...(v.field !== undefined ? { field: v.field } : {}),
-      })),
+      pass: evalResult.pass && tagViolations.length === 0,
+      errors: [
+        ...evalResult.violations.map((v) => ({
+          ...(v.lineIndex !== undefined ? { lineIndex: v.lineIndex } : {}),
+          rule: v.rule,
+          message: v.diagnostic,
+          ...(v.field !== undefined ? { field: v.field } : {}),
+        })),
+        ...tagViolations.map((v) => ({
+          ...(v.lineIndex !== undefined ? { lineIndex: v.lineIndex } : {}),
+          rule: v.rule,
+          message: v.message,
+        })),
+      ],
       deltaDr: evalResult.deltaDr,
       deltaCr: evalResult.deltaCr,
     };
@@ -482,6 +568,9 @@ export class DraftService {
       dr: l.dr ?? null,
       cr: l.cr ?? null,
       memo: l.memo ?? null,
+      // S011 — carries tags saved on the draft (any state, BR214-1) through to
+      // the S013 door for fail-closed validation + persistence at post time.
+      analysisTags: l.analysisTags ?? null,
     }));
 
     // (5) BR216-1 — atomic post through the S013 door; idempotent by draft id so a
@@ -496,6 +585,14 @@ export class DraftService {
       callerClass: 'MANUAL',
       postedBy: actor.userId, // BR216-3 poster identity = authenticated user
       draftId: id,
+      isAdjusting: fresh.isAdjusting ?? false,
+      adjustingReason: fresh.adjustingReason ?? null,
+      adjustingCorrectionRef: fresh.adjustingCorrectionRef ?? null,
+      // S032/BLK-22 — a draft created as an auto-reverse counterpart carries
+      // reversalOfJournalId; forwarding it here reuses S218's certified
+      // mirrored-linkage semantics on post instead of inventing a second one.
+      // Undefined for every ordinary draft (byte-identical prior behavior).
+      reversalOf: (fresh as any).reversalOfJournalId ?? null,
       lines,
     });
 
@@ -588,6 +685,50 @@ export class DraftService {
     return draft;
   }
 
+  /**
+   * S008 — enforce the adjusting-entry policy (PO decision): only a preparer
+   * holding fiscal.je.mark_adjusting may set isAdjusting=true, and a reason +
+   * correction reference are mandatory whenever it is set. Called on every
+   * create()/update() so a draft can never carry isAdjusting=true without
+   * both a real permission check having passed AND the mandatory fields
+   * present — closing the gap before AdjustingEntryAttestation is even written.
+   */
+  private assertAdjustingAllowed(
+    payload: { isAdjusting?: boolean | null; adjustingReason?: string | null; adjustingCorrectionRef?: string | null },
+    canMarkAdjusting: boolean,
+  ): void {
+    if (!payload.isAdjusting) return;
+    if (!canMarkAdjusting) throw new AdjustingEntryPermissionError();
+    if (!payload.adjustingReason?.trim() || !payload.adjustingCorrectionRef?.trim()) {
+      throw new AdjustingEntryReasonRequiredError();
+    }
+  }
+
+  /**
+   * S008 — records the same-database attestation the enforce_period_postable()
+   * DB trigger verifies at posting time (see
+   * 20260728010000_s008_period_close_control). Written via the SECURITY
+   * DEFINER record_adjusting_attestation() function — amacc_app itself has no
+   * direct INSERT/UPDATE/DELETE on adjusting_entry_attestation (same
+   * hardening pattern as fiscal_period_transition). Executed inside the same
+   * transaction as the draft save, so a failure here rolls back the draft
+   * save too (an isAdjusting=true draft can never be persisted without its
+   * attestation, or vice versa).
+   */
+  private async writeAttestation(
+    tx: any,
+    tenantId: string,
+    draftId: string,
+    attestedBy: string,
+    reason: string,
+    correctionRef: string | null,
+  ): Promise<void> {
+    await tx.$executeRawUnsafe(
+      `SELECT record_adjusting_attestation($1, $2, $3, $4, $5)`,
+      tenantId, draftId, attestedBy, reason, correctionRef,
+    );
+  }
+
   private snapshot(d: any) {
     return {
       id: d.id,
@@ -601,6 +742,12 @@ export class DraftService {
       voidedAt: d.voidedAt instanceof Date ? d.voidedAt.toISOString() : d.voidedAt ?? null,
       voidReason: d.voidReason ?? null,
       version: d.version,
+      isAdjusting: d.isAdjusting ?? false,
+      adjustingReason: d.adjustingReason ?? null,
+      adjustingCorrectionRef: d.adjustingCorrectionRef ?? null,
+      generatedFromTemplateId: d.generatedFromTemplateId ?? null,
+      generationBatchId: d.generationBatchId ?? null,
+      reversalOfJournalId: d.reversalOfJournalId ?? null,
     };
   }
 

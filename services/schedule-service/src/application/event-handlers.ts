@@ -3,71 +3,47 @@
 // writes ScheduleDetail if the journal entry is for a scheduled GL account.
 
 import { injectable, inject } from 'tsyringe';
-import { Prisma } from '.prisma/schedule-client';
 import { SCHEDULE_REPO_TOKEN, SCHEDULE_DETAIL_REPO_TOKEN } from './schedule-service';
 import type { IScheduleRepository } from '../infrastructure/schedule-repository';
 import type { IScheduleDetailRepository } from '../infrastructure/schedule-detail-repository';
+import { OpenItemService, JournalEntryPostedEvent } from './open-item-service';
 
-// -----------------------------------------------------------------------
-// Event payload published by gl-service after a journal entry is committed
-// gl-service includes scheduleNumber (from glAccount.scheduleNumber field)
-// @trace-cobol komdetail.cbl INSERT — the eventual-consistency bridge
-// -----------------------------------------------------------------------
-export interface JournalEntryPostedEvent {
-  tenantId: string;
-  journalEntryId: string;
-  glAccountNumber: string;
-  scheduleNumber: string | null;  // null = GL not linked to any schedule
-  controlNumber: string;
-  amount: string;                 // string repr of Decimal to avoid float loss
-  referenceNumber?: string;
-  journalSource: string;
-  transactionDate: string;        // ISO date string
-  description?: string;
-}
+export type { JournalEntryPostedEvent };
 
 @injectable()
 export class ScheduleEventHandlers {
   constructor(
     @inject(SCHEDULE_REPO_TOKEN) private readonly scheduleRepo: IScheduleRepository,
     @inject(SCHEDULE_DETAIL_REPO_TOKEN) private readonly detailRepo: IScheduleDetailRepository,
+    // Explicit @inject required — under tsx/esbuild's transpilation,
+    // reflect-metadata's implicit design:paramtypes for an undecorated
+    // constructor param is unreliable (unlike tsc's), so tsyringe silently
+    // resolved this to undefined at runtime (readonly, works fine under
+    // `tsc`+`vitest`, which is why unit tests never caught it — only a real
+    // RabbitMQ-delivered JOURNAL_ENTRY_POSTED event, running the actual
+    // `npx tsx src/index.ts` process, hit the resulting `TypeError: Cannot
+    // read properties of undefined (reading 'processPostingEvent')`).
+    @inject(OpenItemService) private readonly openItemService: OpenItemService,
   ) {}
 
   // -----------------------------------------------------------------------
   // Handle JOURNAL_ENTRY_POSTED
   // @trace-cobol komdetail.cbl 30000-INSERT / 33000-WRITE-RECORD
-  // If scheduleNumber is null → skip (GL not scheduled)
-  // Idempotent: check journalEntryId uniqueness before writing
+  // @wave S026 — delegates to OpenItemService.processPostingEvent(), which
+  // atomically writes the ScheduleDetail row AND the corresponding
+  // open-item-or-application row in one SERIALIZABLE transaction, keyed by
+  // the event's own correlationId for per-line idempotency. This replaces
+  // the old journalEntryId-only dedup, which silently dropped a second
+  // schedule-relevant line on the same journal entry.
   // -----------------------------------------------------------------------
-  async handleJournalEntryPosted(event: JournalEntryPostedEvent): Promise<void> {
+  async handleJournalEntryPosted(event: JournalEntryPostedEvent, correlationId: string): Promise<void> {
     if (!event.scheduleNumber) return;
-
-    // Verify schedule still exists
-    const schedule = await this.scheduleRepo.findById(event.tenantId, event.scheduleNumber);
-    if (!schedule) {
-      // Schedule may have been deleted after GL was linked — skip silently
-      return;
+    const outcome = await this.openItemService.processPostingEvent(event.tenantId, event, correlationId);
+    if (outcome === 'SKIPPED_SCHEDULE_NOT_FOUND') {
+      console.warn(
+        `[schedule-service] JOURNAL_ENTRY_POSTED for unknown schedule ${event.scheduleNumber} (tenant ${event.tenantId}, entry ${event.journalEntryId}) — skipped.`,
+      );
     }
-
-    // Idempotency guard — check if we already processed this journal entry
-    const existing = await this.detailRepo.findByJournalEntryId(
-      event.tenantId,
-      event.journalEntryId,
-    );
-    if (existing.length > 0) return; // already processed
-
-    await this.detailRepo.create(event.tenantId, {
-      scheduleNumber: event.scheduleNumber,
-      controlNumber: event.controlNumber,
-      amount: new Prisma.Decimal(event.amount),
-      referenceNumber: event.referenceNumber,
-      journalSource: event.journalSource,
-      transactionDate: new Date(event.transactionDate),
-      glAccountNumber: event.glAccountNumber,
-      description: event.description,
-      isBalanceForward: false,
-      journalEntryId: event.journalEntryId,
-    });
   }
 
   // -----------------------------------------------------------------------

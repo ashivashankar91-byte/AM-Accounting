@@ -1,0 +1,48 @@
+$patch: delete
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: data-quality-service
+  namespace: amacc
+---
+$patch: delete
+apiVersion: v1
+kind: Service
+metadata:
+  name: data-quality-service
+  namespace: amacc
+---
+$patch: delete
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: esg-service
+  namespace: amacc
+---
+$patch: delete
+apiVersion: v1
+kind: Service
+metadata:
+  name: esg-service
+  namespace: amacc
+---
+$patch: delete
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: revenue-service
+  namespace: amacc
+---
+$patch: delete
+apiVersion: v1
+kind: Service
+metadata:
+  name: revenue-service
+  namespace: amacc
+---
+$patch: delete
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ml-service
+  namespace: amacc

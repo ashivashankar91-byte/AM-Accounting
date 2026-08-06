@@ -56,6 +56,15 @@ model LegalEntity {
   deactivatedAt      DateTime? @map("deactivated_at")
   deactivatedBy      String?   @map("deactivated_by")
   deactivationReason String?   @map("deactivation_reason")
+  /// ACC-S003: designates this entity as an elimination entity within the
+  /// group. Flag-only in R1 — no scoped pairing metadata, no posting
+  /// behavior. An elimination entity cannot own stores (enforced both
+  /// directions — see BR003-2/BR003-3 in P01_STORY_CONTRACTS.md).
+  isElimination           Boolean   @default(false) @map("is_elimination")
+  eliminationChangedAt    DateTime? @map("elimination_changed_at")
+  eliminationChangedBy    String?   @map("elimination_changed_by")
+  /// Required when has_posted_journals = true (BR003-4); optional otherwise.
+  eliminationChangeReason String?   @map("elimination_change_reason")
   createdAt          DateTime  @default(now()) @map("created_at")
   updatedAt          DateTime  @updatedAt @map("updated_at")
 
@@ -231,4 +240,69 @@ model AuditOutboxEvent {
 
   @@index([publishedAt, retryCount])
   @@map("audit_outbox")
+}
+
+// S005 — HR-Event Provisioning Hooks
+// Every HR-originated provisioning action is persisted for audit lineage.
+model HrProvisioningEvent {
+  id                    String    @id @default(uuid())
+  tenantId              String    @map("tenant_id")
+  legalEntityId         String?   @map("legal_entity_id")    // S005: stored separately, never aliased to tenantId
+  hrEventType           String    @map("hr_event_type")       // HR_USER_CREATED | HR_USER_TERMINATED | HR_USER_ROLE_CHANGED
+  hrUserId              String    @map("hr_user_id")
+  hrSystem              String    @map("hr_system")
+  payload               Json      @default("{}")
+  sourceCorrelationId   String?   @map("source_correlation_id") // from calling HR system; unique per tenant
+  accountingAction      String    @map("accounting_action")   // PROVISIONED | DEPROVISIONED | ROLE_UPDATED | IGNORED | ERROR
+  accountingUserId      String?   @map("accounting_user_id")
+  accountingRoles       String[]  @map("accounting_roles")
+  status                String    @default("PROCESSED") @map("status") // PROCESSED | FAILED_RETRYABLE | FAILED_TERMINAL | DUPLICATE
+  retryCount            Int       @default(0) @map("retry_count")
+  lastAttemptAt         DateTime? @map("last_attempt_at")
+  processedAt           DateTime  @default(now()) @map("processed_at")
+  errorMessage          String?   @map("error_message")
+  correlationId         String    @default(uuid()) @map("correlation_id") // internal trace id
+
+  @@unique([tenantId, sourceCorrelationId], name: "uq_hr_prov_source_corr")
+  @@index([tenantId])
+  @@index([legalEntityId])
+  @@index([hrUserId])
+  @@index([status])
+  @@map("hr_provisioning_events")
+}
+
+// S006 — MFA Policy per Tenant
+model MfaPolicy {
+  id          String   @id @default(uuid())
+  tenantId    String   @unique @map("tenant_id")
+  enforcement String   @default("OPTIONAL")
+  totpEnabled Boolean  @default(true) @map("totp_enabled")
+  smsEnabled  Boolean  @default(false) @map("sms_enabled")
+  exemptRoles String[] @default([]) @map("exempt_roles")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("mfa_policies")
+}
+
+// S006 — Safeguards Evidence (immutable MFA audit log)
+model SafeguardsEvidence {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  userId        String   @map("user_id")
+  eventType     String   @map("event_type")
+  mfaMethod     String?  @map("mfa_method")
+  resourceType  String?  @map("resource_type")
+  resourceId    String?  @map("resource_id")
+  ipAddress     String?  @map("ip_address")
+  userAgent     String?  @map("user_agent")
+  evidenceHash  String?  @map("evidence_hash")
+  occurredAt    DateTime @default(now()) @map("occurred_at")
+  sessionId     String?  @map("session_id")
+  correlationId String   @default(uuid()) @map("correlation_id")
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([occurredAt])
+  @@map("safeguards_evidence")
 }

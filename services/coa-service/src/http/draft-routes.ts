@@ -15,7 +15,11 @@ import {
   DraftPostValidationError,
   DraftReverseOnlyError,
   DraftVoidReasonRequiredError,
+  AdjustingEntryPermissionError,
+  AdjustingEntryReasonRequiredError,
 } from '../application/draft-service';
+import { PostingViolationError, AnalysisTagViolationError } from '../application/posting-service';
+import { RecurringTemplateService } from '../application/recurring-template-service';
 import { requireJePermission, JE_PERMISSIONS } from './journal-routes';
 
 function getTenantId(request: any): string {
@@ -35,6 +39,7 @@ export const JE_DRAFT_PERMISSIONS = {
   VIEW_ALL: 'je.draft.view_all',
   VOID: 'je.draft.void',
   VOID_ANY: 'je.draft.void.any',
+  MARK_ADJUSTING: 'fiscal.je.mark_adjusting',
 } as const;
 
 // R0 Stabilization Phase 3: centralized through the real S207 AuthzService
@@ -73,10 +78,11 @@ function requireDraftReader() {
 async function actorOf(request: any, tenantId: string) {
   const client = container.resolve<AuthzClient>('AuthzClient');
   const userId = (request.user?.sub as string | undefined) ?? 'system';
-  const [viewAll, voidOwn, voidAny] = await Promise.all([
+  const [viewAll, voidOwn, voidAny, markAdjusting] = await Promise.all([
     client.check({ userId, permissionKey: JE_DRAFT_PERMISSIONS.VIEW_ALL, scope: { tenantId } }),
     client.check({ userId, permissionKey: JE_DRAFT_PERMISSIONS.VOID, scope: { tenantId } }),
     client.check({ userId, permissionKey: JE_DRAFT_PERMISSIONS.VOID_ANY, scope: { tenantId } }),
+    client.check({ userId, permissionKey: JE_DRAFT_PERMISSIONS.MARK_ADJUSTING, scope: { tenantId } }),
   ]);
   return {
     tenantId,
@@ -84,6 +90,7 @@ async function actorOf(request: any, tenantId: string) {
     canViewAll: viewAll.allow,
     canVoidOwn: voidOwn.allow,
     canVoidAny: voidAny.allow,
+    canMarkAdjusting: markAdjusting.allow,
   };
 }
 
@@ -98,7 +105,9 @@ function handleError(error: unknown, reply: any) {
     error instanceof DraftEngineUnavailableError ||
     error instanceof PostingModeGateError ||
     error instanceof DraftReverseOnlyError ||
-    error instanceof DraftVoidReasonRequiredError
+    error instanceof DraftVoidReasonRequiredError ||
+    error instanceof AdjustingEntryPermissionError ||
+    error instanceof AdjustingEntryReasonRequiredError
   ) {
     return reply.status((error as any).status).send({ error: (error as any).code, message: (error as any).message });
   }
@@ -109,6 +118,13 @@ function handleError(error: unknown, reply: any) {
       message: error.message,
       validation: error.validation,
     });
+  }
+  if (error instanceof PostingViolationError) {
+    return reply.status(error.status).send({ error: error.code, message: error.message, violations: error.violations });
+  }
+  if (error instanceof AnalysisTagViolationError) {
+    // S011 — tag rejection at the S013 door (cap/inactive/unknown/duplicate).
+    return reply.status(error.status).send({ error: error.code, message: error.message, violations: error.violations });
   }
   if (error instanceof z.ZodError) {
     return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
@@ -129,6 +145,13 @@ const LineSchema = z.object({
   dr: z.union([z.number(), z.string()]).nullable().optional(),
   cr: z.union([z.number(), z.string()]).nullable().optional(),
   memo: z.string().max(500).nullable().optional(),
+  // S011 P01-SCR-05 — line-level analysis tags; validated (cap/active/type
+  // match) only at post time (BR011-1/BR011-4). Draft save accepts ANY shape
+  // here per BR214-1 ("save in any state").
+  analysisTags: z
+    .array(z.object({ typeId: z.string().min(1), valueId: z.string().min(1) }))
+    .nullable()
+    .optional(),
 });
 
 // BR214-1 — every field optional so ANY state saves.
@@ -138,6 +161,11 @@ const DraftSchema = z.object({
   sourceCode: z.string().nullable().optional(),
   memo: z.string().max(500).nullable().optional(),
   lines: z.array(LineSchema).optional(),
+  // S008 — per-draft adjusting-entry attribute. Permission (fiscal.je.mark_adjusting)
+  // and mandatory reason/correctionRef are enforced in DraftService, not here.
+  isAdjusting: z.boolean().nullable().optional(),
+  adjustingReason: z.string().max(500).nullable().optional(),
+  adjustingCorrectionRef: z.string().max(120).nullable().optional(),
 });
 
 const AttachmentSchema = z.object({
@@ -163,7 +191,9 @@ export async function draftRoutes(app: FastifyInstance) {
     try {
       const tenantId = getTenantId(request);
       const body = DraftSchema.parse(request.body ?? {});
-      const draft = await svc.create({ tenantId, preparer: (request.user?.sub as string) ?? 'system', ...body });
+      const preparer = (request.user?.sub as string) ?? 'system';
+      const actor = await actorOf(request, tenantId);
+      const draft = await svc.create({ tenantId, preparer, canMarkAdjusting: actor.canMarkAdjusting, ...body });
       return reply.status(201).send({ draftId: draft.id, status: draft.status, version: draft.version });
     } catch (err) {
       return handleError(err, reply);
@@ -247,7 +277,19 @@ export async function draftRoutes(app: FastifyInstance) {
         await requireJePermission(JE_PERMISSIONS.POST)(request, reply);
         if (reply.sent) return;
         const result = await svc.postDraft(id, actor); // S216
-        return reply.status(201).send(result);
+        // S032/BLK-22 — if this draft was generated from an autoReverse
+        // template, create its reversal draft now. No-op (null) for every
+        // ordinary draft. Isolated: a failure here never unwinds the
+        // already-successful post, and is surfaced (not silent) in the
+        // response rather than swallowed.
+        let reversalDraft: unknown;
+        try {
+          const recurringTemplateService = container.resolve<RecurringTemplateService>('RecurringTemplateService');
+          reversalDraft = await recurringTemplateService.handlePosted(tenantId, id, result.journalId, result.journalNumber, actor);
+        } catch (hookErr: any) {
+          reversalDraft = { error: 'REVERSAL_DRAFT_HOOK_FAILED', message: hookErr?.message ?? 'Unknown error' };
+        }
+        return reply.status(201).send(reversalDraft ? { ...result, reversalDraft } : result);
       }
       if (action === 'void') {
         // S219 — own void needs je.draft.void; voiding another preparer's draft

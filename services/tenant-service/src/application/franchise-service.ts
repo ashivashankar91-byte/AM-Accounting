@@ -104,6 +104,27 @@ export class FranchiseService {
     });
     if (!store) throw new StoreNotFoundForFranchiseError(dto.storeId);
 
+    // P1-F2 corrective fix (reverse ownership guard): a franchise cannot be
+    // attached beneath a store whose owning legal entity is flagged as an
+    // elimination entity — regardless of the store's own ACTIVE/INACTIVE
+    // status (the prior code only validated tenant membership of the
+    // store, never its parent entity). This is checked against the store's
+    // *currently resolved* owning entity (honoring any S202 STORE
+    // re-parent override), not just the immutable base entityId, so both
+    // the direct path (store created directly under the elimination
+    // entity) and the indirect path (store later re-parented beneath an
+    // elimination entity) are rejected.
+    const ownerEntityId = await this._resolveStoreOwnerEntityId(dto.tenantId, dto.storeId, store.entityId);
+    const ownerEntity = await this.prisma.legalEntity.findFirst({
+      where: { id: ownerEntityId, tenantId: dto.tenantId },
+    });
+    if (ownerEntity?.isElimination) {
+      throw new FranchiseConflictError(
+        'ELIMINATION_ENTITY_CANNOT_OWN_STORES',
+        `Store '${dto.storeId}' is owned by an elimination entity and cannot receive a franchise`,
+      );
+    }
+
     // BR204-1: OEM must be on the platform-controlled list → 422 unknown-oem.
     const oem = await this.prisma.oemRef.findFirst({
       where: { oemCode: dto.oemCode, active: true },
@@ -219,6 +240,20 @@ export class FranchiseService {
   }
 
   // ── Private helpers ──────────────────────────────────────────────────────────
+
+  /** P1-F2: resolves the store's *currently effective* owning legal-entity
+   * id — the latest applicable S202 OrgReparentEvent override for this
+   * store (nodeType='STORE'), falling back to the immutable base
+   * Store.entityId when no override applies. Mirrors OrgService's own
+   * resolution (`_resolveCurrentParent`) so the elimination guard sees the
+   * same "current parent" the org tree screen would show. */
+  private async _resolveStoreOwnerEntityId(tenantId: string, storeId: string, baseEntityId: string): Promise<string> {
+    const latest = await this.prisma.orgReparentEvent.findFirst({
+      where: { tenantId, nodeType: 'STORE', nodeId: storeId, effectiveFrom: { lte: new Date() } },
+      orderBy: [{ effectiveFrom: 'desc' }, { createdAt: 'desc' }],
+    });
+    return latest ? latest.newParentId : baseEntityId;
+  }
 
   private _assertDealerCodeFormat(oemCode: string, pattern: string, hint: string, dealerCode: string) {
     let re: RegExp;

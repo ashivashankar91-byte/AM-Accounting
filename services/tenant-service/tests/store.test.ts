@@ -173,6 +173,26 @@ describe('StoreService.create', () => {
     ).rejects.toBeInstanceOf(StoreValidationError);
   });
 
+  // ACC-S003 BR003-2: elimination entities cannot own stores (reverse-direction guard).
+  it('throws StoreConflictError (ELIMINATION_ENTITY_CANNOT_OWN_STORES) when target entity is an elimination entity', async () => {
+    const { svc } = makeService({
+      entityFindFirst: vi.fn().mockResolvedValue({ ...BASE_ENTITY, isElimination: true }),
+    });
+    try {
+      await svc.create({
+        tenantId:     TENANT_ID,
+        entityId:     ENTITY_ID,
+        storeCode:    '01',
+        storeName:    'Store',
+        stateProvince: 'IL',
+      });
+      expect.fail('expected ELIMINATION_ENTITY_CANNOT_OWN_STORES to throw');
+    } catch (err: any) {
+      expect(err).toBeInstanceOf(StoreConflictError);
+      expect(err.code).toBe('ELIMINATION_ENTITY_CANNOT_OWN_STORES');
+    }
+  });
+
   it('throws StoreConflictError (DUPLICATE_STORE_CODE) on code collision', async () => {
     const storeFindFirst = vi.fn().mockResolvedValue(BASE_STORE); // existing store with same code
     const { svc } = makeService({ storeFindFirst });

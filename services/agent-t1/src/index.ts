@@ -4,7 +4,7 @@ import cors from '@fastify/cors';
 import { t1Routes } from './http/routes';
 import { AnthropicClaudeClient } from './infrastructure/claude-client';
 import { RabbitMQEventPublisher } from './infrastructure/event-publisher';
-import { InMemoryAuditLogger } from './infrastructure/audit-logger';
+import { PostgresAuditLogger } from './infrastructure/audit-logger';
 import pino from 'pino';
 
 const logger = pino({ name: 'agent-t1' });
@@ -17,8 +17,8 @@ async function bootstrap() {
   await app.register(cors, { origin: true });
 
   const claudeClient = new AnthropicClaudeClient(ANTHROPIC_API_KEY);
-  const auditLogger = new InMemoryAuditLogger();
-  const eventPublisher = new RabbitMQEventPublisher({ url: process.env['RABBITMQ_URL'] ?? 'amqp://localhost:5672' });
+  const auditLogger = new PostgresAuditLogger();
+  const eventPublisher = new RabbitMQEventPublisher({ url: process.env['RABBITMQ_URL'] ?? 'amqp://localhost:5672', serviceName: 'agent-t1' });
   await eventPublisher.connect();
 
   await app.register(t1Routes(claudeClient, auditLogger, eventPublisher), { prefix: '/api/v1/agents' });

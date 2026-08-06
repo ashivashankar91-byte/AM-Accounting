@@ -91,7 +91,17 @@ CREATE TABLE "deal_product_lines" (
 );
 
 -- CreateTable
-CREATE TABLE "outbox_events" (
+-- Migration-orchestration fix (STABILIZE THE CONSOLIDATED ACCOUNTING
+-- APPLICATION): "outbox_events" (no service prefix) is intentionally
+-- shared across six services' own OutboxEvent Prisma models mapping to the
+-- same physical table (apar-service, eom-service, group-service,
+-- gl-service, payroll-service, schedule-service). Applying every service's
+-- migrations to a genuinely empty database exposed that whichever of
+-- these services' migrations ran second failed with 42P07 ("relation
+-- already exists") — this table's creation must be idempotent across all
+-- of them, same as eom-service's baseline
+-- (20260508000000_eom_service_baseline) already is.
+CREATE TABLE IF NOT EXISTS "outbox_events" (
     "id" TEXT NOT NULL,
     "event_type" TEXT NOT NULL,
     "tenant_id" TEXT NOT NULL,
@@ -209,10 +219,10 @@ CREATE INDEX "deal_product_lines_journal_entry_id_idx" ON "deal_product_lines"("
 CREATE INDEX "deal_product_lines_deal_number_idx" ON "deal_product_lines"("deal_number");
 
 -- CreateIndex
-CREATE INDEX "outbox_events_published_at_retry_count_idx" ON "outbox_events"("published_at", "retry_count");
+CREATE INDEX IF NOT EXISTS "outbox_events_published_at_retry_count_idx" ON "outbox_events"("published_at", "retry_count");
 
 -- CreateIndex
-CREATE INDEX "outbox_events_created_at_idx" ON "outbox_events"("created_at");
+CREATE INDEX IF NOT EXISTS "outbox_events_created_at_idx" ON "outbox_events"("created_at");
 
 -- CreateIndex
 CREATE INDEX "gl_account_period_balances_tenant_id_idx" ON "gl_account_period_balances"("tenant_id");

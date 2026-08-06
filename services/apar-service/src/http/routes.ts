@@ -3,7 +3,143 @@ import { z } from 'zod';
 import { container } from 'tsyringe';
 import { APARService } from '../application/apar-service';
 import { FinanceChargeJob } from '../application/finance-charge-job';
-import { asTenantId, AREntryType, authMiddleware } from '@amacc/shared-kernel';
+import { asTenantId, AREntryType, authMiddleware, createAuthzGuard, AuthzClient, createServiceToken } from '@amacc/shared-kernel';
+import {
+  VendorService,
+  VendorNotFoundError,
+  VendorConflictError,
+  VendorValidationError,
+  VendorHasReferencesError,
+  DuplicateVendorAcknowledgementRequiredError,
+} from '../application/vendor-service';
+import {
+  VendorComplianceService,
+  ComplianceCheckNotFoundError,
+  ComplianceCheckValidationError,
+  ComplianceCheckConflictError,
+  VendorNotFoundForComplianceError,
+} from '../application/vendor-compliance-service';
+import {
+  InsuranceCertificateService,
+  InsuranceCertificateNotFoundError,
+  VendorNotFoundForCertificateError,
+  InsuranceCertificateConflictError,
+  InsuranceCertificateValidationError,
+  INSURANCE_TYPE_VALUES,
+} from '../application/insurance-certificate-service';
+import {
+  CustomerService,
+  CustomerNotFoundError,
+  CustomerConflictError,
+  CustomerValidationError,
+  DuplicateCustomerAcknowledgementRequiredError,
+} from '../application/customer-service';
+import {
+  InvoiceService,
+  InvoiceNotFoundError,
+  VendorNotFoundForInvoiceError,
+  VendorNotEligibleForInvoiceError,
+  InvoiceValidationError,
+  InvoiceConflictError,
+  DuplicateInvoiceAcknowledgementRequiredError,
+  MatchExceptionOverrideRequiredError,
+} from '../application/invoice-service';
+import {
+  GoodsReceiptService,
+  GoodsReceiptNotFoundError,
+  PurchaseOrderNotFoundForReceiptError,
+  GoodsReceiptValidationError,
+  GoodsReceiptConflictError,
+} from '../application/goods-receipt-service';
+import {
+  ApprovalRuleService,
+  ApprovalRuleNotFoundError,
+  ApprovalRuleValidationError,
+  ApprovalRuleConflictError,
+  APPROVAL_ROLE_VALUES,
+} from '../application/approval-rule-service';
+import {
+  InvoiceNotFoundForApprovalError,
+  InvoiceNotSubmittedError,
+  ApprovalInstanceNotFoundError,
+  ApprovalAlreadyDecidedError,
+  ApprovalConflictError,
+  WrongApproverRoleError,
+  ApprovalValidationError,
+} from '../application/invoice-approval-service';
+import {
+  InvoiceNotFoundForPaymentError,
+  InvoiceNotApprovedError,
+  InvoiceAlreadyPaidError,
+  BankAccountNotFoundError,
+  PaymentNotFoundError,
+  PaymentConflictError,
+  PaymentValidationError,
+  VoidRefusedPaymentReconciledError,
+} from '../application/manual-payment-service';
+import {
+  InvoiceNotFoundForUseTaxError,
+  UseTaxAssessmentValidationError,
+  UseTaxAssessmentAlreadyExistsError,
+  UseTaxAssessmentNotFoundError,
+} from '../application/use-tax-service';
+import {
+  EscheatConfigNotFoundError,
+  EscheatTransferAlreadyExistsError,
+} from '../application/payment-lifecycle-service';
+import {
+  WholesaleVehicleItemNotFoundError,
+  WholesaleVehicleValidationError,
+  TitleReleaseRefusedUnpaidError,
+} from '../application/wholesale-vehicle-service';
+import {
+  ArEntryNotFoundForWriteOffError,
+  WriteOffValidationError,
+  WriteOffRefusedOverThresholdError,
+  WriteOffNotFoundError,
+} from '../application/write-off-service';
+import {
+  AllowancePreviewNotFoundError,
+  AllowanceValidationError,
+  AllowancePostAmountMismatchError,
+} from '../application/allowance-service';
+import {
+  ArEntryNotFoundForNsfError,
+  NsfValidationError,
+  NsfEventNotFoundError,
+} from '../application/nsf-service';
+import {
+  PaymentRunNotFoundError,
+  PaymentRunValidationError,
+  RunApprovalRefusedSoDError,
+} from '../application/payment-run-service';
+import {
+  TradePayoffValidationError,
+  PayoffReconfirmationRequiredError,
+  DuplicatePayoffPaymentError,
+  BankAccountNotFoundError as TradePayoffBankAccountNotFoundError,
+  TradePayoffNotFoundError,
+} from '../application/trade-payoff-service';
+import {
+  FleetBillingValidationError,
+  FleetCustomerNotFoundError,
+  FleetUnitAlreadyLinkedError,
+  FleetUnitLinkNotFoundError,
+  FleetUnitNotLinkedToParentError,
+  ConsolidatedInvoiceNotFoundError,
+} from '../application/fleet-billing-service';
+import {
+  InsuranceArValidationError,
+  InsuranceClaimNotFoundError,
+  InsurerPaymentExceedsClaimBalanceError,
+  NoShortPayRemainderError,
+  ShortPayAlreadyDisposedError,
+} from '../application/insurance-ar-service';
+import {
+  Vendor1099ValidationError,
+  Vendor1099VendorNotFoundError,
+  Vendor1099BoxRuleNotFoundError,
+} from '../application/vendor-1099-service';
 
 function getTenantId(request: any) {
   const id = request.headers['x-tenant-id'] as string;
@@ -57,6 +193,28 @@ export async function aparRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authMiddleware(JWT_SECRET));
 
   const svc = container.resolve<APARService>('APARService');
+  const vendorSvc = container.resolve<VendorService>('VendorService');
+  const complianceSvc = container.resolve<VendorComplianceService>('VendorComplianceService');
+  const insuranceSvc = container.resolve<InsuranceCertificateService>('InsuranceCertificateService');
+  const customerSvc = container.resolve<CustomerService>('CustomerService');
+  const invoiceSvc = container.resolve<InvoiceService>('InvoiceService');
+  const goodsReceiptSvc = container.resolve<GoodsReceiptService>('GoodsReceiptService');
+  const approvalRuleSvc = container.resolve<ApprovalRuleService>('ApprovalRuleService');
+  const invoiceApprovalSvc = container.resolve<import('../application/invoice-approval-service').InvoiceApprovalService>('InvoiceApprovalService');
+  const manualPaymentSvc = container.resolve<import('../application/manual-payment-service').ManualPaymentService>('ManualPaymentService');
+  const useTaxSvc = container.resolve<import('../application/use-tax-service').UseTaxService>('UseTaxService');
+  const paymentLifecycleSvc = container.resolve<import('../application/payment-lifecycle-service').PaymentLifecycleService>('PaymentLifecycleService');
+  const wholesaleVehicleSvc = container.resolve<import('../application/wholesale-vehicle-service').WholesaleVehicleService>('WholesaleVehicleService');
+  const writeOffSvc = container.resolve<import('../application/write-off-service').WriteOffService>('WriteOffService');
+  const allowanceSvc = container.resolve<import('../application/allowance-service').AllowanceService>('AllowanceService');
+  const nsfSvc = container.resolve<import('../application/nsf-service').NsfService>('NsfService');
+  const paymentRunSvc = container.resolve<import('../application/payment-run-service').PaymentRunService>('PaymentRunService');
+  const tradePayoffSvc = container.resolve<import('../application/trade-payoff-service').TradePayoffService>('TradePayoffService');
+  const fleetBillingSvc = container.resolve<import('../application/fleet-billing-service').FleetBillingService>('FleetBillingService');
+  const insuranceArSvc = container.resolve<import('../application/insurance-ar-service').InsuranceArService>('InsuranceArService');
+  const vendor1099Svc = container.resolve<import('../application/vendor-1099-service').Vendor1099Service>('Vendor1099Service');
+  const authzClient = container.resolve<AuthzClient>('AuthzClient');
+  const requirePermission = createAuthzGuard(authzClient, { getTenantId });
 
   app.post('/ar', async (request, reply) => {
     const tenantId = getTenantId(request);
@@ -186,10 +344,13 @@ export async function aparRoutes(app: FastifyInstance) {
   const FinanceChargeSchema = z.object({
     annualRatePercent: z.number().positive().max(100),
     minimumBalance: z.number().min(0).default(0.01),
-    chargeReceivableCode: z.string().min(1),
-    chargeRevenueCode: z.string().min(1),
+    /** Kept for backward compatibility — no longer passed to FinanceChargeConfig (posting engine rule pack resolves accounts) */
+    chargeReceivableCode: z.string().optional(),
+    /** Kept for backward compatibility — no longer passed to FinanceChargeConfig (posting engine rule pack resolves accounts) */
+    chargeRevenueCode: z.string().optional(),
     journalSource: z.string().min(1).max(2).default('FC'),
     gracePeriodDays: z.number().int().min(0).default(0),
+    legalEntityId: z.string().max(36).optional().nullable(),
     asOfDate: z.string().datetime().optional(),
     dryRun: z.boolean().default(false),
   });
@@ -226,10 +387,9 @@ export async function aparRoutes(app: FastifyInstance) {
       {
         annualRatePercent: body.annualRatePercent,
         minimumBalance: body.minimumBalance,
-        chargeReceivableCode: body.chargeReceivableCode,
-        chargeRevenueCode: body.chargeRevenueCode,
         journalSource: body.journalSource,
         gracePeriodDays: body.gracePeriodDays,
+        legalEntityId: body.legalEntityId ?? null,
       },
       serviceToken,
       body.dryRun,
@@ -256,10 +416,9 @@ export async function aparRoutes(app: FastifyInstance) {
       {
         annualRatePercent: body.annualRatePercent,
         minimumBalance: body.minimumBalance,
-        chargeReceivableCode: body.chargeReceivableCode,
-        chargeRevenueCode: body.chargeRevenueCode,
         journalSource: body.journalSource,
         gracePeriodDays: body.gracePeriodDays,
+        legalEntityId: body.legalEntityId ?? null,
       },
       '',   // dry run — no actual posting
       true, // dryRun
@@ -268,10 +427,36 @@ export async function aparRoutes(app: FastifyInstance) {
     return reply.send(result);
   });
 
-  // ===== S3-07: Vendor CRUD =====
+  // ===== AMACC-CH04 S036A: Internal Vendor Master (hardened S3-07) =====
+  //
+  // Permission keys — registered in auth-service's S207 catalog via
+  // 20260729030000_extend_authz_catalog_s036a_vendor_master/migration.sql
+  // (renumbered at r1-integration time; originally 20260729010000).
+  const AP_VENDOR_PERMISSIONS = {
+    VIEW:               'ap.vendor.view',
+    CREATE:             'ap.vendor.create',
+    EDIT:               'ap.vendor.edit',
+    INACTIVATE:         'ap.vendor.inactivate',
+    REACTIVATE:         'ap.vendor.reactivate',
+    DELETE:             'ap.vendor.delete',
+    DUPLICATE_OVERRIDE: 'ap.vendor.duplicate_override',
+    AUDIT_VIEW:         'ap.vendor.audit_view',
+    TAX_IDENTIFIER_VIEW: 'ap.vendor.tax_identifier_view',
+  } as const;
+
+  const VENDOR_TYPE_ENUM = z.enum(['SUPPLIER', 'SERVICE_PROVIDER', 'GOVERNMENT', 'OTHER']);
+
+  // NOTE: taxId and the four banking fields (bankName/bankRoutingNumber/
+  // bankAccountNumber/bankAccountType) are deliberately ABSENT from this
+  // schema. S036A disables new plaintext tax-ID writes (no approved
+  // encrypted-field mechanism exists repository-wide) and banking storage is
+  // out of S036A's scope boundary — both fields remain readable (masked, for
+  // tax ID) but are no longer writable through this API. See
+  // services/apar-service/src/application/vendor-service.ts header comments.
   const VendorCreateSchema = z.object({
     vendorNumber:         z.string().max(20).optional(),
     vendorName:           z.string().min(1),
+    vendorType:           VENDOR_TYPE_ENUM.optional(),
     dba:                  z.string().optional(),
     contactName:          z.string().optional(),
     phone:                z.string().optional(),
@@ -282,7 +467,6 @@ export async function aparRoutes(app: FastifyInstance) {
     city:                 z.string().optional(),
     state:                z.string().max(2).optional(),
     zip:                  z.string().max(10).optional(),
-    taxId:                z.string().optional(),
     is1099Misc:           z.boolean().default(false),
     is1099Nec:            z.boolean().default(false),
     income1099Type:       z.string().optional(),
@@ -293,132 +477,652 @@ export async function aparRoutes(app: FastifyInstance) {
     paymentMethod:        z.string().default('Check'),
     discountPercent:      z.number().min(0).max(100).default(0),
     discountDays:         z.number().int().min(0).default(0),
-    bankName:             z.string().optional(),
-    bankRoutingNumber:    z.string().max(9).optional(),
-    bankAccountNumber:    z.string().optional(),
-    bankAccountType:      z.string().optional(),
     separateCheck:        z.boolean().default(false),
     holdPayments:         z.boolean().default(false),
     defaultExpenseAccount: z.string().optional(),
     notes:                z.string().optional(),
+    // S036A duplicate-vendor override — permission checked explicitly below,
+    // independent of the CREATE permission gating this whole route.
+    override:             z.object({ reason: z.string().min(1).max(500) }).optional(),
   });
 
-  // GET /vendors
-  app.get('/vendors', async (request, reply) => {
-    const tenantId = getTenantId(request);
-    const { q, active, taxId } = request.query as { q?: string; active?: string; taxId?: string };
-    const prisma = (app as any).prisma;
-    const vendors = await prisma.vendor.findMany({
-      where: {
-        tenantId,
-        ...(active !== 'false' ? { isActive: true } : {}),
-        ...(taxId ? { taxId } : {}),
-        ...(q ? { OR: [
-          { vendorNumber: { contains: q, mode: 'insensitive' } },
-          { vendorName:   { contains: q, mode: 'insensitive' } },
-        ]} : {}),
-      },
-      orderBy: { vendorNumber: 'asc' },
-    });
-    return reply.send(vendors);
+  const VendorUpdateSchema = VendorCreateSchema.omit({ vendorNumber: true, override: true }).partial().extend({
+    version: z.number().int().min(1),
   });
 
-  // GET /vendors/:id
-  app.get('/vendors/:id', async (request, reply) => {
-    const tenantId = getTenantId(request);
-    const { id } = request.params as { id: string };
-    const prisma = (app as any).prisma;
-    const vendor = await prisma.vendor.findFirst({ where: { id, tenantId } });
-    if (!vendor) return reply.status(404).send({ error: 'NOT_FOUND' });
-    return reply.send(vendor);
+  const DuplicateCheckSchema = z.object({
+    vendorName: z.string().optional(),
+    email: z.string().optional(),
+    phone: z.string().optional(),
+    zip: z.string().optional(),
+    excludeVendorId: z.string().optional(),
   });
 
-  // POST /vendors
-  app.post('/vendors', async (request, reply) => {
-    const tenantId = getTenantId(request);
-    const body = VendorCreateSchema.parse(request.body);
-    const prisma = (app as any).prisma;
-    // Auto-generate vendorNumber if not provided
-    let vendorNumber = body.vendorNumber;
-    if (!vendorNumber) {
-      const count = await prisma.vendor.count({ where: { tenantId } });
-      vendorNumber = String(count + 1).padStart(6, '0');
+  const InactivateSchema = z.object({ version: z.number().int().min(1), reason: z.string().min(1).max(500) });
+  const ReactivateSchema = z.object({ version: z.number().int().min(1) });
+  const DeleteSchema = z.object({ version: z.number().int().min(1), reason: z.string().max(500).optional() });
+
+  function handleVendorError(error: unknown, reply: any) {
+    if (error instanceof VendorNotFoundError) {
+      return reply.status(404).send({ error: 'VENDOR_NOT_FOUND', message: error.message });
     }
-    const exists = await prisma.vendor.findFirst({ where: { tenantId, vendorNumber } });
-    if (exists) return reply.status(409).send({ error: 'DUPLICATE_VENDOR_NUMBER' });
-    const vendor = await prisma.vendor.create({
-      data: {
+    if (error instanceof DuplicateVendorAcknowledgementRequiredError) {
+      return reply.status(409).send({
+        error: 'DUPLICATE_VENDOR_ACKNOWLEDGEMENT_REQUIRED',
+        message: error.message,
+        candidates: error.candidates,
+      });
+    }
+    if (error instanceof VendorHasReferencesError) {
+      return reply.status(409).send({ error: 'VENDOR_HAS_REFERENCES', message: error.message, references: error.references });
+    }
+    if (error instanceof VendorConflictError) {
+      return reply.status(409).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof VendorValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) {
+      return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    }
+    throw error;
+  }
+
+  // ── GET /vendors — list (search/status/vendorType filter) ──────────────────
+  app.get('/vendors', { preHandler: requirePermission(AP_VENDOR_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { q, status, vendorType, page, pageSize } = request.query as {
+      q?: string; status?: string; vendorType?: string; page?: string; pageSize?: string;
+    };
+    try {
+      const result = await vendorSvc.list({
         tenantId,
-        vendorNumber,
-        vendorName: body.vendorName,
-        dba: body.dba ?? null,
-        contactName: body.contactName ?? null,
-        phone: body.phone ?? null,
-        fax: body.fax ?? null,
-        email: body.email || null,
-        address1: body.address1 ?? null,
-        address2: body.address2 ?? null,
-        city: body.city ?? null,
-        state: body.state ?? null,
-        zip: body.zip ?? null,
-        taxId: body.taxId ?? null,
-        is1099Misc: body.is1099Misc,
-        is1099Nec: body.is1099Nec,
-        income1099Type: body.income1099Type ?? null,
-        w9OnFile: body.w9OnFile,
-        w9ReceivedDate: body.w9ReceivedDate ? new Date(body.w9ReceivedDate) : null,
-        paymentTerms: body.paymentTerms,
-        defaultGlAccount: body.defaultGlAccount ?? null,
-        paymentMethod: body.paymentMethod,
-        discountPercent: String(body.discountPercent),
-        discountDays: body.discountDays,
-        bankName: body.bankName ?? null,
-        bankRoutingNumber: body.bankRoutingNumber ?? null,
-        bankAccountNumber: body.bankAccountNumber ?? null,
-        bankAccountType: body.bankAccountType ?? null,
-        separateCheck: body.separateCheck,
-        holdPayments: body.holdPayments,
-        defaultExpenseAccount: body.defaultExpenseAccount ?? null,
-        notes: body.notes ?? null,
-      },
-    });
-    return reply.status(201).send(vendor);
+        search: q?.trim() || undefined,
+        status: status || undefined,
+        vendorType: vendorType || undefined,
+        page: page ? parseInt(page, 10) : 1,
+        pageSize: pageSize ? parseInt(pageSize, 10) : 50,
+      });
+      return reply.send(result);
+    } catch (err) {
+      return handleVendorError(err, reply);
+    }
   });
 
-  // PUT /vendors/:id
-  app.put('/vendors/:id', async (request, reply) => {
+  // ── POST /vendors/duplicate-check — candidate duplicate signals ────────────
+  app.post('/vendors/duplicate-check', { preHandler: requirePermission(AP_VENDOR_PERMISSIONS.CREATE) }, async (request, reply) => {
     const tenantId = getTenantId(request);
-    const { id } = request.params as { id: string };
-    const body = VendorCreateSchema.partial().parse(request.body);
-    const prisma = (app as any).prisma;
-    const existing = await prisma.vendor.findFirst({ where: { id, tenantId } });
-    if (!existing) return reply.status(404).send({ error: 'NOT_FOUND' });
-    const vendor = await prisma.vendor.update({
-      where: { id },
-      data: {
-        ...body,
-        discountPercent: body.discountPercent !== undefined ? String(body.discountPercent) : undefined,
-        w9ReceivedDate: body.w9ReceivedDate ? new Date(body.w9ReceivedDate) : undefined,
-        email: body.email === '' ? null : body.email,
-        updatedAt: new Date(),
-      },
-    });
-    return reply.send(vendor);
+    try {
+      const body = DuplicateCheckSchema.parse(request.body);
+      const candidates = await vendorSvc.checkDuplicates({ tenantId, ...body });
+      return reply.send({ candidates });
+    } catch (err) {
+      return handleVendorError(err, reply);
+    }
   });
 
-  // PATCH /vendors/:id — soft deactivate (BR-AP-001)
-  app.patch('/vendors/:id', async (request, reply) => {
+  // ── GET /vendors/:id — detail ───────────────────────────────────────────────
+  app.get('/vendors/:id', { preHandler: requirePermission(AP_VENDOR_PERMISSIONS.VIEW) }, async (request, reply) => {
     const tenantId = getTenantId(request);
     const { id } = request.params as { id: string };
-    const prisma = (app as any).prisma;
-    const existing = await prisma.vendor.findFirst({ where: { id, tenantId } });
-    if (!existing) return reply.status(404).send({ error: 'NOT_FOUND' });
-    const vendor = await prisma.vendor.update({
-      where: { id },
-      data: { isActive: false, updatedAt: new Date() },
-    });
-    return reply.send(vendor);
+    try {
+      const vendor = await vendorSvc.getById(tenantId, id);
+      return reply.send(vendor);
+    } catch (err) {
+      return handleVendorError(err, reply);
+    }
   });
+
+  // ── POST /vendors — create ──────────────────────────────────────────────────
+  app.post('/vendors', { preHandler: requirePermission(AP_VENDOR_PERMISSIONS.CREATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = VendorCreateSchema.parse(request.body);
+
+      // Duplicate-override permission is independent of CREATE — checked
+      // explicitly (not a static preHandler) because it only applies when
+      // the caller is actually attempting to bypass a duplicate warning.
+      if (body.override) {
+        const result = await authzClient.check({
+          userId: (request as any).user?.sub,
+          permissionKey: AP_VENDOR_PERMISSIONS.DUPLICATE_OVERRIDE,
+          scope: { tenantId },
+          route: (request as any).routeOptions?.url ?? request.url,
+        });
+        if (!result.allow) {
+          return reply.status(403).send({
+            error: 'DUPLICATE_VENDOR_OVERRIDE_FORBIDDEN',
+            message: `Missing required permission: ${AP_VENDOR_PERMISSIONS.DUPLICATE_OVERRIDE}`,
+          });
+        }
+      }
+
+      const vendor = await vendorSvc.create(
+        {
+          ...body,
+          tenantId,
+          email: body.email || undefined,
+          w9ReceivedDate: body.w9ReceivedDate ? new Date(body.w9ReceivedDate) : undefined,
+        },
+        actor,
+        correlationId,
+      );
+      return reply.status(201).send(vendor);
+    } catch (err) {
+      return handleVendorError(err, reply);
+    }
+  });
+
+  // ── PATCH /vendors/:id — update ─────────────────────────────────────────────
+  app.patch('/vendors/:id', { preHandler: requirePermission(AP_VENDOR_PERMISSIONS.EDIT) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = VendorUpdateSchema.parse(request.body);
+      const vendor = await vendorSvc.update(
+        tenantId,
+        id,
+        {
+          ...body,
+          email: body.email || undefined,
+          w9ReceivedDate: body.w9ReceivedDate ? new Date(body.w9ReceivedDate) : undefined,
+        },
+        actor,
+        correlationId,
+      );
+      return reply.send(vendor);
+    } catch (err) {
+      return handleVendorError(err, reply);
+    }
+  });
+
+  // ── DELETE /vendors/:id — guarded logical delete ────────────────────────────
+  app.delete('/vendors/:id', { preHandler: requirePermission(AP_VENDOR_PERMISSIONS.DELETE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = DeleteSchema.parse(request.body ?? {});
+      const vendor = await vendorSvc.delete(tenantId, id, body, actor, correlationId);
+      return reply.send(vendor);
+    } catch (err) {
+      return handleVendorError(err, reply);
+    }
+  });
+
+  // ── POST /vendors/:id/inactivate ────────────────────────────────────────────
+  app.post('/vendors/:id/inactivate', { preHandler: requirePermission(AP_VENDOR_PERMISSIONS.INACTIVATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = InactivateSchema.parse(request.body);
+      const vendor = await vendorSvc.inactivate(tenantId, id, body, actor, correlationId);
+      return reply.send(vendor);
+    } catch (err) {
+      return handleVendorError(err, reply);
+    }
+  });
+
+  // ── POST /vendors/:id/reactivate ────────────────────────────────────────────
+  app.post('/vendors/:id/reactivate', { preHandler: requirePermission(AP_VENDOR_PERMISSIONS.REACTIVATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = ReactivateSchema.parse(request.body);
+      const vendor = await vendorSvc.reactivate(tenantId, id, body, actor, correlationId);
+      return reply.send(vendor);
+    } catch (err) {
+      return handleVendorError(err, reply);
+    }
+  });
+
+  // ── GET /vendors/:id/eligibility — new-invoice eligibility ──────────────────
+  app.get('/vendors/:id/eligibility', { preHandler: requirePermission(AP_VENDOR_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const result = await vendorSvc.eligibility(tenantId, id, actor, correlationId);
+      return reply.send(result);
+    } catch (err) {
+      return handleVendorError(err, reply);
+    }
+  });
+
+  // ── GET /vendors/:id/audit-events — history from audit-service ─────────────
+  app.get('/vendors/:id/audit-events', { preHandler: requirePermission(AP_VENDOR_PERMISSIONS.AUDIT_VIEW) }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const auditUrl =
+      (process.env['AUDIT_SERVICE_URL'] ?? 'http://audit-service:3031') +
+      `/api/v1/audit/entity/Vendor/${id}`;
+    try {
+      // audit-service's authMiddleware is applied globally (all routes,
+      // including this read), so this server-to-server call needs its own
+      // bearer token — same createServiceToken() pattern HttpAuditClient
+      // already uses for outbox delivery. Without this the call always got
+      // 401'd and silently fell back to `[]`, regardless of what audit-service
+      // actually had recorded — found and fixed while certifying S036A.
+      const jwtSecret = process.env['AMACC_JWT_SECRET'] ?? process.env['JWT_SECRET'];
+      const headers: Record<string, string> = { 'x-tenant-id': getTenantId(request) };
+      if (jwtSecret) headers['authorization'] = `Bearer ${createServiceToken('apar-service', jwtSecret)}`;
+      const res = await fetch(auditUrl, { headers });
+      if (!res.ok) return reply.send([]);
+      const data = await res.json();
+      return reply.send(data);
+    } catch {
+      return reply.send([]);
+    }
+  });
+
+  // ===== AMACC-CH04 S036B: Vendor Compliance Adapters =====
+  //
+  // Additive to S036A's vendor master — no vendor CRUD behavior changes.
+  // Permission keys registered in auth-service's catalog via
+  // 20260730040000_extend_authz_catalog_s036b_vendor_compliance/migration.sql.
+  const AP_VENDOR_COMPLIANCE_PERMISSIONS = {
+    VIEW:             'ap.vendor_compliance.view',
+    CREATE:           'ap.vendor_compliance.create',
+    EDIT:             'ap.vendor_compliance.edit',
+    RUN_VERIFICATION: 'ap.vendor_compliance.run_verification',
+    REVIEW:           'ap.vendor_compliance.review',
+  } as const;
+
+  const COMPLIANCE_CHECK_TYPE_ENUM = z.enum([
+    'TAX_ID_VERIFICATION', 'INSURANCE_CERTIFICATE', 'W9_VERIFICATION', 'GENERAL_COMPLIANCE_DOCUMENT', 'OTHER',
+  ]);
+
+  const ComplianceCheckCreateSchema = z.object({
+    checkType:          COMPLIANCE_CHECK_TYPE_ENUM,
+    jurisdiction:       z.string().max(100).optional(),
+    country:            z.string().max(100).optional(),
+    externalReference:  z.string().max(200).optional(),
+    notes:              z.string().optional(),
+    expirationDate:     z.string().optional(),
+  });
+
+  const ComplianceCheckUpdateSchema = z.object({
+    version:            z.number().int().min(1),
+    jurisdiction:       z.string().max(100).optional(),
+    country:            z.string().max(100).optional(),
+    externalReference:  z.string().max(200).optional(),
+    notes:              z.string().optional(),
+    expirationDate:     z.string().nullable().optional(),
+  });
+
+  const ComplianceCheckReviewSchema = z.object({
+    version:  z.number().int().min(1),
+    decision: z.enum(['VERIFIED', 'REJECTED', 'EXPIRED']),
+    reason:   z.string().max(500).optional(),
+  });
+
+  function handleComplianceError(error: unknown, reply: any) {
+    if (error instanceof VendorNotFoundForComplianceError) {
+      return reply.status(404).send({ error: 'VENDOR_NOT_FOUND', message: error.message });
+    }
+    if (error instanceof ComplianceCheckNotFoundError) {
+      return reply.status(404).send({ error: 'COMPLIANCE_CHECK_NOT_FOUND', message: error.message });
+    }
+    if (error instanceof ComplianceCheckConflictError) {
+      return reply.status(409).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof ComplianceCheckValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) {
+      return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    }
+    throw error;
+  }
+
+  // ── GET /vendors/:vendorId/compliance-checks — list ────────────────────────
+  app.get('/vendors/:vendorId/compliance-checks', { preHandler: requirePermission(AP_VENDOR_COMPLIANCE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { vendorId } = request.params as { vendorId: string };
+    try {
+      const checks = await complianceSvc.list({ tenantId, vendorId });
+      return reply.send(checks);
+    } catch (err) {
+      return handleComplianceError(err, reply);
+    }
+  });
+
+  // ── GET /vendors/:vendorId/compliance-checks/:id — detail ──────────────────
+  app.get('/vendors/:vendorId/compliance-checks/:id', { preHandler: requirePermission(AP_VENDOR_COMPLIANCE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { vendorId, id } = request.params as { vendorId: string; id: string };
+    try {
+      const check = await complianceSvc.getById(tenantId, vendorId, id);
+      return reply.send(check);
+    } catch (err) {
+      return handleComplianceError(err, reply);
+    }
+  });
+
+  // ── POST /vendors/:vendorId/compliance-checks — create ─────────────────────
+  app.post('/vendors/:vendorId/compliance-checks', { preHandler: requirePermission(AP_VENDOR_COMPLIANCE_PERMISSIONS.CREATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { vendorId } = request.params as { vendorId: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = ComplianceCheckCreateSchema.parse(request.body);
+      const check = await complianceSvc.create(
+        tenantId,
+        { ...body, vendorId, expirationDate: body.expirationDate ? new Date(body.expirationDate) : undefined },
+        actor,
+        correlationId,
+      );
+      return reply.status(201).send(check);
+    } catch (err) {
+      return handleComplianceError(err, reply);
+    }
+  });
+
+  // ── PATCH /vendors/:vendorId/compliance-checks/:id — edit (pre-review only) ─
+  app.patch('/vendors/:vendorId/compliance-checks/:id', { preHandler: requirePermission(AP_VENDOR_COMPLIANCE_PERMISSIONS.EDIT) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { vendorId, id } = request.params as { vendorId: string; id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = ComplianceCheckUpdateSchema.parse(request.body);
+      const check = await complianceSvc.update(
+        tenantId, vendorId, id,
+        { ...body, expirationDate: body.expirationDate === undefined ? undefined : (body.expirationDate ? new Date(body.expirationDate) : null) },
+        actor,
+        correlationId,
+      );
+      return reply.send(check);
+    } catch (err) {
+      return handleComplianceError(err, reply);
+    }
+  });
+
+  // ── POST /vendors/:vendorId/compliance-checks/:id/run-verification ─────────
+  // Invokes the configured adapter (ManualComplianceAdapter — truthfully
+  // reports NOT_CONFIGURED; never fabricates a passing verification).
+  app.post('/vendors/:vendorId/compliance-checks/:id/run-verification', { preHandler: requirePermission(AP_VENDOR_COMPLIANCE_PERMISSIONS.RUN_VERIFICATION) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { vendorId, id } = request.params as { vendorId: string; id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const check = await complianceSvc.runVerification(tenantId, vendorId, id, actor, correlationId);
+      return reply.send(check);
+    } catch (err) {
+      return handleComplianceError(err, reply);
+    }
+  });
+
+  // ── POST /vendors/:vendorId/compliance-checks/:id/review — manual review ───
+  // The only path that can set VERIFIED/REJECTED/EXPIRED.
+  app.post('/vendors/:vendorId/compliance-checks/:id/review', { preHandler: requirePermission(AP_VENDOR_COMPLIANCE_PERMISSIONS.REVIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { vendorId, id } = request.params as { vendorId: string; id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = ComplianceCheckReviewSchema.parse(request.body);
+      const check = await complianceSvc.review(tenantId, vendorId, id, body, actor, correlationId);
+      return reply.send(check);
+    } catch (err) {
+      return handleComplianceError(err, reply);
+    }
+  });
+
+  // ===== AMACC-CH04 S038: Vendor Insurance Certificate Management =====
+  //
+  // Permission keys — registered in auth-service's catalog via
+  // 20260730070000_extend_authz_catalog_s038_vendor_insurance/migration.sql
+  // (renumbered during INTEGRATE BATCH R1-02; originally 20260730000000).
+  // S036B BOUNDARY: no "verification"/"compliance" permission or endpoint is
+  // defined here — S036B owns external compliance-verification adapters and
+  // any resulting summary status. GET .../insurance-summary is the read-only
+  // integration point a future S036B adapter may call.
+  const AP_VENDOR_INSURANCE_PERMISSIONS = {
+    VIEW:       'ap.vendor_insurance.view',
+    CREATE:     'ap.vendor_insurance.create',
+    EDIT:       'ap.vendor_insurance.edit',
+    RENEW:      'ap.vendor_insurance.renew',
+    REVOKE:     'ap.vendor_insurance.revoke',
+    AUDIT_VIEW: 'ap.vendor_insurance.audit_view',
+  } as const;
+
+  const INSURANCE_TYPE_ENUM = z.enum(INSURANCE_TYPE_VALUES);
+
+  const CertificateCreateSchema = z.object({
+    certificateNumber:   z.string().min(1).max(50),
+    insuranceProvider:   z.string().min(1).max(200),
+    insuranceType:       INSURANCE_TYPE_ENUM,
+    effectiveDate:       z.string(),
+    expirationDate:      z.string(),
+    coverageAmount:      z.number().nonnegative().optional(),
+    coverageDescription: z.string().max(500).optional(),
+    documentId:          z.string().optional(),
+    documentFileName:    z.string().max(255).optional(),
+    documentMimeType:    z.string().max(100).optional(),
+    notes:               z.string().max(1000).optional(),
+  });
+
+  const CertificateUpdateSchema = z.object({
+    version:             z.number().int().min(1),
+    coverageAmount:      z.number().nonnegative().optional(),
+    coverageDescription: z.string().max(500).optional(),
+    documentId:          z.string().optional(),
+    documentFileName:    z.string().max(255).optional(),
+    documentMimeType:    z.string().max(100).optional(),
+    notes:               z.string().max(1000).optional(),
+  });
+
+  const CertificateRenewSchema = z.object({
+    version:             z.number().int().min(1),
+    certificateNumber:   z.string().min(1).max(50),
+    insuranceProvider:   z.string().min(1).max(200),
+    effectiveDate:       z.string(),
+    expirationDate:      z.string(),
+    coverageAmount:      z.number().nonnegative().optional(),
+    coverageDescription: z.string().max(500).optional(),
+    documentId:          z.string().optional(),
+    documentFileName:    z.string().max(255).optional(),
+    documentMimeType:    z.string().max(100).optional(),
+    notes:               z.string().max(1000).optional(),
+  });
+
+  const CertificateRevokeSchema = z.object({
+    version: z.number().int().min(1),
+    reason:  z.string().min(1).max(500),
+  });
+
+  function handleICError(error: unknown, reply: any) {
+    if (error instanceof InsuranceCertificateNotFoundError) {
+      return reply.status(404).send({ error: 'INSURANCE_CERTIFICATE_NOT_FOUND', message: error.message });
+    }
+    if (error instanceof VendorNotFoundForCertificateError) {
+      return reply.status(404).send({ error: 'VENDOR_NOT_FOUND', message: error.message });
+    }
+    if (error instanceof InsuranceCertificateConflictError) {
+      return reply.status(409).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof InsuranceCertificateValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) {
+      return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    }
+    throw error;
+  }
+
+  // ── GET /vendors/:vendorId/insurance-certificates — list ───────────────────
+  app.get('/vendors/:vendorId/insurance-certificates', { preHandler: requirePermission(AP_VENDOR_INSURANCE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { vendorId } = request.params as { vendorId: string };
+    const { status, insuranceType, scope, expirationFilter, withinDays, page, pageSize } = request.query as Record<string, string | undefined>;
+    try {
+      const result = await insuranceSvc.list({
+        tenantId,
+        vendorId,
+        status: status || undefined,
+        insuranceType: insuranceType || undefined,
+        scope: (scope as 'current' | 'all') || 'current',
+        expirationFilter: expirationFilter as 'expired' | 'expiring' | undefined,
+        withinDays: withinDays ? parseInt(withinDays, 10) : undefined,
+        page: page ? parseInt(page, 10) : 1,
+        pageSize: pageSize ? parseInt(pageSize, 10) : 50,
+      });
+      return reply.send(result);
+    } catch (err) {
+      return handleICError(err, reply);
+    }
+  });
+
+  // ── GET /insurance-certificates/expiring — cross-vendor operator list ──────
+  app.get('/insurance-certificates/expiring', { preHandler: requirePermission(AP_VENDOR_INSURANCE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { withinDays, page, pageSize } = request.query as Record<string, string | undefined>;
+    try {
+      const result = await insuranceSvc.list({
+        tenantId,
+        scope: 'current',
+        expirationFilter: 'expiring',
+        withinDays: withinDays ? parseInt(withinDays, 10) : undefined,
+        page: page ? parseInt(page, 10) : 1,
+        pageSize: pageSize ? parseInt(pageSize, 10) : 100,
+      });
+      return reply.send(result);
+    } catch (err) {
+      return handleICError(err, reply);
+    }
+  });
+
+  // ── GET /vendors/:vendorId/insurance-summary — S036B integration point ─────
+  app.get('/vendors/:vendorId/insurance-summary', { preHandler: requirePermission(AP_VENDOR_INSURANCE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { vendorId } = request.params as { vendorId: string };
+    try {
+      const result = await insuranceSvc.getVendorInsuranceSummary(tenantId, vendorId);
+      return reply.send(result);
+    } catch (err) {
+      return handleICError(err, reply);
+    }
+  });
+
+  // ── GET /insurance-certificates/:id — detail ────────────────────────────────
+  app.get('/insurance-certificates/:id', { preHandler: requirePermission(AP_VENDOR_INSURANCE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const cert = await insuranceSvc.getById(tenantId, id);
+      return reply.send(cert);
+    } catch (err) {
+      return handleICError(err, reply);
+    }
+  });
+
+  // ── POST /vendors/:vendorId/insurance-certificates — create ────────────────
+  app.post('/vendors/:vendorId/insurance-certificates', { preHandler: requirePermission(AP_VENDOR_INSURANCE_PERMISSIONS.CREATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { vendorId } = request.params as { vendorId: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = CertificateCreateSchema.parse(request.body);
+      const cert = await insuranceSvc.create(
+        {
+          ...body,
+          tenantId,
+          vendorId,
+          effectiveDate: new Date(body.effectiveDate),
+          expirationDate: new Date(body.expirationDate),
+        },
+        actor,
+        correlationId,
+      );
+      return reply.status(201).send(cert);
+    } catch (err) {
+      return handleICError(err, reply);
+    }
+  });
+
+  // ── PATCH /insurance-certificates/:id — limited in-place edit ──────────────
+  app.patch('/insurance-certificates/:id', { preHandler: requirePermission(AP_VENDOR_INSURANCE_PERMISSIONS.EDIT) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = CertificateUpdateSchema.parse(request.body);
+      const cert = await insuranceSvc.update(tenantId, id, body, actor, correlationId);
+      return reply.send(cert);
+    } catch (err) {
+      return handleICError(err, reply);
+    }
+  });
+
+  // ── POST /insurance-certificates/:id/renew — supersede with a new period ───
+  app.post('/insurance-certificates/:id/renew', { preHandler: requirePermission(AP_VENDOR_INSURANCE_PERMISSIONS.RENEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = CertificateRenewSchema.parse(request.body);
+      const cert = await insuranceSvc.renew(
+        tenantId,
+        id,
+        { ...body, effectiveDate: new Date(body.effectiveDate), expirationDate: new Date(body.expirationDate) },
+        actor,
+        correlationId,
+      );
+      return reply.status(201).send(cert);
+    } catch (err) {
+      return handleICError(err, reply);
+    }
+  });
+
+  // ── POST /insurance-certificates/:id/revoke ─────────────────────────────────
+  app.post('/insurance-certificates/:id/revoke', { preHandler: requirePermission(AP_VENDOR_INSURANCE_PERMISSIONS.REVOKE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = CertificateRevokeSchema.parse(request.body);
+      const cert = await insuranceSvc.revoke(tenantId, id, body, actor, correlationId);
+      return reply.send(cert);
+    } catch (err) {
+      return handleICError(err, reply);
+    }
+  });
+
+  // ── GET /insurance-certificates/:id/audit-events — history from audit-service ─
+  app.get('/insurance-certificates/:id/audit-events', { preHandler: requirePermission(AP_VENDOR_INSURANCE_PERMISSIONS.AUDIT_VIEW) }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const auditUrl =
+      (process.env['AUDIT_SERVICE_URL'] ?? 'http://audit-service:3031') +
+      `/api/v1/audit/entity/VendorInsuranceCertificate/${id}`;
+    try {
+      const jwtSecret = process.env['AMACC_JWT_SECRET'] ?? process.env['JWT_SECRET'];
+      const headers: Record<string, string> = { 'x-tenant-id': getTenantId(request) };
+      if (jwtSecret) headers['authorization'] = `Bearer ${createServiceToken('apar-service', jwtSecret)}`;
+      const res = await fetch(auditUrl, { headers });
+      if (!res.ok) return reply.send([]);
+      const data = await res.json();
+      return reply.send(data);
+    } catch {
+      return reply.send([]);
+    }
+  });
+
 
   // ===== S3-08: AP Payment Void =====
 
@@ -549,23 +1253,47 @@ export async function aparRoutes(app: FastifyInstance) {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // S5-01: Customer Master CRUD
+  // S046: Customer AR Master and Credit Profile — hardened S5-01
+  // (AMACC-CH04, mirrors the S036A vendor-master pattern). This slice
+  // implements only the master-record + credit-profile portion of the S046
+  // story title ("Customer AR Master, Credit & Statements") — statements,
+  // invoicing, receipts, cash application, write-offs and NSF processing are
+  // explicitly OUT of scope (see S047-S051).
   // ─────────────────────────────────────────────────────────────────────────
 
-  const CreateCustomerSchema = z.object({
+  // Permission keys — registered in auth-service's S207 catalog via
+  // 20260730080000_extend_authz_catalog_s046_customer_master/migration.sql.
+  const AR_CUSTOMER_PERMISSIONS = {
+    VIEW:               'ar.customer.view',
+    CREATE:             'ar.customer.create',
+    EDIT:               'ar.customer.edit',
+    INACTIVATE:         'ar.customer.inactivate',
+    REACTIVATE:         'ar.customer.reactivate',
+    DELETE:             'ar.customer.delete',
+    DUPLICATE_OVERRIDE: 'ar.customer.duplicate_override',
+    AUDIT_VIEW:         'ar.customer.audit_view',
+    CREDIT_HOLD:        'ar.customer.credit_hold',
+    CREDIT_RELEASE:     'ar.customer.credit_release',
+  } as const;
+
+  const CUSTOMER_TYPE_ENUM = z.enum(['Individual', 'Business', 'Government', 'Fleet']);
+  const CREDIT_TERMS_ENUM = z.enum(['COD', 'Net10', 'Net15', 'Net30', 'Net45', 'Net60']);
+  const CONTACT_METHOD_ENUM = z.enum(['Phone', 'Email', 'Mail', 'Text']);
+
+  const CustomerCreateSchema = z.object({
+    customerNumber:         z.string().max(20).optional(), // auto-generated if omitted
     customerName:           z.string().min(1),
-    customerNumber:         z.string().optional(), // auto-generated if omitted
-    customerType:           z.enum(['Individual', 'Business', 'Government', 'Fleet']).default('Individual'),
+    customerType:           CUSTOMER_TYPE_ENUM.optional(),
     salespersonCode:        z.string().max(10).optional(),
     arAccountOverride:      z.string().uuid().optional(),
     companyNumber:          z.string().max(4).optional(),
     taxId:                  z.string().optional(),
     taxExemptStatus:        z.boolean().default(false),
     taxExemptCertNumber:    z.string().optional(),
-    taxExemptExpiration:    z.string().optional().transform(s => s ? new Date(s) : undefined),
+    taxExemptExpiration:    z.string().optional(),
     creditLimit:            z.number().min(0).default(0),
-    creditTerms:            z.enum(['COD','Net10','Net15','Net30','Net45','Net60']).default('Net30'),
-    preferredContactMethod: z.enum(['Phone','Email','Mail','Text']).default('Phone'),
+    creditTerms:            CREDIT_TERMS_ENUM.optional(),
+    preferredContactMethod: CONTACT_METHOD_ENUM.optional(),
     doNotSolicit:           z.boolean().default(false),
     doNotMail:              z.boolean().default(false),
     address1:               z.string().optional(),
@@ -577,7 +1305,7 @@ export async function aparRoutes(app: FastifyInstance) {
     phone:                  z.string().optional(),
     phone2:                 z.string().optional(),
     fax:                    z.string().optional(),
-    email:                  z.string().email().optional(),
+    email:                  z.string().email().optional().or(z.literal('')),
     secondaryStreet:        z.string().optional(),
     secondaryCity:          z.string().optional(),
     secondaryState:         z.string().max(2).optional(),
@@ -590,89 +1318,293 @@ export async function aparRoutes(app: FastifyInstance) {
     flagService:            z.boolean().default(false),
     flagFI:                 z.boolean().default(false),
     employeeFlag:           z.boolean().default(false),
+    notes:                  z.any().optional(),
+    // S046 duplicate-customer override — permission checked explicitly
+    // below, independent of the CREATE permission gating this whole route.
+    override:               z.object({ reason: z.string().min(1).max(500) }).optional(),
   });
 
-  const UpdateCustomerSchema = CreateCustomerSchema.partial();
+  const CustomerUpdateSchema = CustomerCreateSchema.omit({ customerNumber: true, override: true }).partial().extend({
+    version: z.number().int().min(1),
+  });
 
-  const prisma = (app as any).prisma;
+  const CustomerDuplicateCheckSchema = z.object({
+    customerName: z.string().optional(),
+    email: z.string().optional(),
+    phone: z.string().optional(),
+    zip: z.string().optional(),
+    excludeCustomerId: z.string().optional(),
+  });
 
-  // GET /customers — list / search
-  app.get('/customers', async (request, reply) => {
+  const CustomerInactivateSchema = z.object({ version: z.number().int().min(1), reason: z.string().min(1).max(500) });
+  const CustomerReactivateSchema = z.object({ version: z.number().int().min(1) });
+  const CustomerDeleteSchema = z.object({ version: z.number().int().min(1), reason: z.string().max(500).optional() });
+  const CustomerCreditHoldSchema = z.object({ version: z.number().int().min(1), reason: z.string().min(1).max(500) });
+  const CustomerCreditReleaseSchema = z.object({ version: z.number().int().min(1) });
+
+  function handleCustomerError(error: unknown, reply: any) {
+    if (error instanceof CustomerNotFoundError) {
+      return reply.status(404).send({ error: 'CUSTOMER_NOT_FOUND', message: error.message });
+    }
+    if (error instanceof DuplicateCustomerAcknowledgementRequiredError) {
+      return reply.status(409).send({
+        error: 'DUPLICATE_CUSTOMER_ACKNOWLEDGEMENT_REQUIRED',
+        message: error.message,
+        candidates: error.candidates,
+      });
+    }
+    if (error instanceof CustomerConflictError) {
+      return reply.status(409).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof CustomerValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) {
+      return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    }
+    throw error;
+  }
+
+  // ── GET /customers — list (search/status filter) ───────────────────────────
+  app.get('/customers', { preHandler: requirePermission(AR_CUSTOMER_PERMISSIONS.VIEW) }, async (request, reply) => {
     const tenantId = getTenantId(request);
-    const q = (request.query as any).q as string | undefined;
-    const mode = (request.query as any).mode as string | undefined; // 'name'|'number'|'phone'
-    const where: any = { tenantId, isActive: true };
-    if (q) {
-      if (mode === 'number') {
-        where.customerNumber = { contains: q, mode: 'insensitive' };
-      } else if (mode === 'phone') {
-        where.OR = [{ phone: { contains: q } }, { phone2: { contains: q } }];
-      } else {
-        where.customerName = { contains: q, mode: 'insensitive' };
+    const { q, mode, status, page, pageSize } = request.query as {
+      q?: string; mode?: string; status?: string; page?: string; pageSize?: string;
+    };
+    try {
+      const result = await customerSvc.list({
+        tenantId,
+        search: q?.trim() || undefined,
+        searchMode: (mode as any) || undefined,
+        status: status || undefined,
+        page: page ? parseInt(page, 10) : 1,
+        pageSize: pageSize ? parseInt(pageSize, 10) : 200,
+      });
+      // Preserves the pre-S046 response shape (a bare array) for existing
+      // frontend consumers — S046 adds total/page/pageSize alongside it.
+      return reply.send(result.items);
+    } catch (err) {
+      return handleCustomerError(err, reply);
+    }
+  });
+
+  // ── POST /customers/duplicate-check — candidate duplicate signals ──────────
+  app.post('/customers/duplicate-check', { preHandler: requirePermission(AR_CUSTOMER_PERMISSIONS.CREATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    try {
+      const body = CustomerDuplicateCheckSchema.parse(request.body);
+      const candidates = await customerSvc.checkDuplicates({ tenantId, ...body });
+      return reply.send({ candidates });
+    } catch (err) {
+      return handleCustomerError(err, reply);
+    }
+  });
+
+  // ── GET /customers/:id — detail ─────────────────────────────────────────────
+  app.get('/customers/:id', { preHandler: requirePermission(AR_CUSTOMER_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const customer = await customerSvc.getById(tenantId, id);
+      return reply.send(customer);
+    } catch (err) {
+      return handleCustomerError(err, reply);
+    }
+  });
+
+  // ── POST /customers — create ────────────────────────────────────────────────
+  app.post('/customers', { preHandler: requirePermission(AR_CUSTOMER_PERMISSIONS.CREATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = CustomerCreateSchema.parse(request.body);
+
+      // Duplicate-override permission is independent of CREATE — checked
+      // explicitly (not a static preHandler) because it only applies when
+      // the caller is actually attempting to bypass a duplicate warning.
+      if (body.override) {
+        const result = await authzClient.check({
+          userId: (request as any).user?.sub,
+          permissionKey: AR_CUSTOMER_PERMISSIONS.DUPLICATE_OVERRIDE,
+          scope: { tenantId },
+          route: (request as any).routeOptions?.url ?? request.url,
+        });
+        if (!result.allow) {
+          return reply.status(403).send({
+            error: 'DUPLICATE_CUSTOMER_OVERRIDE_FORBIDDEN',
+            message: `Missing required permission: ${AR_CUSTOMER_PERMISSIONS.DUPLICATE_OVERRIDE}`,
+          });
+        }
       }
+
+      const customer = await customerSvc.create(
+        {
+          ...body,
+          tenantId,
+          email: body.email || undefined,
+          taxExemptExpiration: body.taxExemptExpiration ? new Date(body.taxExemptExpiration) : undefined,
+        },
+        actor,
+        correlationId,
+      );
+      return reply.status(201).send(customer);
+    } catch (err) {
+      return handleCustomerError(err, reply);
     }
-    const customers = await (app as any).prisma.customer.findMany({
-      where,
-      orderBy: { customerName: 'asc' },
-      take: 200,
-    });
-    return reply.send(customers);
   });
 
-  // GET /customers/:id — fetch single customer
-  app.get('/customers/:id', async (request, reply) => {
+  // ── PATCH /customers/:id — update ───────────────────────────────────────────
+  app.patch('/customers/:id', { preHandler: requirePermission(AR_CUSTOMER_PERMISSIONS.EDIT) }, async (request, reply) => {
     const tenantId = getTenantId(request);
     const { id } = request.params as { id: string };
-    const customer = await (app as any).prisma.customer.findFirst({ where: { id, tenantId } });
-    if (!customer) return reply.status(404).send({ error: 'NOT_FOUND' });
-    return reply.send(customer);
-  });
-
-  // POST /customers — create
-  app.post('/customers', async (request, reply) => {
-    const tenantId = getTenantId(request);
-    const body = CreateCustomerSchema.parse(request.body);
-    // Auto-generate customer number if not provided
-    let customerNumber = body.customerNumber;
-    if (!customerNumber) {
-      const count = await (app as any).prisma.customer.count({ where: { tenantId } });
-      customerNumber = String(count + 1).padStart(6, '0');
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = CustomerUpdateSchema.parse(request.body);
+      const customer = await customerSvc.update(
+        tenantId,
+        id,
+        {
+          ...body,
+          email: body.email || undefined,
+          taxExemptExpiration: body.taxExemptExpiration ? new Date(body.taxExemptExpiration) : undefined,
+        },
+        actor,
+        correlationId,
+      );
+      return reply.send(customer);
+    } catch (err) {
+      return handleCustomerError(err, reply);
     }
-    // Duplicate detection — check existing same name
-    const existing = await (app as any).prisma.customer.findMany({
-      where: { tenantId, customerName: { contains: body.customerName, mode: 'insensitive' }, isActive: true },
-      select: { id: true, customerNumber: true, customerName: true },
-      take: 5,
-    });
-    const customer = await (app as any).prisma.customer.create({
-      data: { tenantId, customerNumber, ...body },
-    });
-    return reply.status(201).send({ ...customer, duplicateCandidates: existing });
   });
 
-  // PUT /customers/:id — full update
-  app.put('/customers/:id', async (request, reply) => {
+  // ── DELETE /customers/:id — guarded logical delete ──────────────────────────
+  app.delete('/customers/:id', { preHandler: requirePermission(AR_CUSTOMER_PERMISSIONS.DELETE) }, async (request, reply) => {
     const tenantId = getTenantId(request);
     const { id } = request.params as { id: string };
-    const body = UpdateCustomerSchema.parse(request.body);
-    const customer = await (app as any).prisma.customer.updateMany({
-      where: { id, tenantId },
-      data: { ...body },
-    });
-    if (customer.count === 0) return reply.status(404).send({ error: 'NOT_FOUND' });
-    const updated = await (app as any).prisma.customer.findFirst({ where: { id, tenantId } });
-    return reply.send(updated);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = CustomerDeleteSchema.parse(request.body ?? {});
+      const customer = await customerSvc.delete(tenantId, id, body, actor, correlationId);
+      return reply.send(customer);
+    } catch (err) {
+      return handleCustomerError(err, reply);
+    }
   });
 
-  // PATCH /customers/:id/deactivate — soft delete
-  app.patch('/customers/:id/deactivate', async (request, reply) => {
+  // ── POST /customers/:id/inactivate ──────────────────────────────────────────
+  app.post('/customers/:id/inactivate', { preHandler: requirePermission(AR_CUSTOMER_PERMISSIONS.INACTIVATE) }, async (request, reply) => {
     const tenantId = getTenantId(request);
     const { id } = request.params as { id: string };
-    await (app as any).prisma.customer.updateMany({
-      where: { id, tenantId },
-      data: { isActive: false },
-    });
-    return reply.send({ ok: true });
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = CustomerInactivateSchema.parse(request.body);
+      const customer = await customerSvc.inactivate(tenantId, id, body, actor, correlationId);
+      return reply.send(customer);
+    } catch (err) {
+      return handleCustomerError(err, reply);
+    }
+  });
+
+  // Back-compat alias for the pre-S046 frontend contract
+  // (PATCH /customers/:id/deactivate, no version/reason). Deprecated —
+  // callers should migrate to POST /customers/:id/inactivate.
+  app.patch('/customers/:id/deactivate', { preHandler: requirePermission(AR_CUSTOMER_PERMISSIONS.INACTIVATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const current = await customerSvc.getById(tenantId, id);
+      const customer = await customerSvc.inactivate(tenantId, id, { version: current.version, reason: 'Deactivated (legacy endpoint)' }, actor, correlationId);
+      return reply.send(customer);
+    } catch (err) {
+      return handleCustomerError(err, reply);
+    }
+  });
+
+  // ── POST /customers/:id/reactivate ──────────────────────────────────────────
+  app.post('/customers/:id/reactivate', { preHandler: requirePermission(AR_CUSTOMER_PERMISSIONS.REACTIVATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = CustomerReactivateSchema.parse(request.body);
+      const customer = await customerSvc.reactivate(tenantId, id, body, actor, correlationId);
+      return reply.send(customer);
+    } catch (err) {
+      return handleCustomerError(err, reply);
+    }
+  });
+
+  // ── GET /customers/:id/eligibility — new-charge eligibility ────────────────
+  app.get('/customers/:id/eligibility', { preHandler: requirePermission(AR_CUSTOMER_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const result = await customerSvc.eligibility(tenantId, id, actor, correlationId);
+      return reply.send(result);
+    } catch (err) {
+      return handleCustomerError(err, reply);
+    }
+  });
+
+  // ── POST /customers/:id/credit-hold — place a credit hold ──────────────────
+  app.post('/customers/:id/credit-hold', { preHandler: requirePermission(AR_CUSTOMER_PERMISSIONS.CREDIT_HOLD) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = CustomerCreditHoldSchema.parse(request.body);
+      const customer = await customerSvc.setCreditHold(tenantId, id, body, actor, correlationId);
+      return reply.send(customer);
+    } catch (err) {
+      return handleCustomerError(err, reply);
+    }
+  });
+
+  // ── POST /customers/:id/credit-release — release a credit hold ─────────────
+  app.post('/customers/:id/credit-release', { preHandler: requirePermission(AR_CUSTOMER_PERMISSIONS.CREDIT_RELEASE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = CustomerCreditReleaseSchema.parse(request.body);
+      const customer = await customerSvc.releaseCreditHold(tenantId, id, body, actor, correlationId);
+      return reply.send(customer);
+    } catch (err) {
+      return handleCustomerError(err, reply);
+    }
+  });
+
+  // ── GET /customers/:id/audit-events — history from audit-service ───────────
+  app.get('/customers/:id/audit-events', { preHandler: requirePermission(AR_CUSTOMER_PERMISSIONS.AUDIT_VIEW) }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const auditUrl =
+      (process.env['AUDIT_SERVICE_URL'] ?? 'http://audit-service:3031') +
+      `/api/v1/audit/entity/Customer/${id}`;
+    try {
+      // Same server-to-server bearer-token requirement discovered/fixed for
+      // the vendor audit-events route (S036A) — audit-service's
+      // authMiddleware is applied globally, including to this read.
+      const jwtSecret = process.env['AMACC_JWT_SECRET'] ?? process.env['JWT_SECRET'];
+      const headers: Record<string, string> = { 'x-tenant-id': getTenantId(request) };
+      if (jwtSecret) headers['authorization'] = `Bearer ${createServiceToken('apar-service', jwtSecret)}`;
+      const res = await fetch(auditUrl, { headers });
+      if (!res.ok) return reply.send([]);
+      const data = await res.json();
+      return reply.send(data);
+    } catch {
+      return reply.send([]);
+    }
   });
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -1295,4 +2227,1861 @@ export async function aparRoutes(app: FastifyInstance) {
     });
     return reply.send(vendors);
   });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // AMACC-CH04 S039: AP Invoice Entry & 2/3-Way Match
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const AP_INVOICE_PERMISSIONS = {
+    VIEW:               'ap.invoice.view',
+    CREATE:             'ap.invoice.create',
+    EDIT:               'ap.invoice.edit',
+    MATCH:              'ap.invoice.match',
+    MATCH_OVERRIDE:     'ap.invoice.match_override',
+    SUBMIT:             'ap.invoice.submit',
+    VOID:               'ap.invoice.void',
+    DUPLICATE_OVERRIDE: 'ap.invoice.duplicate_override',
+    AUDIT_VIEW:         'ap.invoice.audit_view',
+  } as const;
+
+  const AP_GOODS_RECEIPT_PERMISSIONS = {
+    VIEW:   'ap.goods_receipt.view',
+    CREATE: 'ap.goods_receipt.create',
+    VOID:   'ap.goods_receipt.void',
+  } as const;
+
+  const InvoiceLineSchema = z.object({
+    poLineId: z.string().uuid().optional(),
+    glAccountId: z.string().uuid().optional(),
+    description: z.string().min(1),
+    quantity: z.number().positive().optional(),
+    unitPrice: z.number(),
+    taxAmount: z.number().optional(),
+  });
+
+  const InvoiceCreateSchema = z.object({
+    vendorId: z.string().uuid(),
+    invoiceNumber: z.string().min(1),
+    invoiceDate: z.string().transform((s) => new Date(s)),
+    dueDate: z.string().transform((s) => new Date(s)),
+    poId: z.string().uuid().optional(),
+    freightAmount: z.number().optional(),
+    notes: z.string().optional(),
+    lines: z.array(InvoiceLineSchema).min(1),
+    override: z.object({ reason: z.string().min(1) }).optional(),
+  });
+
+  const InvoiceUpdateSchema = z.object({
+    version: z.number().int().min(1),
+    dueDate: z.string().transform((s) => new Date(s)).optional(),
+    notes: z.string().optional(),
+    freightAmount: z.number().optional(),
+    lines: z.array(InvoiceLineSchema).min(1).optional(),
+  });
+
+  const InvoiceDuplicateCheckSchema = z.object({
+    vendorId: z.string().uuid(),
+    invoiceNumber: z.string().min(1),
+    excludeInvoiceId: z.string().uuid().optional(),
+  });
+
+  const InvoiceSubmitSchema = z.object({
+    version: z.number().int().min(1),
+    override: z.object({ reason: z.string().min(1) }).optional(),
+  });
+
+  const InvoiceVoidSchema = z.object({
+    version: z.number().int().min(1),
+    reason: z.string().min(1),
+  });
+
+  const GoodsReceiptCreateSchema = z.object({
+    poId: z.string().uuid(),
+    receiptDate: z.string().transform((s) => new Date(s)).optional(),
+    receivedBy: z.string().optional(),
+    notes: z.string().optional(),
+    lines: z.array(z.object({
+      poLineId: z.string().uuid(),
+      description: z.string().min(1),
+      qtyReceived: z.number().positive(),
+    })).min(1),
+  });
+
+  const GoodsReceiptVoidSchema = z.object({
+    reason: z.string().min(1),
+  });
+
+  function handleInvoiceError(error: unknown, reply: any) {
+    if (error instanceof InvoiceNotFoundError || error instanceof VendorNotFoundForInvoiceError) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof VendorNotEligibleForInvoiceError) {
+      return reply.status(422).send({ error: 'VENDOR_NOT_ELIGIBLE', message: error.message, vendorStatus: error.vendorStatus });
+    }
+    if (error instanceof DuplicateInvoiceAcknowledgementRequiredError) {
+      return reply.status(409).send({ error: 'DUPLICATE_INVOICE_ACKNOWLEDGEMENT_REQUIRED', message: error.message, candidates: error.candidates });
+    }
+    if (error instanceof MatchExceptionOverrideRequiredError) {
+      return reply.status(409).send({ error: 'MATCH_EXCEPTION_OVERRIDE_REQUIRED', message: error.message, variances: error.variances });
+    }
+    if (error instanceof InvoiceConflictError) {
+      return reply.status(409).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof InvoiceValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) {
+      return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    }
+    throw error;
+  }
+
+  function handleGoodsReceiptError(error: unknown, reply: any) {
+    if (error instanceof GoodsReceiptNotFoundError || error instanceof PurchaseOrderNotFoundForReceiptError) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof GoodsReceiptConflictError) {
+      return reply.status(409).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof GoodsReceiptValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) {
+      return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    }
+    throw error;
+  }
+
+  // ── GET /invoices — list ────────────────────────────────────────────────
+  app.get('/invoices', { preHandler: requirePermission(AP_INVOICE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { vendorId, status, poId, page, pageSize } = request.query as {
+      vendorId?: string; status?: string; poId?: string; page?: string; pageSize?: string;
+    };
+    try {
+      const result = await invoiceSvc.list({
+        tenantId, vendorId, status, poId,
+        page: page ? parseInt(page, 10) : 1,
+        pageSize: pageSize ? parseInt(pageSize, 10) : 50,
+      });
+      return reply.send(result);
+    } catch (err) {
+      return handleInvoiceError(err, reply);
+    }
+  });
+
+  // ── POST /invoices/duplicate-check ──────────────────────────────────────
+  app.post('/invoices/duplicate-check', { preHandler: requirePermission(AP_INVOICE_PERMISSIONS.CREATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    try {
+      const body = InvoiceDuplicateCheckSchema.parse(request.body);
+      const candidates = await invoiceSvc.checkDuplicates({ tenantId, ...body });
+      return reply.send({ candidates });
+    } catch (err) {
+      return handleInvoiceError(err, reply);
+    }
+  });
+
+  // ── GET /invoices/:id — detail (header + lines + match history) ─────────
+  app.get('/invoices/:id', { preHandler: requirePermission(AP_INVOICE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const invoice = await invoiceSvc.getById(tenantId, id);
+      return reply.send(invoice);
+    } catch (err) {
+      return handleInvoiceError(err, reply);
+    }
+  });
+
+  // ── POST /invoices — create (DRAFT) ─────────────────────────────────────
+  app.post('/invoices', { preHandler: requirePermission(AP_INVOICE_PERMISSIONS.CREATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = InvoiceCreateSchema.parse(request.body);
+
+      if (body.override) {
+        const result = await authzClient.check({
+          userId: (request as any).user?.sub,
+          permissionKey: AP_INVOICE_PERMISSIONS.DUPLICATE_OVERRIDE,
+          scope: { tenantId },
+          route: (request as any).routeOptions?.url ?? request.url,
+        });
+        if (!result.allow) {
+          return reply.status(403).send({ error: 'DUPLICATE_INVOICE_OVERRIDE_FORBIDDEN', message: `Missing required permission: ${AP_INVOICE_PERMISSIONS.DUPLICATE_OVERRIDE}` });
+        }
+      }
+
+      const invoice = await invoiceSvc.create({ ...body, tenantId }, actor, correlationId);
+      return reply.status(201).send(invoice);
+    } catch (err) {
+      return handleInvoiceError(err, reply);
+    }
+  });
+
+  // ── PATCH /invoices/:id — update (DRAFT only) ───────────────────────────
+  app.patch('/invoices/:id', { preHandler: requirePermission(AP_INVOICE_PERMISSIONS.EDIT) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = InvoiceUpdateSchema.parse(request.body);
+      const invoice = await invoiceSvc.update(tenantId, id, body, actor, correlationId);
+      return reply.send(invoice);
+    } catch (err) {
+      return handleInvoiceError(err, reply);
+    }
+  });
+
+  // ── POST /invoices/:id/match — run 2/3-way match ────────────────────────
+  app.post('/invoices/:id/match', { preHandler: requirePermission(AP_INVOICE_PERMISSIONS.MATCH) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const { invoice, result } = await invoiceSvc.runMatch(tenantId, id, actor, correlationId);
+      return reply.send({ invoice, result });
+    } catch (err) {
+      return handleInvoiceError(err, reply);
+    }
+  });
+
+  // ── POST /invoices/:id/submit — DRAFT -> SUBMITTED ──────────────────────
+  app.post('/invoices/:id/submit', { preHandler: requirePermission(AP_INVOICE_PERMISSIONS.SUBMIT) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = InvoiceSubmitSchema.parse(request.body);
+
+      if (body.override) {
+        const result = await authzClient.check({
+          userId: (request as any).user?.sub,
+          permissionKey: AP_INVOICE_PERMISSIONS.MATCH_OVERRIDE,
+          scope: { tenantId },
+          route: (request as any).routeOptions?.url ?? request.url,
+        });
+        if (!result.allow) {
+          return reply.status(403).send({ error: 'MATCH_OVERRIDE_FORBIDDEN', message: `Missing required permission: ${AP_INVOICE_PERMISSIONS.MATCH_OVERRIDE}` });
+        }
+      }
+
+      const invoice = await invoiceSvc.submit(tenantId, id, body, actor, correlationId);
+      return reply.send(invoice);
+    } catch (err) {
+      return handleInvoiceError(err, reply);
+    }
+  });
+
+  // ── POST /invoices/:id/void ──────────────────────────────────────────────
+  app.post('/invoices/:id/void', { preHandler: requirePermission(AP_INVOICE_PERMISSIONS.VOID) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = InvoiceVoidSchema.parse(request.body);
+      const invoice = await invoiceSvc.void(tenantId, id, body, actor, correlationId);
+      return reply.send(invoice);
+    } catch (err) {
+      return handleInvoiceError(err, reply);
+    }
+  });
+
+  // ── Goods Receipts (3-way match input) ──────────────────────────────────
+
+  // ── GET /purchase-orders/:poId/receipts ─────────────────────────────────
+  app.get('/purchase-orders/:poId/receipts', { preHandler: requirePermission(AP_GOODS_RECEIPT_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { poId } = request.params as { poId: string };
+    try {
+      const receipts = await goodsReceiptSvc.listForPO(tenantId, poId);
+      return reply.send(receipts);
+    } catch (err) {
+      return handleGoodsReceiptError(err, reply);
+    }
+  });
+
+  // ── GET /goods-receipts/:id ──────────────────────────────────────────────
+  app.get('/goods-receipts/:id', { preHandler: requirePermission(AP_GOODS_RECEIPT_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const receipt = await goodsReceiptSvc.getById(tenantId, id);
+      return reply.send(receipt);
+    } catch (err) {
+      return handleGoodsReceiptError(err, reply);
+    }
+  });
+
+  // ── POST /goods-receipts — receive against a PO ─────────────────────────
+  app.post('/goods-receipts', { preHandler: requirePermission(AP_GOODS_RECEIPT_PERMISSIONS.CREATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = GoodsReceiptCreateSchema.parse(request.body);
+      const receipt = await goodsReceiptSvc.create({ ...body, tenantId }, actor, correlationId);
+      return reply.status(201).send(receipt);
+    } catch (err) {
+      return handleGoodsReceiptError(err, reply);
+    }
+  });
+
+  // ── POST /goods-receipts/:id/void ───────────────────────────────────────
+  app.post('/goods-receipts/:id/void', { preHandler: requirePermission(AP_GOODS_RECEIPT_PERMISSIONS.VOID) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = GoodsReceiptVoidSchema.parse(request.body);
+      const receipt = await goodsReceiptSvc.void(tenantId, id, body, actor, correlationId);
+      return reply.send(receipt);
+    } catch (err) {
+      return handleGoodsReceiptError(err, reply);
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // AMACC-CH04 S041: Invoice Approval Matrix
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const AP_INVOICE_APPROVAL_PERMISSIONS = {
+    VIEW:               'ap.invoice_approval.view',
+    CONFIGURE:          'ap.invoice_approval.configure',
+    START:              'ap.invoice_approval.start',
+    APPROVE:            'ap.invoice_approval.approve',
+    REJECT:             'ap.invoice_approval.reject',
+    RETRY_GL_POSTING:   'ap.invoice_approval.retry_gl_posting',
+  } as const;
+
+  const ApprovalRuleCreateSchema = z.object({
+    thresholdAmount: z.number().min(0),
+    requiredRole: z.enum(APPROVAL_ROLE_VALUES),
+    sequence: z.number().int().min(1),
+  });
+
+  const ApprovalRuleUpdateSchema = z.object({
+    thresholdAmount: z.number().min(0).optional(),
+    requiredRole: z.enum(APPROVAL_ROLE_VALUES).optional(),
+    isActive: z.boolean().optional(),
+  });
+
+  const ApprovalDecisionSchema = z.object({
+    version: z.number().int().min(1),
+    note: z.string().optional(),
+  });
+
+  const ApprovalRejectSchema = z.object({
+    version: z.number().int().min(1),
+    reason: z.string().min(1),
+  });
+
+  function getServiceToken(): string | undefined {
+    try {
+      const jwtSecret = process.env['AMACC_JWT_SECRET'] ?? 'amacc-dev-secret-change-in-production';
+      return createServiceToken('apar-service', jwtSecret);
+    } catch {
+      return undefined;
+    }
+  }
+
+  function handleApprovalRuleError(error: unknown, reply: any) {
+    if (error instanceof ApprovalRuleNotFoundError) return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    if (error instanceof ApprovalRuleConflictError) return reply.status(409).send({ error: error.code, message: error.message });
+    if (error instanceof ApprovalRuleValidationError) return reply.status(422).send({ error: error.code, message: error.message });
+    if (error instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    throw error;
+  }
+
+  function handleApprovalError(error: unknown, reply: any) {
+    if (error instanceof InvoiceNotFoundForApprovalError || error instanceof ApprovalInstanceNotFoundError) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof WrongApproverRoleError) {
+      return reply.status(403).send({ error: 'WRONG_APPROVER_ROLE', message: error.message, requiredRole: error.requiredRole });
+    }
+    if (error instanceof ApprovalAlreadyDecidedError) {
+      return reply.status(409).send({ error: 'ALREADY_DECIDED', message: error.message });
+    }
+    if (error instanceof ApprovalConflictError) {
+      return reply.status(409).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof InvoiceNotSubmittedError || error instanceof ApprovalValidationError) {
+      return reply.status(422).send({ error: (error as any).code ?? 'NOT_SUBMITTED', message: error.message });
+    }
+    if (error instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    throw error;
+  }
+
+  // ── Approval Matrix Configuration ────────────────────────────────────────
+
+  app.get('/invoice-approval-rules', { preHandler: requirePermission(AP_INVOICE_APPROVAL_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const rules = await approvalRuleSvc.list(tenantId);
+    return reply.send(rules);
+  });
+
+  app.post('/invoice-approval-rules', { preHandler: requirePermission(AP_INVOICE_APPROVAL_PERMISSIONS.CONFIGURE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    try {
+      const body = ApprovalRuleCreateSchema.parse(request.body);
+      const rule = await approvalRuleSvc.create({ ...body, tenantId }, actor);
+      return reply.status(201).send(rule);
+    } catch (err) {
+      return handleApprovalRuleError(err, reply);
+    }
+  });
+
+  app.patch('/invoice-approval-rules/:id', { preHandler: requirePermission(AP_INVOICE_APPROVAL_PERMISSIONS.CONFIGURE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const body = ApprovalRuleUpdateSchema.parse(request.body);
+      const rule = await approvalRuleSvc.update(tenantId, id, body);
+      return reply.send(rule);
+    } catch (err) {
+      return handleApprovalRuleError(err, reply);
+    }
+  });
+
+  // ── Approval Workflow ─────────────────────────────────────────────────────
+
+  app.get('/invoices/:id/approval', { preHandler: requirePermission(AP_INVOICE_APPROVAL_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const instance = await invoiceApprovalSvc.getInstance(tenantId, id);
+      return reply.send(instance);
+    } catch (err) {
+      return handleApprovalError(err, reply);
+    }
+  });
+
+  app.post('/invoices/:id/approval/start', { preHandler: requirePermission(AP_INVOICE_APPROVAL_PERMISSIONS.START) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const instance = await invoiceApprovalSvc.start(tenantId, id, actor, correlationId);
+      return reply.status(201).send(instance);
+    } catch (err) {
+      return handleApprovalError(err, reply);
+    }
+  });
+
+  app.post('/invoices/:id/approval/approve', { preHandler: requirePermission(AP_INVOICE_APPROVAL_PERMISSIONS.APPROVE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const actorRole = (request as any).user?.role ?? 'UNKNOWN';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = ApprovalDecisionSchema.parse(request.body);
+      const instance = await invoiceApprovalSvc.approveStep(tenantId, id, body, actor, actorRole, getServiceToken(), correlationId);
+      return reply.send(instance);
+    } catch (err) {
+      return handleApprovalError(err, reply);
+    }
+  });
+
+  app.post('/invoices/:id/approval/reject', { preHandler: requirePermission(AP_INVOICE_APPROVAL_PERMISSIONS.REJECT) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const actorRole = (request as any).user?.role ?? 'UNKNOWN';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = ApprovalRejectSchema.parse(request.body);
+      const instance = await invoiceApprovalSvc.rejectStep(tenantId, id, body, actor, actorRole, correlationId);
+      return reply.send(instance);
+    } catch (err) {
+      return handleApprovalError(err, reply);
+    }
+  });
+
+  app.post('/invoices/:id/approval/retry-gl-posting', { preHandler: requirePermission(AP_INVOICE_APPROVAL_PERMISSIONS.RETRY_GL_POSTING) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const journalEntryId = await invoiceApprovalSvc.retryGlPosting(tenantId, id, actor, getServiceToken(), correlationId);
+      return reply.send({ journalEntryId });
+    } catch (err) {
+      return handleApprovalError(err, reply);
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // AMACC-CH04 S043A: Manual Single Payment
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const AP_MANUAL_PAYMENT_PERMISSIONS = {
+    VIEW:                'ap.manual_payment.view',
+    CREATE:              'ap.manual_payment.create',
+    VOID:                'ap.manual_payment.void',
+    RETRY_SCHEDULE_RELIEF: 'ap.manual_payment.retry_schedule_relief',
+  } as const;
+
+  const AP_BANK_ACCOUNT_PERMISSIONS = {
+    VIEW:   'ap.bank_account.view',
+    MANAGE: 'ap.bank_account.manage',
+  } as const;
+
+  const BankAccountCreateSchema = z.object({
+    bankName: z.string().min(1),
+    accountNumber: z.string().min(1),
+    routingNumber: z.string().min(1),
+    glAccountId: z.string().uuid().optional(),
+    nextCheckNumber: z.number().int().min(1).optional(),
+  });
+
+  // S043A: no bank-account list/create surface existed anywhere in the
+  // repository before this — required so the manual-payment picker has real
+  // data rather than an empty/fake dropdown. Kept intentionally minimal
+  // (no edit/deactivate UI) — out of S043A's own scope beyond what's needed
+  // to exercise the payment flow end-to-end.
+  app.get('/bank-accounts', { preHandler: requirePermission(AP_BANK_ACCOUNT_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const prisma = (app as any).prisma;
+    const accounts = await prisma.aPBankAccount.findMany({ where: { tenantId, isActive: true }, orderBy: { bankName: 'asc' } });
+    return reply.send(accounts);
+  });
+
+  app.post('/bank-accounts', { preHandler: requirePermission(AP_BANK_ACCOUNT_PERMISSIONS.MANAGE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const prisma = (app as any).prisma;
+    try {
+      const body = BankAccountCreateSchema.parse(request.body);
+      const account = await prisma.aPBankAccount.create({
+        data: {
+          tenantId, bankName: body.bankName, accountNumber: body.accountNumber, routingNumber: body.routingNumber,
+          glAccountId: body.glAccountId ?? null, nextCheckNumber: body.nextCheckNumber ?? 1001, isActive: true,
+        },
+      });
+      return reply.status(201).send(account);
+    } catch (err) {
+      if (err instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: err.issues });
+      throw err;
+    }
+  });
+
+  const ManualPaymentCreateSchema = z.object({
+    invoiceId: z.string().uuid(),
+    bankAccountId: z.string().uuid(),
+    paymentDate: z.string().transform((s) => new Date(s)).optional(),
+  });
+
+  const ManualPaymentVoidSchema = z.object({
+    version: z.number().int().min(1),
+    reason: z.string().min(1),
+  });
+
+  function handlePaymentError(error: unknown, reply: any) {
+    if (
+      error instanceof InvoiceNotFoundForPaymentError ||
+      error instanceof BankAccountNotFoundError ||
+      error instanceof PaymentNotFoundError
+    ) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof InvoiceAlreadyPaidError) {
+      return reply.status(409).send({ error: 'ALREADY_PAID', message: error.message });
+    }
+    if (error instanceof PaymentConflictError) {
+      return reply.status(409).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof VoidRefusedPaymentReconciledError) {
+      return reply.status(409).send({ error: 'VOID_REFUSED_PAYMENT_RECONCILED', message: error.message });
+    }
+    if (error instanceof InvoiceNotApprovedError || error instanceof PaymentValidationError) {
+      return reply.status(422).send({ error: (error as any).code ?? 'NOT_APPROVED', message: error.message });
+    }
+    if (error instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    throw error;
+  }
+
+  app.get('/manual-payments', { preHandler: requirePermission(AP_MANUAL_PAYMENT_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { vendorId } = request.query as { vendorId?: string };
+    const payments = await manualPaymentSvc.list(tenantId, vendorId);
+    return reply.send(payments);
+  });
+
+  app.get('/manual-payments/:id', { preHandler: requirePermission(AP_MANUAL_PAYMENT_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const payment = await manualPaymentSvc.getById(tenantId, id);
+      return reply.send(payment);
+    } catch (err) {
+      return handlePaymentError(err, reply);
+    }
+  });
+
+  app.post('/manual-payments', { preHandler: requirePermission(AP_MANUAL_PAYMENT_PERMISSIONS.CREATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = ManualPaymentCreateSchema.parse(request.body);
+      const payment = await manualPaymentSvc.create(tenantId, body, actor, getServiceToken(), correlationId);
+      return reply.status(201).send(payment);
+    } catch (err) {
+      return handlePaymentError(err, reply);
+    }
+  });
+
+  app.post('/manual-payments/:id/void', { preHandler: requirePermission(AP_MANUAL_PAYMENT_PERMISSIONS.VOID) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = ManualPaymentVoidSchema.parse(request.body);
+      const payment = await manualPaymentSvc.void(tenantId, id, body, actor, correlationId);
+      return reply.send(payment);
+    } catch (err) {
+      return handlePaymentError(err, reply);
+    }
+  });
+
+  app.post('/manual-payments/:id/retry-schedule-relief', { preHandler: requirePermission(AP_MANUAL_PAYMENT_PERMISSIONS.RETRY_SCHEDULE_RELIEF) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const payment = await manualPaymentSvc.retryScheduleRelief(tenantId, id);
+      return reply.send(payment);
+    } catch (err) {
+      return handlePaymentError(err, reply);
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CE-09 S042: Use-Tax Self-Assessment
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const AP_USE_TAX_PERMISSIONS = {
+    VIEW:   'ap.use_tax.view',
+    ASSESS: 'ap.use_tax.assess',
+  } as const;
+
+  const UseTaxAssessSchema = z.object({
+    jurisdiction: z.string().min(1),
+    taxableAmount: z.number().positive(),
+    manualRate: z.number().min(0).optional(),
+    attestationBasis: z.string().min(1).optional(),
+  });
+
+  function handleUseTaxError(error: unknown, reply: any) {
+    if (error instanceof InvoiceNotFoundForUseTaxError || error instanceof UseTaxAssessmentNotFoundError) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof UseTaxAssessmentAlreadyExistsError) {
+      return reply.status(409).send({ error: 'ALREADY_ASSESSED', message: error.message });
+    }
+    if (error instanceof UseTaxAssessmentValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    throw error;
+  }
+
+  app.get('/use-tax/assessments', { preHandler: requirePermission(AP_USE_TAX_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { invoiceId } = request.query as { invoiceId?: string };
+    const assessments = await useTaxSvc.list(tenantId, invoiceId);
+    return reply.send(assessments);
+  });
+
+  app.get('/use-tax/assessments/:id', { preHandler: requirePermission(AP_USE_TAX_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const assessment = await useTaxSvc.getById(tenantId, id);
+      return reply.send(assessment);
+    } catch (err) {
+      return handleUseTaxError(err, reply);
+    }
+  });
+
+  app.get('/use-tax/register', { preHandler: requirePermission(AP_USE_TAX_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { period } = request.query as { period?: string };
+    if (!period) return reply.status(400).send({ error: 'VALIDATION_ERROR', message: 'period (YYYY-MM) query parameter is required' });
+    const register = await useTaxSvc.register(tenantId, { period });
+    return reply.send(register);
+  });
+
+  app.post('/invoices/:id/use-tax-assessment', { preHandler: requirePermission(AP_USE_TAX_PERMISSIONS.ASSESS) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = UseTaxAssessSchema.parse(request.body);
+      const assessment = await useTaxSvc.assess(tenantId, id, body, actor, getServiceToken(), correlationId);
+      return reply.status(201).send(assessment);
+    } catch (err) {
+      return handleUseTaxError(err, reply);
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CE-09 S045: Void/Stop/Reissue & Check Escheat
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const AP_PAYMENT_LIFECYCLE_PERMISSIONS = {
+    MARK_CLEARED_TEST_ONLY: 'ap.payment_lifecycle.mark_cleared_test_only',
+    REISSUE: 'ap.payment_lifecycle.reissue',
+    STOP_PAYMENT_REQUEST: 'ap.payment_lifecycle.stop_payment_request',
+    STOP_PAYMENT_RESOLVE: 'ap.payment_lifecycle.stop_payment_resolve',
+    ESCHEAT_VIEW: 'ap.payment_lifecycle.escheat_view',
+    ESCHEAT_DUE_DILIGENCE: 'ap.payment_lifecycle.escheat_due_diligence',
+    ESCHEAT_TRANSFER: 'ap.payment_lifecycle.escheat_transfer',
+  } as const;
+
+  const MarkClearedSchema = z.object({
+    clearedAt: z.string().transform((s) => new Date(s)).optional(),
+  });
+
+  const StopPaymentRequestSchema = z.object({
+    reason: z.string().min(1),
+  });
+
+  const ResolveStopPaymentSchema = z.object({
+    status: z.enum(['ACKNOWLEDGED', 'FAILED']),
+    bankAck: z.enum(['MANUAL', 'PAYMENT_RAIL_NOT_CONFIGURED']),
+    bankAckNote: z.string().optional(),
+  });
+
+  const ReissuePaymentSchema = z.object({
+    bankAccountId: z.string().uuid(),
+    paymentDate: z.string().transform((s) => new Date(s)).optional(),
+  });
+
+  const RecordDueDiligenceSchema = z.object({
+    method: z.enum(['LETTER', 'PHONE', 'EMAIL', 'OTHER']),
+    outcome: z.string().min(1),
+    notes: z.string().optional(),
+  });
+
+  const PostEscheatTransferSchema = z.object({
+    jurisdiction: z.string().min(1),
+  });
+
+  function handleLifecycleError(error: unknown, reply: any) {
+    if (error instanceof PaymentNotFoundError) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof VoidRefusedPaymentReconciledError) {
+      return reply.status(409).send({ error: 'VOID_REFUSED_PAYMENT_RECONCILED', message: error.message });
+    }
+    if (error instanceof EscheatConfigNotFoundError) {
+      return reply.status(422).send({ error: 'ESCHEAT_CONFIG_NOT_FOUND', message: error.message });
+    }
+    if (error instanceof EscheatTransferAlreadyExistsError) {
+      return reply.status(409).send({ error: 'ESCHEAT_TRANSFER_ALREADY_EXISTS', message: error.message });
+    }
+    if (error instanceof PaymentValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    throw error;
+  }
+
+  // NOTE: this endpoint is a PUTR (Point Until The Real thing) integration
+  // boundary with recon-service (S054A/S054B) — recon-service is expected
+  // to set clearedAt/clearedBy once genuine bank-clearing/reconciliation
+  // wiring exists. Until then, this is admin/test-only and MUST NOT be
+  // exposed to ordinary AP clerks — gated by a distinct permission.
+  app.post('/manual-payments/:id/mark-cleared-test-only', { preHandler: requirePermission(AP_PAYMENT_LIFECYCLE_PERMISSIONS.MARK_CLEARED_TEST_ONLY) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    try {
+      const body = MarkClearedSchema.parse(request.body ?? {});
+      const payment = await paymentLifecycleSvc.markCleared(tenantId, id, body, actor);
+      return reply.send(payment);
+    } catch (err) {
+      return handleLifecycleError(err, reply);
+    }
+  });
+
+  app.post('/manual-payments/:id/reissue', { preHandler: requirePermission(AP_PAYMENT_LIFECYCLE_PERMISSIONS.REISSUE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = ReissuePaymentSchema.parse(request.body);
+      const payment = await paymentLifecycleSvc.reissue(tenantId, id, body, actor, getServiceToken(), correlationId);
+      return reply.status(201).send(payment);
+    } catch (err) {
+      return handleLifecycleError(err, reply);
+    }
+  });
+
+  app.post('/manual-payments/:id/stop-payment-requests', { preHandler: requirePermission(AP_PAYMENT_LIFECYCLE_PERMISSIONS.STOP_PAYMENT_REQUEST) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = StopPaymentRequestSchema.parse(request.body);
+      const req = await paymentLifecycleSvc.requestStopPayment(tenantId, id, body, actor, correlationId);
+      return reply.status(201).send(req);
+    } catch (err) {
+      return handleLifecycleError(err, reply);
+    }
+  });
+
+  app.get('/manual-payments/:id/stop-payment-requests', { preHandler: requirePermission(AP_PAYMENT_LIFECYCLE_PERMISSIONS.ESCHEAT_VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const requests = await paymentLifecycleSvc.listStopPaymentRequests(tenantId, id);
+    return reply.send(requests);
+  });
+
+  app.post('/stop-payment-requests/:requestId/resolve', { preHandler: requirePermission(AP_PAYMENT_LIFECYCLE_PERMISSIONS.STOP_PAYMENT_RESOLVE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { requestId } = request.params as { requestId: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = ResolveStopPaymentSchema.parse(request.body);
+      const resolved = await paymentLifecycleSvc.resolveStopPayment(tenantId, requestId, body, actor, correlationId);
+      return reply.send(resolved);
+    } catch (err) {
+      return handleLifecycleError(err, reply);
+    }
+  });
+
+  // D-CE09-03: purely informational — never auto-computes/auto-posts an
+  // escheat without an explicit jurisdiction configuration + a separate
+  // explicit transfer action below.
+  app.get('/escheat/queue', { preHandler: requirePermission(AP_PAYMENT_LIFECYCLE_PERMISSIONS.ESCHEAT_VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const queue = await paymentLifecycleSvc.escheatQueue(tenantId);
+    return reply.send(queue);
+  });
+
+  app.post('/manual-payments/:id/due-diligence', { preHandler: requirePermission(AP_PAYMENT_LIFECYCLE_PERMISSIONS.ESCHEAT_DUE_DILIGENCE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    try {
+      const body = RecordDueDiligenceSchema.parse(request.body);
+      const record = await paymentLifecycleSvc.recordDueDiligence(tenantId, id, body, actor);
+      return reply.status(201).send(record);
+    } catch (err) {
+      return handleLifecycleError(err, reply);
+    }
+  });
+
+  app.get('/manual-payments/:id/due-diligence', { preHandler: requirePermission(AP_PAYMENT_LIFECYCLE_PERMISSIONS.ESCHEAT_VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const records = await paymentLifecycleSvc.listDueDiligence(tenantId, id);
+    return reply.send(records);
+  });
+
+  app.post('/manual-payments/:id/escheat-transfer', { preHandler: requirePermission(AP_PAYMENT_LIFECYCLE_PERMISSIONS.ESCHEAT_TRANSFER) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = PostEscheatTransferSchema.parse(request.body);
+      const transfer = await paymentLifecycleSvc.postEscheatTransfer(tenantId, id, body, actor, getServiceToken(), correlationId);
+      return reply.status(201).send(transfer);
+    } catch (err) {
+      return handleLifecycleError(err, reply);
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CE-09 S048: Wholesale Vehicle AR & Title Gate
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const AR_WHOLESALE_VEHICLE_PERMISSIONS = {
+    VIEW:              'ar.wholesale.view',
+    CREATE:            'ar.wholesale.create',
+    RECORD_PAYMENT:    'ar.wholesale.record_payment',
+    RELEASE_TITLE:     'ar.wholesale.release_title',
+    RELEASE_EXCEPTION: 'ar.wholesale.title_release_exception',
+  } as const;
+
+  const WholesaleVehicleCreateSchema = z.object({
+    customerId: z.string().min(1),
+    vehicleVin: z.string().min(1),
+    saleAmount: z.number().positive(),
+  });
+
+  const WholesaleVehicleRecordPaymentSchema = z.object({
+    amount: z.number().positive(),
+  });
+
+  const WholesaleVehicleReleaseExceptionSchema = z.object({
+    reason: z.string().min(1),
+  });
+
+  function handleWholesaleVehicleError(error: unknown, reply: any) {
+    if (error instanceof WholesaleVehicleItemNotFoundError) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof TitleReleaseRefusedUnpaidError) {
+      return reply.status(409).send({ error: 'TITLE_RELEASE_REFUSED_UNPAID', message: error.message });
+    }
+    if (error instanceof WholesaleVehicleValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    throw error;
+  }
+
+  app.get('/wholesale-vehicle-items', { preHandler: requirePermission(AR_WHOLESALE_VEHICLE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { customerId } = request.query as { customerId?: string };
+    const items = await wholesaleVehicleSvc.list(tenantId, customerId);
+    return reply.send(items);
+  });
+
+  app.get('/wholesale-vehicle-items/:id', { preHandler: requirePermission(AR_WHOLESALE_VEHICLE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const item = await wholesaleVehicleSvc.getById(tenantId, id);
+      return reply.send(item);
+    } catch (err) {
+      return handleWholesaleVehicleError(err, reply);
+    }
+  });
+
+  app.post('/wholesale-vehicle-items', { preHandler: requirePermission(AR_WHOLESALE_VEHICLE_PERMISSIONS.CREATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    try {
+      const body = WholesaleVehicleCreateSchema.parse(request.body);
+      const item = await wholesaleVehicleSvc.create(tenantId, body, actor);
+      return reply.status(201).send(item);
+    } catch (err) {
+      return handleWholesaleVehicleError(err, reply);
+    }
+  });
+
+  app.post('/wholesale-vehicle-items/:id/payments', { preHandler: requirePermission(AR_WHOLESALE_VEHICLE_PERMISSIONS.RECORD_PAYMENT) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    try {
+      const body = WholesaleVehicleRecordPaymentSchema.parse(request.body);
+      const item = await wholesaleVehicleSvc.recordPayment(tenantId, id, body, actor);
+      return reply.send(item);
+    } catch (err) {
+      return handleWholesaleVehicleError(err, reply);
+    }
+  });
+
+  // AC: unpaid release attempt returns a named refusal
+  // (TITLE_RELEASE_REFUSED_UNPAID); paid-in-full items are auto-eligible.
+  app.post('/wholesale-vehicle-items/:id/release-title', { preHandler: requirePermission(AR_WHOLESALE_VEHICLE_PERMISSIONS.RELEASE_TITLE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const item = await wholesaleVehicleSvc.releaseTitle(tenantId, id, actor, correlationId);
+      return reply.send(item);
+    } catch (err) {
+      return handleWholesaleVehicleError(err, reply);
+    }
+  });
+
+  // Exception path: requires a DISTINCT permission from ordinary release,
+  // a mandatory reason, and creates a fully-audited/queryable
+  // ArTitleReleaseException record naming the authorizing user (AC).
+  app.post('/wholesale-vehicle-items/:id/release-title-exception', { preHandler: requirePermission(AR_WHOLESALE_VEHICLE_PERMISSIONS.RELEASE_EXCEPTION) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = WholesaleVehicleReleaseExceptionSchema.parse(request.body);
+      const result = await wholesaleVehicleSvc.releaseTitleWithException(tenantId, id, body, actor, correlationId);
+      return reply.status(201).send(result);
+    } catch (err) {
+      return handleWholesaleVehicleError(err, reply);
+    }
+  });
+
+  app.get('/wholesale-vehicle-items/:id/release-exceptions', { preHandler: requirePermission(AR_WHOLESALE_VEHICLE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const exceptions = await wholesaleVehicleSvc.listExceptions(tenantId, id);
+    return reply.send(exceptions);
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CE-09 S050: AR Write-offs & Allowance Model
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const AR_WRITE_OFF_PERMISSIONS = {
+    VIEW:     'ar.write_off.view',
+    CREATE:   'ar.write_off.create',
+    OVERRIDE: 'ar.write_off.override',
+    REVERSE:  'ar.write_off.reverse',
+  } as const;
+
+  const AR_ALLOWANCE_PERMISSIONS = {
+    VIEW:            'ar.allowance.view',
+    COMPUTE_PREVIEW: 'ar.allowance.compute_preview',
+    APPROVE_PREVIEW: 'ar.allowance.approve_preview',
+    POST:            'ar.allowance.post',
+  } as const;
+
+  const DirectWriteOffSchema = z.object({
+    arEntryId: z.string().min(1),
+    amount: z.number().positive(),
+    reason: z.string().min(1),
+  });
+
+  const ReverseWriteOffSchema = z.object({
+    reason: z.string().min(1),
+  });
+
+  const WriteOffRegisterQuerySchema = z.object({
+    period: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+  });
+
+  const ComputeAllowancePreviewSchema = z.object({
+    asOfDate: z.string().min(1),
+  });
+
+  const ApproveAllowancePreviewSchema = z.object({
+    approvedBy: z.string().optional(),
+  });
+
+  const PostAllowancePreviewSchema = z.object({
+    postedAmount: z.number(),
+  });
+
+  function handleWriteOffError(error: unknown, reply: any) {
+    if (error instanceof ArEntryNotFoundForWriteOffError || error instanceof WriteOffNotFoundError) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof WriteOffRefusedOverThresholdError) {
+      return reply.status(409).send({ error: 'WRITE_OFF_REFUSED_OVER_THRESHOLD', message: error.message });
+    }
+    if (error instanceof WriteOffValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    throw error;
+  }
+
+  function handleAllowanceError(error: unknown, reply: any) {
+    if (error instanceof AllowancePreviewNotFoundError) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof AllowancePostAmountMismatchError) {
+      return reply.status(409).send({ error: 'ALLOWANCE_POST_AMOUNT_MISMATCH', message: error.message });
+    }
+    if (error instanceof AllowanceValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    throw error;
+  }
+
+  app.get('/write-offs', { preHandler: requirePermission(AR_WRITE_OFF_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { arEntryId } = request.query as { arEntryId?: string };
+    const rows = await writeOffSvc.list(tenantId, arEntryId);
+    return reply.send(rows);
+  });
+
+  app.get('/write-offs/register', { preHandler: requirePermission(AR_WRITE_OFF_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    try {
+      const query = WriteOffRegisterQuerySchema.parse(request.query);
+      const register = await writeOffSvc.register(tenantId, query);
+      return reply.send(register);
+    } catch (err) {
+      return handleWriteOffError(err, reply);
+    }
+  });
+
+  app.get('/write-offs/:id', { preHandler: requirePermission(AR_WRITE_OFF_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const row = await writeOffSvc.getById(tenantId, id);
+      return reply.send(row);
+    } catch (err) {
+      return handleWriteOffError(err, reply);
+    }
+  });
+
+  // AC: refused above the configured threshold (WRITE_OFF_REFUSED_OVER_THRESHOLD)
+  // unless the caller holds the distinct ar.write_off.override permission —
+  // useOverride is only ever forwarded to the service when the actor's own
+  // permission grant includes OVERRIDE, so the "higher authority" check is
+  // itself server-enforced, not merely a client-supplied flag.
+  app.post('/write-offs', { preHandler: requirePermission(AR_WRITE_OFF_PERMISSIONS.CREATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = DirectWriteOffSchema.parse(request.body);
+      let useOverride = false;
+      if ((request.body as any)?.useOverride) {
+        const authzResult = await authzClient.check({ userId: actor, permissionKey: AR_WRITE_OFF_PERMISSIONS.OVERRIDE, scope: { tenantId } });
+        useOverride = !!authzResult?.allow;
+      }
+      const writeOff = await writeOffSvc.directWriteOff(tenantId, { ...body, useOverride }, actor, getServiceToken(), correlationId);
+      return reply.status(201).send(writeOff);
+    } catch (err) {
+      return handleWriteOffError(err, reply);
+    }
+  });
+
+  app.post('/write-offs/:id/reverse', { preHandler: requirePermission(AR_WRITE_OFF_PERMISSIONS.REVERSE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = ReverseWriteOffSchema.parse(request.body);
+      const reversed = await writeOffSvc.reverseWriteOff(tenantId, id, body, actor, correlationId);
+      return reply.send(reversed);
+    } catch (err) {
+      return handleWriteOffError(err, reply);
+    }
+  });
+
+  app.get('/allowance-previews', { preHandler: requirePermission(AR_ALLOWANCE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const rows = await allowanceSvc.list(tenantId);
+    return reply.send(rows);
+  });
+
+  app.get('/allowance-previews/:id', { preHandler: requirePermission(AR_ALLOWANCE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const row = await allowanceSvc.getById(tenantId, id);
+      return reply.send(row);
+    } catch (err) {
+      return handleAllowanceError(err, reply);
+    }
+  });
+
+  // D-CE09-02: this endpoint ONLY EVER produces a preview — nothing posts here.
+  app.post('/allowance-previews', { preHandler: requirePermission(AR_ALLOWANCE_PERMISSIONS.COMPUTE_PREVIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    try {
+      const body = ComputeAllowancePreviewSchema.parse(request.body);
+      const preview = await allowanceSvc.computePreview(tenantId, body, actor);
+      return reply.status(201).send(preview);
+    } catch (err) {
+      return handleAllowanceError(err, reply);
+    }
+  });
+
+  // Separate, explicit "approve preview" action by an accountant (AC) —
+  // stores the approved amount so post-time can verify equality.
+  app.post('/allowance-previews/:id/approve', { preHandler: requirePermission(AR_ALLOWANCE_PERMISSIONS.APPROVE_PREVIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = ApproveAllowancePreviewSchema.parse(request.body);
+      const approved = await allowanceSvc.approvePreview(tenantId, id, body, actor, correlationId);
+      return reply.send(approved);
+    } catch (err) {
+      return handleAllowanceError(err, reply);
+    }
+  });
+
+  // D-CE09-02: postedAmount must exactly equal the approved preview amount
+  // — mismatch is refused (ALLOWANCE_POST_AMOUNT_MISMATCH), never silently
+  // re-computed.
+  app.post('/allowance-previews/:id/post', { preHandler: requirePermission(AR_ALLOWANCE_PERMISSIONS.POST) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = PostAllowancePreviewSchema.parse(request.body);
+      const posted = await allowanceSvc.postPreview(tenantId, id, body, actor, getServiceToken(), correlationId);
+      return reply.send(posted);
+    } catch (err) {
+      return handleAllowanceError(err, reply);
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CE-09 S051: NSF (returned-payment) Handling
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const AR_NSF_PERMISSIONS = {
+    VIEW:                     'ar.nsf.view',
+    RECORD:                   'ar.nsf.record',
+    MARK_RECONCILED_TEST_ONLY: 'ar.nsf.mark_deposit_reconciled_test_only',
+  } as const;
+
+  const RecordNsfSchema = z.object({
+    customerId: z.string().min(1),
+    originalArEntryId: z.string().min(1),
+    amount: z.number().positive(),
+    reason: z.string().min(1),
+    source: z.enum(['MANUAL', 'BANK_FEED_NOT_CONFIGURED']).optional(),
+  });
+
+  const MarkDepositReconciledSchema = z.object({
+    reconciledAt: z.string().transform((s) => new Date(s)).optional(),
+  });
+
+  function handleNsfError(error: unknown, reply: any) {
+    if (error instanceof ArEntryNotFoundForNsfError || error instanceof NsfEventNotFoundError) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof NsfValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    throw error;
+  }
+
+  app.get('/nsf-events', { preHandler: requirePermission(AR_NSF_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { customerId } = request.query as { customerId?: string };
+    const rows = await nsfSvc.list(tenantId, customerId);
+    return reply.send(rows);
+  });
+
+  app.get('/nsf-events/:id', { preHandler: requirePermission(AR_NSF_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const row = await nsfSvc.getById(tenantId, id);
+      return reply.send(row);
+    } catch (err) {
+      return handleNsfError(err, reply);
+    }
+  });
+
+  // Manual entry endpoint (AC: sufficient — no bank-feed integration exists
+  // in this repo; a caller supplies source: 'BANK_FEED_NOT_CONFIGURED' to
+  // record that truthfully rather than fabricating an automated adapter).
+  app.post('/nsf-events', { preHandler: requirePermission(AR_NSF_PERMISSIONS.RECORD) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = RecordNsfSchema.parse(request.body);
+      const nsfEvent = await nsfSvc.recordNsf(tenantId, body, actor, getServiceToken(), correlationId);
+      return reply.status(201).send(nsfEvent);
+    } catch (err) {
+      return handleNsfError(err, reply);
+    }
+  });
+
+  // PUTR integration boundary with recon-service (S054A/S054B) — see
+  // NsfService.markDepositReconciled()'s doc comment. Test/admin-only until
+  // that cross-service wiring exists; mirrors POST
+  // /manual-payments/:id/mark-cleared-test-only from S045 exactly.
+  app.post('/ar-entries/:id/mark-deposit-reconciled-test-only', { preHandler: requirePermission(AR_NSF_PERMISSIONS.MARK_RECONCILED_TEST_ONLY) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    try {
+      const body = MarkDepositReconciledSchema.parse(request.body ?? {});
+      const entry = await nsfSvc.markDepositReconciled(tenantId, id, body, actor);
+      return reply.send(entry);
+    } catch (err) {
+      return handleNsfError(err, reply);
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CE-09 S043B: AP Payment Runs & Rails
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const AP_PAYMENT_RUN_PERMISSIONS = {
+    VIEW:          'ap.payment_run.view',
+    PROPOSE:       'ap.payment_run.propose',
+    APPROVE:       'ap.payment_run.approve',
+    REJECT:        'ap.payment_run.reject',
+    EXECUTE:       'ap.payment_run.execute',
+    GENERATE_RAIL: 'ap.payment_run.generate_rail',
+  } as const;
+
+  const CreatePaymentRunProposalSchema = z.object({
+    bankAccountId: z.string().min(1),
+    dueDateThrough: z.string().min(1),
+    discountDateThrough: z.string().optional(),
+    vendorIds: z.array(z.string()).optional(),
+  });
+
+  const ApproveRunSchema = z.object({ note: z.string().optional() });
+  const RejectRunSchema = z.object({ reason: z.string().min(1) });
+  const GenerateRailArtifactSchema = z.object({ mode: z.enum(['CHECK_PRINT', 'POSITIVE_PAY', 'ACH_NACHA']) });
+
+  function handlePaymentRunError(error: unknown, reply: any) {
+    if (error instanceof PaymentRunNotFoundError) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof RunApprovalRefusedSoDError) {
+      return reply.status(409).send({ error: 'RUN_APPROVAL_REFUSED_SOD', message: error.message });
+    }
+    if (error instanceof PaymentRunValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    throw error;
+  }
+
+  app.get('/payment-runs', { preHandler: requirePermission(AP_PAYMENT_RUN_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const rows = await paymentRunSvc.list(tenantId);
+    return reply.send(rows);
+  });
+
+  app.get('/payment-runs/:id', { preHandler: requirePermission(AP_PAYMENT_RUN_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const run = await paymentRunSvc.getById(tenantId, id);
+      return reply.send(run);
+    } catch (err) {
+      return handlePaymentRunError(err, reply);
+    }
+  });
+
+  app.post('/payment-runs', { preHandler: requirePermission(AP_PAYMENT_RUN_PERMISSIONS.PROPOSE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    try {
+      const body = CreatePaymentRunProposalSchema.parse(request.body);
+      const run = await paymentRunSvc.createProposal(tenantId, body, actor);
+      return reply.status(201).send(run);
+    } catch (err) {
+      return handlePaymentRunError(err, reply);
+    }
+  });
+
+  // SoD (segregation of duties) is enforced in PaymentRunService.approveRun
+  // itself — server-side identity comparison (proposedBy !== actor), not a
+  // client-trusted flag and not merely a permission check.
+  app.post('/payment-runs/:id/approve', { preHandler: requirePermission(AP_PAYMENT_RUN_PERMISSIONS.APPROVE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    try {
+      const body = ApproveRunSchema.parse(request.body ?? {});
+      const run = await paymentRunSvc.approveRun(tenantId, id, body, actor);
+      return reply.send(run);
+    } catch (err) {
+      return handlePaymentRunError(err, reply);
+    }
+  });
+
+  app.post('/payment-runs/:id/reject', { preHandler: requirePermission(AP_PAYMENT_RUN_PERMISSIONS.REJECT) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    try {
+      const body = RejectRunSchema.parse(request.body);
+      const run = await paymentRunSvc.rejectRun(tenantId, id, body, actor);
+      return reply.send(run);
+    } catch (err) {
+      return handlePaymentRunError(err, reply);
+    }
+  });
+
+  // Idempotent by run id — a duplicate execution attempt returns the
+  // original stored results (no double-pay). Per-invoice failures are
+  // isolated (named failureReason per item) and do not fail the request.
+  app.post('/payment-runs/:id/execute', { preHandler: requirePermission(AP_PAYMENT_RUN_PERMISSIONS.EXECUTE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const run = await paymentRunSvc.executeRun(tenantId, id, actor, getServiceToken(), correlationId);
+      return reply.send(run);
+    } catch (err) {
+      return handlePaymentRunError(err, reply);
+    }
+  });
+
+  app.post('/payment-runs/:id/rail-artifacts', { preHandler: requirePermission(AP_PAYMENT_RUN_PERMISSIONS.GENERATE_RAIL) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    try {
+      const body = GenerateRailArtifactSchema.parse(request.body);
+      const artifact = await paymentRunSvc.generateRailArtifact(tenantId, id, body, actor);
+      return reply.status(201).send(artifact);
+    } catch (err) {
+      return handlePaymentRunError(err, reply);
+    }
+  });
+
+  app.get('/payment-runs/:id/rail-artifacts', { preHandler: requirePermission(AP_PAYMENT_RUN_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const rows = await paymentRunSvc.listRailArtifacts(tenantId, id);
+    return reply.send(rows);
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CE-09 S044: Trade-Payoff Fast Lane
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const AP_TRADE_PAYOFF_PERMISSIONS = {
+    VIEW:   'ap.trade_payoff.view',
+    CREATE: 'ap.trade_payoff.create',
+  } as const;
+
+  const CreateTradePayoffSchema = z.object({
+    dealReference: z.string().min(1),
+    payeeName: z.string().min(1),
+    payeeRemitAddress: z.string().min(1),
+    payeeReference: z.string().optional(),
+    amount: z.number().positive(),
+    goodThroughDate: z.string().min(1),
+    bankAccountId: z.string().min(1),
+    reconfirmedAmount: z.number().positive().optional(),
+    acknowledgePastGoodThrough: z.boolean().optional(),
+  });
+
+  function handleTradePayoffError(error: unknown, reply: any) {
+    if (error instanceof TradePayoffNotFoundError || error instanceof TradePayoffBankAccountNotFoundError) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof PayoffReconfirmationRequiredError) {
+      return reply.status(422).send({ error: 'PAYOFF_RECONFIRMATION_REQUIRED', message: error.message });
+    }
+    if (error instanceof DuplicatePayoffPaymentError) {
+      return reply.status(409).send({ error: 'DUPLICATE_PAYOFF_PAYMENT', message: error.message });
+    }
+    if (error instanceof TradePayoffValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    throw error;
+  }
+
+  app.get('/trade-payoff-payments', { preHandler: requirePermission(AP_TRADE_PAYOFF_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const rows = await tradePayoffSvc.list(tenantId);
+    return reply.send(rows);
+  });
+
+  app.get('/trade-payoff-payments/:id', { preHandler: requirePermission(AP_TRADE_PAYOFF_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const row = await tradePayoffSvc.getById(tenantId, id);
+      return reply.send(row);
+    } catch (err) {
+      return handleTradePayoffError(err, reply);
+    }
+  });
+
+  // Priority execution path — outside the normal S043B payment-run
+  // cadence. Same overpay/duplicate-payment-style guards as S043A manual
+  // payments (see TradePayoffService's doc comment).
+  app.post('/trade-payoff-payments', { preHandler: requirePermission(AP_TRADE_PAYOFF_PERMISSIONS.CREATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = CreateTradePayoffSchema.parse(request.body);
+      const payment = await tradePayoffSvc.create(tenantId, body, actor, getServiceToken(), correlationId);
+      return reply.status(201).send(payment);
+    } catch (err) {
+      return handleTradePayoffError(err, reply);
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CE-09 S047: Fleet AR Consolidated Billing
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const AR_FLEET_BILLING_PERMISSIONS = {
+    VIEW:               'ar.fleet_billing.view',
+    MANAGE_LINKS:       'ar.fleet_billing.manage_links',
+    CREATE_CONSOLIDATED_INVOICE: 'ar.fleet_billing.create_consolidated_invoice',
+  } as const;
+
+  const LinkFleetUnitSchema = z.object({
+    parentCustomerId: z.string().min(1),
+    childCustomerId: z.string().min(1),
+    billingGroupName: z.string().optional(),
+  });
+
+  const CreateConsolidatedInvoiceSchema = z.object({
+    parentCustomerId: z.string().min(1),
+    invoiceDate: z.string().min(1),
+    items: z.array(z.object({
+      childCustomerId: z.string().min(1),
+      amount: z.number().positive(),
+      description: z.string().optional(),
+    })).min(1),
+  });
+
+  function handleFleetBillingError(error: unknown, reply: any) {
+    if (
+      error instanceof FleetCustomerNotFoundError ||
+      error instanceof FleetUnitLinkNotFoundError ||
+      error instanceof ConsolidatedInvoiceNotFoundError
+    ) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof FleetUnitAlreadyLinkedError) {
+      return reply.status(409).send({ error: 'FLEET_UNIT_ALREADY_LINKED', message: error.message });
+    }
+    if (error instanceof FleetUnitNotLinkedToParentError) {
+      return reply.status(422).send({ error: 'FLEET_UNIT_NOT_LINKED_TO_PARENT', message: error.message });
+    }
+    if (error instanceof FleetBillingValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    throw error;
+  }
+
+  app.post('/fleet-billing/unit-links', { preHandler: requirePermission(AR_FLEET_BILLING_PERMISSIONS.MANAGE_LINKS) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = LinkFleetUnitSchema.parse(request.body);
+      const link = await fleetBillingSvc.linkUnit(tenantId, body, actor, correlationId);
+      return reply.status(201).send(link);
+    } catch (err) {
+      return handleFleetBillingError(err, reply);
+    }
+  });
+
+  app.delete('/fleet-billing/unit-links/:id', { preHandler: requirePermission(AR_FLEET_BILLING_PERMISSIONS.MANAGE_LINKS) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const result = await fleetBillingSvc.unlinkUnit(tenantId, id, actor, correlationId);
+      return reply.send(result);
+    } catch (err) {
+      return handleFleetBillingError(err, reply);
+    }
+  });
+
+  app.get('/fleet-billing/parents/:parentCustomerId/units', { preHandler: requirePermission(AR_FLEET_BILLING_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { parentCustomerId } = request.params as { parentCustomerId: string };
+    const rows = await fleetBillingSvc.listUnitsForParent(tenantId, parentCustomerId);
+    return reply.send(rows);
+  });
+
+  app.post('/fleet-billing/consolidated-invoices', { preHandler: requirePermission(AR_FLEET_BILLING_PERMISSIONS.CREATE_CONSOLIDATED_INVOICE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = CreateConsolidatedInvoiceSchema.parse(request.body);
+      const invoice = await fleetBillingSvc.createConsolidatedInvoice(tenantId, body, actor, getServiceToken(), correlationId);
+      return reply.status(201).send(invoice);
+    } catch (err) {
+      return handleFleetBillingError(err, reply);
+    }
+  });
+
+  app.get('/fleet-billing/consolidated-invoices', { preHandler: requirePermission(AR_FLEET_BILLING_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { parentCustomerId } = request.query as { parentCustomerId?: string };
+    const rows = await fleetBillingSvc.list(tenantId, parentCustomerId);
+    return reply.send(rows);
+  });
+
+  app.get('/fleet-billing/consolidated-invoices/:id', { preHandler: requirePermission(AR_FLEET_BILLING_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const invoice = await fleetBillingSvc.getById(tenantId, id);
+      return reply.send(invoice);
+    } catch (err) {
+      return handleFleetBillingError(err, reply);
+    }
+  });
+
+  app.get('/fleet-billing/parents/:parentCustomerId/statement', { preHandler: requirePermission(AR_FLEET_BILLING_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { parentCustomerId } = request.params as { parentCustomerId: string };
+    const statement = await fleetBillingSvc.getStatement(tenantId, parentCustomerId);
+    return reply.send(statement);
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CE-09 S049: Insurance AR (Body Shop)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const AR_INSURANCE_PERMISSIONS = {
+    VIEW:               'ar.insurance_claim.view',
+    CREATE:              'ar.insurance_claim.create',
+    POST_SUPPLEMENT:     'ar.insurance_claim.post_supplement',
+    APPLY_PAYMENT:       'ar.insurance_claim.apply_payment',
+    DISPOSE_SHORT_PAY:   'ar.insurance_claim.dispose_short_pay',
+  } as const;
+
+  const CreateInsuranceClaimSchema = z.object({
+    customerId: z.string().min(1),
+    insurerName: z.string().min(1),
+    insurerReference: z.string().optional(),
+    claimNumber: z.string().min(1),
+    roReference: z.string().optional(),
+    claimAmount: z.number().positive(),
+  });
+
+  const PostSupplementSchema = z.object({
+    adjustmentAmount: z.number().refine((v) => v !== 0, 'adjustmentAmount must be non-zero'),
+    reason: z.string().min(1),
+  });
+
+  const ApplyInsurerPaymentSchema = z.object({
+    amount: z.number().positive(),
+  });
+
+  const DisposeShortPaySchema = z.object({
+    dispositionType: z.enum(['CUSTOMER_RESPONSIBILITY', 'WRITE_OFF']),
+    reason: z.string().min(1),
+  });
+
+  function handleInsuranceArError(error: unknown, reply: any) {
+    if (error instanceof InsuranceClaimNotFoundError) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof InsurerPaymentExceedsClaimBalanceError) {
+      return reply.status(422).send({ error: 'INSURER_PAYMENT_EXCEEDS_CLAIM_BALANCE', message: error.message });
+    }
+    if (error instanceof NoShortPayRemainderError) {
+      return reply.status(422).send({ error: 'NO_SHORT_PAY_REMAINDER', message: error.message });
+    }
+    if (error instanceof ShortPayAlreadyDisposedError) {
+      return reply.status(409).send({ error: 'SHORT_PAY_ALREADY_DISPOSED', message: error.message });
+    }
+    if (error instanceof InsuranceArValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    throw error;
+  }
+
+  app.get('/insurance-claims', { preHandler: requirePermission(AR_INSURANCE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { customerId } = request.query as { customerId?: string };
+    const rows = await insuranceArSvc.list(tenantId, customerId);
+    return reply.send(rows);
+  });
+
+  app.get('/insurance-claims/:id', { preHandler: requirePermission(AR_INSURANCE_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    try {
+      const claim = await insuranceArSvc.getById(tenantId, id);
+      return reply.send(claim);
+    } catch (err) {
+      return handleInsuranceArError(err, reply);
+    }
+  });
+
+  app.post('/insurance-claims', { preHandler: requirePermission(AR_INSURANCE_PERMISSIONS.CREATE) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = CreateInsuranceClaimSchema.parse(request.body);
+      const claim = await insuranceArSvc.createClaim(tenantId, body, actor, getServiceToken(), correlationId);
+      return reply.status(201).send(claim);
+    } catch (err) {
+      return handleInsuranceArError(err, reply);
+    }
+  });
+
+  app.post('/insurance-claims/:id/supplements', { preHandler: requirePermission(AR_INSURANCE_PERMISSIONS.POST_SUPPLEMENT) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = PostSupplementSchema.parse(request.body);
+      const claim = await insuranceArSvc.postSupplement(tenantId, id, body, actor, getServiceToken(), correlationId);
+      return reply.status(201).send(claim);
+    } catch (err) {
+      return handleInsuranceArError(err, reply);
+    }
+  });
+
+  app.post('/insurance-claims/:id/apply-payment', { preHandler: requirePermission(AR_INSURANCE_PERMISSIONS.APPLY_PAYMENT) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = ApplyInsurerPaymentSchema.parse(request.body);
+      const claim = await insuranceArSvc.applyInsurerPayment(tenantId, id, body, actor, getServiceToken(), correlationId);
+      return reply.send(claim);
+    } catch (err) {
+      return handleInsuranceArError(err, reply);
+    }
+  });
+
+  app.post('/insurance-claims/:id/dispose-short-pay', { preHandler: requirePermission(AR_INSURANCE_PERMISSIONS.DISPOSE_SHORT_PAY) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { id } = request.params as { id: string };
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = DisposeShortPaySchema.parse(request.body);
+      const claim = await insuranceArSvc.disposeShortPay(tenantId, id, body, actor, getServiceToken(), correlationId);
+      return reply.send(claim);
+    } catch (err) {
+      return handleInsuranceArError(err, reply);
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CE-09 S037: 1099/T4A Flag Rules & Preview
+  //
+  // PUTR: actual e-filing transmission (IRS FIRE / CRA XML submission) is
+  // explicitly EXCLUDED from this story's scope (compliance-vendor scope) —
+  // no route here transmits anything; the year-preview is a report only.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const VENDOR_1099_PERMISSIONS = {
+    VIEW:               'ap.vendor_1099.view',
+    MANAGE_BOX_RULES:    'ap.vendor_1099.manage_box_rules',
+    MANAGE_THRESHOLDS:   'ap.vendor_1099.manage_thresholds',
+    POST_CORRECTION:     'ap.vendor_1099.post_correction',
+  } as const;
+
+  const SetVendorBoxRuleSchema = z.object({
+    vendorId: z.string().min(1),
+    taxYear: z.number().int(),
+    formType: z.enum(['1099-MISC', '1099-NEC', 'T4A']),
+    boxCode: z.string().min(1),
+  });
+
+  const SetThresholdConfigSchema = z.object({
+    formType: z.enum(['1099-MISC', '1099-NEC', 'T4A']),
+    taxYear: z.number().int(),
+    thresholdAmount: z.number().min(0),
+  });
+
+  const PostCorrectionSchema = z.object({
+    vendorId: z.string().min(1),
+    taxYear: z.number().int(),
+    formType: z.enum(['1099-MISC', '1099-NEC', 'T4A']),
+    correctedAmount: z.number().min(0),
+    reason: z.string().min(1),
+  });
+
+  function handleVendor1099Error(error: unknown, reply: any) {
+    if (error instanceof Vendor1099VendorNotFoundError || error instanceof Vendor1099BoxRuleNotFoundError) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error instanceof Vendor1099ValidationError) {
+      return reply.status(422).send({ error: error.code, message: error.message });
+    }
+    if (error instanceof z.ZodError) return reply.status(400).send({ error: 'VALIDATION_ERROR', issues: error.issues });
+    throw error;
+  }
+
+  app.post('/vendor-1099/box-rules', { preHandler: requirePermission(VENDOR_1099_PERMISSIONS.MANAGE_BOX_RULES) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = SetVendorBoxRuleSchema.parse(request.body);
+      const rule = await vendor1099Svc.setVendorBoxRule(tenantId, body, actor, correlationId);
+      return reply.status(201).send(rule);
+    } catch (err) {
+      return handleVendor1099Error(err, reply);
+    }
+  });
+
+  app.get('/vendor-1099/box-rules', { preHandler: requirePermission(VENDOR_1099_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { vendorId, taxYear } = request.query as { vendorId?: string; taxYear?: string };
+    const rows = await vendor1099Svc.listVendorBoxRules(tenantId, vendorId, taxYear ? Number(taxYear) : undefined);
+    return reply.send(rows);
+  });
+
+  app.post('/vendor-1099/threshold-configs', { preHandler: requirePermission(VENDOR_1099_PERMISSIONS.MANAGE_THRESHOLDS) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = SetThresholdConfigSchema.parse(request.body);
+      const config = await vendor1099Svc.setThresholdConfig(tenantId, body, actor, correlationId);
+      return reply.status(201).send(config);
+    } catch (err) {
+      return handleVendor1099Error(err, reply);
+    }
+  });
+
+  app.get('/vendor-1099/threshold-configs', { preHandler: requirePermission(VENDOR_1099_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { taxYear } = request.query as { taxYear?: string };
+    const rows = await vendor1099Svc.listThresholdConfigs(tenantId, taxYear ? Number(taxYear) : undefined);
+    return reply.send(rows);
+  });
+
+  app.post('/vendor-1099/corrections', { preHandler: requirePermission(VENDOR_1099_PERMISSIONS.POST_CORRECTION) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const actor = (request as any).user?.sub ?? 'system';
+    const correlationId = request.headers['x-correlation-id'] as string | undefined;
+    try {
+      const body = PostCorrectionSchema.parse(request.body);
+      const correction = await vendor1099Svc.postCorrection(tenantId, body, actor, correlationId);
+      return reply.status(201).send(correction);
+    } catch (err) {
+      return handleVendor1099Error(err, reply);
+    }
+  });
+
+  app.get('/vendor-1099/corrections', { preHandler: requirePermission(VENDOR_1099_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { vendorId, taxYear } = request.query as { vendorId?: string; taxYear?: string };
+    const rows = await vendor1099Svc.listCorrections(tenantId, vendorId, taxYear ? Number(taxYear) : undefined);
+    return reply.send(rows);
+  });
+
+  app.get('/vendor-1099/year-preview/:taxYear', { preHandler: requirePermission(VENDOR_1099_PERMISSIONS.VIEW) }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { taxYear } = request.params as { taxYear: string };
+    try {
+      const preview = await vendor1099Svc.getYearPreview(tenantId, Number(taxYear));
+      return reply.send(preview);
+    } catch (err) {
+      return handleVendor1099Error(err, reply);
+    }
+  });
 }
+
+

@@ -4,6 +4,7 @@ import { IEventPublisher } from '@amacc/shared-kernel';
 import { PrismaClient } from '.prisma/coa-client';
 import { FiscalCalendarService } from './fiscal-service';
 import { SequenceService } from './sequence-service';
+import { AnalysisCodeService } from './analysis-code-service';
 import { withSerializableRetry } from '../lib/serializable-retry';
 import {
   evaluate,
@@ -17,6 +18,7 @@ import {
   Violation,
   SourceClass,
 } from '../domain/journal-posting';
+import { validateLineTags, AnalysisTagViolation } from '../domain/analysis-code';
 
 // ── Errors ───────────────────────────────────────────────────────────────────
 
@@ -40,6 +42,25 @@ export class PostingViolationError extends Error {
   }
 }
 
+/**
+ * S011 — BR011-1/BR011-2/BR011-4: one or more lines carry an invalid tag
+ * (unknown/inactive type or value, duplicate type on a line, or over the
+ * cap). Rejected the same way as a BR013 violation — 422, no partial write,
+ * evaluated and enforced BEFORE the journal number is allocated so a tag
+ * rejection never produces a sequence gap.
+ */
+export class AnalysisTagViolationError extends Error {
+  readonly status = 422;
+  readonly code = 'ANALYSIS_TAG_REJECTED';
+  constructor(readonly violations: AnalysisTagViolation[]) {
+    super(
+      'Journal rejected: ' +
+        violations.map((v) => `${v.rule}${v.lineIndex !== undefined ? `[${v.lineIndex}]` : ''}`).join(', '),
+    );
+    this.name = 'AnalysisTagViolationError';
+  }
+}
+
 // ── DTOs ──────────────────────────────────────────────────────────────────────
 
 export interface PostJournalDTO {
@@ -52,6 +73,13 @@ export interface PostJournalDTO {
   callerClass?: SourceClass; // default MANUAL
   postedBy?: string;
   draftId?: string | null; // S216 back-ref
+  // S008 — per-journal adjusting-entry attribute. Only meaningful (and only
+  // permitted through by the DB trigger) when the draft carries a matching
+  // AdjustingEntryAttestation row written by DraftService at
+  // fiscal.je.mark_adjusting-check time.
+  isAdjusting?: boolean;
+  adjustingReason?: string | null;
+  adjustingCorrectionRef?: string | null;
   // S218 reversal linkage (set by the reverse path):
   reversalOf?: string | null;
   reversalReason?: string | null;
@@ -75,6 +103,7 @@ export class PostingService {
     @inject('IEventPublisher') private readonly events: IEventPublisher,
     @inject('FiscalCalendarService') private readonly fiscal: FiscalCalendarService,
     @inject('SequenceService') private readonly sequence: SequenceService,
+    @inject('AnalysisCodeService') private readonly analysisCodes: AnalysisCodeService,
   ) {}
 
   /**
@@ -115,12 +144,29 @@ export class PostingService {
       sourceCode: dto.sourceCode,
       memo: dto.memo ?? null,
       idempotencyKey: dto.idempotencyKey,
+      isAdjusting: dto.isAdjusting ?? false,
     };
 
     // ── Single rule source (shared with S215) ─────────────────────────────────
     const result = evaluate(header, dto.lines ?? [], ctx);
     if (!result.pass) {
       throw new PostingViolationError(result.violations); // 422, NO partial write
+    }
+
+    // ── S011 BR011-1/BR011-2/BR011-4 — tags are validated but NEVER passed to
+    // evaluate() above: this is the structural proof of BR011-3 ("tags never
+    // affect posting math, balancing, or the S013 gate"). Checked before the
+    // journal number is allocated so a tag rejection never produces a gap.
+    const anyTags = (dto.lines ?? []).some((l) => (l.analysisTags?.length ?? 0) > 0);
+    if (anyTags) {
+      const tagCtx = await this.analysisCodes.loadValidationContext(dto.tenantId);
+      const tagViolations: AnalysisTagViolation[] = [];
+      (dto.lines ?? []).forEach((line, i) => {
+        tagViolations.push(...validateLineTags(line.analysisTags ?? undefined, tagCtx, i));
+      });
+      if (tagViolations.length > 0) {
+        throw new AnalysisTagViolationError(tagViolations); // 422, NO partial write
+      }
     }
 
     const period = ctx.period!; // guaranteed present + OPEN by a clean evaluation
@@ -158,19 +204,29 @@ export class PostingService {
             reversalReason: dto.reversalReason ?? null,
             draftId: dto.draftId ?? null,
             postedBy,
+            isAdjusting: dto.isAdjusting ?? false,
+            adjustingReason: dto.adjustingReason ?? null,
+            adjustingCorrectionRef: dto.adjustingCorrectionRef ?? null,
           },
         });
 
         // Lines + per-account aggregation for balance updates.
         const perAccount = new Map<string, { drC: number; crC: number }>();
+        // CE-12 — schedule-service bridge: one JOURNAL_ENTRY_POSTED-shaped
+        // event per line whose account opted in via scheduleCode AND which
+        // carries a controlNumber, mirroring gl-service's own
+        // scheduleCode-gated emission exactly (same payload shape, so
+        // schedule-service's existing subscription needs zero changes).
+        const scheduleBridgeEvents: Array<Record<string, unknown>> = [];
         for (let i = 0; i < dto.lines.length; i++) {
           const line = dto.lines[i];
           const acct = ctx.accounts.get(line.accountId)!;
           const drC = toCents(line.dr);
           const crC = toCents(line.cr);
+          const lineId = crypto.randomUUID();
           await tx.journalLine.create({
             data: {
-              id: crypto.randomUUID(),
+              id: lineId,
               journalEntryId: entryId,
               tenantId: dto.tenantId,
               lineIndex: i,
@@ -185,6 +241,57 @@ export class PostingService {
               memo: line.memo ?? null,
             },
           });
+          if (acct.scheduleCode && line.controlNumber) {
+            // schedule-service's ScheduleDetail.controlNumber is VarChar(10)
+            // and .referenceNumber is VarChar(12) (which becomes the new
+            // ScheduleOpenItem's itemNumber — see OpenItemService.
+            // processPostingEvent: `itemNumber = referenceNumber || journalEntryId`).
+            // Both MUST resolve to the caller's real business key (stock#,
+            // deal#, trade#, ...) so the resulting open item is identifiable
+            // and queryable by that key — a fabricated/idempotency-derived
+            // value here would make every open item effectively anonymous.
+            // Previously this used a truncated idempotencyKey for
+            // referenceNumber; fixed to reuse the same controlNumber the
+            // caller already set for exactly this purpose.
+            const scheduleControlNumber = line.controlNumber.slice(0, 10);
+            scheduleBridgeEvents.push({
+              tenantId: dto.tenantId,
+              journalEntryId: entryId,
+              glAccountNumber: acct.accountNumber,
+              scheduleNumber: acct.scheduleCode,
+              controlNumber: scheduleControlNumber,
+              amount: String(drC / 100 - crC / 100),
+              referenceNumber: scheduleControlNumber,
+              journalSource: dto.sourceCode,
+              transactionDate: new Date(dto.date).toISOString(),
+              // schedule-service's ScheduleDetail.description is VarChar(35)
+              // (legacy PIC X(35)) — a rule pack's memoTemplate easily
+              // exceeds that (e.g. "Deferral booking origination — deal
+              // D1 product GAP" is well over 35 chars), which previously
+              // caused a genuine Postgres "value too long" P2000 error
+              // inside schedule-service's own transaction, silently
+              // swallowed by its RabbitMQ consumer. Truncated, never
+              // dropped or rejected — same policy as controlNumber/
+              // applyNumber above.
+              description: (line.memo ?? dto.memo ?? '').slice(0, 35) || null,
+              applyNumber: line.applyNumber ? line.applyNumber.slice(0, 12) : null,
+              applyCd: line.applyNumber ? '#' : null,
+            });
+          }
+          // S011 BR011-2 — persist tags atomically with the line they belong
+          // to (same transaction); already validated above (fail-closed,
+          // before allocation) so this insert cannot fail on a bad tag.
+          if (line.analysisTags && line.analysisTags.length > 0) {
+            await tx.journalLineAnalysisTag.createMany({
+              data: line.analysisTags.map((tag) => ({
+                id: crypto.randomUUID(),
+                tenantId: dto.tenantId,
+                journalLineId: lineId,
+                typeId: tag.typeId,
+                valueId: tag.valueId,
+              })),
+            });
+          }
           const agg = perAccount.get(line.accountId) ?? { drC: 0, crC: 0 };
           agg.drC += drC;
           agg.crC += crC;
@@ -268,7 +375,7 @@ export class PostingService {
           },
         });
 
-        return { entryId, payload };
+        return { entryId, payload, scheduleBridgeEvents };
       });
 
       // Best-effort broker publish (outbox is the source of truth).
@@ -282,6 +389,24 @@ export class PostingService {
         } as any);
       } catch {
         /* outbox row already durable */
+      }
+
+      // CE-12 — schedule-service bridge events, same best-effort semantics
+      // as the acct.je.posted publish above (the journalLine rows written
+      // inside the transaction, with controlNumber/applyNumber, remain the
+      // durable source of truth regardless of broker delivery).
+      for (const bridgeEvent of created.scheduleBridgeEvents) {
+        try {
+          await this.events.publish({
+            type: 'JOURNAL_ENTRY_POSTED',
+            tenantId: dto.tenantId,
+            payload: bridgeEvent,
+            occurredAt: new Date().toISOString(),
+            correlationId: `${created.entryId}-schedule-bridge-${bridgeEvent['glAccountNumber']}-${bridgeEvent['controlNumber']}`,
+          } as any);
+        } catch {
+          /* best-effort — journalLine.controlNumber/applyNumber remain durable */
+        }
       }
 
       return {
@@ -369,6 +494,7 @@ export class PostingService {
           normalBalance: r.normalBalance,
           postable: r.postable,
           status: r.status,
+          scheduleCode: (r as any).scheduleCode ?? null,
         });
       }
     }

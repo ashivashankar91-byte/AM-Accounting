@@ -2,7 +2,7 @@
   "name": "am-accounting",
   "version": "0.1.0",
   "private": true,
-  "description": "AM-Accounting — AutoMate Accounting Cloud (Microservices)",
+  "description": "AM-Accounting \u2014 AutoMate Accounting Cloud (Microservices)",
   "workspaces": [
     "packages/*",
     "services/*",
@@ -17,18 +17,25 @@
     "build:all": "npm run build:shared && npm run build:services && npm -w apps/web run build",
     "build:services": "npm run build:shared && node scripts/build-services.js",
     "lint": "eslint . --ext .ts,.tsx",
-    "test": "vitest run",
+    "test": "npm run test --workspaces --if-present",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "seed": "npx tsx scripts/seed.ts",
+    "seed:r1-demo": "bash scripts/seed-r1-demo.sh",
+    "seed:r1-demo:reset": "bash scripts/seed-r1-demo.sh --reset",
+    "seed:r1-demo:verify": "npx tsx scripts/verify-r1-demo.ts",
+    "seed:all-159-demo": "bash scripts/seed-all-159-demo.sh",
+    "seed:all-159-demo:reset": "bash scripts/seed-all-159-demo.sh --reset",
+    "seed:all-159-demo:verify": "bash scripts/seed-all-159-demo.sh --verify",
     "release:generate": "node scripts/generate-release-doc.js",
-    "release:check": "node scripts/generate-release-doc.js --check"
+    "release:check": "node scripts/generate-release-doc.js --check",
+    "demo:all-159:preflight": "bash scripts/demo-preflight.sh"
   },
   "engines": {
     "node": ">=20.0.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.60.0",
+    "@playwright/test": "^1.62.1",
     "@types/pg": "^8.20.0",
     "pg": "^8.20.0"
   }

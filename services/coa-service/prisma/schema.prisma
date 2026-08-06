@@ -107,14 +107,25 @@ model FiscalPeriod {
   code            String // YYYY-MM | YYYY-13
   startDate       DateTime @map("start_date") @db.Date
   endDate         DateTime @map("end_date") @db.Date
-  status          String   @default("FUTURE") // FUTURE | OPEN | SOFT_CLOSED | HARD_CLOSED | LOCKED (S209: FUTURE->OPEN only)
+  status          String   @default("FUTURE") // FUTURE | OPEN | SOFT_CLOSED | HARD_CLOSED | LOCKED
   adjustmentsOnly Boolean  @default(false) @map("adjustments_only")
   hasPostings     Boolean  @default(false) @map("has_postings")
   openedBy        String?  @map("opened_by")
   openedAt        DateTime? @map("opened_at")
+  // S008 — set/cleared by the enforce_period_transition() DB trigger, never
+  // directly by application code (see 20260728010000_s008_period_close_control).
+  // closedBy/closedAt reflect only the MOST RECENT close-family transition —
+  // cleared to NULL on reopen. Full history lives in FiscalPeriodTransition.
+  closedBy        String?  @map("closed_by")
+  closedAt        DateTime? @map("closed_at")
+  // lockedBy/lockedAt are write-once in normal operation: LOCKED is terminal
+  // in S008 v1 (no unlock path exists — see S008 Story Contract §LOCKED).
+  lockedBy        String?  @map("locked_by")
+  lockedAt        DateTime? @map("locked_at")
   createdAt       DateTime @default(now()) @map("created_at")
 
-  calendar FiscalCalendar @relation(fields: [calendarId], references: [id])
+  calendar    FiscalCalendar             @relation(fields: [calendarId], references: [id])
+  transitions FiscalPeriodTransition[]
 
   @@unique([entityId, code])
   @@unique([entityId, fiscalYear, periodNumber])
@@ -122,6 +133,52 @@ model FiscalPeriod {
   @@index([entityId, startDate, endDate])
   @@index([entityId, status])
   @@map("fiscal_period")
+}
+
+/// S008 — append-only period status-transition ledger. Written ONLY by the
+/// enforce_period_transition() trigger via the SECURITY DEFINER function
+/// record_period_transition() (never directly by amacc_app — see the S008
+/// migration for the full RLS/privilege hardening). Independent of, and in
+/// addition to, S007 audit events: this table protects against an
+/// application-code path that forgets to write an S007 event; it commits or
+/// rolls back atomically with its enclosing transaction, same as any other
+/// row (see S008 Story Contract §Atomicity — it is not an independent
+/// durability guarantee beyond normal transaction semantics).
+model FiscalPeriodTransition {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  entityId    String   @map("entity_id")
+  periodId    String   @map("period_id")
+  fromStatus  String   @map("from_status")
+  toStatus    String   @map("to_status")
+  actor       String
+  occurredAt  DateTime @default(now()) @map("occurred_at")
+
+  period FiscalPeriod @relation(fields: [periodId], references: [id])
+
+  @@index([tenantId, periodId, occurredAt])
+  @@map("fiscal_period_transition")
+}
+
+/// S008 — same-database attestation that a real, permission-checked
+/// fiscal.je.mark_adjusting decision was made for a given draft, verified by
+/// the enforce_period_postable() posting trigger before it will accept
+/// is_adjusting=true into a SOFT_CLOSED period. Written by the application
+/// (DraftService) at the moment the S207 check succeeds — a DB trigger
+/// cannot itself call the cross-service S207 permission check. See S008
+/// Story Contract §Adjusting-Entry Raw-SQL Control for the disclosed
+/// residual gap (a privileged raw-SQL session could still forge this row
+/// directly) and the accompanying risk-acceptance note.
+model AdjustingEntryAttestation {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  draftId         String   @unique @map("draft_id")
+  attestedBy      String   @map("attested_by")
+  reason          String
+  correctionRef   String?  @map("correction_ref")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@map("adjusting_entry_attestation")
 }
 
 /// Domain-event outbox for reliable delivery of coa-service events
@@ -162,6 +219,13 @@ model GlAccount {
   status        String   @default("ACTIVE") // ACTIVE | INACTIVE
   balance       Decimal  @default(0) @db.Decimal(15, 2)
   hasPostings   Boolean  @default(false) @map("has_postings")
+  /// CE-12 — optional schedule-service linkage. When set, a posted journal
+  /// line against this account whose controlNumber is present also emits a
+  /// JOURNAL_ENTRY_POSTED-shaped bridge event (see posting-service.ts's
+  /// post()) so schedule-service opens/relieves a real open item, mirroring
+  /// gl-service's own scheduleCode-gated JOURNAL_ENTRY_POSTED emission.
+  /// Null by default — no effect on any account that doesn't opt in.
+  scheduleCode  String?  @map("schedule_code")
   version       Int      @default(1)
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
@@ -285,6 +349,14 @@ model JournalEntry {
   postedBy       String   @map("posted_by")
   postedAt       DateTime @default(now()) @map("posted_at")
   createdAt      DateTime @default(now()) @map("created_at")
+  // S008 — per-journal adjusting-entry attribute (BR008-ADJ). Not inferred
+  // from the fiscal period; only settable by a preparer holding
+  // fiscal.je.mark_adjusting, verified against AdjustingEntryAttestation at
+  // posting time by the enforce_period_postable() trigger. Immutable once
+  // POSTED (enforced by the same trigger's BEFORE UPDATE guard).
+  isAdjusting        Boolean @default(false) @map("is_adjusting")
+  adjustingReason    String? @map("adjusting_reason") @db.VarChar(500)
+  adjustingCorrectionRef String? @map("adjusting_correction_ref") @db.VarChar(120)
 
   lines JournalLine[]
 
@@ -315,6 +387,8 @@ model JournalLine {
   createdAt      DateTime @default(now()) @map("created_at")
 
   entry JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  /// S011 — additive, optional (BR011-3: never affects balancing/posting math).
+  analysisTags JournalLineAnalysisTag[]
 
   @@index([journalEntryId])
   @@index([accountId])
@@ -365,8 +439,24 @@ model ManualJeDraft {
   postedJournalNumber String?   @map("posted_journal_number")
   voidedAt            DateTime? @map("voided_at")
   voidReason          String?   @map("void_reason") @db.VarChar(500)
+  // S032 — additive, nullable linkage fields. A draft created by hand (S214's
+  // original path) never sets these; DraftService.create()/postDraft() treat
+  // them as plain passthrough data so pre-S032 behavior is byte-identical
+  // when absent (BR032-3 "generator is a client of the journal lifecycle,
+  // never a second posting path").
+  generatedFromTemplateId String? @map("generated_from_template_id") // S032 BR032-3 generation linkage
+  generationBatchId       String? @map("generation_batch_id") // S032 BR032-4 idempotency batch tag
+  reversalOfJournalId     String? @map("reversal_of_journal_id") // S032 BR032-5 — forwarded into PostingService.post's reversalOf on post (reuses S218 mirrored-linkage semantics)
   createdAt           DateTime  @default(now()) @map("created_at")
   updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at")
+  // S008 — draft-side mirror of the adjusting-entry attribute, carried
+  // through to JournalEntry.isAdjusting on post. Changing this flag OR
+  // adjustingReason on an already-VALIDATED draft resets it to DRAFT
+  // (BR008-ADJ-2: an attestation change invalidates prior validation,
+  // mirroring the existing line-edit invalidation rule).
+  isAdjusting            Boolean @default(false) @map("is_adjusting")
+  adjustingReason        String? @map("adjusting_reason") @db.VarChar(500)
+  adjustingCorrectionRef String? @map("adjusting_correction_ref") @db.VarChar(120)
 
   revisions   ManualJeDraftRevision[]
   attachments Attachment[]
@@ -374,6 +464,7 @@ model ManualJeDraft {
   @@index([tenantId, preparer])
   @@index([tenantId, status])
   @@index([postedJournalId])
+  @@index([generatedFromTemplateId])
   @@map("manual_je_draft")
 }
 
@@ -428,4 +519,364 @@ model SavedGlSearch {
   @@unique([tenantId, createdBy, name])
   @@index([tenantId, createdBy])
   @@map("saved_gl_search")
+}
+
+/// S011 — Analysis Codes and Accounting Dimensions (P01, confirmed slice only;
+/// AMD-005/accumulator-adjacent behavior is explicitly excluded — see
+/// P01_STORY_CONTRACTS.md "S011"). A tenant-defined dimension "type" (e.g.
+/// Campaign, Project, Unit Group) — BR011-1. Deactivation only, never delete
+/// (matches department-service.ts's registry convention); a type with any
+/// active value cannot itself be deactivated out from under posted history.
+model AnalysisCodeType {
+  id                  String    @id @default(uuid())
+  tenantId            String    @map("tenant_id")
+  code                String    @db.VarChar(20)
+  name                String    @db.VarChar(120)
+  isActive            Boolean   @default(true) @map("is_active")
+  version             Int       @default(1)
+  createdAt           DateTime  @default(now()) @map("created_at")
+  deactivatedAt        DateTime? @map("deactivated_at")
+  deactivatedBy        String?   @map("deactivated_by")
+  deactivationReason   String?   @map("deactivation_reason")
+
+  values AnalysisCodeValue[]
+  tags   JournalLineAnalysisTag[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, isActive])
+  @@map("analysis_code_type")
+}
+
+/// S011 — a value within a code type (e.g. Campaign="SPRING24") — BR011-1.
+/// BR011-4: inactive values reject on NEW lines but remain valid/immutable on
+/// history already tagged with them.
+model AnalysisCodeValue {
+  id                  String    @id @default(uuid())
+  tenantId            String    @map("tenant_id")
+  typeId              String    @map("type_id")
+  code                String    @db.VarChar(20)
+  name                String    @db.VarChar(120)
+  isActive            Boolean   @default(true) @map("is_active")
+  version             Int       @default(1)
+  createdAt           DateTime  @default(now()) @map("created_at")
+  deactivatedAt        DateTime? @map("deactivated_at")
+  deactivatedBy        String?   @map("deactivated_by")
+  deactivationReason   String?   @map("deactivation_reason")
+
+  type AnalysisCodeType     @relation(fields: [typeId], references: [id], onDelete: Cascade)
+  tags JournalLineAnalysisTag[]
+
+  @@unique([tenantId, typeId, code])
+  @@index([tenantId, typeId, isActive])
+  @@map("analysis_code_value")
+}
+
+/// S011 — BR011-2/BR011-3: additive child row per journal line x tag. Tags
+/// are pure reporting dimensions; they never participate in the BR013
+/// balancing/posting evaluator (domain/journal-posting.ts) and this table is
+/// never read by PostingService's balance math. Written once, at post time,
+/// alongside the JournalLine row it belongs to (same transaction) — BR011-1
+/// AC: "the tag persists immutably with the posted line" (no update path;
+/// only inserted when the line is created).
+model JournalLineAnalysisTag {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  journalLineId  String   @map("journal_line_id")
+  typeId         String   @map("type_id")
+  valueId        String   @map("value_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  line  JournalLine       @relation(fields: [journalLineId], references: [id], onDelete: Cascade)
+  type  AnalysisCodeType  @relation(fields: [typeId], references: [id])
+  value AnalysisCodeValue @relation(fields: [valueId], references: [id])
+
+  // A line may carry 0..N tags but never two values for the SAME type
+  // (proposed default; a line tagged "Campaign=Spring24" and
+  // "Campaign=Fall24" simultaneously is not a defined semantic).
+  @@unique([journalLineId, typeId])
+  @@index([tenantId, valueId])
+  @@index([tenantId, typeId])
+  @@index([journalLineId])
+  @@map("journal_line_analysis_tag")
+}
+
+/// S032 — Recurring Journal Template master (BR032-1). Entity-scoped like
+/// GlAccount (its lines reference GlAccount rows, which are entity-scoped).
+/// Fixed debit/credit amounts only in R1 (BLK-23 — formula amounts excluded).
+/// sourceCode is always the dedicated 'RT' code (BLK-20), never GJ/88.
+model RecurringJournalTemplate {
+  id           String   @id @default(uuid())
+  tenantId     String   @map("tenant_id")
+  entityId     String   @map("entity_id")
+  code         String   @db.VarChar(40)
+  name         String   @db.VarChar(120)
+  description  String?  @db.VarChar(500)
+  sourceCode   String   @default("RT") @map("source_code")
+  active       Boolean  @default(true)
+  autoReverse  Boolean  @default(false) @map("auto_reverse") // BR032-5
+  version      Int      @default(1) // BR032-7 — generation stamps this version; edits never touch past generations
+  actor        String // creator/last-editor, mirrors ConfigSetting/FiscalCalendar convention
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  lines       RecurringJournalTemplateLine[]
+  generations RecurringTemplateGeneration[]
+
+  @@unique([tenantId, entityId, code])
+  @@index([tenantId, entityId, active])
+  @@map("recurring_journal_template")
+}
+
+/// S032 — fixed template line (BLK-23). Mirrors ManualJeDraft's JSON line
+/// shape as real columns (a template is a governed master record, not a
+/// freeform scratchpad, so BR032-1 validates it fully at save).
+model RecurringJournalTemplateLine {
+  id            String  @id @default(uuid())
+  templateId    String  @map("template_id")
+  tenantId      String  @map("tenant_id")
+  lineIndex     Int     @map("line_index")
+  accountId     String  @map("account_id")
+  accountNumber String  @map("account_number") @db.VarChar(5)
+  storeId       String  @map("store_id")
+  deptCode      String? @map("dept_code")
+  controlNumber String? @map("control_number")
+  applyNumber   String? @map("apply_number")
+  dr            Decimal @default(0) @db.Decimal(15, 2)
+  cr            Decimal @default(0) @db.Decimal(15, 2)
+  memo          String? @db.VarChar(500)
+
+  template RecurringJournalTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId])
+  @@index([tenantId])
+  @@map("recurring_journal_template_line")
+}
+
+/// S032 — one row per (template, period) generation (BR032-4 idempotency —
+/// generating twice for the same template+period returns the existing draft,
+/// never a duplicate). draftId links to the ManualJeDraft created via the
+/// certified S214 path; reversalDraftId is populated once BLK-22's
+/// auto-reverse draft is created at the original's post time (BR032-5).
+model RecurringTemplateGeneration {
+  id                String    @id @default(uuid())
+  tenantId          String    @map("tenant_id")
+  templateId        String    @map("template_id")
+  entityId          String    @map("entity_id")
+  periodId          String    @map("period_id")
+  periodCode        String    @map("period_code")
+  batchId           String    @map("batch_id")
+  draftId           String    @map("draft_id")
+  templateVersion   Int       @map("template_version") // BR032-7 stamp
+  reversalDraftId   String?   @map("reversal_draft_id")
+  reversalPeriodId  String?   @map("reversal_period_id")
+  generatedBy       String    @map("generated_by")
+  generatedAt       DateTime  @default(now()) @map("generated_at")
+
+  template RecurringJournalTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, templateId, periodId])
+  @@unique([tenantId, draftId])
+  @@index([tenantId, batchId])
+  @@map("recurring_template_generation")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// S019/S020 — Posting Engine: DSL rule packs, deterministic evaluation and
+// idempotent posting orchestration. This slice is a CLIENT of PostingService
+// (posting-service.ts) — it never writes journal_entry/journal_line directly.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// S019 — Stable rule-pack identity (one row per packKey per tenant). Versions
+/// carry all the actual content; this row exists so version history has a
+/// stable parent to hang off regardless of how many versions are drafted.
+model PostingRulePack {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  // CE-07 legal-entity isolation defect — a pack key is only stable identity
+  // WITHIN a legal entity. Two entities in the same tenant configuring the
+  // same packKey independently must get two separate parent rows, never one
+  // shared row whose versions/activation state bleed across entities. See
+  // migration 20260802010000_ce07_rule_pack_entity_isolation.
+  entityId  String   @map("entity_id")
+  packKey   String   @map("pack_key")
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  versions PostingRulePackVersion[]
+
+  @@unique([tenantId, entityId, packKey])
+  @@index([tenantId])
+  @@index([tenantId, entityId])
+  @@map("posting_rule_pack")
+}
+
+/// S019 — Immutable-once-activated rule-pack version. `definition` is the
+/// full validated Posting DSL v1 document (canonical AST); `contentHash` is
+/// the stable sha256 over its canonical serialization. Lifecycle: DRAFT ->
+/// VALIDATED -> ACTIVE -> SUPERSEDED (or DRAFT/VALIDATED -> REJECTED). Once a
+/// version reaches ACTIVE, `enforce_posting_rule_pack_version_immutability()`
+/// (see migration 20260729010000_add_posting_engine) blocks any further
+/// change to `definition`/`content_hash` and blocks reverting status back to
+/// DRAFT/VALIDATED — the DB trigger is the real backstop, not just the
+/// application-layer guard in PostingEngineService.
+model PostingRulePackVersion {
+  id                  String    @id @default(uuid())
+  tenantId            String    @map("tenant_id")
+  rulePackId          String    @map("rule_pack_id")
+  packKey             String    @map("pack_key")
+  semver              String
+  dslVersion           Int      @map("dsl_version")
+  eventType           String    @map("event_type")
+  eventSchemaVersions  String[] @map("event_schema_versions")
+  entityId            String    @map("entity_id")
+  effectiveFrom        DateTime @map("effective_from")
+  effectiveTo          DateTime? @map("effective_to")
+  journalSourceCode    String   @map("journal_source_code")
+  matchStrategy        String   @map("match_strategy")
+  noMatchBehavior      String   @map("no_match_behavior")
+  definition           Json
+  contentHash          String   @map("content_hash")
+  status               String   @default("DRAFT") // DRAFT | VALIDATED | ACTIVE | SUPERSEDED | REJECTED
+  validationFindings   Json?    @map("validation_findings")
+  createdBy            String   @map("created_by")
+  createdAt            DateTime @default(now()) @map("created_at")
+  validatedAt          DateTime? @map("validated_at")
+  activatedBy          String?  @map("activated_by")
+  activatedAt          DateTime? @map("activated_at")
+  supersededAt         DateTime? @map("superseded_at")
+
+  rulePack   PostingRulePack    @relation(fields: [rulePackId], references: [id])
+  executions PostingExecution[]
+
+  // CE-07 legal-entity isolation defect — (tenantId, packKey, semver) alone
+  // forbids two entities in the same tenant from EVER using the same
+  // packKey+semver pair (e.g. both independently authoring their own
+  // "1.0.0"), which is an explicit certification requirement. entityId join
+  // makes the two entities' version histories fully independent.
+  // Explicit short `map` names — the default Prisma-generated names for
+  // these two exceed Postgres's 63-byte identifier limit and get silently
+  // truncated (confirmed via a live-db apply); pinning them keeps the DDL
+  // deterministic instead of relying on Postgres's own truncation.
+  @@unique([tenantId, entityId, packKey, semver], map: "posting_rule_pack_version_entity_pack_semver_key")
+  @@index([tenantId, eventType, status])
+  @@index([tenantId, entityId, eventType, status], map: "posting_rule_pack_version_entity_event_status_idx")
+  @@index([tenantId, rulePackId])
+  @@map("posting_rule_pack_version")
+}
+
+/// S020 — One row per tenantId+eventId (the idempotency identity). Holds the
+/// approved event representation, the pinned rule-pack version/rule that
+/// evaluated it, and the resulting journal reference (a read-only pointer —
+/// never a foreign key the posting engine can write through).
+model PostingExecution {
+  id                 String    @id @default(uuid())
+  tenantId           String    @map("tenant_id")
+  eventId            String    @map("event_id")
+  eventType          String    @map("event_type")
+  eventSchemaVersion String    @map("event_schema_version")
+  // CE-07 legal-entity isolation defect — denormalized from the envelope's
+  // own legalEntityId at claim time (see event-envelope.ts). Nullable
+  // because historical rows predate this column and because a terminal
+  // NO_RULE_MATCH/REJECTED outcome must still record the intended entity
+  // even when no rule-pack version was ultimately selected — never inferred
+  // from rulePackVersionId, which the entity/cross-entity certification
+  // proves can legitimately be null.
+  entityId           String?   @map("entity_id")
+  sourceSystem       String    @map("source_system")
+  sourceEntityType   String    @map("source_entity_type")
+  sourceEntityId     String    @map("source_entity_id")
+  correlationId      String    @map("correlation_id")
+  causationId        String?   @map("causation_id")
+  businessDate       DateTime  @map("business_date") @db.Date
+  eventHash          String    @map("event_hash")
+  eventEnvelope      Json      @map("event_envelope")
+  status             String    // POSTED | NO_RULE_MATCH | IDENTITY_CONFLICT | REJECTED | FAILED
+  rulePackVersionId  String?   @map("rule_pack_version_id")
+  ruleId             String?   @map("rule_id")
+  blueprintHash      String?   @map("blueprint_hash")
+  journalEntryId     String?   @map("journal_entry_id")
+  journalNumber      String?   @map("journal_number")
+  failureReason      String?   @map("failure_reason")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  rulePackVersion PostingRulePackVersion? @relation(fields: [rulePackVersionId], references: [id])
+  attempts        PostingExecutionAttempt[]
+  exceptions      PostingException[]
+  replays         PostingExecutionReplay[]
+
+  @@unique([tenantId, eventId])
+  @@index([tenantId, eventType, status])
+  @@index([tenantId, correlationId])
+  @@index([tenantId, sourceEntityId])
+  @@index([tenantId, entityId])
+  @@map("posting_execution")
+}
+
+/// S020 — Append-only attempt ledger for a PostingExecution (retry/reconcile
+/// history). Never updated or deleted, only inserted.
+model PostingExecutionAttempt {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  executionId   String   @map("execution_id")
+  attemptNumber Int      @map("attempt_number")
+  outcome       String   // STARTED | POSTED | DUPLICATE | NO_RULE_MATCH | IDENTITY_CONFLICT | REJECTED | FAILED
+  detail        Json?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  execution PostingExecution @relation(fields: [executionId], references: [id])
+
+  @@unique([executionId, attemptNumber])
+  @@index([tenantId])
+  @@map("posting_execution_attempt")
+}
+
+/// S020 — Durable, queryable no-rule-match / identity-conflict record
+/// (BR S020-F/BR S020-3d). Never silently dropped, never marks the event
+/// "successful"; replay is explicitly out of scope for this story.
+model PostingException {
+  id                         String   @id @default(uuid())
+  tenantId                   String   @map("tenant_id")
+  executionId                String   @map("execution_id")
+  reasonCode                 String   @map("reason_code") // NO_RULE_MATCH | EVENT_IDENTITY_CONFLICT
+  reasonDetail                String  @map("reason_detail")
+  eventType                  String   @map("event_type")
+  eventSchemaVersion          String  @map("event_schema_version")
+  rulePackVersionsConsidered  Json    @map("rule_pack_versions_considered")
+  createdAt                  DateTime @default(now()) @map("created_at")
+
+  execution PostingExecution @relation(fields: [executionId], references: [id])
+
+  @@index([tenantId, reasonCode])
+  @@index([tenantId, executionId])
+  @@map("posting_exception")
+}
+
+/// CE-07/S023 (D-S023-25, D-S023-22 narrow scope) — dual-version replay
+/// evidence. One row per authorized replay attempt against an existing
+/// posting_execution row (never a second posting_execution row for the same
+/// (tenantId, eventId) — the execution row itself is updated in place,
+/// exactly like an ordinary posting attempt).
+model PostingExecutionReplay {
+  id                          String    @id @default(uuid())
+  tenantId                    String    @map("tenant_id")
+  executionId                 String    @map("execution_id")
+  originalRulePackVersionId   String?   @map("original_rule_pack_version_id")
+  replayRulePackVersionId     String?   @map("replay_rule_pack_version_id")
+  originalFailureReasonCode   String?   @map("original_failure_reason_code")
+  originalFailureReasonDetail String?   @map("original_failure_reason_detail")
+  replayActor                 String    @map("replay_actor")
+  replayReason                String    @map("replay_reason")
+  originalBusinessDate        DateTime  @map("original_business_date") @db.Date
+  originalAttemptedPeriodId   String?   @map("original_attempted_period_id")
+  currentPostingPeriodId      String?   @map("current_posting_period_id")
+  resultingStatus             String    @map("resulting_status")
+  resultingJournalEntryId     String?   @map("resulting_journal_entry_id")
+  resultingJournalNumber      String?   @map("resulting_journal_number")
+  createdAt                   DateTime  @default(now()) @map("created_at")
+
+  execution PostingExecution @relation(fields: [executionId], references: [id])
+
+  @@index([tenantId, executionId])
+  @@map("posting_execution_replay")
 }

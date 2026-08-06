@@ -252,7 +252,7 @@ describe('GLSearchService', () => {
     expect(result.results.every((r) => r.accountId !== 'acc-9')).toBe(true);
   });
 
-  it('returns the frozen S220-plus-accountNumber shape, omitting runningBalance', async () => {
+  it('returns the frozen S220-plus-accountNumber shape (plus S011 analysisTags), omitting runningBalance', async () => {
     const prisma = makePrisma({ entries: ENTRIES, lines: LINES });
     const result = await svc(prisma).search(TENANT, { docRef: 'CTRL-100' }, ACTOR);
     expect(result.results[0]).toEqual({
@@ -269,6 +269,7 @@ describe('GLSearchService', () => {
       memo: 'accrual line',
       dr: 500,
       cr: 0,
+      analysisTags: [],
     });
     expect('runningBalance' in result.results[0]).toBe(false);
   });

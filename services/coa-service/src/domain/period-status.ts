@@ -1,6 +1,10 @@
-// S209 — Accounting period status domain logic (pure, no I/O).
-// The full status vocabulary ships now for S013; only FUTURE->OPEN is a legal
-// transition in this story (BR209-1). Later transitions are owned by S008/R1.
+// S209/S008 — Accounting period status domain logic (pure, no I/O).
+// S008 extends the S209 FUTURE->OPEN-only vocabulary with the full
+// OPEN/SOFT_CLOSED/HARD_CLOSED/LOCKED lifecycle. This allowlist is mirrored
+// exactly by the enforce_period_transition() DB trigger (see
+// 20260728010000_s008_period_close_control) — the service layer's canTransition()
+// exists to return a clean 422 without a round trip, but the DB trigger is the
+// real backstop (this list must never diverge from the trigger's allowlist).
 
 export type PeriodStatus = 'FUTURE' | 'OPEN' | 'SOFT_CLOSED' | 'HARD_CLOSED' | 'LOCKED';
 
@@ -12,12 +16,12 @@ export const PERIOD_STATUSES: readonly PeriodStatus[] = [
   'LOCKED',
 ];
 
-/** Legal transitions in this story. Close transitions arrive with S008/R1. */
+/** S008 — full allowlist. LOCKED is terminal (no transition out, S008 v1). */
 const LEGAL_TRANSITIONS: Record<PeriodStatus, PeriodStatus[]> = {
   FUTURE: ['OPEN'],
-  OPEN: [], // SOFT_CLOSED etc. owned by S008/R1
-  SOFT_CLOSED: [],
-  HARD_CLOSED: [],
+  OPEN: ['SOFT_CLOSED'],
+  SOFT_CLOSED: ['OPEN', 'HARD_CLOSED'],
+  HARD_CLOSED: ['OPEN', 'LOCKED'],
   LOCKED: [],
 };
 
@@ -25,13 +29,24 @@ export function canTransition(from: PeriodStatus, to: PeriodStatus): boolean {
   return LEGAL_TRANSITIONS[from]?.includes(to) ?? false;
 }
 
-/** A period is postable only while OPEN (BR209 / S013 eligibility). */
-export function eligibility(status: PeriodStatus): { postable: boolean; reason: string } {
+/**
+ * A period is postable while OPEN, or while SOFT_CLOSED for an authorized
+ * manual adjusting entry (S008 v1 — automated/system postings remain
+ * blocked even when isAdjusting, matching the DB trigger's own guard, which
+ * does not special-case caller class).
+ */
+export function eligibility(
+  status: PeriodStatus,
+  isAdjusting = false,
+): { postable: boolean; reason: string } {
   if (status === 'OPEN') return { postable: true, reason: 'Period is OPEN' };
+  if (status === 'SOFT_CLOSED' && isAdjusting) {
+    return { postable: true, reason: 'Period is SOFT_CLOSED — postable only for an authorized adjusting entry' };
+  }
   const reasons: Record<PeriodStatus, string> = {
     FUTURE: 'Period is FUTURE — not yet opened for business',
     OPEN: 'Period is OPEN',
-    SOFT_CLOSED: 'Period is SOFT_CLOSED — postings blocked pending review',
+    SOFT_CLOSED: 'Period is SOFT_CLOSED — postings blocked pending review (adjusting entries require fiscal.je.mark_adjusting)',
     HARD_CLOSED: 'Period is HARD_CLOSED — no further postings permitted',
     LOCKED: 'Period is LOCKED — permanently sealed',
   };

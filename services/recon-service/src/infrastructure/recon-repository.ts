@@ -31,8 +31,8 @@ export class PrismaBankReconRepository implements IBankReconRepository {
     return {
       id: row.id, tenantId: row.tenantId as TenantId,
       accountName: row.accountName, reconDate: row.reconDate,
-      glBalance: row.glBalance, bankBalance: row.bankBalance,
-      variance: row.variance, status: row.status as ReconStatus,
+      glBalance: row.glBalance.toNumber(), bankBalance: row.bankBalance.toNumber(),
+      variance: row.variance.toNumber(), status: row.status as ReconStatus,
       lockedBy: row.lockedBy, lockedAt: row.lockedAt,
     };
   }

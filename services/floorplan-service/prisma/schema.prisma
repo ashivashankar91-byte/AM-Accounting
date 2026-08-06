@@ -1,0 +1,536 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/floorplan-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// CE-12 / S079-S082 — Floorplan Lender Feed, VIN Match & Breaks, SOT
+/// Monitor, Interest & Curtailments.
+///
+/// Ownership boundaries (see docs/accounting-modernization/
+/// CE12_FABLE_EPIC_PACKAGE.md, WORKSTREAM F): floorplan-service computes NO
+/// interest math and invents NO lender data. Every dollar figure originates
+/// either from a staged lender feed row (evidence), a manually-entered
+/// statement figure (evidence), or this service's own deterministic
+/// basis-point allocation of an ALREADY-entered figure. All GL posting is
+/// via coa-service's rule-pack-governed posting engine
+/// (POST /api/v1/coa/posting-engine/events) — this service never writes to
+/// gl-service/coa-service tables directly and owns no journal.
+///
+/// CE-12 gap-close — schedule-service linkage (Schedule 85, "Floorplan
+/// Advance Liability", GL account 19102) is now wired end-to-end:
+/// coa-service's GlAccount carries a scheduleCode column and
+/// PostingService.post() publishes a JOURNAL_ENTRY_POSTED-shaped bridge
+/// event alongside its own 'acct.je.posted' outbox event for any line whose
+/// account has scheduleCode set (see services/coa-service/src/application/
+/// posting-service.ts). schedule-service's existing S026 binding consumes
+/// that bridge event with zero changes on its side. See
+/// scripts/seed-ce12-rule-packs.ts's test-tenant fixture path for how
+/// Schedule 85 / GlAccount(19102).scheduleCode get created, and
+/// src/application/tie-out-service.ts's doc comment for how the S080 $0
+/// tie-out AC now sources its authoritative balance from schedule-service's
+/// real ScheduleOpenItem ledger. FloorplanLiabilityItem/
+/// FloorplanLiabilityApplication below remain this service's OWN VIN-match
+/// lineage/audit ledger (still authoritative for "which staged lender row
+/// created/relieved which unit's exposure", exposed via GET
+/// /liability-items) — they are simply no longer the tie-out's authoritative
+/// GL-facing number.
+model LenderProfile {
+  id       String @id @default(uuid())
+  tenantId String @map("tenant_id")
+
+  lenderCode String @map("lender_code")
+  lenderName String @map("lender_name")
+
+  /// CONFIGURED | NOT_CONFIGURED — truthful adapter wiring state (S079 AC).
+  /// A lender with no adapter wired is NOT_CONFIGURED forever until an
+  /// operator explicitly configures one; manual statement entry is always
+  /// usable regardless of this value (enforced at the application layer,
+  /// never gated by adapterStatus).
+  adapterStatus String @default("NOT_CONFIGURED") @map("adapter_status")
+
+  /// FIXTURE_FEED | NOT_CONFIGURED — FIXTURE_FEED is a deterministic, clearly
+  /// labeled fixture adapter (no real lender integration exists in this
+  /// repo/environment); never a live external connector.
+  adapterType String @default("NOT_CONFIGURED") @map("adapter_type")
+
+  active    Boolean  @default(true)
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, lenderCode])
+  @@map("floorplan_lender_profile")
+}
+
+/// S079 — one row per import action (feed pull or manual entry batch).
+/// Immutable audit trail: never updated after creation.
+model FloorplanImportBatch {
+  id       String @id @default(uuid())
+  tenantId String @map("tenant_id")
+
+  lenderCode String @map("lender_code")
+  /// FEED | MANUAL
+  sourceType String @map("source_type")
+  /// Present only for sourceType=FEED — labels which deterministic fixture
+  /// adapter produced this batch (never a real vendor integration).
+  fixtureLabel String? @map("fixture_label")
+
+  rowCount    Int    @map("row_count")
+  importedBy  String @map("imported_by")
+  importedAt  DateTime @default(now()) @map("imported_at")
+  /// Optional free-text note (e.g. manual-entry justification).
+  note String?
+
+  rows FloorplanStagedRow[]
+
+  @@index([tenantId, lenderCode, importedAt])
+  @@map("floorplan_import_batch")
+}
+
+/// S079 — staged lender evidence rows. Immutable once created: no update
+/// endpoint exists anywhere in this service. Correcting a row means
+/// superseding it (supersedesRowId chain) via a NEW import, never an
+/// in-place edit.
+model FloorplanStagedRow {
+  id       String @id @default(uuid())
+  tenantId String @map("tenant_id")
+
+  lenderCode      String @map("lender_code")
+  importBatchId   String @map("import_batch_id")
+  importBatch     FloorplanImportBatch @relation(fields: [importBatchId], references: [id])
+
+  /// ADVANCE | PAYOFF — the only two row types S080 matches/posts from.
+  rowType String @map("row_type")
+
+  vin         String?
+  stockNumber String? @map("stock_number")
+
+  amount          Decimal  @db.Decimal(15, 2)
+  statementDate   DateTime @map("statement_date") @db.Date
+  referenceNumber String?  @map("reference_number")
+
+  /// FEED | MANUAL
+  sourceType String @map("source_type")
+
+  /// STAGED | MATCHED | DISPOSITIONED | SUPERSEDED
+  status String @default("STAGED")
+
+  /// Set when a later import batch supersedes this row (correction), never
+  /// mutated on the original row's own fields.
+  supersedesRowId String? @map("supersedes_row_id")
+
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  match FloorplanMatch?
+  breaksAsStagedRow FloorplanBreak[] @relation("BreakStagedRow")
+
+  @@index([tenantId, lenderCode, status])
+  @@index([tenantId, vin])
+  @@index([tenantId, stockNumber])
+  @@map("floorplan_staged_row")
+}
+
+/// S080 — one liability item per unit (VIN or stock# — applyNumber value),
+/// this service's own VIN-match lineage/audit open-item ledger (see
+/// schema-level doc comment — the S080 tie-out's authoritative GL-facing
+/// balance now comes from schedule-service's real ScheduleOpenItem ledger,
+/// not this table).
+model FloorplanLiabilityItem {
+  id       String @id @default(uuid())
+  tenantId String @map("tenant_id")
+
+  lenderCode  String @map("lender_code")
+  vin         String?
+  stockNumber String? @map("stock_number")
+  /// The applyNumber value this item is keyed by — VIN when present, else
+  /// stock#. Unique per tenant+lender so an advance can be matched to
+  /// exactly one item.
+  applyNumber String @map("apply_number")
+
+  originalAmount   Decimal @db.Decimal(15, 2) @map("original_amount")
+  remainingBalance Decimal @db.Decimal(15, 2) @map("remaining_balance")
+
+  /// OPEN | PARTIALLY_RELIEVED | RELIEVED
+  status String @default("OPEN")
+
+  openedAt   DateTime  @default(now()) @map("opened_at")
+  relievedAt DateTime? @map("relieved_at")
+
+  applications FloorplanLiabilityApplication[]
+  sotExceptions FloorplanSotException[]
+
+  @@unique([tenantId, lenderCode, applyNumber])
+  @@index([tenantId, status])
+  @@index([tenantId, vin])
+  @@index([tenantId, stockNumber])
+  @@map("floorplan_liability_item")
+}
+
+/// S080/S082 — every posted movement against a liability item (advance
+/// opens/increases, payoff/curtailment relieves). Append-only ledger; the
+/// item's remainingBalance is the running total.
+model FloorplanLiabilityApplication {
+  id       String @id @default(uuid())
+  tenantId String @map("tenant_id")
+
+  itemId String @map("item_id")
+  item   FloorplanLiabilityItem @relation(fields: [itemId], references: [id])
+
+  /// ADVANCE | PAYOFF | CURTAILMENT
+  applicationType String @map("application_type")
+  /// Positive for ADVANCE (increases liability), negative for PAYOFF/
+  /// CURTAILMENT (decreases liability).
+  amount Decimal @db.Decimal(15, 2)
+
+  matchId              String? @map("match_id")
+  curtailmentPaymentId String? @map("curtailment_payment_id")
+
+  postingExecutionId String? @map("posting_execution_id")
+  journalEntryId     String? @map("journal_entry_id")
+  journalNumber      String? @map("journal_number")
+
+  occurredAt DateTime @default(now()) @map("occurred_at")
+
+  @@index([tenantId, itemId])
+  @@map("floorplan_liability_application")
+}
+
+/// S080 — match record: exactly one per staged row (own-DB idempotency,
+/// enforced by the unique constraint on stagedRowId — independent of
+/// coa-service's own eventId dedup).
+model FloorplanMatch {
+  id       String @id @default(uuid())
+  tenantId String @map("tenant_id")
+
+  stagedRowId String @unique @map("staged_row_id")
+  stagedRow   FloorplanStagedRow @relation(fields: [stagedRowId], references: [id])
+
+  itemId String? @map("item_id")
+
+  /// ADVANCE | PAYOFF
+  matchType String @map("match_type")
+
+  idempotencyKey String @map("idempotency_key")
+
+  /// POSTED | REJECTED | FAILED — mirrors the coa-service posting-engine
+  /// SubmitEventResult.status (NO_RULE_MATCH collapses into REJECTED here
+  /// for worklist purposes; failureReason retains the detail).
+  status String @default("POSTED")
+
+  postingExecutionId String? @map("posting_execution_id")
+  journalEntryId     String? @map("journal_entry_id")
+  journalNumber      String? @map("journal_number")
+  failureReason      String? @map("failure_reason")
+
+  matchedBy String   @map("matched_by")
+  matchedAt DateTime @default(now()) @map("matched_at")
+
+  @@index([tenantId, status])
+  @@map("floorplan_match")
+}
+
+/// S080 — the break worklist. A break may reference a staged row (lender-has/
+/// we-don't, amount-variance) or exist purely from our own side (we-have/
+/// lender-doesn't — stagedRowId null).
+model FloorplanBreak {
+  id       String @id @default(uuid())
+  tenantId String @map("tenant_id")
+
+  /// LENDER_HAS_WE_DONT | WE_HAVE_LENDER_DOESNT | AMOUNT_VARIANCE
+  breakType String @map("break_type")
+
+  /// Own-DB idempotency: at most one break per staged row (unique when
+  /// present — multiple WE_HAVE_LENDER_DOESNT breaks with stagedRowId=null
+  /// are unaffected, Postgres unique indexes treat NULL as distinct).
+  stagedRowId String? @unique @map("staged_row_id")
+  stagedRow   FloorplanStagedRow? @relation("BreakStagedRow", fields: [stagedRowId], references: [id])
+
+  itemId String? @map("item_id")
+
+  vin         String?
+  stockNumber String? @map("stock_number")
+
+  lenderAmount   Decimal? @db.Decimal(15, 2) @map("lender_amount")
+  ourAmount      Decimal? @db.Decimal(15, 2) @map("our_amount")
+  varianceAmount Decimal? @db.Decimal(15, 2) @map("variance_amount")
+
+  /// OPEN | DISPOSITIONED
+  status String @default("OPEN")
+
+  detectedAt DateTime @default(now()) @map("detected_at")
+
+  dispositions FloorplanBreakDisposition[]
+
+  @@index([tenantId, status])
+  @@map("floorplan_break")
+}
+
+/// S080 — audited disposition ceremony for a break. Append-only; a break's
+/// current status/action is the latest row here.
+model FloorplanBreakDisposition {
+  id       String @id @default(uuid())
+  tenantId String @map("tenant_id")
+
+  breakId String @map("break_id")
+  break   FloorplanBreak @relation(fields: [breakId], references: [id])
+
+  /// ACCEPT_LENDER_FIGURE | ACCEPT_OUR_FIGURE | WRITE_OFF_VARIANCE |
+  /// ESCALATE | NO_ACTION_DOCUMENTED
+  action String
+  reason String
+
+  /// When the disposition results in a posting (e.g. accepting a variance
+  /// adjustment), the resulting match/application is linked here.
+  resultingMatchId String? @map("resulting_match_id")
+
+  actor      String
+  occurredAt DateTime @default(now()) @map("occurred_at")
+
+  idempotencyKey String @map("idempotency_key")
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, breakId])
+  @@map("floorplan_break_disposition")
+}
+
+/// S081 — SOT composition point: this service's own read model of
+/// delivered-unit events, fed either by a `deal.unit_delivered` webhook
+/// (deal-accounting-service, PENDING_UPSTREAM_TECHNICAL_RECONCILIATION —
+/// deal-accounting-service does not exist yet in this branch) or by a
+/// manual/fixture entry for certification. See
+/// src/domain/sot.ts for the exact contract this service expects.
+model FloorplanDeliveryEvent {
+  id       String @id @default(uuid())
+  tenantId String @map("tenant_id")
+
+  vin         String?
+  stockNumber String? @map("stock_number")
+  dealNumber  String  @map("deal_number")
+
+  deliveredAt DateTime @map("delivered_at")
+
+  /// WEBHOOK | MANUAL_FIXTURE
+  source String
+
+  receivedAt DateTime @default(now()) @map("received_at")
+
+  /// Idempotency: the same upstream delivery notification replayed is a
+  /// durable no-op.
+  idempotencyKey String @map("idempotency_key")
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, vin])
+  @@index([tenantId, stockNumber])
+  @@map("floorplan_delivery_event")
+}
+
+/// S081 — SOT exception/escalation state for one delivered-but-unrelieved
+/// unit. One row per (tenantId, deliveryEventId); re-evaluated by the
+/// SotService on demand (GET drives evaluation — deliberately not a
+/// background poller, so results are always freshly computed from the
+/// current join of delivery events vs open liability items).
+model FloorplanSotException {
+  id       String @id @default(uuid())
+  tenantId String @map("tenant_id")
+
+  deliveryEventId String @map("delivery_event_id")
+  itemId          String @map("item_id")
+  item            FloorplanLiabilityItem @relation(fields: [itemId], references: [id])
+
+  gracePeriodDays Int      @map("grace_period_days")
+  exposureSince   DateTime @map("exposure_since")
+
+  /// WATCH | ESCALATED | RESOLVED
+  escalationState String @default("WATCH") @map("escalation_state")
+
+  lastEvaluatedAt DateTime @default(now()) @map("last_evaluated_at")
+
+  history FloorplanSotEscalationHistory[]
+
+  @@unique([tenantId, deliveryEventId])
+  @@index([tenantId, escalationState])
+  @@map("floorplan_sot_exception")
+}
+
+/// S081 — audited escalation-state transition trail.
+model FloorplanSotEscalationHistory {
+  id       String @id @default(uuid())
+  tenantId String @map("tenant_id")
+
+  sotExceptionId String @map("sot_exception_id")
+  sotException   FloorplanSotException @relation(fields: [sotExceptionId], references: [id])
+
+  fromState String? @map("from_state")
+  toState   String  @map("to_state")
+  actor     String
+  reason    String?
+
+  occurredAt DateTime @default(now()) @map("occurred_at")
+
+  @@index([tenantId, sotExceptionId])
+  @@map("floorplan_sot_escalation_history")
+}
+
+/// S082 — an ENTERED lender interest statement figure. No interest math is
+/// ever computed by this service; totalInterestAmount is always evidence,
+/// never derived.
+model FloorplanInterestStatement {
+  id       String @id @default(uuid())
+  tenantId String @map("tenant_id")
+
+  lenderCode        String   @map("lender_code")
+  statementDate     DateTime @map("statement_date") @db.Date
+  totalInterestAmount Decimal @db.Decimal(15, 2) @map("total_interest_amount")
+
+  /// PER_UNIT_EQUAL | PER_UNIT_BALANCE_WEIGHTED — SAFE_CONFIGURATION basis
+  /// used to allocate totalInterestAmount across open units/departments.
+  allocationBasis String @map("allocation_basis")
+
+  /// ENTERED | ALLOCATED | POSTED | REJECTED | REVERSED
+  status String @default("ENTERED")
+
+  enteredBy String   @map("entered_by")
+  enteredAt DateTime @default(now()) @map("entered_at")
+
+  idempotencyKey String @map("idempotency_key")
+
+  /// S218 accrual posting linkage — set once the accrual journal posts.
+  postingExecutionId String? @map("posting_execution_id")
+  journalEntryId     String? @map("journal_entry_id")
+  journalNumber      String? @map("journal_number")
+  failureReason      String? @map("failure_reason")
+
+  /// S218 symmetric reversal linkage — set once the accrual is reversed.
+  reversalJournalEntryId String?   @map("reversal_journal_entry_id")
+  reversalJournalNumber  String?   @map("reversal_journal_number")
+  reversalReason         String?   @map("reversal_reason")
+  reversedAt             DateTime? @map("reversed_at")
+
+  allocations FloorplanInterestAllocation[]
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, lenderCode, statementDate])
+  @@map("floorplan_interest_statement")
+}
+
+/// S082 — one allocation line (per unit/department) of an entered interest
+/// statement. bp-based remainder-absorbing split — allocatedAmount across
+/// all lines for a statement sums EXACTLY to totalInterestAmount.
+model FloorplanInterestAllocation {
+  id       String @id @default(uuid())
+  tenantId String @map("tenant_id")
+
+  statementId String @map("statement_id")
+  statement   FloorplanInterestStatement @relation(fields: [statementId], references: [id])
+
+  itemId      String? @map("item_id")
+  vin         String?
+  stockNumber String? @map("stock_number")
+  deptCode    String  @map("dept_code")
+
+  bp Int
+  allocatedAmount Decimal @db.Decimal(15, 2) @map("allocated_amount")
+
+  postingExecutionId String? @map("posting_execution_id")
+  journalEntryId     String? @map("journal_entry_id")
+  journalNumber      String? @map("journal_number")
+
+  @@index([tenantId, statementId])
+  @@map("floorplan_interest_allocation")
+}
+
+/// S082 — curtailment schedule per lender terms (SAFE_CONFIGURATION,
+/// tenant/lender entered — never invented rate math).
+model FloorplanCurtailmentScheduleConfig {
+  id       String @id @default(uuid())
+  tenantId String @map("tenant_id")
+
+  lenderCode String @map("lender_code")
+
+  intervalDays       Int     @map("interval_days")
+  curtailmentPercent Decimal @db.Decimal(7, 4) @map("curtailment_percent")
+
+  effectiveFrom DateTime  @map("effective_from") @db.Date
+  effectiveTo   DateTime? @map("effective_to") @db.Date
+
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, lenderCode, effectiveFrom])
+  @@map("floorplan_curtailment_schedule_config")
+}
+
+/// S082 — an entered/executed curtailment payment. Posts a principal-relief
+/// application against the specific unit's liability item.
+model FloorplanCurtailmentPayment {
+  id       String @id @default(uuid())
+  tenantId String @map("tenant_id")
+
+  lenderCode  String @map("lender_code")
+  itemId      String @map("item_id")
+  vin         String?
+  stockNumber String? @map("stock_number")
+
+  amount Decimal @db.Decimal(15, 2)
+  paidAt DateTime @map("paid_at")
+
+  idempotencyKey String @map("idempotency_key")
+
+  status String @default("POSTED")
+  postingExecutionId String? @map("posting_execution_id")
+  journalEntryId     String? @map("journal_entry_id")
+  journalNumber      String? @map("journal_number")
+  failureReason      String? @map("failure_reason")
+
+  enteredBy String   @map("entered_by")
+  enteredAt DateTime @default(now()) @map("entered_at")
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, lenderCode])
+  @@map("floorplan_curtailment_payment")
+}
+
+/// Tenant-configurable SAFE_CONFIGURATION values: S081 grace-period
+/// threshold, S082 default allocation basis. One active row per tenant.
+model FloorplanTenantConfig {
+  id       String @id @default(uuid())
+  tenantId String @unique @map("tenant_id")
+
+  sotGracePeriodDays      Int    @default(3) @map("sot_grace_period_days")
+  defaultAllocationBasis  String @default("PER_UNIT_EQUAL") @map("default_allocation_basis")
+
+  updatedBy String   @map("updated_by")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("floorplan_tenant_config")
+}
+
+/// This service's audit outbox — drained by the shared
+/// @amacc/shared-kernel AuditOutboxDrainer to audit-service, exactly like
+/// every other service's audit outbox. Excluded from RLS (background
+/// drainer runs outside tenant context) — see the RLS migration.
+model FloorplanAuditReference {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  entityType  String?   @map("entity_type")
+  entityId    String?   @map("entity_id")
+  eventType   String    @map("event_type")
+  actor       String
+  before      Json?
+  after       Json?
+  publishedAt DateTime? @map("published_at")
+  retryCount  Int       @default(0) @map("retry_count")
+  lastError   String?   @map("last_error")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([publishedAt, retryCount])
+  @@index([tenantId, entityType, entityId])
+  @@map("floorplan_audit_reference")
+}

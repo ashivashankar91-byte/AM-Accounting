@@ -1,0 +1,6 @@
+HEADER|FORD|REMITTANCE|FS-2026-07-001|2.2|F12345
+REMIT|C-1001|475.00|Warranty claim 1001 remittance (corrected amount)
+REMIT|C-1002|320.50|Warranty claim 1002 remittance
+INCENTIVE|I-2001|1200.00|RDR incentive Q3 program
+COOP|CO-3001|600.00|Co-op advertising claim 3001
+XSEGMENT|Z-9999|75.00|Unrecognized segment type from carrier

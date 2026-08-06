@@ -1,0 +1,14 @@
+{
+  "$label": "CERTIFICATION-ONLY: synthetic non-production data",
+  "$description": "Mapping decisions that must be refused. A MAP or DIVERGE decision with no target account would force the transformation engine to invent a legacy field meaning at staging time.",
+  "legalEntityId": "LE-CERT-001",
+  "invalidEntries": [
+    { "sourceField": "accountCode", "sourceValue": "4100", "classification": "MAP", "targetValue": null, "expectedError": "TARGET_VALUE_REQUIRED" },
+    { "sourceField": "accountCode", "sourceValue": "4200", "classification": "DIVERGE", "targetValue": null, "expectedError": "TARGET_VALUE_REQUIRED" },
+    { "sourceField": "accountCode", "sourceValue": "4300", "classification": "TRANSFORM", "targetValue": "4300", "expectedError": "INVALID_CLASSIFICATION" }
+  ],
+  "validEntries": [
+    { "sourceField": "accountCode", "sourceValue": "1000", "classification": "ALIGN", "targetValue": "1000", "provenanceNote": "Chart position identical in modern COA" },
+    { "sourceField": "accountCode", "sourceValue": "4100", "classification": "MAP", "targetValue": "4110", "provenanceNote": "Legacy new-vehicle sales folded into 4110 per controller decision" }
+  ]
+}

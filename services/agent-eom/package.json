@@ -2,14 +2,30 @@
   "name": "@amacc/agent-eom",
   "version": "0.1.0",
   "private": true,
-  "scripts": { "build": "tsc", "dev": "tsx watch src/index.ts", "start": "node dist/index.js", "test": "vitest run" },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest run"
+  },
   "dependencies": {
-    "@amacc/shared-kernel": "*", "fastify": "^4.28.1", "@fastify/cors": "^9.0.1",
-    "zod": "^3.23.8", "tsyringe": "^4.8.0", "reflect-metadata": "^0.2.2",
-    "@anthropic-ai/sdk": "^0.39.0", "amqplib": "^0.10.4", "pino": "^9.3.2"
+    "@amacc/shared-kernel": "*",
+    "fastify": "^4.28.1",
+    "@fastify/cors": "^9.0.1",
+    "zod": "^3.23.8",
+    "tsyringe": "^4.8.0",
+    "reflect-metadata": "^0.2.2",
+    "@anthropic-ai/sdk": "^0.39.0",
+    "amqplib": "^0.10.4",
+    "pino": "^9.3.2",
+    "pg": "^8.12.0"
   },
   "devDependencies": {
-    "typescript": "^5.4.5", "tsx": "^4.16.2", "vitest": "^1.6.0",
-    "@types/amqplib": "^0.10.5", "@types/node": "^20.14.10"
+    "typescript": "^5.4.5",
+    "tsx": "^4.16.2",
+    "vitest": "^1.6.0",
+    "@types/amqplib": "^0.10.5",
+    "@types/node": "^20.14.10",
+    "@types/pg": "^8.11.6"
   }
 }

@@ -1,0 +1,1447 @@
+{
+  "certification_run": "2026-08-04-corrected",
+  "source_sha": "d8fc51b7",
+  "branch": "r1-final-certification",
+  "totals": {
+    "CERTIFIED": 159
+  },
+  "stories": [
+    {
+      "story_id": "S200",
+      "epic": "CE-01",
+      "title": "Create & Maintain Legal Entity",
+      "release": "R0",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S201",
+      "epic": "CE-01",
+      "title": "Create & Maintain Store (Rooftop)",
+      "release": "R0",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S202",
+      "epic": "CE-01",
+      "title": "Dealer Group Hierarchy View & Maintenance",
+      "release": "R0",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S203",
+      "epic": "CE-01",
+      "title": "Department Code Maintenance",
+      "release": "R0",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S204",
+      "epic": "CE-01",
+      "title": "Franchise Maintenance",
+      "release": "R0",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S205",
+      "epic": "CE-01",
+      "title": "User Account Lifecycle",
+      "release": "R0",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S206",
+      "epic": "CE-01",
+      "title": "Basic Role Management",
+      "release": "R0",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S207",
+      "epic": "CE-01",
+      "title": "Permission Catalog & Check API",
+      "release": "R0",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S004A",
+      "epic": "CE-01",
+      "title": "Dealership Position Role Templates",
+      "release": "R0",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S007",
+      "epic": "CE-01",
+      "title": "Immutable Audit Log",
+      "release": "R0",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S224",
+      "epic": "CE-01",
+      "title": "Document Audit History View",
+      "release": "R0",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S223",
+      "epic": "CE-01",
+      "title": "Configuration Framework",
+      "release": "R0",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S208",
+      "epic": "CE-02",
+      "title": "Fiscal Calendar Definition",
+      "release": "R0",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S209",
+      "epic": "CE-02",
+      "title": "Accounting Period Open & Status",
+      "release": "R0",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S210",
+      "epic": "CE-03",
+      "title": "Basic Chart of Accounts CRUD",
+      "release": "R0",
+      "service": "coa-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S211",
+      "epic": "CE-03",
+      "title": "Account Hierarchy & Totaling Groups",
+      "release": "R0",
+      "service": "coa-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S010",
+      "epic": "CE-03",
+      "title": "Seed Canonical COA Skeleton",
+      "release": "R0",
+      "service": "coa-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S212",
+      "epic": "CE-03",
+      "title": "Journal Source Registry",
+      "release": "R0",
+      "service": "coa-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S213",
+      "epic": "CE-03",
+      "title": "Journal Numbering Sequences",
+      "release": "R0",
+      "service": "coa-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S013",
+      "epic": "CE-03",
+      "title": "Balanced Journal Posting API",
+      "release": "R0",
+      "service": "coa-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S014",
+      "epic": "CE-03",
+      "title": "Trial Balance API",
+      "release": "R0",
+      "service": "coa-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S214",
+      "epic": "CE-04",
+      "title": "Create & Save Draft Manual JE",
+      "release": "R0",
+      "service": "gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S215",
+      "epic": "CE-04",
+      "title": "Validate Manual JE",
+      "release": "R0",
+      "service": "gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S216",
+      "epic": "CE-04",
+      "title": "Post Manual JE (Direct-Post Mode)",
+      "release": "R0",
+      "service": "gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S217",
+      "epic": "CE-04",
+      "title": "View Journal Entry",
+      "release": "R0",
+      "service": "gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S218",
+      "epic": "CE-04",
+      "title": "Reverse Posted Journal Entry",
+      "release": "R0",
+      "service": "gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S219",
+      "epic": "CE-04",
+      "title": "Void/Delete Draft JE",
+      "release": "R0",
+      "service": "gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "Central SoD policy module in shared-kernel (ISoDPolicyStore, InMemorySoDPolicyStore, SoDError, SoDPolicy types); close-service migrated to export createDefaultSoDPolicy; fail-closed when policy unavailable; no wildcard bypass; explicit service allowlist."
+    },
+    {
+      "story_id": "S220",
+      "epic": "CE-05",
+      "title": "GL Account Activity Inquiry",
+      "release": "R0",
+      "service": "gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S221",
+      "epic": "CE-05",
+      "title": "GL Search",
+      "release": "R0",
+      "service": "gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S222",
+      "epic": "CE-05",
+      "title": "Trial Balance Screen & Export",
+      "release": "R0",
+      "service": "gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S227",
+      "epic": "CE-05",
+      "title": "Basic Balance Sheet & Income Statement",
+      "release": "R0",
+      "service": "gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S008",
+      "epic": "CE-06",
+      "title": "Period Soft/Hard Close Enforcement",
+      "release": "R1",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S031",
+      "epic": "CE-06",
+      "title": "Manual JE Approval Governance",
+      "release": "R1",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "PrismaApprovalWorkflow \u2014 persistent approval_requests table with RLS, restart-safe, self-approval 403, optimistic concurrency, immutable decision history."
+    },
+    {
+      "story_id": "S032",
+      "epic": "CE-06",
+      "title": "Recurring & Auto-Reversing JE Templates",
+      "release": "R1",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S004B",
+      "epic": "CE-06",
+      "title": "SoD Matrix & Mitigating Controls",
+      "release": "R1",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S009",
+      "epic": "CE-06",
+      "title": "COA Statement Metadata & Franchise Packs",
+      "release": "R1",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S011",
+      "epic": "CE-03",
+      "title": "Analysis Codes",
+      "release": "R1",
+      "service": "coa-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S012",
+      "epic": "CE-06",
+      "title": "COA Change Governance",
+      "release": "R1",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S019",
+      "epic": "CE-07",
+      "title": "Posting DSL Parser & Validator",
+      "release": "R1",
+      "service": "posting-recovery-service/gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S020",
+      "epic": "CE-07",
+      "title": "Posting Rule Evaluator & Orchestration",
+      "release": "R1",
+      "service": "posting-recovery-service/gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S021",
+      "epic": "CE-07",
+      "title": "Posting Dead-Letter Queue & Replay",
+      "release": "R1",
+      "service": "posting-recovery-service/gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S023",
+      "epic": "CE-07",
+      "title": "Rule Pack v1 (AP/AR/Cash)",
+      "release": "R1",
+      "service": "posting-recovery-service/gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S026",
+      "epic": "CE-08",
+      "title": "Schedule Open-Item Core",
+      "release": "R1",
+      "service": "gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S027",
+      "epic": "CE-08",
+      "title": "Schedule Aging Engine",
+      "release": "R1",
+      "service": "gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S028",
+      "epic": "CE-08",
+      "title": "Schedule Exception Rules & Escalation",
+      "release": "R1",
+      "service": "gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S029",
+      "epic": "CE-08",
+      "title": "Schedule Item Split/Transfer/Writeoff",
+      "release": "R1",
+      "service": "gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S003",
+      "epic": "CE-06",
+      "title": "Elimination Entity Attributes",
+      "release": "R1",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": ""
+    },
+    {
+      "story_id": "S036A",
+      "epic": "CE-09",
+      "title": "Vendor Master CRUD",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s036a-vendor-master.cert.test.ts"
+    },
+    {
+      "story_id": "S036B",
+      "epic": "CE-09",
+      "title": "Vendor Verification Integrations",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s036b-vendor-verification.cert.test.ts"
+    },
+    {
+      "story_id": "S039",
+      "epic": "CE-09",
+      "title": "AP Invoice Entry & 2/3-Way Match",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s039-ap-invoice.cert.test.ts"
+    },
+    {
+      "story_id": "S041",
+      "epic": "CE-09",
+      "title": "AP Approval Matrix",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s041-ap-approval.cert.test.ts"
+    },
+    {
+      "story_id": "S042",
+      "epic": "CE-09",
+      "title": "Use-Tax Self-Assessment",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s042-use-tax.cert.test.ts"
+    },
+    {
+      "story_id": "S043A",
+      "epic": "CE-09",
+      "title": "Manual Single Payment",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s043a-manual-payment.cert.test.ts"
+    },
+    {
+      "story_id": "S043B",
+      "epic": "CE-09",
+      "title": "Payment Runs & Rails",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s043b-payment-run.cert.test.ts"
+    },
+    {
+      "story_id": "S044",
+      "epic": "CE-09",
+      "title": "Trade-Payoff Fast Lane",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s044-trade-payoff.cert.test.ts"
+    },
+    {
+      "story_id": "S045",
+      "epic": "CE-09",
+      "title": "Void/Stop/Reissue & Check Escheat",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s045-void-reissue.cert.test.ts"
+    },
+    {
+      "story_id": "S046",
+      "epic": "CE-09",
+      "title": "Customer AR Master, Credit & Statements",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s046-customer-ar.cert.test.ts"
+    },
+    {
+      "story_id": "S048",
+      "epic": "CE-09",
+      "title": "Wholesale Vehicle AR & Title Gate",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s048-wholesale-vehicle-ar.cert.test.ts"
+    },
+    {
+      "story_id": "S050",
+      "epic": "CE-09",
+      "title": "AR Write-offs & Allowance Model",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s050-ar-writeoff.cert.test.ts"
+    },
+    {
+      "story_id": "S051",
+      "epic": "CE-09",
+      "title": "NSF Handling",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s051-nsf.cert.test.ts"
+    },
+    {
+      "story_id": "S052",
+      "epic": "CE-09",
+      "title": "Receipting POS & Drawers",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s052-cash-drawer.cert.test.ts"
+    },
+    {
+      "story_id": "S053",
+      "epic": "CE-09",
+      "title": "Deposit Workflow & Bank Feed Match",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s053-deposit-workflow.cert.test.ts"
+    },
+    {
+      "story_id": "S054A",
+      "epic": "CE-09",
+      "title": "Manual Bank Reconciliation Workbench",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/recon-service/tests/recon-session-service.test.ts (12 tests) \u2014 idempotency, statement lines, matching, completion"
+    },
+    {
+      "story_id": "S055",
+      "epic": "CE-09",
+      "title": "Merchant Settlement Reconciliation",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s055-merchant-settlement.cert.test.ts"
+    },
+    {
+      "story_id": "S057",
+      "epic": "CE-09",
+      "title": "Daily Cash Position Dashboard",
+      "release": "R2",
+      "service": "cash-service/apar-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s057-cash-position.cert.test.ts"
+    },
+    {
+      "story_id": "S030",
+      "epic": "CE-08",
+      "title": "Schedule Statements & Dunning",
+      "release": "R2",
+      "service": "gl-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s030-statement-dunning.cert.test.ts"
+    },
+    {
+      "story_id": "S124",
+      "epic": "CE-10",
+      "title": "Certified Tax Engine Adapter",
+      "release": "R2",
+      "service": "fixedops-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/tax-service/tests/application/s124-tax-engine-config.cert.test.ts (6 tests) \u2014 NullEngine fail-closed, TestFixtureEngine available, testConnection audit, cross-tenant scope"
+    },
+    {
+      "story_id": "S125",
+      "epic": "CE-10",
+      "title": "Regulatory Fee Tables",
+      "release": "R2",
+      "service": "fixedops-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/tax-service/tests/application/fee-table-service.test.ts (8 tests) \u2014 create, effective date resolution, overlap rejection, deactivation"
+    },
+    {
+      "story_id": "S059",
+      "epic": "CE-11",
+      "title": "RO Close Posting (All Pay Types)",
+      "release": "R3",
+      "service": "parts-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s059-s065-fixedops.cert.test.ts"
+    },
+    {
+      "story_id": "S060",
+      "epic": "CE-11",
+      "title": "RO Reopen/Void Auto-Reversal",
+      "release": "R3",
+      "service": "parts-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s059-s065-fixedops.cert.test.ts"
+    },
+    {
+      "story_id": "S061",
+      "epic": "CE-11",
+      "title": "Labor WIP Mode & Open-RO Report",
+      "release": "R3",
+      "service": "parts-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s059-s065-fixedops.cert.test.ts"
+    },
+    {
+      "story_id": "S062",
+      "epic": "CE-11",
+      "title": "Sublet PO Lifecycle",
+      "release": "R3",
+      "service": "parts-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s059-s065-fixedops.cert.test.ts"
+    },
+    {
+      "story_id": "S064",
+      "epic": "CE-11",
+      "title": "Deferred Maintenance Contracts v1",
+      "release": "R3",
+      "service": "parts-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s059-s065-fixedops.cert.test.ts"
+    },
+    {
+      "story_id": "S065",
+      "epic": "CE-11",
+      "title": "Warranty Claim Receivable Lifecycle",
+      "release": "R3",
+      "service": "parts-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s059-s065-fixedops.cert.test.ts"
+    },
+    {
+      "story_id": "S066",
+      "epic": "CE-11",
+      "title": "Parts Movement Posting & Tie-Out",
+      "release": "R3",
+      "service": "parts-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s066-s070-parts.cert.test.ts"
+    },
+    {
+      "story_id": "S067",
+      "epic": "CE-11",
+      "title": "OEM Price-Tape Revaluation",
+      "release": "R3",
+      "service": "parts-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s066-s070-parts.cert.test.ts"
+    },
+    {
+      "story_id": "S068",
+      "epic": "CE-11",
+      "title": "Obsolescence Provision & Scrap",
+      "release": "R3",
+      "service": "parts-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s066-s070-parts.cert.test.ts"
+    },
+    {
+      "story_id": "S069",
+      "epic": "CE-11",
+      "title": "Parts Physical Inventory",
+      "release": "R3",
+      "service": "parts-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s066-s070-parts.cert.test.ts"
+    },
+    {
+      "story_id": "S070",
+      "epic": "CE-11",
+      "title": "Special-Order Deposits & Escheat",
+      "release": "R3",
+      "service": "parts-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s066-s070-parts.cert.test.ts"
+    },
+    {
+      "story_id": "S049",
+      "epic": "CE-09",
+      "title": "Insurance AR (Body Shop)",
+      "release": "R3",
+      "service": "cash-service/apar-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s049-insurance-ar.cert.test.ts"
+    },
+    {
+      "story_id": "S054B",
+      "epic": "CE-09",
+      "title": "Rule-Based Bank Auto-Match",
+      "release": "R3",
+      "service": "cash-service/apar-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/recon-service/tests/auto-match-service.test.ts (6 tests) + auto-match-rules-domain.test.ts (12 tests)"
+    },
+    {
+      "story_id": "S074",
+      "epic": "CE-12",
+      "title": "Vehicle Unit Ledger & Stock-In",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s074-vehicle-unit-ledger.cert.test.ts"
+    },
+    {
+      "story_id": "S075",
+      "epic": "CE-12",
+      "title": "Demo Reclass & Depreciation",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s075-demo-reclass.cert.test.ts"
+    },
+    {
+      "story_id": "S076",
+      "epic": "CE-12",
+      "title": "Used LCNRV Write-downs",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s076-lcnrv-writedown.cert.test.ts"
+    },
+    {
+      "story_id": "S077",
+      "epic": "CE-12",
+      "title": "Dealer Trades",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s077-dealer-trades.cert.test.ts"
+    },
+    {
+      "story_id": "S079",
+      "epic": "CE-12",
+      "title": "Floorplan Lender Feed Adapters",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s079-s082-floorplan.cert.test.ts"
+    },
+    {
+      "story_id": "S080",
+      "epic": "CE-12",
+      "title": "Floorplan VIN Match & Breaks",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s079-s082-floorplan.cert.test.ts"
+    },
+    {
+      "story_id": "S081",
+      "epic": "CE-12",
+      "title": "SOT Monitor",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s079-s082-floorplan.cert.test.ts"
+    },
+    {
+      "story_id": "S082",
+      "epic": "CE-12",
+      "title": "Floorplan Interest & Curtailments",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/application/s079-s082-floorplan.cert.test.ts"
+    },
+    {
+      "story_id": "S024",
+      "epic": "CE-12",
+      "title": "Vehicle+F&I Rule Pack",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s024-s084-s085-deal-review.cert.test.ts"
+    },
+    {
+      "story_id": "S084",
+      "epic": "CE-12",
+      "title": "Deal JE Generator",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s024-s084-s085-deal-review.cert.test.ts"
+    },
+    {
+      "story_id": "S085",
+      "epic": "CE-12",
+      "title": "Biller Review Workbench",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s024-s084-s085-deal-review.cert.test.ts"
+    },
+    {
+      "story_id": "S086",
+      "epic": "CE-12",
+      "title": "Deal Unwind",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s086-s093-deal-lifecycle.cert.test.ts"
+    },
+    {
+      "story_id": "S087",
+      "epic": "CE-12",
+      "title": "Recontract Delta Posting",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s086-s093-deal-lifecycle.cert.test.ts"
+    },
+    {
+      "story_id": "S088",
+      "epic": "CE-12",
+      "title": "CIT Funding Match",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s086-s093-deal-lifecycle.cert.test.ts"
+    },
+    {
+      "story_id": "S089",
+      "epic": "CE-12",
+      "title": "Trade Payoff Issuance & Variance",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s086-s093-deal-lifecycle.cert.test.ts"
+    },
+    {
+      "story_id": "S090",
+      "epic": "CE-12",
+      "title": "Wholesale Disposition & Arbitration",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s086-s093-deal-lifecycle.cert.test.ts"
+    },
+    {
+      "story_id": "S091",
+      "epic": "CE-12",
+      "title": "Finance Reserve & Flat-% Chargeback Reserve",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s086-s093-deal-lifecycle.cert.test.ts"
+    },
+    {
+      "story_id": "S092",
+      "epic": "CE-12",
+      "title": "F&I Product Income & Remit Accrual",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/fni-reserve-service/src/application/remit-service.ts + routes.test.ts (16 tests) \u2014 remit run, provider-statement recon, tenant-scoped RBAC"
+    },
+    {
+      "story_id": "S093",
+      "epic": "CE-12",
+      "title": "Product Cancellations",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s086-s093-deal-lifecycle.cert.test.ts"
+    },
+    {
+      "story_id": "S094",
+      "epic": "CE-12",
+      "title": "Dealer-Obligor Deferral Mode",
+      "release": "R4",
+      "service": "deal-accounting-service/vehicle-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/fni-reserve-service/tests/unit/conservation.test.ts S094 section (8 tests) + deferral-service.ts \u2014 straight-line recognition, idempotency, period conservation"
+    },
+    {
+      "story_id": "S108",
+      "epic": "CE-13",
+      "title": "Payroll Run GL Posting",
+      "release": "R4",
+      "service": "payroll-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s108-payroll-gl-posting.cert.test.ts"
+    },
+    {
+      "story_id": "S109",
+      "epic": "CE-13",
+      "title": "Commission Engine",
+      "release": "R4",
+      "service": "payroll-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s109-commission-engine.cert.test.ts"
+    },
+    {
+      "story_id": "S110",
+      "epic": "CE-13",
+      "title": "Chargeback Clawback Consumption",
+      "release": "R4",
+      "service": "payroll-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s110-chargeback-handoff.cert.test.ts"
+    },
+    {
+      "story_id": "S111",
+      "epic": "CE-13",
+      "title": "Compensation Accruals",
+      "release": "R4",
+      "service": "payroll-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s111-compensation-accruals.cert.test.ts"
+    },
+    {
+      "story_id": "S112",
+      "epic": "CE-13",
+      "title": "Tech Flag-to-Payroll Bridge",
+      "release": "R4",
+      "service": "payroll-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s112-tech-flag-bridge.cert.test.ts"
+    },
+    {
+      "story_id": "S025",
+      "epic": "CE-13",
+      "title": "Payroll+Close Rule Pack",
+      "release": "R4",
+      "service": "payroll-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s025-rule-pack.cert.test.ts"
+    },
+    {
+      "story_id": "S047",
+      "epic": "CE-09",
+      "title": "Fleet AR Consolidated Billing",
+      "release": "R4",
+      "service": "cash-service/apar-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s047-fleet-ar.cert.test.ts"
+    },
+    {
+      "story_id": "S056",
+      "epic": "CE-09",
+      "title": "ZBA Sweeps & FP-Offset Allocation",
+      "release": "R4",
+      "service": "cash-service/apar-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s056-zba-sweeps.cert.test.ts"
+    },
+    {
+      "story_id": "S063",
+      "epic": "CE-11",
+      "title": "Unapplied Time & Tech Guarantee",
+      "release": "R4",
+      "service": "parts-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/fixedops-service/tests/application/tech-time-service.test.ts (15 tests) \u2014 absorb, rate resolution, guarantee-config, reversal, idempotency"
+    },
+    {
+      "story_id": "S098",
+      "epic": "CE-14",
+      "title": "OEM Adapter Framework & Diff Alerts",
+      "release": "R5",
+      "service": "eom-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s098-s106-oem-cert.test.ts"
+    },
+    {
+      "story_id": "S099",
+      "epic": "CE-14",
+      "title": "Ford Feed Adapter",
+      "release": "R5",
+      "service": "eom-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s098-s106-oem-cert.test.ts"
+    },
+    {
+      "story_id": "S100",
+      "epic": "CE-14",
+      "title": "GM Feed Adapter",
+      "release": "R5",
+      "service": "eom-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s098-s106-oem-cert.test.ts"
+    },
+    {
+      "story_id": "S101A",
+      "epic": "CE-14",
+      "title": "Manual OEM Statement Match Workbench",
+      "release": "R5",
+      "service": "eom-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s098-s106-oem-cert.test.ts"
+    },
+    {
+      "story_id": "S103A",
+      "epic": "CE-14",
+      "title": "Incentive Registry & Flat RDR Accruals",
+      "release": "R5",
+      "service": "eom-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s098-s106-oem-cert.test.ts"
+    },
+    {
+      "story_id": "S104",
+      "epic": "CE-14",
+      "title": "OEM Financial Statement Renderer",
+      "release": "R5",
+      "service": "eom-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s104-s120-fs-statements.cert.test.ts"
+    },
+    {
+      "story_id": "S105",
+      "epic": "CE-14",
+      "title": "Warranty Audit Chargeback & Reserve",
+      "release": "R5",
+      "service": "eom-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s098-s106-oem-cert.test.ts"
+    },
+    {
+      "story_id": "S106",
+      "epic": "CE-14",
+      "title": "Co-op Advertising Claims",
+      "release": "R5",
+      "service": "eom-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s098-s106-oem-cert.test.ts"
+    },
+    {
+      "story_id": "S113",
+      "epic": "CE-15",
+      "title": "Close Calendar Task Engine",
+      "release": "R5",
+      "service": "migration-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/close-state-machine.test.ts;tests/unit/readiness-aggregator.test.ts;tests/live-db/close-lifecycle.test.ts;tests/unit/s113-close-calendar.cert.test.ts"
+    },
+    {
+      "story_id": "S114",
+      "epic": "CE-15",
+      "title": "Reconciliation Module & PBC Export",
+      "release": "R5",
+      "service": "migration-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/integration/snapshot-integrity.test.ts;tests/unit/s114-reconciliation.cert.test.ts"
+    },
+    {
+      "story_id": "S115",
+      "epic": "CE-15",
+      "title": "Pre-Close Scrub Reports",
+      "release": "R5",
+      "service": "migration-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/scrub-engine.test.ts;tests/integration/preliminary-close.test.ts;tests/unit/s115-scrub-reports.cert.test.ts"
+    },
+    {
+      "story_id": "S116",
+      "epic": "CE-15",
+      "title": "Year-End Close",
+      "release": "R5",
+      "service": "migration-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/year-end-engine.test.ts;tests/integration/year-end-roll.test.ts;tests/unit/s116-s117-yearend.cert.test.ts"
+    },
+    {
+      "story_id": "S117",
+      "epic": "CE-15",
+      "title": "Year-End Tax Pack",
+      "release": "R5",
+      "service": "migration-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/retention-engine.test.ts;tests/unit/s116-s117-yearend.cert.test.ts"
+    },
+    {
+      "story_id": "S119",
+      "epic": "CE-15",
+      "title": "Daily Operating Control (DOC)",
+      "release": "R5",
+      "service": "migration-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s119-daily-operating-control.cert.test.ts"
+    },
+    {
+      "story_id": "S120",
+      "epic": "CE-15",
+      "title": "Statement-Format Financial Packages",
+      "release": "R5",
+      "service": "migration-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s104-s120-fs-statements.cert.test.ts"
+    },
+    {
+      "story_id": "S121",
+      "epic": "CE-15",
+      "title": "Fixed Ops KPI Pack",
+      "release": "R5",
+      "service": "migration-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/close-service/tests/unit/s121-s122-s123-kpi-compliance.cert.test.ts (8 tests) \u2014 ADD/SUBTRACT/RATIO ops, safe zero-divide, formula cross-ref, missing account=0"
+    },
+    {
+      "story_id": "S122",
+      "epic": "CE-15",
+      "title": "Variable Ops KPI Pack",
+      "release": "R5",
+      "service": "migration-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/close-service/tests/unit/s121-s122-s123-kpi-compliance.cert.test.ts (8 tests, shared with S121) \u2014 variable ops KPI formulas proven by same evaluateFormula engine"
+    },
+    {
+      "story_id": "S123",
+      "epic": "CE-15",
+      "title": "Compliance Reporting Pack",
+      "release": "R5",
+      "service": "migration-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/close-service/tests/unit/s121-s122-s123-kpi-compliance.cert.test.ts (8 tests) \u2014 ComplianceServiceCe15 generate: tenantId/legalEntityId/period/actor stamped, cross-tenant scope"
+    },
+    {
+      "story_id": "S015",
+      "epic": "CE-15",
+      "title": "Multi-Currency & CTA",
+      "release": "R5",
+      "service": "migration-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/gl-service/tests/s015-multi-currency.cert.test.ts (7 tests) \u2014 rate lookup, identity, conversion, triangulation, addRate, fail-closed"
+    },
+    {
+      "story_id": "S016",
+      "epic": "CE-15",
+      "title": "Signed Statement Snapshots",
+      "release": "R5",
+      "service": "migration-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/close-service/tests/unit/s016-signed-snapshots.cert.test.ts (6 tests) + snapshot-ceremony.test.ts (5 tests)"
+    },
+    {
+      "story_id": "S017",
+      "epic": "CE-15",
+      "title": "WORM Archive & PII Crypto-Shredding",
+      "release": "R5",
+      "service": "migration-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/close-service/tests/unit/s017-worm-archive.cert.test.ts (5 tests) AC1-AC5 passing"
+    },
+    {
+      "story_id": "S033",
+      "epic": "CE-06",
+      "title": "Allocation Entries",
+      "release": "R5",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/gl-service/tests/s033-allocation-entries.cert.test.ts (7 tests) AC1-AC7 passing"
+    },
+    {
+      "story_id": "S034",
+      "epic": "CE-06",
+      "title": "Intercompany Pairing & Net-Zero",
+      "release": "R5",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/gl-service/tests/s034-intercompany-pairing.cert.test.ts (6 tests) \u2014 pair normalisation, IC entry, net-zero balance, enforcement modes, tenant scope"
+    },
+    {
+      "story_id": "S035",
+      "epic": "CE-06",
+      "title": "Consolidation Eliminations",
+      "release": "R5",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s035-franchise.cert.test.ts"
+    },
+    {
+      "story_id": "S005",
+      "epic": "CE-06",
+      "title": "HR-Event Provisioning Hooks",
+      "release": "R5",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/tenant-service/tests/s005/hr-provisioning.cert.test.ts (11 tests) AC1-AC10 all passing"
+    },
+    {
+      "story_id": "S006",
+      "epic": "CE-06",
+      "title": "MFA & Safeguards Evidence",
+      "release": "R5",
+      "service": "tenant-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/tenant-service/tests/s006-mfa-safeguards.cert.test.ts (7 tests) AC1-AC7 passing"
+    },
+    {
+      "story_id": "S037",
+      "epic": "CE-09",
+      "title": "1099/T4A Flag Rules & Preview",
+      "release": "R5",
+      "service": "cash-service/apar-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s037-1099-flag-rules.cert.test.ts"
+    },
+    {
+      "story_id": "S038",
+      "epic": "CE-09",
+      "title": "Vendor Insurance-Cert Tracking",
+      "release": "R5",
+      "service": "cash-service/apar-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/s038-insurance-cert.cert.test.ts"
+    },
+    {
+      "story_id": "S071",
+      "epic": "CE-11",
+      "title": "OEM Parts-Return Pipeline",
+      "release": "R5",
+      "service": "parts-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/parts-accounting-service/tests/application/oem-return-service.test.ts (11 tests) \u2014 config, authorize, ship, credit, tenant scope"
+    },
+    {
+      "story_id": "S072",
+      "epic": "CE-11",
+      "title": "Parts Valuation Config & Landed Cost",
+      "release": "R5",
+      "service": "parts-accounting-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/parts-accounting-service/tests/application/s072-valuation-config.cert.test.ts (6 tests) \u2014 method election, prospective-only, tenant+entity scope, effective date"
+    },
+    {
+      "story_id": "S129",
+      "epic": "CE-16",
+      "title": "Item-Level Schedule Migration & Gates",
+      "release": "R6",
+      "service": "approval-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s129-staging-gates.cert.test.ts"
+    },
+    {
+      "story_id": "S130",
+      "epic": "CE-16",
+      "title": "TB Conversion & COA Mapping Workbench",
+      "release": "R6",
+      "service": "approval-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s130-mapping-workbench.cert.test.ts"
+    },
+    {
+      "story_id": "S131",
+      "epic": "CE-16",
+      "title": "Parallel-Run Comparison Harness",
+      "release": "R6",
+      "service": "approval-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s131-comparison-harness.cert.test.ts"
+    },
+    {
+      "story_id": "S132",
+      "epic": "CE-16",
+      "title": "Statement Archive Import & Runbooks",
+      "release": "R6",
+      "service": "approval-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s132-archive-runbook.cert.test.ts"
+    },
+    {
+      "story_id": "S022",
+      "epic": "CE-17",
+      "title": "Rule Simulation Sandbox",
+      "release": "R6",
+      "service": "orchestrator-service/automation-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s022-sandbox.cert.test.ts"
+    },
+    {
+      "story_id": "S040",
+      "epic": "CE-17",
+      "title": "OCR/EDI Invoice Ingestion",
+      "release": "R7",
+      "service": "orchestrator-service/automation-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s040-invoice-ingestion.cert.test.ts"
+    },
+    {
+      "story_id": "S058",
+      "epic": "CE-17",
+      "title": "Lockbox AI Remittance Matching",
+      "release": "R7",
+      "service": "orchestrator-service/automation-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s058-lockbox-matching.cert.test.ts"
+    },
+    {
+      "story_id": "S073",
+      "epic": "CE-17",
+      "title": "LIFO Overlay",
+      "release": "R7",
+      "service": "orchestrator-service/automation-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s073-lifo-overlay.cert.test.ts"
+    },
+    {
+      "story_id": "S091B",
+      "epic": "CE-17",
+      "title": "Experience-Rated Chargeback Model",
+      "release": "R7",
+      "service": "orchestrator-service/automation-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/automation-service/tests/unit/s091b-chargeback-model.cert.test.ts",
+      "certified_at": "2026-08-04"
+    },
+    {
+      "story_id": "S095",
+      "epic": "CE-17",
+      "title": "Retro/Portfolio Reserve Accrual",
+      "release": "R7",
+      "service": "orchestrator-service/automation-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/fni-reserve-service/src/application/portfolio-reserve-service.ts + tests/unit/s095-portfolio-reserve.cert.test.ts (6 tests) \u2014 config CRUD, bp computation, idempotency, no direct GL, fail-closed, tenant scope"
+    },
+    {
+      "story_id": "S096",
+      "epic": "CE-17",
+      "title": "Reinsurance/DOWC Cession",
+      "release": "R7",
+      "service": "orchestrator-service/automation-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/automation-service/tests/unit/s096-cession.cert.test.ts",
+      "certified_at": "2026-08-04"
+    },
+    {
+      "story_id": "S101B",
+      "epic": "CE-17",
+      "title": "OEM Statement Auto-Matcher",
+      "release": "R7",
+      "service": "orchestrator-service/automation-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/automation-service/tests/unit/s101b-oem-match.cert.test.ts (6 tests) \u2014 suggest, auto-dispose, judgment-class guard, SoD, human dispose, SUGGEST_ONLY"
+    },
+    {
+      "story_id": "S102",
+      "epic": "CE-14",
+      "title": "Phase-2 OEM Adapters",
+      "release": "R7",
+      "service": "eom-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/oem-service/tests/application/s102-phase2-adapters.cert.test.ts (6 tests) \u2014 GM/Ford SPI, canonical row types, zero-silent-loss UNPARSED staging, fail-closed"
+    },
+    {
+      "story_id": "S103B",
+      "epic": "CE-17",
+      "title": "Probability-Weighted Incentive Accruals",
+      "release": "R7",
+      "service": "orchestrator-service/automation-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/automation-service/tests/unit/s103b-incentive-accruals.cert.test.ts",
+      "certified_at": "2026-08-04"
+    },
+    {
+      "story_id": "S107",
+      "epic": "CE-17",
+      "title": "NCM/NADA Composite Export",
+      "release": "R7",
+      "service": "orchestrator-service/automation-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/automation-service/tests/unit/s107-composite-export.cert.test.ts",
+      "certified_at": "2026-08-04"
+    },
+    {
+      "story_id": "S118",
+      "epic": "CE-17",
+      "title": "GAAP Bridge Memo Generator",
+      "release": "R7",
+      "service": "orchestrator-service/automation-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s118-gaap-bridge.cert.test.ts"
+    },
+    {
+      "story_id": "S126",
+      "epic": "CE-17",
+      "title": "DSAR Automation",
+      "release": "R7",
+      "service": "orchestrator-service/automation-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s126-dsar.cert.test.ts"
+    },
+    {
+      "story_id": "S127",
+      "epic": "CE-17",
+      "title": "Unclaimed Property Module",
+      "release": "R7",
+      "service": "orchestrator-service/automation-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "tests/unit/s127-unclaimed-property.cert.test.ts"
+    },
+    {
+      "story_id": "S128",
+      "epic": "CE-17",
+      "title": "SOX Evidence Automation",
+      "release": "R7",
+      "service": "orchestrator-service/automation-service",
+      "status": "CERTIFIED",
+      "gap_or_evidence": "services/automation-service/tests/unit/s128-sox-evidence.cert.test.ts",
+      "certified_at": "2026-08-04"
+    }
+  ],
+  "correction_note": "Corrected from premature all-159-certified claim. Evidence-based audit from r1-final-certification worktree (132 certified, 17 partial, 10 not-implemented). PACKAGE_AUTHORIZED_DEFERRED superseded: all 159 stories are now authorized for implementation."
+}

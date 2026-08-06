@@ -63,6 +63,8 @@ const SearchQuerySchema = z.object({
   memoContains: z.string().optional(),
   postedBy: z.string().optional(),
   docRef: z.string().optional(),
+  // S011 — restrict search to lines tagged with this analysis-code value.
+  analysisValueId: z.string().optional(),
   page: z.coerce.number().int().min(1).optional(),
   pageSize: z.coerce.number().int().min(1).max(500).optional(),
 });

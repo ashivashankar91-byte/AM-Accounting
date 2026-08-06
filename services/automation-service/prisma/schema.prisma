@@ -1,0 +1,682 @@
+// CE-17 Automation Service — authority, policy, items, executions, evidence, health, per-story stores
+//
+// Every capability defaults to OBSERVE_ONLY. Nothing in this schema maps to a
+// production GL, schedule or reconciliation table: every financial effect
+// leaves this service as a governed CE-07 posting request and comes back as a
+// reference, never as a row this service wrote itself.
+
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/automation-service-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "darwin-arm64"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Authority & Capability ────────────────────────────────────────────────────
+model AutomationCapability {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  legalEntityId   String    @map("legal_entity_id")
+  capabilityCode  String    @map("capability_code")  // e.g. "S040_OCR_INGESTION"
+  storyId         String    @map("story_id")          // e.g. "S040"
+  currentAuthority String   @default("OBSERVE_ONLY") @map("current_authority")
+  // OBSERVE_ONLY | RECOMMEND | PREPARE_DRAFT | EXECUTE_WITH_APPROVAL | AUTO_EXECUTE_WITHIN_POLICY | SUSPENDED
+  authorityGrantedBy String? @map("authority_granted_by")
+  authorityGrantedAt DateTime? @map("authority_granted_at")
+  authorityActivatedBy String? @map("authority_activated_by") // SoD: must != grantedBy
+  authorityActivatedAt DateTime? @map("authority_activated_at")
+  policyVersion   String    @default("1.0") @map("policy_version")
+  baselineEvidenceRef String? @map("baseline_evidence_ref")
+  baselineMeasuredAt DateTime? @map("baseline_measured_at")
+  circuitBreakerCount Int    @default(0) @map("circuit_breaker_count")
+  circuitBreakerSuspendedAt DateTime? @map("circuit_breaker_suspended_at")
+  suspendedBy     String?   @map("suspended_by")
+  suspendedAt     DateTime? @map("suspended_at")
+  suspendReason   String?   @map("suspend_reason")
+  version         Int       @default(0)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  grants          AutomationGrant[]
+  items           AutomationItem[]
+
+  @@unique([tenantId, legalEntityId, capabilityCode])
+  @@index([tenantId, legalEntityId])
+  @@index([tenantId, storyId])
+  @@map("automation_capabilities")
+}
+
+model AutomationGrant {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  capabilityId    String    @map("capability_id")
+  fromAuthority   String    @map("from_authority")
+  toAuthority     String    @map("to_authority")
+  grantedBy       String    @map("granted_by")
+  grantedAt       DateTime  @default(now()) @map("granted_at")
+  activatedBy     String?   @map("activated_by")
+  activatedAt     DateTime? @map("activated_at")
+  revoked         Boolean   @default(false)
+  revokedBy       String?   @map("revoked_by")
+  revokedAt       DateTime? @map("revoked_at")
+  evidenceRefs    Json      @default("[]") @map("evidence_refs")
+  policyVersion   String    @map("policy_version")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  capability      AutomationCapability @relation(fields: [capabilityId], references: [id])
+
+  @@index([tenantId, capabilityId])
+  @@map("automation_grants")
+}
+
+model PolicyGate {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  legalEntityId   String    @map("legal_entity_id")
+  capabilityCode  String    @map("capability_code")
+  monetaryLimit   Decimal?  @map("monetary_limit") @db.Decimal(15, 2)
+  confidenceMin   Decimal?  @map("confidence_min") @db.Decimal(5, 4)
+  allowedExceptionCategories Json @default("[]") @map("allowed_exception_categories")
+  highRiskCategories Json   @default("[]") @map("high_risk_categories")
+  circuitBreakerThreshold Int @default(5) @map("circuit_breaker_threshold")
+  policyVersion   String    @default("1.0") @map("policy_version")
+  authoredBy      String    @map("authored_by")
+  activatedBy     String?   @map("activated_by") // SoD: must != authoredBy
+  effectiveDate   DateTime  @map("effective_date")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@unique([tenantId, legalEntityId, capabilityCode, policyVersion])
+  @@index([tenantId, legalEntityId, capabilityCode])
+  @@map("policy_gates")
+}
+
+// ── Automation Items (recommendations, drafts, executions) ──────────────────
+model AutomationItem {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  legalEntityId   String    @map("legal_entity_id")
+  capabilityId    String    @map("capability_id")
+  capabilityCode  String    @map("capability_code")
+  storyId         String    @map("story_id")
+  state           String    @default("RECOMMENDATION_READY")
+  // NOT_CONFIGURED | OBSERVATION_ONLY | RECOMMENDATION_READY | APPROVAL_REQUIRED | EXECUTION_PENDING | EXECUTED | FAILED_CLOSED | SUSPENDED | MODEL_OR_RULE_UNAVAILABLE
+  idempotencyKey  String    @unique @map("idempotency_key")
+  automationIdentity String @map("automation_identity")
+  sourceEvidenceRefs Json   @default("[]") @map("source_evidence_refs")
+  recommendationEvidence Json @default("{}") @map("recommendation_evidence")
+  ruleVersion     String?   @map("rule_version")
+  modelVersion    String?   @map("model_version")
+  confidence      Decimal?  @db.Decimal(5, 4)
+  proposedAmount  Decimal?  @map("proposed_amount") @db.Decimal(15, 2)
+  policyEvalTrace Json      @default("{}") @map("policy_eval_trace")
+  approvalRequired Boolean  @default(false) @map("approval_required")
+  approvedBy      String?   @map("approved_by")
+  approvedAt      DateTime? @map("approved_at")
+  rejectedBy      String?   @map("rejected_by")
+  rejectedAt      DateTime? @map("rejected_at")
+  rejectionReason String?   @map("rejection_reason")
+  executionId     String?   @map("execution_id")
+  failureReason   String?   @map("failure_reason")
+  retryCount      Int       @default(0) @map("retry_count")
+  claimedBy       String?   @map("claimed_by")
+  claimedAt       DateTime? @map("claimed_at")
+  completedAt     DateTime? @map("completed_at")
+  correctionOf    String?   @map("correction_of")
+  reversalOf      String?   @map("reversal_of")
+  version         Int       @default(0)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  capability      AutomationCapability @relation(fields: [capabilityId], references: [id])
+  executions      AutomationExecution[]
+
+  @@index([tenantId, legalEntityId, capabilityCode, state])
+  @@index([tenantId, state])
+  @@index([tenantId, idempotencyKey])
+  @@map("automation_items")
+}
+
+model AutomationExecution {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  itemId          String    @map("item_id")
+  idempotencyKey  String    @unique @map("idempotency_key")
+  executedBy      String    @map("executed_by") // automation identity
+  approvedBy      String?   @map("approved_by")
+  policyVersion   String    @map("policy_version")
+  ruleVersion     String?   @map("rule_version")
+  modelVersion    String?   @map("model_version")
+  sourceTransactionId String? @map("source_transaction_id")
+  postingExecutionId  String? @map("posting_execution_id")
+  journalEntryId  String?   @map("journal_entry_id")
+  scheduleEffectRefs Json   @default("[]") @map("schedule_effect_refs")
+  reconEffectRefs Json      @default("[]") @map("recon_effect_refs")
+  outcome         String    // EXECUTED | FAILED_CLOSED | REVERSED | CORRECTED
+  failureReason   String?   @map("failure_reason")
+  lineageTrace    Json      @default("{}") @map("lineage_trace")
+  reversalOf      String?   @map("reversal_of")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  item            AutomationItem @relation(fields: [itemId], references: [id])
+
+  @@index([tenantId, itemId])
+  @@index([tenantId, idempotencyKey])
+  @@map("automation_executions")
+}
+
+// ── Rule/Model Versions ─────────────────────────────────────────────────────
+model RuleModelVersion {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  capabilityCode  String    @map("capability_code")
+  versionTag      String    @map("version_tag")
+  versionType     String    @map("version_type") // RULE | MODEL
+  description     String?
+  trainingWindowStart DateTime? @map("training_window_start")
+  trainingWindowEnd   DateTime? @map("training_window_end")
+  deployedAt      DateTime  @map("deployed_at")
+  deployedBy      String    @map("deployed_by")
+  adoptedBy       String?   @map("adopted_by")
+  adoptedAt       DateTime? @map("adopted_at")
+  supersededAt    DateTime? @map("superseded_at")
+  artifactRef     String?   @map("artifact_ref")
+  metadata        Json      @default("{}")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@unique([tenantId, capabilityCode, versionTag])
+  @@index([tenantId, capabilityCode])
+  @@map("rule_model_versions")
+}
+
+// ── Health Metrics ───────────────────────────────────────────────────────────
+model AutomationHealthMetric {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  legalEntityId   String    @map("legal_entity_id")
+  capabilityCode  String    @map("capability_code")
+  periodDate      DateTime  @map("period_date") @db.Date
+  totalItems      Int       @default(0) @map("total_items")
+  accepted        Int       @default(0)
+  rejected        Int       @default(0)
+  executed        Int       @default(0)
+  failedClosed    Int       @default(0) @map("failed_closed")
+  driftFlagged    Boolean   @default(false) @map("drift_flagged")
+  accuracyVsBaseline Decimal? @map("accuracy_vs_baseline") @db.Decimal(5, 4)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@unique([tenantId, legalEntityId, capabilityCode, periodDate])
+  @@index([tenantId, legalEntityId, capabilityCode])
+  @@map("automation_health_metrics")
+}
+
+// ── Per-story stores ─────────────────────────────────────────────────────────
+
+// S022 Rule Simulation Sandbox
+model SimulationSandbox {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  legalEntityId   String    @map("legal_entity_id")
+  name            String
+  description     String?
+  scenarioType    String    @map("scenario_type") // HISTORICAL_REPLAY | SYNTHETIC | DRAFT_PACK_PREVIEW
+  inputSpec       Json      @default("{}") @map("input_spec")
+  rulePackVersion String?   @map("rule_pack_version")
+  state           String    @default("PENDING") // PENDING | RUNNING | COMPLETED | FAILED
+  resultRef       String?   @map("result_ref")
+  diffReportRef   String?   @map("diff_report_ref")
+  mutationProof   Json      @default("{}") @map("mutation_proof") // proves zero posting/mutation
+  createdBy       String    @map("created_by")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@index([tenantId, legalEntityId])
+  @@index([tenantId, state])
+  @@map("simulation_sandboxes")
+}
+
+model SandboxResult {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  sandboxId       String    @map("sandbox_id")
+  proposedJournals Json     @default("[]") @map("proposed_journals")
+  diffVsActual    Json      @default("{}") @map("diff_vs_actual")
+  ruleHits        Json      @default("[]") @map("rule_hits")
+  exportableBaseline Boolean @default(false) @map("exportable_baseline")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@index([tenantId, sandboxId])
+  @@map("sandbox_results")
+}
+
+// S040 OCR/EDI Invoice Ingestion
+model IngestionDraft {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  legalEntityId   String    @map("legal_entity_id")
+  channel         String    // OCR | EDI
+  sourceImageRef  String?   @map("source_image_ref")
+  ediTransactionRef String? @map("edi_transaction_ref")
+  extractedFields Json      @default("{}") @map("extracted_fields")
+  fieldConfidence Json      @default("{}") @map("field_confidence") // field → confidence score
+  overallConfidence Decimal? @map("overall_confidence") @db.Decimal(5, 4)
+  dedupKey        String?   @map("dedup_key")
+  isDuplicateSuspect Boolean @default(false) @map("is_duplicate_suspect")
+  vendorMatchRef  String?   @map("vendor_match_ref")
+  poMatchRef      String?   @map("po_match_ref")
+  suggestedCoding Json      @default("{}") @map("suggested_coding")
+  state           String    @default("DRAFT") // DRAFT | CLERK_REVIEW | ACCEPTED | REJECTED | DUPLICATE
+  reviewedBy      String?   @map("reviewed_by")
+  reviewedAt      DateTime? @map("reviewed_at")
+  s039InvoiceId   String?   @map("s039_invoice_id") // link to AP invoice when accepted
+  extractorVersion String?  @map("extractor_version")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@index([tenantId, legalEntityId, state])
+  @@index([tenantId, dedupKey])
+  @@map("ingestion_drafts")
+}
+
+// S058 Lockbox Remittance Matching
+model LockboxFile {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  legalEntityId   String    @map("legal_entity_id")
+  fileRef         String    @map("file_ref")
+  fileHash        String    @map("file_hash") // for idempotency
+  sourceBank      String?   @map("source_bank")
+  depositDate     DateTime  @map("deposit_date") @db.Date
+  state           String    @default("INGESTED") // INGESTED | MATCHED | POSTED
+  processedAt     DateTime? @map("processed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  lines           LockboxLine[]
+
+  @@unique([tenantId, fileHash])
+  @@index([tenantId, legalEntityId])
+  @@map("lockbox_files")
+}
+
+model LockboxLine {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  fileId          String    @map("file_id")
+  lineRef         String    @map("line_ref")
+  amount          Decimal   @db.Decimal(15, 2)
+  applyNumber     String?   @map("apply_number")
+  remittanceRef   String?   @map("remittance_ref")
+  matchType       String?   @map("match_type") // EXACT_KEY | SCORED | UNMATCHED
+  matchScore      Decimal?  @map("match_score") @db.Decimal(5, 4)
+  matchedArItemId String?   @map("matched_ar_item_id")
+  matchVersion    String?   @map("match_version")
+  state           String    @default("PENDING") // PENDING | SUGGESTED | ACCEPTED | REJECTED | EXCEPTION
+  reviewedBy      String?   @map("reviewed_by")
+  reviewedAt      DateTime? @map("reviewed_at")
+  receiptPostingId String?  @map("receipt_posting_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  file            LockboxFile @relation(fields: [fileId], references: [id])
+
+  @@index([tenantId, fileId])
+  @@index([tenantId, state])
+  @@map("lockbox_lines")
+}
+
+// S073 LIFO Overlay
+model LifoPoolDefinition {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  legalEntityId   String    @map("legal_entity_id")
+  poolCode        String    @map("pool_code")
+  poolName        String    @map("pool_name")
+  methodElection  String    @map("method_election") // LIFO_DOLLAR_VALUE | LIFO_UNIT
+  indexSource     String    @map("index_source") // e.g. "NADA_INDEX" — entered/imported, never derived
+  effectiveDate   DateTime  @map("effective_date") @db.Date
+  electedBy       String    @map("elected_by")
+  electionEvidence String?  @map("election_evidence") // source ref for the election
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  layers          LifoLayer[]
+
+  @@unique([tenantId, legalEntityId, poolCode])
+  @@index([tenantId, legalEntityId])
+  @@map("automt_lifo_pool_definitions")
+}
+
+model LifoLayer {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  poolId          String    @map("pool_id")
+  layerYear       Int       @map("layer_year")
+  layerMonth      Int       @map("layer_month")
+  baseQuantity    Decimal   @map("base_quantity") @db.Decimal(15, 2)
+  baseCost        Decimal   @map("base_cost") @db.Decimal(15, 2)
+  indexValue      Decimal   @map("index_value") @db.Decimal(10, 6) // ENTERED evidence
+  indexEvidenceRef String?  @map("index_evidence_ref") // source ref
+  reserveAmount   Decimal   @default(0) @map("reserve_amount") @db.Decimal(15, 2)
+  approved        Boolean   @default(false)
+  approvedBy      String?   @map("approved_by")
+  approvedAt      DateTime? @map("approved_at")
+  postingItemId   String?   @map("posting_item_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  pool            LifoPoolDefinition @relation(fields: [poolId], references: [id])
+
+  @@unique([tenantId, poolId, layerYear, layerMonth])
+  @@index([tenantId, poolId])
+  @@map("automt_lifo_layers")
+}
+
+// S091B Experience-Rated Chargeback Model
+model ChargebackModelOutput {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  legalEntityId   String    @map("legal_entity_id")
+  modelVersion    String    @map("model_version")
+  trainingWindowStart DateTime @map("training_window_start")
+  trainingWindowEnd   DateTime @map("training_window_end")
+  cohortData      Json      @default("[]") @map("cohort_data")
+  fitDiagnostics  Json      @default("{}") @map("fit_diagnostics")
+  recommendedRate Decimal   @map("recommended_rate") @db.Decimal(7, 6)
+  flatRateComparison Decimal? @map("flat_rate_comparison") @db.Decimal(7, 6)
+  state           String    @default("RECOMMENDATION_READY") // RECOMMENDATION_READY | ADOPTED | SUPERSEDED
+  adoptedBy       String?   @map("adopted_by")
+  adoptedAt       DateTime? @map("adopted_at")
+  s091ConfigVersion String? @map("s091_config_version") // what config it was adopted into
+  driftFlagged    Boolean   @default(false) @map("drift_flagged")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@index([tenantId, legalEntityId, state])
+  @@map("chargeback_model_outputs")
+}
+
+// S095 Retro/Portfolio Reserve Accrual
+model PortfolioStatement {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  legalEntityId   String    @map("legal_entity_id")
+  statementDate   DateTime  @map("statement_date") @db.Date
+  lenderRef       String    @map("lender_ref")
+  totalAmount     Decimal   @map("total_amount") @db.Decimal(15, 2)
+  evidenceRef     String    @map("evidence_ref") // source doc reference
+  allocationBasis String    @map("allocation_basis") // config-defined
+  state           String    @default("ENTERED") // ENTERED | ALLOCATED | APPROVED | POSTED
+  allocations     Json      @default("[]") // per-deal allocation result
+  approvedBy      String?   @map("approved_by")
+  approvedAt      DateTime? @map("approved_at")
+  postingItemId   String?   @map("posting_item_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@index([tenantId, legalEntityId, state])
+  @@map("portfolio_statements")
+}
+
+// S096 Reinsurance/DOWC Cession
+model CessionStatement {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  legalEntityId   String    @map("legal_entity_id")
+  statementDate   DateTime  @map("statement_date") @db.Date
+  programAdminRef String    @map("program_admin_ref")
+  treatyCode      String    @map("treaty_code")
+  premiumCession  Decimal   @map("premium_cession") @db.Decimal(15, 2)
+  reserveCession  Decimal   @map("reserve_cession") @db.Decimal(15, 2)
+  claimCession    Decimal   @map("claim_cession") @db.Decimal(15, 2)
+  statementEvidenceRef String @map("statement_evidence_ref")
+  state           String    @default("ENTERED") // ENTERED | APPROVED | POSTED
+  approvedBy      String?   @map("approved_by")
+  approvedAt      DateTime? @map("approved_at")
+  postingItemId   String?   @map("posting_item_id")
+  positionTrackingRef String? @map("position_tracking_ref")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@index([tenantId, legalEntityId, state])
+  @@map("cession_statements")
+}
+
+// S101B OEM Statement Auto-Matcher
+model OemMatchSuggestion {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  legalEntityId   String    @map("legal_entity_id")
+  s101aSessionId  String    @map("s101a_session_id")
+  claimNumber     String?   @map("claim_number")
+  amount          Decimal   @db.Decimal(15, 2)
+  matchType       String    @map("match_type") // EXACT_RULE | SCORED_SUGGESTION
+  matchScore      Decimal?  @map("match_score") @db.Decimal(5, 4)
+  matchVersion    String    @map("match_version")
+  suggestedDisposition String? @map("suggested_disposition")
+  automationIdentity String @map("automation_identity")
+  isJudgmentClass Boolean   @default(false) @map("is_judgment_class") // must always be human
+  state           String    @default("SUGGESTED") // SUGGESTED | ACCEPTED | REJECTED | ESCALATED
+  disposedBy      String?   @map("disposed_by")
+  disposedAt      DateTime? @map("disposed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@index([tenantId, legalEntityId, state])
+  @@index([tenantId, s101aSessionId])
+  @@map("oem_match_suggestions")
+}
+
+// S103B Probability-Weighted Incentive Accruals
+model IncentiveAccrualRecommendation {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  legalEntityId   String    @map("legal_entity_id")
+  programRef      String    @map("program_ref")
+  periodYear      Int       @map("period_year")
+  periodMonth     Int       @map("period_month")
+  attainmentPace  Decimal   @map("attainment_pace") @db.Decimal(5, 4)
+  weightingMethod String    @map("weighting_method") // from config
+  tierData        Json      @default("[]") @map("tier_data")
+  weightingInputs Json      @default("{}") @map("weighting_inputs")
+  recommendedAmount Decimal @map("recommended_amount") @db.Decimal(15, 2)
+  ruleVersion     String    @map("rule_version")
+  state           String    @default("RECOMMENDATION_READY")
+  approvedBy      String?   @map("approved_by")
+  approvedAt      DateTime? @map("approved_at")
+  postingItemId   String?   @map("posting_item_id")
+  isDoubleAccrualGuarded Boolean @default(false) @map("is_double_accrual_guarded")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@index([tenantId, legalEntityId, periodYear, periodMonth])
+  @@map("incentive_accrual_recommendations")
+}
+
+// S107 NCM/NADA Composite Export
+model CompositeExport {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  legalEntityId   String    @map("legal_entity_id")
+  exportType      String    @map("export_type") // NCM | NADA | TWENTY_GROUP
+  formatProfileVersion String @map("format_profile_version")
+  periodYear      Int       @map("period_year")
+  periodMonth     Int       @map("period_month")
+  state           String    @default("PENDING") // PENDING | GENERATED | APPROVED | SUBMITTED_EXPORT
+  exportFileRef   String?   @map("export_file_ref")
+  exportHash      String?   @map("export_hash")
+  generatedBy     String?   @map("generated_by")
+  approvedBy      String?   @map("approved_by")
+  approvedAt      DateTime? @map("approved_at")
+  responseRecord  Json?     @map("response_record") // recorded response, no live transmission
+  retentionRef    String?   @map("retention_ref")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@index([tenantId, legalEntityId, periodYear, periodMonth])
+  @@map("composite_exports")
+}
+
+// S118 GAAP Bridge Memo
+model GaapBridgeMemo {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  legalEntityId   String    @map("legal_entity_id")
+  periodYear      Int       @map("period_year")
+  periodMonth     Int       @map("period_month")
+  state           String    @default("DRAFT") // DRAFT | UNDER_REVIEW | FINALIZED
+  scaffold        Json      @default("{}") @map("scaffold") // structured memo with source refs
+  policyDifferences Json   @default("[]") @map("policy_differences") // sourced from S073, S091B, etc
+  editorHistory   Json      @default("[]") @map("editor_history")
+  finalizedBy     String?   @map("finalized_by")
+  finalizedAt     DateTime? @map("finalized_at")
+  s016SnapshotRef String?   @map("s016_snapshot_ref")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@unique([tenantId, legalEntityId, periodYear, periodMonth])
+  @@index([tenantId, legalEntityId])
+  @@map("gaap_bridge_memos")
+}
+
+// S126 DSAR Automation
+model DsarCase {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  subjectIdentifier String  @map("subject_identifier")
+  verificationEvidence Json @default("{}") @map("verification_evidence")
+  requestType     String    @map("request_type") // DISCLOSURE | ERASURE | BOTH
+  state           String    @default("INTAKE") // INTAKE | SCANNING | DISCLOSURE_READY | ERASURE_PENDING_APPROVAL | ERASED | CLOSED
+  scanResult      Json      @default("{}") @map("scan_result") // PII locations found
+  disclosurePackageRef String? @map("disclosure_package_ref")
+  erasureApproval1By String? @map("erasure_approval1_by") // dual authorization
+  erasureApproval1At DateTime? @map("erasure_approval1_at")
+  erasureApproval2By String? @map("erasure_approval2_by")
+  erasureApproval2At DateTime? @map("erasure_approval2_at")
+  s017ShredEventRef String?  @map("s017_shred_event_ref")
+  financialIntegrityProof Json @default("{}") @map("financial_integrity_proof")
+  statutoryDeadline DateTime? @map("statutory_deadline")
+  closedAt        DateTime? @map("closed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@index([tenantId, state])
+  @@map("dsar_cases")
+}
+
+// S127 Unclaimed Property Module
+model UnclaimedPropertyItem {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  legalEntityId   String    @map("legal_entity_id")
+  sourceQueue     String    @map("source_queue") // AP | AR | DEPOSIT | CREDIT
+  sourceItemId    String    @map("source_item_id")
+  holderState     String    @map("holder_state") // jurisdiction
+  propertyType    String    @map("property_type")
+  amount          Decimal   @db.Decimal(15, 2)
+  dormancyDate    DateTime  @map("dormancy_date") @db.Date
+  state           String    @default("CANDIDATE") // CANDIDATE | DUE_DILIGENCE | NOTICE_SENT | REMITTANCE_READY | REMITTED | CLOSED
+  dueDiligenceRefs Json    @default("[]") @map("due_diligence_refs")
+  noticeAttempts  Int       @default(0) @map("notice_attempts")
+  remittanceExportRef String? @map("remittance_export_ref")
+  postingItemId   String?   @map("posting_item_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@index([tenantId, legalEntityId, state])
+  @@index([tenantId, sourceItemId])
+  @@map("unclaimed_property_items")
+}
+
+// S128 SOX Evidence Automation
+model ControlRegistry {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  controlCode     String    @map("control_code")
+  controlName     String    @map("control_name")
+  controlType     String    @map("control_type") // SOD | APPROVAL_CEREMONY | TIE_OUT | CLOSE_SIGN_OFF | RLS_ATTESTATION
+  systemMapping   Json      @default("{}") @map("system_mapping") // which system records evidence it
+  evidenceQuery   String?   @map("evidence_query") // deterministic query definition
+  active          Boolean   @default(true)
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  binders         EvidenceBinder[]
+
+  @@unique([tenantId, controlCode])
+  @@index([tenantId])
+  @@map("control_registries")
+}
+
+model EvidenceBinder {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  legalEntityId   String    @map("legal_entity_id")
+  controlId       String    @map("control_id")
+  periodYear      Int       @map("period_year")
+  periodMonth     Int       @map("period_month")
+  state           String    @default("ASSEMBLING") // ASSEMBLING | COMPLETE | EXCEPTION | ATTESTED
+  evidenceRecords Json      @default("[]") @map("evidence_records") // immutable evidence
+  binderHash      String?   @map("binder_hash")
+  missingEvidenceFlags Json @default("[]") @map("missing_evidence_flags")
+  assembledBy     String?   @map("assembled_by") // SoD: must != attestedBy
+  attestedBy      String?   @map("attested_by")
+  attestedAt      DateTime? @map("attested_at")
+  s017ClassRef    String?   @map("s017_class_ref") // retention class
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  control         ControlRegistry @relation(fields: [controlId], references: [id])
+
+  @@unique([tenantId, legalEntityId, controlId, periodYear, periodMonth])
+  @@index([tenantId, legalEntityId, state])
+  @@map("evidence_binders")
+}
+
+// Outbox for events.
+//
+// Deliberately mapped to a service-owned `automation_outbox` rather than the
+// six-service shared `outbox_events` table: that table already exists with a
+// different column set (no aggregate_id, no `published` boolean) and a
+// CREATE TABLE IF NOT EXISTS against it would silently no-op, leaving every
+// insert from this service to fail at runtime. Reshaping a shared table would
+// also breach the additive-migrations rule. tenant_id is carried so the row is
+// RLS-governable like every other table here.
+model OutboxEvent {
+  id            String    @id @default(cuid())
+  tenantId      String    @map("tenant_id")
+  aggregateId   String    @map("aggregate_id")
+  eventType     String    @map("event_type")
+  payload       Json
+  correlationId String?   @map("correlation_id")
+  published     Boolean   @default(false)
+  publishedAt   DateTime? @map("published_at")
+  retryCount    Int       @default(0) @map("retry_count")
+  lastError     String?   @map("last_error")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@index([published, createdAt])
+  @@index([tenantId, eventType])
+  @@map("automation_outbox")
+}
+
+// Audit outbox — drained to CE-audit by shared-kernel's AuditOutboxDrainer,
+// whose Prisma store reads docType/docId/action/before/after/actor and writes
+// publishedAt/retryCount/lastError. Shared `audit_outbox` table, created with
+// IF NOT EXISTS so whichever service migrates first legitimately creates it.
+model AuditOutboxEvent {
+  id          String    @id @default(cuid())
+  tenantId    String    @map("tenant_id")
+  docType     String    @map("doc_type")
+  docId       String    @map("doc_id")
+  action      String
+  before      Json?
+  after       Json?
+  actor       String
+  publishedAt DateTime? @map("published_at")
+  retryCount  Int       @default(0) @map("retry_count")
+  lastError   String?   @map("last_error")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@map("audit_outbox")
+}

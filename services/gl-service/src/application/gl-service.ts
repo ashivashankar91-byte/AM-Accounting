@@ -37,6 +37,7 @@ import {
   JournalStatus,
   asTenantId,
   setTenantContextOnConnection,
+  createServiceToken,
 } from '@amacc/shared-kernel';
 import { createEvent } from '@amacc/shared-kernel';
 import { GLValidationEngine } from '../domain/validation-engine';
@@ -140,6 +141,7 @@ export class CutoffDateViolationError extends Error {
 export class GLService {
   /** Base URL of eom-service — never query its DB directly (COPILOT.md constraint #5) */
   private readonly eomServiceUrl: string;
+  private readonly jwtSecret: string;
 
   constructor(
     @inject('IJournalRepository') private readonly journalRepo: IJournalRepository,
@@ -149,6 +151,16 @@ export class GLService {
     @inject('PrismaClient') private readonly prisma: PrismaClient,
   ) {
     this.eomServiceUrl = process.env['EOM_SERVICE_URL'] ?? 'http://eom-service:3011';
+    this.jwtSecret = process.env['AMACC_JWT_SECRET'] ?? '';
+  }
+
+  /** Build headers for authenticated service-to-service calls (eom-service requires a valid JWT). */
+  private eomRequestHeaders(tenantId: TenantId): Record<string, string> {
+    const headers: Record<string, string> = { 'x-tenant-id': tenantId };
+    if (this.jwtSecret) {
+      headers['authorization'] = `Bearer ${createServiceToken('gl-service', this.jwtSecret)}`;
+    }
+    return headers;
   }
 
   // ── Account CRUD ──────────────────────────────────────────────────────────
@@ -348,7 +360,7 @@ export class GLService {
   async getPeriodStatus(tenantId: TenantId, year: number, month: number): Promise<string> {
     try {
       const res = await fetch(`${this.eomServiceUrl}/api/v1/eom/`, {
-        headers: { 'x-tenant-id': tenantId },
+        headers: this.eomRequestHeaders(tenantId),
         signal: AbortSignal.timeout(5000),
       });
       if (!res.ok) return 'NOT_STARTED';
@@ -370,7 +382,7 @@ export class GLService {
   async getPeriods(tenantId: TenantId): Promise<Array<{ year: number; month: number; status: string }>> {
     try {
       const res = await fetch(`${this.eomServiceUrl}/api/v1/eom/`, {
-        headers: { 'x-tenant-id': tenantId },
+        headers: this.eomRequestHeaders(tenantId),
         signal: AbortSignal.timeout(5000),
       });
       if (!res.ok) return [];
@@ -505,6 +517,85 @@ export class GLService {
     // Use expandedLines for all further processing (balance check + save)
     const expandedDto = { ...dto, lines: expandedLines };
     return this.journalRepo.create(expandedDto, tenantId);
+  }
+
+  // ── S219: Journal Entry — Void/Discard Draft (DRAFT → VOIDED) ────────────
+
+  /**
+   * @story S219 — Void/Delete Draft JE
+   * @accounting-rule Only DRAFT entries may be voided. PENDING_REVIEW, POSTED, and
+   *   REVERSED entries are immutable — their accounting effects must be corrected via
+   *   reversal (S218). A void does not produce a ledger effect — the entry never posted.
+   * @sod The actor (voidedBy) may not be the same as the entry creator when
+   *   SoD is enforced by tenant policy. Inherit S004B SoD matrix.
+   * @audit Every void is written to the immutable audit log (S007).
+   * @idempotent A second call on an already-VOIDED entry is a no-op (returns current state).
+   */
+  async discardDraftJournalEntry(
+    entryId: string,
+    tenantId: TenantId,
+    voidedBy: string,
+    reason: string,
+  ): Promise<JournalEntry> {
+    const entry = await this.journalRepo.findById(entryId, tenantId);
+    if (!entry) throw new JournalEntryNotFoundError(entryId);
+
+    // Idempotency — already voided is acceptable
+    if ((entry.status as string) === JournalStatus.VOIDED) {
+      return entry;
+    }
+
+    if (entry.status !== JournalStatus.DRAFT) {
+      throw new InvalidStatusTransitionError(entry.status, 'DRAFT');
+    }
+
+    // SoD check: actor must not be the entry creator (mirrors S004B enforcement)
+    const creatorId = (entry as any).createdByUserId;
+    if (creatorId && voidedBy && creatorId === voidedBy) {
+      throw new SegregationOfDutiesError();
+    }
+
+    const correlationId = crypto.randomUUID();
+
+    await this.prisma.$transaction(async (tx: any) => {
+      await setTenantContextOnConnection(tx, tenantId);
+      await tx.journalEntry.update({
+        where: { id: entryId },
+        data: { status: 'VOIDED' },
+      });
+      await appendAuditRowsTx(tx, {
+        tenantId,
+        docType: 'JOURNAL_ENTRY',
+        docId: entryId,
+        action: 'VOIDED',
+        actor: voidedBy,
+        before: { status: entry.status },
+        after: { status: 'VOIDED', reason, correlationId },
+        writeEventOutbox: false,
+      });
+      await tx.outboxEvent.create({
+        data: {
+          eventType: 'JOURNAL_ENTRY_VOIDED',
+          tenantId,
+          payload: { entryId, voidedBy, reason } as any,
+          correlationId,
+        },
+      });
+    });
+
+    try {
+      await this.eventPublisher.publish(
+        createEvent('JOURNAL_ENTRY_VOIDED', tenantId, { entryId, voidedBy, reason }),
+      );
+      await (this.prisma as any).outboxEvent.updateMany({
+        where: { correlationId, publishedAt: null },
+        data: { publishedAt: new Date() },
+      });
+    } catch {
+      // Outbox processor will retry
+    }
+
+    return this.journalRepo.findById(entryId, tenantId) as Promise<JournalEntry>;
   }
 
   // ── Journal Entry — Submit for Review (DRAFT → PENDING_REVIEW) ───────────
@@ -670,7 +761,15 @@ export class GLService {
                 tenantId,
                 payload: {
                   tenantId,
+                  legalEntityId: (entry as any).legalEntityId ?? null,
                   journalEntryId: entry.id,
+                  journalNumber: (entry as any).journalNumber ?? null,
+                  sourceEventId: (entry as any).sourceEventId ?? null,
+                  postingExecutionId: (entry as any).postingExecutionId ?? null,
+                  businessDate: entryDate.toISOString().substring(0, 10),
+                  postingDate: (entry as any).postedAt ? new Date((entry as any).postedAt).toISOString() : null,
+                  rulePackKey: (entry as any).rulePackKey ?? null,
+                  rulePackVersion: (entry as any).rulePackVersion ?? null,
                   glAccountNumber: account.code,
                   scheduleNumber: account.scheduleCode,
                   controlNumber: line.controlNumber ?? '',
@@ -704,7 +803,21 @@ export class GLService {
           data: {
             eventType: 'JOURNAL_ENTRY_POSTED',
             tenantId,
-            payload: { entryId, totalDebits, totalCredits, lineCount: entry.lines.length } as any,
+            payload: {
+              entryId,
+              tenantId,
+              legalEntityId: (entry as any).legalEntityId ?? null,
+              journalNumber: (entry as any).journalNumber ?? null,
+              sourceEventId: (entry as any).sourceEventId ?? null,
+              postingExecutionId: (entry as any).postingExecutionId ?? null,
+              businessDate: (entry as any).entryDate ? new Date((entry as any).entryDate).toISOString().substring(0, 10) : null,
+              postingDate: (entry as any).postedAt ? new Date((entry as any).postedAt).toISOString() : null,
+              rulePackKey: (entry as any).rulePackKey ?? null,
+              rulePackVersion: (entry as any).rulePackVersion ?? null,
+              totalDebits,
+              totalCredits,
+              lineCount: entry.lines.length,
+            } as any,
             correlationId,
           },
         });
@@ -1076,7 +1189,15 @@ export class GLService {
           tenantId,
           payload: {
             tenantId,
+            legalEntityId: (entry as any).legalEntityId ?? null,
             journalEntryId: entry.id, glAccountNumber: cosAccount.code,
+            journalNumber: (entry as any).journalNumber ?? null,
+            sourceEventId: (entry as any).sourceEventId ?? null,
+            postingExecutionId: (entry as any).postingExecutionId ?? null,
+            businessDate: entryDate.toISOString().substring(0, 10),
+            postingDate: (entry as any).postedAt ? new Date((entry as any).postedAt).toISOString() : null,
+            rulePackKey: (entry as any).rulePackKey ?? null,
+            rulePackVersion: (entry as any).rulePackVersion ?? null,
             scheduleNumber: cosAccount.scheduleCode, controlNumber: line.controlNumber ?? '',
             amount: String(costAmount), referenceNumber: ((entry as any).sourceRef ?? entry.id).substring(0, 12),
             journalSource: (entry as any).source ?? 'XX', transactionDate: entryDate.toISOString(),
@@ -1109,7 +1230,15 @@ export class GLService {
           tenantId,
           payload: {
             tenantId,
+            legalEntityId: (entry as any).legalEntityId ?? null,
             journalEntryId: entry.id, glAccountNumber: invAccount.code,
+            journalNumber: (entry as any).journalNumber ?? null,
+            sourceEventId: (entry as any).sourceEventId ?? null,
+            postingExecutionId: (entry as any).postingExecutionId ?? null,
+            businessDate: entryDate.toISOString().substring(0, 10),
+            postingDate: (entry as any).postedAt ? new Date((entry as any).postedAt).toISOString() : null,
+            rulePackKey: (entry as any).rulePackKey ?? null,
+            rulePackVersion: (entry as any).rulePackVersion ?? null,
             scheduleNumber: invAccount.scheduleCode, controlNumber: line.controlNumber ?? '',
             amount: String(invAmount), referenceNumber: ((entry as any).sourceRef ?? entry.id).substring(0, 12),
             journalSource: (entry as any).source ?? 'XX', transactionDate: entryDate.toISOString(),

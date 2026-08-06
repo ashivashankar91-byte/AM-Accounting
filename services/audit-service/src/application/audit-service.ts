@@ -1,6 +1,7 @@
 import { PrismaClient, Prisma } from '.prisma/audit-client';
 import pino from 'pino';
 import { createHash } from 'crypto';
+import { setTenantContextOnConnection } from '@amacc/shared-kernel';
 
 const logger = pino({ name: 'audit-service' });
 
@@ -173,6 +174,17 @@ export class AuditService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
+        // Interactive $transaction callbacks get their own dedicated
+        // connection, separate from the one createTenantRlsMiddleware's
+        // $use hook sets app.current_tenant_id on (see rls-middleware.ts's
+        // "Batch C defect fix" comment) -- without this call, tenant_id
+        // inserts here deterministically violate audit_logs' own RLS
+        // tenant_isolation_insert policy (42501), because the setting is
+        // unset on this transaction's connection. Every other service's
+        // interactive-transaction call sites already do this (see
+        // gl-service.ts, period-service.ts, draft-service.ts); audit-service
+        // was the one remaining call site missing it, discovered here.
+        await setTenantContextOnConnection(tx, dto.tenantId);
         // Ensure the partition's chain-anchor row exists, then lock it for
         // the duration of this write (FOR UPDATE) so two concurrent inserts
         // into the SAME partition can never both read the same hashPrev

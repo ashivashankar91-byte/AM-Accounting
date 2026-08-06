@@ -1,8 +1,14 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { container } from 'tsyringe';
-import { asTenantId, authMiddleware } from '@amacc/shared-kernel';
+import { asTenantId, authMiddleware, createAuthzGuard, AuthzClient } from '@amacc/shared-kernel';
 import { ScheduleApplicationService } from '../application/schedule-service';
+import { OpenItemService } from '../application/open-item-service';
+import { TieOutService } from '../application/tie-out-service';
+import { AgingService } from '../application/aging-service';
+import { ExceptionService } from '../application/exception-service';
+import { StatementService } from '../application/statement-service';
+import { InvalidAgingBucketConfigError } from '../domain/aging';
 import {
   ScheduleNotFoundError,
   ScheduleDetailNotFoundError,
@@ -14,12 +20,32 @@ import {
   NoAccountsError,
   ScheduleAccessDeniedError,
   PendingEventsError,
+  OpenItemNotFoundError,
+  OpenItemClosedError,
+  OverApplicationError,
+  ApplicationNotFoundError,
+  ApplicationAlreadyReversedError,
+  InvalidApplicationAmountError,
+  DuplicateApplicationError,
+  NoOpenItemsToRelieveError,
+  InvalidSplitError,
+  CrossAccountTransferNotAllowedError,
+  ItemAlreadyWrittenOffError,
+  WriteOffThresholdExceededError,
+  DownstreamApplicationsExistError,
+  DuplicateCeremonyError,
+  ExceptionNotFoundError,
+  ExceptionAlreadyDispositionedError,
 } from '../domain/errors';
 
+// @wave S026: corrected from 401 to 400 to comply with CLAUDE.md rule #3
+// ("Every API endpoint MUST require x-tenant-id header — return 400 if
+// missing") — non-negotiable and repo-wide, not S026/S027-specific, so this
+// fixes every route in this file, not just the new open-item/tie-out ones.
 function requireTenantId(request: any, reply: any): string | null {
   const id = request.headers['x-tenant-id'] as string | undefined;
   if (!id || !id.trim()) {
-    reply.status(401).send({ error: 'Missing required header: x-tenant-id' });
+    reply.status(400).send({ error: 'Missing required header: x-tenant-id' });
     return null;
   }
   return id.trim();
@@ -41,6 +67,35 @@ function handleError(err: unknown, reply: any): void {
     reply.status(403).send({ error: (err as Error).message });
   } else if (err instanceof PendingEventsError) {
     reply.status(409).send({ error: (err as Error).message, code: (err as any).code });
+  } else if (err instanceof OpenItemNotFoundError || err instanceof ApplicationNotFoundError) {
+    reply.status(404).send({ error: (err as Error).message });
+  } else if (
+    err instanceof OpenItemClosedError ||
+    err instanceof OverApplicationError ||
+    err instanceof ApplicationAlreadyReversedError ||
+    err instanceof InvalidApplicationAmountError
+  ) {
+    reply.status(422).send({ error: (err as Error).message, code: (err as any).name });
+  } else if (err instanceof DuplicateApplicationError) {
+    reply.status(409).send({ error: (err as Error).message, code: (err as any).name });
+  } else if (err instanceof InvalidAgingBucketConfigError) {
+    reply.status(422).send({ error: (err as Error).message, code: (err as any).name });
+  } else if (err instanceof NoOpenItemsToRelieveError) {
+    reply.status(404).send({ error: (err as Error).message, code: (err as any).name });
+  } else if (
+    err instanceof InvalidSplitError ||
+    err instanceof CrossAccountTransferNotAllowedError ||
+    err instanceof ItemAlreadyWrittenOffError ||
+    err instanceof WriteOffThresholdExceededError ||
+    err instanceof DownstreamApplicationsExistError
+  ) {
+    reply.status(422).send({ error: (err as Error).message, code: (err as any).name });
+  } else if (err instanceof DuplicateCeremonyError) {
+    reply.status(409).send({ error: (err as Error).message, code: (err as any).name });
+  } else if (err instanceof ExceptionNotFoundError) {
+    reply.status(404).send({ error: (err as Error).message, code: (err as any).name });
+  } else if (err instanceof ExceptionAlreadyDispositionedError) {
+    reply.status(422).send({ error: (err as Error).message, code: (err as any).name });
   } else {
     reply.status(500).send({ error: 'Internal server error' });
     console.error('[schedule-service] Unhandled error:', err);
@@ -95,6 +150,13 @@ export async function scheduleRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authMiddleware(JWT_SECRET));
 
   const svc = container.resolve(ScheduleApplicationService);
+  const openItemSvc = container.resolve(OpenItemService);
+  const tieOutSvc = container.resolve(TieOutService);
+  const agingSvc = container.resolve(AgingService);
+  const exceptionSvc = container.resolve(ExceptionService);
+  const statementSvc = container.resolve(StatementService);
+  const authzClient = container.resolve<AuthzClient>('AuthzClient');
+  const requirePermission = createAuthzGuard(authzClient, { getTenantId: (req) => req.headers['x-tenant-id'] as string });
 
   // ---------------------------------------------------------------------------
   // Schedule master CRUD
@@ -478,4 +540,648 @@ export async function scheduleRoutes(app: FastifyInstance) {
       handleError(err, reply);
     }
   });
+
+  // ---------------------------------------------------------------------------
+  // S026 — Schedule Open-Item Core
+  // ---------------------------------------------------------------------------
+
+  const ManualApplySchema = z.object({
+    amount: z.string().regex(/^-?\d+(\.\d{1,2})?$/),
+    idempotencyKey: z.string().min(1),
+    note: z.string().max(500).optional(),
+  });
+
+  const ReverseApplicationSchema = z.object({
+    note: z.string().max(500).optional(),
+  });
+
+  app.get(
+    '/api/v1/schedules/:id/open-items',
+    { preHandler: requirePermission('schedule.open_item.view') },
+    async (req: any, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const q = req.query as any;
+      try {
+        const items = await openItemSvc.listOpenItems(tenantId, req.params.id, {
+          controlNumber: q.controlNumber,
+          status: q.status,
+          glAccountNumber: q.glAccountNumber,
+          asOfDate: q.asOfDate ? new Date(q.asOfDate) : undefined,
+        });
+        reply.send(items);
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  app.get(
+    '/api/v1/schedules/:id/open-items/:itemId',
+    { preHandler: requirePermission('schedule.open_item.view') },
+    async (req: any, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      try {
+        const item = await openItemSvc.getOpenItem(tenantId, req.params.itemId);
+        reply.send(item);
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  app.post(
+    '/api/v1/schedules/:id/open-items/:itemId/apply',
+    { preHandler: requirePermission('schedule.open_item.apply') },
+    async (req: any, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const body = ManualApplySchema.safeParse(req.body);
+      if (!body.success) {
+        return reply.status(400).send({ error: 'Invalid request body', issues: body.error.issues });
+      }
+      try {
+        const userId = (req as any).user?.sub ?? 'unknown';
+        const application = await openItemSvc.applyManual(tenantId, req.params.itemId, {
+          amount: body.data.amount,
+          idempotencyKey: body.data.idempotencyKey,
+          note: body.data.note,
+          appliedBy: userId,
+        });
+        reply.status(201).send(application);
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  app.post(
+    '/api/v1/schedules/:id/open-items/applications/:applicationId/reverse',
+    { preHandler: requirePermission('schedule.open_item.reverse') },
+    async (req: any, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const body = ReverseApplicationSchema.safeParse(req.body ?? {});
+      if (!body.success) {
+        return reply.status(400).send({ error: 'Invalid request body', issues: body.error.issues });
+      }
+      try {
+        const userId = (req as any).user?.sub ?? 'unknown';
+        const reversal = await openItemSvc.reverseApplication(
+          tenantId,
+          req.params.applicationId,
+          userId,
+          body.data.note,
+        );
+        reply.status(201).send(reversal);
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // S026 — nightly GL-to-schedule tie-out
+  // ---------------------------------------------------------------------------
+
+  app.get(
+    '/api/v1/schedules/tie-outs',
+    { preHandler: requirePermission('schedule.tie_out.view') },
+    async (req, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const q = req.query as any;
+      try {
+        const rows = q.latest === 'true'
+          ? await tieOutSvc.getLatestRun(tenantId)
+          : await tieOutSvc.listTieOuts(tenantId, {
+              scheduleNumber: q.scheduleNumber,
+              status: q.status,
+              asOfDate: q.asOfDate ? new Date(q.asOfDate) : undefined,
+            });
+        reply.send(rows);
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  app.post(
+    '/api/v1/schedules/tie-outs/run',
+    { preHandler: requirePermission('schedule.tie_out.run') },
+    async (req, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const body = (req.body ?? {}) as { asOfDate?: string };
+      try {
+        const userId = (req as any).user?.sub ?? 'unknown';
+        const asOfDate = body.asOfDate ? new Date(body.asOfDate) : new Date();
+        const result = await tieOutSvc.runTieOut(tenantId, asOfDate, userId);
+        reply.status(201).send(result);
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // S027 — Schedule Aging Engine
+  // ---------------------------------------------------------------------------
+
+  const AgingQuerySchema = z.object({
+    asOfDate: z.string().optional(),
+    controlNumber: z.string().optional(),
+    glAccountNumber: z.string().optional(),
+  });
+
+  app.get(
+    '/api/v1/schedules/:id/aging-report',
+    { preHandler: requirePermission('schedule.aging.view') },
+    async (req: any, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const q = AgingQuerySchema.safeParse(req.query);
+      if (!q.success) {
+        return reply.status(400).send({ error: 'Invalid query parameters', issues: q.error.issues });
+      }
+      try {
+        const report = await agingSvc.getAgingReport(tenantId, {
+          scheduleNumber: req.params.id,
+          controlNumber: q.data.controlNumber,
+          glAccountNumber: q.data.glAccountNumber,
+          asOfDate: q.data.asOfDate ? new Date(q.data.asOfDate) : undefined,
+        });
+        reply.send(report);
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  // Cross-schedule aging — same report shape, no scheduleNumber filter.
+  app.get(
+    '/api/v1/schedules/aging-report',
+    { preHandler: requirePermission('schedule.aging.view') },
+    async (req, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const ExtQuerySchema = AgingQuerySchema.extend({ scheduleNumber: z.string().optional() });
+      const q = ExtQuerySchema.safeParse(req.query);
+      if (!q.success) {
+        return reply.status(400).send({ error: 'Invalid query parameters', issues: q.error.issues });
+      }
+      try {
+        const report = await agingSvc.getAgingReport(tenantId, {
+          scheduleNumber: q.data.scheduleNumber,
+          controlNumber: q.data.controlNumber,
+          glAccountNumber: q.data.glAccountNumber,
+          asOfDate: q.data.asOfDate ? new Date(q.data.asOfDate) : undefined,
+        });
+        reply.send(report);
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  app.get(
+    '/api/v1/schedules/aging-bucket-config',
+    { preHandler: requirePermission('schedule.aging.view') },
+    async (req, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      try {
+        const buckets = await agingSvc.getBucketConfig(tenantId);
+        reply.send({ buckets });
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  const SetBucketConfigSchema = z.object({
+    buckets: z.array(z.object({
+      label: z.string().min(1),
+      upperBoundDays: z.number().nullable(),
+    })).min(1),
+  });
+
+  app.put(
+    '/api/v1/schedules/aging-bucket-config',
+    { preHandler: requirePermission('schedule.aging.config') },
+    async (req: any, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const body = SetBucketConfigSchema.safeParse(req.body);
+      if (!body.success) {
+        return reply.status(400).send({ error: 'Invalid request body', issues: body.error.issues });
+      }
+      try {
+        const userId = (req as any).user?.sub ?? 'unknown';
+        const buckets = await agingSvc.setBucketConfig(tenantId, body.data.buckets, userId);
+        reply.send({ buckets });
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // S028 — Relieving Policy: auto/on-account application (manual trigger).
+  // Posted-line auto-application (no explicit apply-to reference) is handled
+  // automatically by OpenItemService.processPostingEvent's FIFO sweep; this
+  // endpoint is for an operator marking a receipt "apply on account" by hand.
+  // ---------------------------------------------------------------------------
+
+  const AutoApplySchema = z.object({
+    scheduleNumber: z.string().length(2),
+    controlNumber: z.string().min(1).max(10),
+    amount: z.string().regex(/^\d+(\.\d{1,2})?$/),
+    idempotencyKey: z.string().min(1),
+  });
+
+  app.post(
+    '/api/v1/schedules/open-items/auto-apply',
+    { preHandler: requirePermission('schedule.open_item.apply') },
+    async (req: any, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const body = AutoApplySchema.safeParse(req.body);
+      if (!body.success) {
+        return reply.status(400).send({ error: 'Invalid request body', issues: body.error.issues });
+      }
+      try {
+        const userId = (req as any).user?.sub ?? 'unknown';
+        const result = await openItemSvc.applyAutoFifo(
+          tenantId, body.data.scheduleNumber, body.data.controlNumber, body.data.amount, body.data.idempotencyKey, userId,
+        );
+        reply.status(201).send(result);
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // S029 — Split / Transfer / Write-off ceremonies
+  // ---------------------------------------------------------------------------
+
+  const SplitSchema = z.object({
+    parts: z.array(z.string().regex(/^\d+(\.\d{1,2})?$/)).min(2),
+    idempotencyKey: z.string().min(1),
+    reason: z.string().min(1).max(500),
+  });
+
+  app.post(
+    '/api/v1/schedules/:id/open-items/:itemId/split',
+    { preHandler: requirePermission('schedule.open_item.split') },
+    async (req: any, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const body = SplitSchema.safeParse(req.body);
+      if (!body.success) {
+        return reply.status(400).send({ error: 'Invalid request body', issues: body.error.issues });
+      }
+      try {
+        const userId = (req as any).user?.sub ?? 'unknown';
+        const result = await openItemSvc.splitOpenItem(
+          tenantId, req.params.itemId, body.data.parts, body.data.idempotencyKey, userId, body.data.reason,
+        );
+        reply.status(201).send(result);
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  const TransferSchema = z.object({
+    toScheduleNumber: z.string().length(2),
+    toControlNumber: z.string().min(1).max(10),
+    toItemNumber: z.string().min(1),
+    idempotencyKey: z.string().min(1),
+    reason: z.string().min(1).max(500),
+  });
+
+  app.post(
+    '/api/v1/schedules/:id/open-items/:itemId/transfer',
+    { preHandler: requirePermission('schedule.open_item.transfer') },
+    async (req: any, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const body = TransferSchema.safeParse(req.body);
+      if (!body.success) {
+        return reply.status(400).send({ error: 'Invalid request body', issues: body.error.issues });
+      }
+      try {
+        const userId = (req as any).user?.sub ?? 'unknown';
+        const result = await openItemSvc.transferOpenItem(
+          tenantId, req.params.itemId, body.data.toScheduleNumber, body.data.toControlNumber,
+          body.data.toItemNumber, body.data.idempotencyKey, userId, body.data.reason,
+        );
+        reply.status(201).send(result);
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  const WriteOffSchema = z.object({
+    offsetAccountCode: z.string().min(1),
+    idempotencyKey: z.string().min(1),
+    reason: z.string().min(1).max(500),
+  });
+
+  app.post(
+    '/api/v1/schedules/:id/open-items/:itemId/write-off',
+    { preHandler: requirePermission('schedule.open_item.writeoff') },
+    async (req: any, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const body = WriteOffSchema.safeParse(req.body);
+      if (!body.success) {
+        return reply.status(400).send({ error: 'Invalid request body', issues: body.error.issues });
+      }
+      try {
+        const userId = (req as any).user?.sub ?? 'unknown';
+        const result = await openItemSvc.writeOffOpenItem(
+          tenantId, req.params.itemId, body.data.offsetAccountCode, body.data.idempotencyKey, userId, body.data.reason,
+        );
+        reply.status(201).send(result);
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  const SetWriteOffConfigSchema = z.object({ thresholdAmount: z.string().regex(/^\d+(\.\d{1,2})?$/).nullable() });
+
+  app.put(
+    '/api/v1/schedules/open-items/write-off-config',
+    { preHandler: requirePermission('schedule.open_item.writeoff') },
+    async (req: any, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const body = SetWriteOffConfigSchema.safeParse(req.body);
+      if (!body.success) {
+        return reply.status(400).send({ error: 'Invalid request body', issues: body.error.issues });
+      }
+      try {
+        const userId = (req as any).user?.sub ?? 'unknown';
+        const prisma = container.resolve<any>('PrismaClient');
+        const row = await prisma.scheduleWriteOffConfig.upsert({
+          where: { tenantId },
+          create: { tenantId, thresholdAmount: body.data.thresholdAmount, updatedBy: userId },
+          update: { thresholdAmount: body.data.thresholdAmount, updatedBy: userId },
+        });
+        reply.send({ thresholdAmount: row.thresholdAmount ? row.thresholdAmount.toFixed(2) : null });
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // S027 completion — Exception engine
+  // ---------------------------------------------------------------------------
+
+  app.post(
+    '/api/v1/schedules/exceptions/run',
+    { preHandler: requirePermission('schedule.exception.view') },
+    async (req: any, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const q = (req.body ?? {}) as { scheduleNumber?: string };
+      try {
+        const userId = (req as any).user?.sub ?? 'unknown';
+        const result = await exceptionSvc.runEvaluation(tenantId, q.scheduleNumber, userId);
+        reply.status(201).send(result);
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  app.get(
+    '/api/v1/schedules/exceptions',
+    { preHandler: requirePermission('schedule.exception.view') },
+    async (req: any, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const q = req.query as any;
+      try {
+        const rows = await exceptionSvc.listExceptions(tenantId, { scheduleNumber: q.scheduleNumber, status: q.status });
+        reply.send(rows);
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  const DispositionSchema = z.object({ note: z.string().min(1).max(500) });
+
+  app.post(
+    '/api/v1/schedules/exceptions/:exceptionId/disposition',
+    { preHandler: requirePermission('schedule.exception.disposition') },
+    async (req: any, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const body = DispositionSchema.safeParse(req.body);
+      if (!body.success) {
+        return reply.status(400).send({ error: 'Invalid request body', issues: body.error.issues });
+      }
+      try {
+        const userId = (req as any).user?.sub ?? 'unknown';
+        const result = await exceptionSvc.dispositionException(tenantId, req.params.exceptionId, body.data.note, userId);
+        reply.send(result);
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  app.get(
+    '/api/v1/schedules/exceptions/rule-config',
+    { preHandler: requirePermission('schedule.exception.view') },
+    async (req, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      try {
+        reply.send(await exceptionSvc.getRuleConfig(tenantId));
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  const SetExceptionRuleConfigSchema = z.object({
+    staleDays: z.number().int().positive(),
+    controlLimitAmount: z.string().regex(/^\d+(\.\d{1,2})?$/).nullable(),
+    normalBalance: z.enum(['DEBIT', 'CREDIT']),
+  });
+
+  app.put(
+    '/api/v1/schedules/exceptions/rule-config',
+    { preHandler: requirePermission('schedule.exception.disposition') },
+    async (req: any, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const body = SetExceptionRuleConfigSchema.safeParse(req.body);
+      if (!body.success) {
+        return reply.status(400).send({ error: 'Invalid request body', issues: body.error.issues });
+      }
+      try {
+        const userId = (req as any).user?.sub ?? 'unknown';
+        reply.send(await exceptionSvc.setRuleConfig(tenantId, body.data, userId));
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // S030 — Statements & Dunning
+  // ---------------------------------------------------------------------------
+
+  const GenerateStatementSchema = z.object({
+    scheduleNumber: z.string().length(2),
+    controlNumber: z.string().min(1).max(10),
+    asOfDate: z.string().optional(),
+  });
+
+  app.post(
+    '/api/v1/schedules/statements/generate',
+    { preHandler: requirePermission('schedule.statement.generate') },
+    async (req: any, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const body = GenerateStatementSchema.safeParse(req.body);
+      if (!body.success) {
+        return reply.status(400).send({ error: 'Invalid request body', issues: body.error.issues });
+      }
+      try {
+        const userId = (req as any).user?.sub ?? 'unknown';
+        const asOfDate = body.data.asOfDate ? new Date(body.data.asOfDate) : new Date();
+        const result = await statementSvc.generateStatement(tenantId, body.data.scheduleNumber, body.data.controlNumber, asOfDate, userId);
+        reply.status(201).send(result);
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  app.get(
+    '/api/v1/schedules/statements',
+    { preHandler: requirePermission('schedule.statement.view') },
+    async (req: any, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const q = req.query as any;
+      try {
+        reply.send(await statementSvc.listStatements(tenantId, q.scheduleNumber, q.controlNumber));
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  app.get(
+    '/api/v1/schedules/statements/:statementId',
+    { preHandler: requirePermission('schedule.statement.view') },
+    async (req: any, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      try {
+        const row = await statementSvc.getStatement(tenantId, req.params.statementId);
+        if (!row) return reply.status(404).send({ error: 'Statement run not found' });
+        reply.send(row);
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  const GenerateDunningSchema = z.object({
+    scheduleNumber: z.string().length(2),
+    controlNumber: z.string().min(1).max(10),
+  });
+
+  app.post(
+    '/api/v1/schedules/dunning/generate',
+    { preHandler: requirePermission('schedule.statement.generate') },
+    async (req: any, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const body = GenerateDunningSchema.safeParse(req.body);
+      if (!body.success) {
+        return reply.status(400).send({ error: 'Invalid request body', issues: body.error.issues });
+      }
+      try {
+        const userId = (req as any).user?.sub ?? 'unknown';
+        const result = await statementSvc.generateDunning(tenantId, body.data.scheduleNumber, body.data.controlNumber, userId);
+        reply.status(201).send(result);
+      } catch (err) {
+        if (err instanceof Error && err.message === 'NO_DUNNING_LEVEL_APPLICABLE') {
+          return reply.status(422).send({ error: 'No dunning level applies yet for this control (not sufficiently past due).' });
+        }
+        handleError(err, reply);
+      }
+    },
+  );
+
+  app.get(
+    '/api/v1/schedules/dunning',
+    { preHandler: requirePermission('schedule.statement.view') },
+    async (req: any, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const q = req.query as any;
+      try {
+        reply.send(await statementSvc.listDunningRuns(tenantId, q.scheduleNumber, q.controlNumber));
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  app.get(
+    '/api/v1/schedules/dunning/config',
+    { preHandler: requirePermission('schedule.statement.view') },
+    async (req, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      try {
+        reply.send({ levels: await statementSvc.getDunningConfig(tenantId) });
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
+
+  const DunningLevelSchema = z.object({
+    level: z.number().int().positive(),
+    afterDays: z.number().int().nonnegative(),
+    label: z.string().min(1),
+    bodyTemplate: z.string().min(1),
+  });
+
+  app.put(
+    '/api/v1/schedules/dunning/config',
+    { preHandler: requirePermission('schedule.statement.generate') },
+    async (req: any, reply) => {
+      const tenantId = requireTenantId(req, reply);
+      if (!tenantId) return;
+      const body = z.object({ levels: z.array(DunningLevelSchema).min(1) }).safeParse(req.body);
+      if (!body.success) {
+        return reply.status(400).send({ error: 'Invalid request body', issues: body.error.issues });
+      }
+      try {
+        const userId = (req as any).user?.sub ?? 'unknown';
+        const levels = await statementSvc.setDunningConfig(tenantId, body.data.levels, userId);
+        reply.send({ levels });
+      } catch (err) {
+        handleError(err, reply);
+      }
+    },
+  );
 }

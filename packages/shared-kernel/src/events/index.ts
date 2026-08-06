@@ -12,6 +12,7 @@ export type EventType =
   | 'JOURNAL_ENTRY_SUBMITTED'
   | 'JOURNAL_ENTRY_POSTED'
   | 'JOURNAL_ENTRY_HELD'
+  | 'JOURNAL_ENTRY_VOIDED'  // S219 — Void/Delete Draft JE
   | 'GL_ANOMALY_DETECTED'
   // EOM events
   | 'EOM_CLOSE_INITIATED'
@@ -81,7 +82,22 @@ export type EventType =
   // S224 BR224-3: emitted by audit-service's document-history endpoint when
   // a rendered field diff contains a PII field — "views audit itself" is
   // itself an auditable, security-monitorable event.
-  | 'audit.viewed';
+  | 'audit.viewed'
+  // CE-15 Close & Statutory events
+  | 'CE15_YEAR_END_RETAINED_EARNINGS_INITIATED'
+  | 'CE15_CURRENCY_TRANSLATION_INITIATED'
+  | 'CE15_CLOSE_PERIOD_TRANSITIONED'
+  | 'CE15_SNAPSHOT_SIGNED'
+  | 'CE15_SNAPSHOT_INTEGRITY_ALERT'
+  // CE-16 Accounting Migration events
+  | 'migration.run.created'
+  | 'migration.run.state_changed'
+  | 'migration.staging.complete'
+  | 'migration.validation.complete'
+  | 'migration.cutover.initiated'
+  | 'migration.cutover.complete'
+  | 'migration.rollback.initiated'
+  | 'migration.rollback.complete';
 
 export function createEvent(
   type: EventType,
@@ -103,6 +119,7 @@ export const EVENT_ROUTING: Record<EventType, string[]> = {
   JOURNAL_ENTRY_SUBMITTED:  ['agent-gl'],
   JOURNAL_ENTRY_POSTED:     ['audit-service', 'fs-service'],
   JOURNAL_ENTRY_HELD:       ['notification-service', 'audit-service'],
+  JOURNAL_ENTRY_VOIDED:     ['audit-service'],  // S219 — Void/Delete Draft JE
   GL_ANOMALY_DETECTED:      ['agent-t1', 'notification-service'],
   // EOM
   EOM_CLOSE_INITIATED:      ['agent-eom', 'audit-service'],
@@ -167,4 +184,21 @@ export const EVENT_ROUTING: Record<EventType, string[]> = {
   THIRTEENTH_MONTH_FINALIZED:     ['fs-service', 'audit-service', 'notification-service'],
   'audit.chain.alert':            ['notification-service'],
   'audit.viewed':                 ['notification-service'],
+  // CE-15 Close & Statutory
+  'CE15_YEAR_END_RETAINED_EARNINGS_INITIATED': ['posting-recovery-service'],
+  'CE15_CURRENCY_TRANSLATION_INITIATED':       ['posting-recovery-service'],
+  'CE15_CLOSE_PERIOD_TRANSITIONED':            ['notification-service', 'audit-service'],
+  'CE15_SNAPSHOT_SIGNED':                      ['audit-service'],
+  'CE15_SNAPSHOT_INTEGRITY_ALERT':             ['notification-service', 'audit-service'],
+  // CE-16 Accounting Migration. Cutover and rollback are irreversible domain
+  // authority, so they fan out to notification as well as audit — a silent
+  // cutover is not an acceptable failure mode.
+  'migration.run.created':                     ['audit-service'],
+  'migration.run.state_changed':               ['audit-service'],
+  'migration.staging.complete':                ['audit-service'],
+  'migration.validation.complete':             ['audit-service'],
+  'migration.cutover.initiated':               ['notification-service', 'audit-service'],
+  'migration.cutover.complete':                ['notification-service', 'audit-service'],
+  'migration.rollback.initiated':              ['notification-service', 'audit-service'],
+  'migration.rollback.complete':               ['notification-service', 'audit-service'],
 };

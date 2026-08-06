@@ -59,10 +59,71 @@ model GLAccount {
   // See wave-3-schedule-subsystem.md for architecture decision
   distributionsAsSource  GlDistribution[] @relation("DistributionSource")
   distributionsAsTarget  GlDistribution[] @relation("DistributionTarget")
+  /// S009 — current effective statement-line mapping (BR009-1). Optional: an
+  /// account may exist without a statementLine (falls to its `type`'s default
+  /// statement section, BR009-4) but never without a `type` classification.
+  statementLineId    String? @map("statement_line_id")
+  statementLine      StatementLine? @relation(fields: [statementLineId], references: [id])
+  statementLineHistory GLAccountStatementLineHistory[]
 
   @@unique([tenantId, code])
   @@map("gl_accounts")
   @@index([tenantId])
+  @@index([tenantId, statementLineId])
+}
+
+/// S009 — BR009-1: tenant-scoped registry of Balance Sheet / Income Statement
+/// presentation lines a controller can map accounts onto. Seed content is
+/// intentionally empty in v1 — see P01_STORY_BLOCKING_REGISTER.csv BLK-07
+/// (Accounting SME registry-content sign-off still pending).
+model StatementLine {
+  id         String   @id @default(uuid())
+  tenantId   String   @map("tenant_id")
+  code       String
+  name       String
+  statement  String   // BS | IS
+  section    String   // e.g. ASSET, LIABILITY, EQUITY, REVENUE, COST_OF_SALES, EXPENSE
+  sortOrder  Int      @default(0) @map("sort_order")
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at")
+
+  accounts        GLAccount[]
+  mappingHistory  GLAccountStatementLineHistory[]
+
+  @@unique([tenantId, code])
+  @@map("statement_lines")
+  @@index([tenantId])
+}
+
+/// S009 — BR009-3/BLK-09 (Product decision 2026-07-28, Option 2): append-only,
+/// effective-dated statement-line mapping history. A statement request for a
+/// given `asOf` period resolves the row where
+/// `effectiveFrom <= asOf AND (effectiveTo IS NULL OR asOf < effectiveTo)`.
+/// Never updated or deleted in place — reclassifying an account appends a new
+/// row and closes the previous one's `effectiveTo` in the same transaction.
+/// Overlapping effective ranges for the same account are rejected at the
+/// application layer (DB-level exclusion constraint is a documented follow-up
+/// — see S009 implementation notes; Postgres `EXCLUDE USING gist` requires the
+/// `btree_gist` extension, added in the migration).
+model GLAccountStatementLineHistory {
+  id              String    @id @default(uuid())
+  tenantId        String    @map("tenant_id")
+  glAccountId     String    @map("gl_account_id")
+  statementLineId String?   @map("statement_line_id") // null = explicit unmap to type default
+  effectiveFrom   DateTime  @map("effective_from") @db.Date
+  effectiveTo     DateTime? @map("effective_to") @db.Date
+  reason          String
+  actor           String
+  isBootstrap     Boolean   @default(false) @map("is_bootstrap") // governed migration/backdate, per BLK-09
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  glAccount     GLAccount      @relation(fields: [glAccountId], references: [id])
+  statementLine StatementLine? @relation(fields: [statementLineId], references: [id])
+
+  @@map("gl_account_statement_line_history")
+  @@index([tenantId, glAccountId, effectiveFrom], map: "idx_gaslh_account_from")
+  @@index([tenantId, glAccountId, effectiveTo], map: "idx_gaslh_account_to")
 }
 
 /// @cobol-origin GLBYID-FILE — external account ID to GL number mapping
@@ -108,6 +169,25 @@ model JournalEntry {
   isReconciled          Boolean @default(false) @map("is_reconciled")
   /// S7-04: Links to auto-created IC counterpart entry in the other company
   icCounterpartEntryId  String? @map("ic_counterpart_entry_id")
+  /// CE-07 — authoritative idempotency identity for callers (e.g. the
+  /// S019/S020 posting engine's GlPostingBridge) that must never create a
+  /// second journal for the same canonical event on retry/crash-recovery.
+  /// Immutable once set (enforced at the application layer — never updated
+  /// after creation); nullable because most existing callers (manual JE
+  /// entry, finance-charge-job, reversal, etc.) supply no idempotency
+  /// identity and remain unaffected. Uniqueness enforced by a PARTIAL unique
+  /// index (WHERE idempotency_key IS NOT NULL) — see migration
+  /// 20260803010000_add_journal_entry_idempotency_key_gl_svc — so any number
+  /// of legacy NULL rows coexist without conflict.
+  idempotencyKey        String?   @map("idempotency_key")
+
+  /// CE-09 integration — posting context forwarded from CE-07 posting engine.
+  /// All nullable: manual JE, reversal, and legacy paths leave these unset.
+  legalEntityId     String?   @map("legal_entity_id")
+  postingExecutionId String?  @map("posting_execution_id")
+  rulePackKey       String?   @map("rule_pack_key")
+  rulePackVersion   String?   @map("rule_pack_version")
+  sourceEventId     String?   @map("source_event_id")
 
   lines            JournalLine[]
   dealProductLines DealProductLine[]
@@ -146,6 +226,13 @@ model JournalLine {
   costAmount      Decimal? @map("cost_amount") @db.Decimal(15, 2)
   /// @cobol-origin tran.fd TR-APPLY-CD — "#" = use apply number not cost
   applyCd         String?  @map("apply_cd")
+  /// @cobol-origin tran.fd TR-APPLYNO — the open-item business reference this
+  /// line relieves when applyCd = "#" (schedule-service's ScheduleOpenItem.
+  /// itemNumber match). Only meaningful when applyCd = "#"; a schedule-
+  /// relevant line with no applyNumber always creates a NEW open item
+  /// instead of relieving one — see gl-service.ts's JOURNAL_ENTRY_POSTED
+  /// outbox payload construction.
+  applyNumber     String?  @db.VarChar(20) @map("apply_number")
   /// @cobol-origin tran.fd TR-REV-ADJ — "R"=reversal, "A"=adjustment
   revAdjFlag      String?  @map("rev_adj_flag")
   /// S2-05: company code (2-char) for multi-company GL routing
@@ -693,4 +780,104 @@ model OemStatementMapping {
   @@map("oem_statement_mappings")
   @@index([tenantId])
   @@index([tenantId, oemCode, statementYear])
+}
+
+// S033 — Allocation Templates
+model AllocationTemplate {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  name            String
+  description     String?
+  sourceAccountId String   @map("source_account_id")
+  allocationBasis String   @default("PERCENTAGE") @map("allocation_basis")
+  journalSource   String   @default("ALLOCATION") @map("journal_source")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdBy       String   @map("created_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  lines           AllocationTemplateLine[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("allocation_templates")
+}
+
+model AllocationTemplateLine {
+  id              String  @id @default(uuid())
+  templateId      String  @map("template_id")
+  tenantId        String  @map("tenant_id")
+  targetAccountId String  @map("target_account_id")
+  allocationPct   Decimal? @map("allocation_pct") @db.Decimal(10, 6)
+  fixedAmount     Decimal? @map("fixed_amount") @db.Decimal(15, 2)
+  departmentCode  String? @map("department_code")
+  description     String?
+  lineOrder       Int     @default(0) @map("line_order")
+  template        AllocationTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId])
+  @@index([tenantId])
+  @@map("allocation_template_lines")
+}
+
+// S034 — Intercompany Pairs
+model IntercompanyPair {
+  id                    String   @id @default(uuid())
+  tenantId              String   @map("tenant_id")
+  entityAId             String   @map("entity_a_id")
+  entityBId             String   @map("entity_b_id")
+  icReceivableAccount   String?  @map("ic_receivable_account")
+  icPayableAccount      String?  @map("ic_payable_account")
+  enforcement           String   @default("WARN")
+  createdBy             String   @map("created_by")
+  createdAt             DateTime @default(now()) @map("created_at")
+  entries               IntercompanyPairEntry[]
+
+  @@unique([tenantId, entityAId, entityBId])
+  @@index([tenantId])
+  @@map("intercompany_pairs")
+}
+
+// Distinct from the legacy IntercompanyEntry model above (intercompany_entries table,
+// counterparty-tenant shape) — this is the S034 pair-based net-zero tracking entry.
+model IntercompanyPairEntry {
+  id                    String   @id @default(uuid())
+  tenantId              String   @map("tenant_id")
+  pairId                String   @map("pair_id")
+  journalEntryId        String   @map("journal_entry_id")
+  originatingEntityId   String   @map("originating_entity_id")
+  contraJournalEntryId  String?  @map("contra_journal_entry_id")
+  icAmount              Decimal  @map("ic_amount") @db.Decimal(15, 2)
+  periodYear            Int      @map("period_year")
+  periodMonth           Int      @map("period_month")
+  status                String   @default("UNMATCHED")
+  createdAt             DateTime @default(now()) @map("created_at")
+  pair                  IntercompanyPair @relation(fields: [pairId], references: [id])
+
+  @@index([tenantId])
+  @@index([journalEntryId])
+  @@index([tenantId, periodYear, periodMonth])
+  @@map("intercompany_pair_entries")
+}
+
+// S035 — Consolidation Elimination Runs
+model ConsolidationEliminationRun {
+  id                     String   @id @default(uuid())
+  tenantId               String   @map("tenant_id")
+  eliminationEntityId    String   @map("elimination_entity_id")
+  periodYear             Int      @map("period_year")
+  periodMonth            Int      @map("period_month")
+  status                 String   @default("PENDING")
+  startedBy              String   @map("started_by")
+  startedAt              DateTime @default(now()) @map("started_at")
+  completedAt            DateTime? @map("completed_at")
+  journalEntryIds        String[] @default([]) @map("journal_entry_ids")
+  icPairsProcessed       Int      @default(0) @map("ic_pairs_processed")
+  totalEliminatedDebit   Decimal  @default(0) @map("total_eliminated_debit") @db.Decimal(15, 2)
+  totalEliminatedCredit  Decimal  @default(0) @map("total_eliminated_credit") @db.Decimal(15, 2)
+  errorMessage           String?  @map("error_message")
+
+  @@unique([tenantId, eliminationEntityId, periodYear, periodMonth])
+  @@index([tenantId])
+  @@index([tenantId, periodYear, periodMonth])
+  @@map("consolidation_elimination_runs")
 }

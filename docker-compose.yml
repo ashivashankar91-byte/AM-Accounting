@@ -17,7 +17,11 @@
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-sk-ant-placeholder}
   # AMACC_JWT_SECRET must be set in .env â€” no default allowed in production
   AMACC_JWT_SECRET: ${AMACC_JWT_SECRET:?AMACC_JWT_SECRET is required}
-  # auth-service uses JWT_SECRET (its own issuer)
+  # Golden R0 Phase 5 fix: JWT_SECRET is no longer used by any signature
+  # issuance or verification path (auth-service and every downstream
+  # consumer, including the internal audit outbox drainer, now use
+  # AMACC_JWT_SECRET exclusively) -- kept required here only because some
+  # deployments may still reference it; do not wire new code to it.
   JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
   JWT_ISSUER: amacc
   ADMIN_API_KEY: ${ADMIN_API_KEY:?ADMIN_API_KEY is required}
@@ -32,6 +36,7 @@ services:
   # --- Infrastructure ---
   postgres:
     image: postgres:15
+    command: postgres -c max_connections=300 -c shared_buffers=256MB
     environment:
       POSTGRES_USER: amacc
       POSTGRES_PASSWORD: amacc_dev
@@ -66,6 +71,24 @@ services:
       test: ["CMD", "rabbitmq-diagnostics", "check_running"]
       <<: *healthcheck
 
+  # Migration-orchestration fix (STABILIZE THE CONSOLIDATED ACCOUNTING
+  # APPLICATION): one-shot job that runs `prisma migrate deploy` for every
+  # service against the shared `amacc` database as the privileged `amacc`
+  # superuser (see scripts/migrate-all.sh). Every service below that owns
+  # Prisma migrations depends on this completing successfully first, so a
+  # brand-new developer can go from an empty `pgdata` volume to a running
+  # application with a single `docker compose up --build` — no manual
+  # migration step required.
+  migrator:
+    build:
+      context: .
+      dockerfile: infra/migrator/Dockerfile
+    environment:
+      MIGRATE_DATABASE_URL: postgresql://amacc:amacc_dev@postgres:5432/amacc
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
   # --- Core Services ---
   auth-service:
     build:
@@ -79,6 +102,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
 
   tenant-service:
     build:
@@ -92,6 +116,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
 
   # --- Domain Services ---
   gl-service:
@@ -108,6 +133,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
 
   eom-service:
     build:
@@ -123,6 +149,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
 
   payroll-service:
     build:
@@ -136,6 +163,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
 
   apar-service:
     build:
@@ -149,6 +177,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
 
   recon-service:
     build:
@@ -159,6 +188,40 @@ services:
     environment:
       <<: *service-env
       PORT: 3014
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
+
+
+  # CE-17 Accounting Automation. Every capability boots at OBSERVE_ONLY; the
+  # service holds recommendations, drafts and evidence but never writes the
+  # ledger itself, so the posting/schedule/close/COA URLs below are the only
+  # routes an approved effect can take out of it.
+  automation-service:
+    build:
+      context: .
+      dockerfile: services/automation-service/Dockerfile
+    ports:
+      - "3056:3056"
+    environment:
+      <<: *service-env
+      PORT: 3056
+      POSTING_SERVICE_URL: http://posting-recovery-service:3049
+      SCHEDULE_SERVICE_URL: http://schedule-service:3018
+      CLOSE_SERVICE_URL: http://close-service:3095
+      COA_SERVICE_URL: http://coa-service:3002
+      APAR_SERVICE_URL: http://apar-service:3013
+      MIGRATION_SERVICE_URL: http://migration-service:3062
+      FIXEDOPS_SERVICE_URL: http://fixedops-service:3060
+      DEAL_ACCOUNTING_SERVICE_URL: http://deal-accounting-service:3092
+      VEHICLE_ACCOUNTING_SERVICE_URL: http://vehicle-accounting-service:3090
+      PAYROLL_SERVICE_URL: http://payroll-service:3012
+      OEM_SERVICE_URL: http://oem-service:3052
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
 
   schedule-service:
     build:
@@ -174,6 +237,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
 
   # --- Agent Services ---
   agent-gl:
@@ -291,6 +355,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
 
   connector-service:
     build:
@@ -329,6 +394,155 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
+
+  posting-recovery-service:
+    build:
+      context: .
+      dockerfile: services/posting-recovery-service/Dockerfile
+    ports:
+      - "3049:3049"
+    environment:
+      <<: *service-env
+      PORT: 3049
+      COA_SERVICE_URL: http://coa-service:3016
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  tax-service:
+    build:
+      context: .
+      dockerfile: services/tax-service/Dockerfile
+    ports:
+      - "3051:3051"
+    environment:
+      <<: *service-env
+      PORT: 3051
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
+
+  # CE-14 S098-S106 — OEM integrations (adapter framework, statement match
+  # workbench, incentive/co-op/warranty-chargeback receivables, OEM
+  # financial statement renderer). Zero direct GL writes.
+  oem-service:
+    build:
+      context: .
+      dockerfile: services/oem-service/Dockerfile
+    ports:
+      - "3052:3052"
+    environment:
+      <<: *service-env
+      PORT: 3052
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
+
+  # CE-11 S059-S065 — Fixed Ops (Service) accounting.
+  fixedops-service:
+    build:
+      context: .
+      dockerfile: services/fixedops-service/Dockerfile
+    ports:
+      - "3060:3060"
+    environment:
+      <<: *service-env
+      PORT: 3060
+      COA_SERVICE_URL: http://coa-service:3016
+      TAX_SERVICE_URL: http://tax-service:3051
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
+      coa-service: { condition: service_started }
+      tax-service: { condition: service_started }
+
+  # CE-11 S066-S072 — Parts accounting.
+  parts-accounting-service:
+    build:
+      context: .
+      dockerfile: services/parts-accounting-service/Dockerfile
+    ports:
+      - "3061:3061"
+    environment:
+      <<: *service-env
+      PORT: 3061
+      COA_SERVICE_URL: http://coa-service:3016
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
+      coa-service: { condition: service_started }
+      posting-recovery-service: { condition: service_started }
+
+  vehicle-accounting-service:
+    build:
+      context: .
+      dockerfile: services/vehicle-accounting-service/Dockerfile
+    ports:
+      - "3090:3090"
+    environment:
+      <<: *service-env
+      PORT: 3090
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
+      coa-service: { condition: service_started }
+      posting-recovery-service: { condition: service_started }
+
+  floorplan-service:
+    build:
+      context: .
+      dockerfile: services/floorplan-service/Dockerfile
+    ports:
+      - "3091:3091"
+    environment:
+      <<: *service-env
+      PORT: 3091
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
+      coa-service: { condition: service_started }
+      posting-recovery-service: { condition: service_started }
+
+  deal-accounting-service:
+    build:
+      context: .
+      dockerfile: services/deal-accounting-service/Dockerfile
+    ports:
+      - "3092:3092"
+    environment:
+      <<: *service-env
+      PORT: 3092
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
+      coa-service: { condition: service_started }
+      posting-recovery-service: { condition: service_started }
+      tax-service: { condition: service_started }
+
+  fni-reserve-service:
+    build:
+      context: .
+      dockerfile: services/fni-reserve-service/Dockerfile
+    ports:
+      - "3093:3093"
+    environment:
+      <<: *service-env
+      PORT: 3093
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
+      coa-service: { condition: service_started }
+      posting-recovery-service: { condition: service_started }
+
 
   fs-service:
     build:
@@ -342,6 +556,21 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
+
+  cash-service:
+    build:
+      context: .
+      dockerfile: services/cash-service/Dockerfile
+    ports:
+      - "3050:3050"
+    environment:
+      <<: *service-env
+      PORT: 3050
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
 
   onboarding-service:
     build:
@@ -493,6 +722,8 @@ services:
       EOM_SERVICE_URL: http://eom-service:3011
       SCHEDULE_SERVICE_URL: http://schedule-service:3018
       GROUP_SERVICE_URL: http://group-service:3039
+      CLOSE_SERVICE_URL: http://close-service:3095
+      MIGRATION_SERVICE_URL: http://migration-service:3062
     depends_on:
       - auth-service
       - gl-service
@@ -515,6 +746,7 @@ services:
       - onboarding-service
       - webhook-service
       - cashflow-service
+      - cash-service
       - document-service
       - group-service
       - compliance-service
@@ -538,5 +770,45 @@ services:
       - ./apps/web/src:/app/src
     command: npx vite --host
 
+  close-service:
+    build:
+      context: .
+      dockerfile: services/close-service/Dockerfile
+    ports:
+      - "3095:3095"
+    environment:
+      <<: *service-env
+      PORT: 3095
+      APAR_SERVICE_URL: http://apar-service:3013
+      FIXEDOPS_SERVICE_URL: http://fixedops-service:3060
+      DEAL_ACCOUNTING_SERVICE_URL: http://deal-accounting-service:3092
+      PAYROLL_SERVICE_URL: http://payroll-service:3012
+      OEM_SERVICE_URL: http://oem-service:3052
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
+
+  # CE-16 S129/S130/S131/S132 — accounting migration service
+  # Port 3062: fixedops-service owns 3060; close-service is on 3095 (not 3052).
+  migration-service:
+    build:
+      context: .
+      dockerfile: services/migration-service/Dockerfile
+    ports:
+      - "3062:3062"
+    environment:
+      <<: *service-env
+      PORT: 3062
+      POSTING_SERVICE_URL: http://posting-recovery-service:3049
+      SCHEDULE_SERVICE_URL: http://schedule-service:3018
+      CLOSE_SERVICE_URL: http://close-service:3095
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
+
+
 volumes:
   pgdata:
+

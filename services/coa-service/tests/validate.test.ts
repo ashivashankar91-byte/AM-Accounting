@@ -10,7 +10,7 @@ import 'reflect-metadata';
 import { describe, it, expect } from 'vitest';
 import { container } from 'tsyringe';
 import { DraftService, DraftValidationBlockedError, DraftEngineUnavailableError } from '../src/application/draft-service';
-import { PostingService, PostingViolationError, PostingInputError } from '../src/application/posting-service';
+import { PostingService, PostingViolationError, PostingInputError, AnalysisTagViolationError } from '../src/application/posting-service';
 
 const TENANT = 'tenant-kunes';
 const ENTITY = 'e1';
@@ -31,6 +31,7 @@ function makePrisma(opts: { breakEngine?: boolean } = {}) {
   const revisions: any[] = [];
   const entries: any[] = [];
   const lines: any[] = [];
+  const tags: any[] = [];
   const snaps: any[] = [];
   const outbox: any[] = [];
   const audits: any[] = [];
@@ -44,6 +45,7 @@ function makePrisma(opts: { breakEngine?: boolean } = {}) {
     _revisions: revisions,
     _entries: entries,
     _lines: lines,
+    _tags: tags,
     _outbox: outbox,
     _audits: audits,
     _accounts: accounts,
@@ -73,6 +75,12 @@ function makePrisma(opts: { breakEngine?: boolean } = {}) {
       create: async ({ data }: any) => (entries.push(data), data),
     },
     journalLine: { create: async ({ data }: any) => (lines.push(data), data) },
+    journalLineAnalysisTag: {
+      createMany: async ({ data }: any) => {
+        tags.push(...(data as any[]));
+        return { count: data.length };
+      },
+    },
     balanceSnapshot: { create: async ({ data }: any) => (snaps.push(data), data) },
     glAccount: {
       findMany: async ({ where }: any) => {
@@ -117,7 +125,16 @@ function fakeSequence() {
   };
 }
 
-function setup(opts: { breakEngine?: boolean } = {}) {
+function fakeAnalysisCodes(opts: { types?: { id: string; isActive: boolean }[]; values?: { id: string; typeId: string; isActive: boolean }[] } = {}) {
+  return {
+    loadValidationContext: async (_tenantId: string) => ({
+      types: new Map((opts.types ?? []).map((t) => [t.id, t])),
+      values: new Map((opts.values ?? []).map((v) => [v.id, v])),
+    }),
+  };
+}
+
+function setup(opts: { breakEngine?: boolean; analysisTypes?: { id: string; isActive: boolean }[]; analysisValues?: { id: string; typeId: string; isActive: boolean }[] } = {}) {
   container.reset();
   const prisma = makePrisma(opts);
   const events = { publish: async () => undefined };
@@ -125,6 +142,7 @@ function setup(opts: { breakEngine?: boolean } = {}) {
   container.registerInstance('IEventPublisher', events as any);
   container.registerInstance('FiscalCalendarService', fakeFiscal() as any);
   container.registerInstance('SequenceService', fakeSequence() as any);
+  container.registerInstance('AnalysisCodeService', fakeAnalysisCodes({ types: opts.analysisTypes, values: opts.analysisValues }) as any);
   container.register('PostingService', { useClass: PostingService });
   container.registerInstance('ConfigService', { resolve: async () => ({ value: 'direct' }) } as any); // unused here (post lives in post.test.ts)
   container.register('DraftService', { useClass: DraftService });
@@ -276,4 +294,133 @@ describe('BR215-2 validate<->post parity', () => {
       expect(validation.pass).toBe(!postRejected);
     });
   }
+});
+
+/**
+ * P1-F1 — Validate must evaluate analysis tags with the SAME evaluator Post
+ * uses (validateLineTags), so a draft that passes Validate never later fails
+ * Post solely because of unchanged analysis-tag data. Fixes the defect where
+ * Validate ignored analysisTags entirely and only Post enforced BR011-1/2/4.
+ */
+describe('P1-F1 — Validate/Post analysis-tag consistency', () => {
+  const analysisFixtures = {
+    analysisTypes: [{ id: 'type-store', isActive: true }],
+    analysisValues: [
+      { id: 'value-01', typeId: 'type-store', isActive: true },
+      { id: 'value-inactive', typeId: 'type-store', isActive: false },
+    ],
+  };
+
+  const linesWithTag = (tags: { typeId: string; valueId: string }[]) => [
+    { accountId: 'a-cash', storeId: '01', dr: 100, analysisTags: tags },
+    { accountId: 'a-rev', storeId: '01', deptCode: 'SVC', cr: 100 },
+  ];
+
+  it('1. valid tags pass Validate and Post', async () => {
+    const { draft, posting } = setup(analysisFixtures);
+    const lines = linesWithTag([{ typeId: 'type-store', valueId: 'value-01' }]);
+    const id = await mkDraft(draft, { lines });
+    const r = await draft.validate(id, actor);
+    expect(r.pass).toBe(true);
+    expect(r.errors).toHaveLength(0);
+
+    // Fresh posting-only fixture to avoid idempotency collisions across scenarios.
+    const p2 = setup(analysisFixtures);
+    const posted = await p2.posting.post({
+      tenantId: TENANT,
+      entityId: ENTITY,
+      date: '2026-01-15',
+      sourceCode: 'GJ',
+      idempotencyKey: 'p1-f1-valid-tags',
+      postedBy: 'alice',
+      lines,
+    });
+    expect(posted.status).toBe('POSTED');
+  });
+
+  it('2. inactive tag fails Validate', async () => {
+    const { draft } = setup(analysisFixtures);
+    const lines = linesWithTag([{ typeId: 'type-store', valueId: 'value-inactive' }]);
+    const id = await mkDraft(draft, { lines });
+    const r = await draft.validate(id, actor);
+    expect(r.pass).toBe(false);
+    expect(r.errors.some((e) => e.rule === 'INACTIVE_VALUE')).toBe(true);
+  });
+
+  it('3. unknown tag fails Validate', async () => {
+    const { draft } = setup(analysisFixtures);
+    const lines = linesWithTag([{ typeId: 'type-store', valueId: 'value-does-not-exist' }]);
+    const id = await mkDraft(draft, { lines });
+    const r = await draft.validate(id, actor);
+    expect(r.pass).toBe(false);
+    expect(r.errors.some((e) => e.rule === 'UNKNOWN_VALUE')).toBe(true);
+  });
+
+  it('4. more than three tags fails Validate (BLK-13 default cap)', async () => {
+    const fourValues = [
+      { id: 'v1', typeId: 'type-store', isActive: true },
+      { id: 'v2', typeId: 'type-store', isActive: true },
+      { id: 'v3', typeId: 'type-store', isActive: true },
+      { id: 'v4', typeId: 'type-store', isActive: true },
+    ];
+    const { draft } = setup({ analysisTypes: [{ id: 'type-store', isActive: true }], analysisValues: fourValues });
+    // Distinct fake types so DUPLICATE_TYPE_ON_LINE doesn't mask the cap check.
+    const lines = [
+      {
+        accountId: 'a-cash',
+        storeId: '01',
+        dr: 100,
+        analysisTags: [
+          { typeId: 'type-store', valueId: 'v1' },
+          { typeId: 'type-store', valueId: 'v2' },
+          { typeId: 'type-store', valueId: 'v3' },
+          { typeId: 'type-store', valueId: 'v4' },
+        ],
+      },
+      { accountId: 'a-rev', storeId: '01', deptCode: 'SVC', cr: 100 },
+    ];
+    const id = await mkDraft(draft, { lines });
+    const r = await draft.validate(id, actor);
+    expect(r.pass).toBe(false);
+    expect(r.errors.some((e) => e.rule === 'TAG_CAP_EXCEEDED')).toBe(true);
+  });
+
+  it('5. an unchanged draft that passes Validate also passes the tag portion of Post', async () => {
+    const { draft } = setup(analysisFixtures);
+    const lines = linesWithTag([{ typeId: 'type-store', valueId: 'value-01' }]);
+    const id = await mkDraft(draft, { lines });
+    const validation = await draft.validate(id, actor);
+    expect(validation.pass).toBe(true);
+
+    // Post the SAME (unchanged) draft against the SAME fixture state — must not
+    // throw AnalysisTagViolationError, proving Validate/Post tag-rule parity.
+    const posted = await draft.postDraft(id, actor);
+    expect(posted.status).toBe('POSTED_LINKED');
+  });
+
+  it('bonus: an inactive tag rejected at Validate is also rejected at Post (defense in depth)', async () => {
+    const { draft } = setup(analysisFixtures);
+    const lines = linesWithTag([{ typeId: 'type-store', valueId: 'value-inactive' }]);
+    const id = await mkDraft(draft, { lines });
+    const validation = await draft.validate(id, actor);
+    expect(validation.pass).toBe(false);
+
+    await expect(draft.postDraft(id, actor)).rejects.toThrow();
+  });
+
+  it('bonus: posting directly (bypassing Validate) with an invalid tag still throws AnalysisTagViolationError (backend authoritative)', async () => {
+    const { posting } = setup(analysisFixtures);
+    const lines = linesWithTag([{ typeId: 'type-store', valueId: 'value-inactive' }]);
+    await expect(
+      posting.post({
+        tenantId: TENANT,
+        entityId: ENTITY,
+        date: '2026-01-15',
+        sourceCode: 'GJ',
+        idempotencyKey: 'p1-f1-bypass-validate',
+        postedBy: 'alice',
+        lines,
+      }),
+    ).rejects.toBeInstanceOf(AnalysisTagViolationError);
+  });
 });

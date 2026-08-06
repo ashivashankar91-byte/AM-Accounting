@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Search, Printer, ChevronDown, X, Loader2, AlertCircle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Search, Printer, ChevronDown, X, Loader2, AlertCircle, ListChecks } from 'lucide-react';
 import { scheduleApi } from '../../api/client';
 import TransactionDetailPopup from '../../components/accounting/TransactionDetailPopup';
 
@@ -218,6 +219,7 @@ function ScheduleSetModal({ onClose, currentScheduleId }: ScheduleSetModalProps)
 }
 
 export default function ScheduleInquiry() {
+  const navigate = useNavigate();
   const paramAreaRef = useRef<HTMLDivElement>(null);
 
   const [selectedScheduleId, setSelectedScheduleId] = useState('');
@@ -516,6 +518,15 @@ export default function ScheduleInquiry() {
                 onClick={() => { window.print(); setShowMoreMenu(false); }}
               >
                 Save as PDF
+              </button>
+              <button
+                className="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 flex items-center gap-1.5"
+                onClick={() => {
+                  setShowMoreMenu(false);
+                  navigate(`/accounting/schedules/open-items${selectedScheduleId ? `?schedule=${selectedScheduleId}` : ''}`);
+                }}
+              >
+                <ListChecks size={12} /> Open Items &amp; Tie-Out
               </button>
             </div>
           )}

@@ -1,6 +1,7 @@
 import { inject, injectable } from 'tsyringe';
 import { PrismaClient } from '.prisma/auth-client';
 import type { IEventPublisher } from '@amacc/shared-kernel';
+import { setTenantContextOnConnection } from '@amacc/shared-kernel';
 import { randomUUID } from 'crypto';
 
 // ── S207: Permission Catalog & Check API ───────────────────────────────────────
@@ -148,6 +149,28 @@ export class AuthzService {
     return result;
   }
 
+  /// @net-new fix(integration) — CE-13 UI closure: the frontend's
+  /// client-side permission gating (disabling/hiding actions a user has no
+  /// server-side grant for anyway) had no real data source — nothing ever
+  /// populated it, so every gated button/nav item rendered disabled for
+  /// every user regardless of role. This mirrors check()'s own
+  /// roles-in-scope → role_permission expansion but returns the FULL
+  /// effective set for the caller instead of testing one key, so the UI can
+  /// self-configure once at login without N round-trips. Never the sole
+  /// enforcement point — every route this gates still runs check() itself.
+  async myPermissions(userId: string, scope: Scope): Promise<string[]> {
+    const scopeError = this._validateScope(scope);
+    if (scopeError) return [];
+    const roles = await this._rolesForUserInScope(userId, scope);
+    if (roles.length === 0) return [];
+    const grants = await this._rolePermissionMap();
+    const keys = new Set<string>();
+    for (const role of roles) {
+      for (const key of grants.get(role) ?? []) keys.add(key);
+    }
+    return [...keys].sort();
+  }
+
   // ── catalog — versioned list + optional diff report ─────────────────────────
 
   async catalog(opts: { version?: string; diffFrom?: string } = {}): Promise<CatalogResult> {
@@ -212,8 +235,23 @@ export class AuthzService {
     //  - tenant-wide grant (entity/store null) applies to any entity/store
     //  - entity-scoped grant applies to that entity and its stores
     //  - store-scoped grant applies only to that store
-    const rows = await this.prisma.authzRoleAssignment.findMany({
-      where: { tenantId: scope.tenantId, userId },
+    //
+    // Wrapped in an interactive $transaction so the `app.current_tenant_id`
+    // RLS session variable (set via setTenantContextOnConnection) lands on
+    // the SAME physical connection as the findMany below — the base
+    // `this.prisma` client's own $use middleware sets that variable on
+    // whichever pooled connection its raw SET happens to run on, which is
+    // not guaranteed to be the same connection the next query runs on under
+    // concurrency (see rls-middleware.ts's disclosed limitation). Without
+    // this, authz_role_assignment's RLS policy intermittently sees no
+    // current_tenant_id set and silently returns zero rows for a user who
+    // genuinely has a role assignment, producing a flaky NO_MATCHING_ROLE
+    // deny (observed here as an intermittent 403 on gl.dashboard.view).
+    const rows = await this.prisma.$transaction(async (tx) => {
+      await setTenantContextOnConnection(tx, scope.tenantId);
+      return tx.authzRoleAssignment.findMany({
+        where: { tenantId: scope.tenantId, userId },
+      });
     });
     const roles = new Set<string>();
     for (const a of rows) {

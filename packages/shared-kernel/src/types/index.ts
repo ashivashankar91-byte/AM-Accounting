@@ -101,6 +101,8 @@ export enum JournalStatus {
   POSTED = 'POSTED',
   HELD = 'HELD',
   REVERSED = 'REVERSED',
+  /** S219 — Void/Delete Draft JE: DRAFT entries may be voided by authorized actors */
+  VOIDED = 'VOIDED',
 }
 
 export enum EOMCloseStatus {
@@ -303,6 +305,7 @@ export interface JournalLine {
   departmentCode?: string;
   controlNumber?: string;
   applyCd?: string;
+  applyNumber?: string;
   companyCode?: string;
   applyToCost?: number;
   unitCount?: number;
@@ -344,6 +347,17 @@ export interface JournalEntry {
   adjustmentReason?: string;
   lines: JournalLine[];
   dealProductLines?: DealProductLine[];
+  /** CE-07 — authoritative idempotency identity for callers that must never create a second journal for the same canonical event on retry/crash-recovery. Null for callers that supplied none (most existing producers). */
+  idempotencyKey?: string | null;
+  /** fix(integration): CE-07/CE-09 posting-engine context, persisted at
+   * creation time (see journal-repository.ts's create()/toDomain()) so the
+   * real legalEntityId/postingExecutionId/sourceEventId flow through to the
+   * JOURNAL_ENTRY_POSTED outbox event instead of always being null. */
+  legalEntityId?: string | null;
+  postingExecutionId?: string | null;
+  sourceEventId?: string | null;
+  rulePackKey?: string | null;
+  rulePackVersion?: string | null;
 }
 
 export interface EOMClose {
@@ -443,6 +457,11 @@ export interface AgentLogEntry {
   humanRequired: boolean;
   humanResolvedAt: Date | null;
   createdAt: Date;
+  /** Structured context for the action (e.g. the caught error for
+   * outcome=AGENT_ERROR) — written on every log() call but previously
+   * silently dropped on read (PostgresAuditLogger.toEntry() never mapped
+   * the underlying `details` JSONB column back onto this shape). */
+  details?: Record<string, unknown> | null;
 }
 
 // ── Pending Agent Action (approval workflow) ───────────
@@ -548,6 +567,14 @@ export interface CreateJournalEntryDTO {
   priorPeriodAdjustment?: boolean;
   adjustmentReason?: string;
   lines: CreateJournalLineDTO[];
+  /** CE-07 — authoritative idempotency identity. See JournalEntry.idempotencyKey. */
+  idempotencyKey?: string;
+  /** CE-07/CE-09 posting-engine context — see JournalEntry's identical fields below. */
+  legalEntityId?: string | null;
+  postingExecutionId?: string | null;
+  sourceEventId?: string | null;
+  rulePackKey?: string | null;
+  rulePackVersion?: string | null;
 }
 
 export interface CreateJournalLineDTO {
@@ -559,6 +586,7 @@ export interface CreateJournalLineDTO {
   departmentCode?: string;
   controlNumber?: string;
   applyCd?: string;
+  applyNumber?: string;
   companyCode?: string;
   applyToCost?: number;
   unitCount?: number;

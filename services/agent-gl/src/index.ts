@@ -6,7 +6,7 @@ import { GLIntegrityAgent } from './domain/gl-integrity-agent';
 import { AnthropicClaudeClient } from './infrastructure/claude-client';
 import { RabbitMQEventPublisher } from './infrastructure/event-publisher';
 import { IClaudeClient, IAuditLogger, IEventPublisher, asTenantId } from '@amacc/shared-kernel';
-import { InMemoryAuditLogger } from './infrastructure/audit-logger';
+import { PostgresAuditLogger } from './infrastructure/audit-logger';
 import { GLAgentTools } from './infrastructure/agent-tools';
 import pino from 'pino';
 
@@ -20,8 +20,8 @@ async function bootstrap() {
   await app.register(cors, { origin: true });
 
   const claudeClient = new AnthropicClaudeClient(ANTHROPIC_API_KEY);
-  const auditLogger = new InMemoryAuditLogger();
-  const eventPublisher = new RabbitMQEventPublisher({ url: process.env['RABBITMQ_URL'] ?? 'amqp://localhost:5672' });
+  const auditLogger = new PostgresAuditLogger();
+  const eventPublisher = new RabbitMQEventPublisher({ url: process.env['RABBITMQ_URL'] ?? 'amqp://localhost:5672', serviceName: 'agent-gl' });
   await eventPublisher.connect();
 
   container.registerInstance<IClaudeClient>('IClaudeClient', claudeClient);

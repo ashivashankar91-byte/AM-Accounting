@@ -1,0 +1,14 @@
+{
+  "$label": "CERTIFICATION-ONLY: synthetic non-production data",
+  "$description": "A conversion batch whose debits and credits do not agree. Promotion must be refused with STRUCTURAL_IMBALANCE before anything is handed to CE-07 posting; no partial journal may be created.",
+  "legalEntityId": "LE-CERT-001",
+  "unbalancedRows": [
+    { "accountCode": "1000", "debit": 10000.00, "credit": 0, "description": "Cash" },
+    { "accountCode": "2000", "debit": 0, "credit": 9999.99, "description": "AP (one cent short)" }
+  ],
+  "balancedRows": [
+    { "accountCode": "1000", "debit": 10000.00, "credit": 0, "description": "Cash" },
+    { "accountCode": "2000", "debit": 0, "credit": 10000.00, "description": "AP" }
+  ],
+  "expected": { "unbalancedDelta": 0.01, "promotionRefused": true, "errorCode": "STRUCTURAL_IMBALANCE", "balancedPromotes": true }
+}

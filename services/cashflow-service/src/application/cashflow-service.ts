@@ -1,13 +1,32 @@
 import { PrismaClient } from '.prisma/cashflow-client';
 import pino from 'pino';
+import { createServiceToken } from '@amacc/shared-kernel';
 
 const logger = pino({ name: 'cashflow-service' });
 const GL_SERVICE_URL = process.env['GL_SERVICE_URL'] ?? 'http://gl-service:3010';
 const APAR_SERVICE_URL = process.env['APAR_SERVICE_URL'] ?? 'http://apar-service:3013';
 const PAYROLL_SERVICE_URL = process.env['PAYROLL_SERVICE_URL'] ?? 'http://payroll-service:3012';
 
+// FIX: fetchJSON previously sent only x-tenant-id with no Authorization
+// header. Every downstream route (gl-service /trial-balance, apar-service
+// /ar /ap, payroll-service /batches) requires a valid Bearer JWT via
+// authMiddleware, so every one of these internal calls was silently
+// rejected with 401 -- fetchJSON swallowed the failure (`!resp.ok` -> null),
+// currentCash stayed 0, and generateForecast always threw
+// GL_SERVICE_UNAVAILABLE, producing a permanent "No forecast data — run
+// cashflow service" 503 regardless of how much real GL/AR/AP data existed.
+// Attaching a SERVICE-role token (same createServiceToken pattern already
+// used by eom-service/gl-service/apar-service for service-to-service calls)
+// fixes this.
+const JWT_SECRET = process.env['AMACC_JWT_SECRET'];
+function serviceAuthHeaders(tenantId: string): Record<string, string> {
+  if (!JWT_SECRET) return { 'x-tenant-id': tenantId };
+  const token = createServiceToken('cashflow-service', JWT_SECRET);
+  return { 'x-tenant-id': tenantId, authorization: `Bearer ${token}` };
+}
+
 async function fetchJSON(url: string, tenantId: string): Promise<any> {
-  const resp = await fetch(url, { headers: { 'x-tenant-id': tenantId } });
+  const resp = await fetch(url, { headers: serviceAuthHeaders(tenantId) });
   if (!resp.ok) return null;
   return resp.json();
 }
@@ -80,7 +99,7 @@ export class CashFlowService {
       if (b.status === 'PENDING' || b.status === 'VALIDATED') {
         const periodEnd = new Date(b.periodEnd);
         const daysUntil = Math.floor((periodEnd.getTime() - nowMs) / 86400000);
-        const batchTotal = b.totalAmount ?? b.totalGrossPay ?? b.total_gross_pay ?? 0;
+        const batchTotal = parseFloat(b.totalAmount ?? b.totalGrossPay ?? b.total_gross_pay ?? 0) || 0;
         if (daysUntil <= 30) payroll30 += batchTotal;
         if (daysUntil <= 90) payroll90 += batchTotal;
       }
@@ -89,7 +108,7 @@ export class CashFlowService {
     if (payroll30 === 0) {
       const postedBatches = (batches ?? []).filter((b: any) => b.status === 'POSTED');
       if (postedBatches.length > 0) {
-        const avgPayroll = postedBatches.reduce((s: number, b: any) => s + (b.totalAmount ?? b.totalGrossPay ?? b.total_gross_pay ?? 0), 0) / postedBatches.length;
+        const avgPayroll = postedBatches.reduce((s: number, b: any) => s + (parseFloat(b.totalAmount ?? b.totalGrossPay ?? b.total_gross_pay ?? 0) || 0), 0) / postedBatches.length;
         payroll30 = avgPayroll; // One cycle within 30 days
         payroll90 = avgPayroll * 3; // ~3 cycles in 90 days
       }

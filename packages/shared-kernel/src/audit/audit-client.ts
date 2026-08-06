@@ -49,7 +49,18 @@ export class HttpAuditClient implements AuditClient {
     // ENABLED=false) mode the drainer could never deliver a single audit
     // record. Sign a short-lived internal service token with the same shared
     // JWT secret every other cross-service call already uses.
-    this.jwtSecret = options.jwtSecret ?? process.env['JWT_SECRET'] ?? process.env['AMACC_JWT_SECRET'];
+    //
+    // Golden R0 cert environment fix: this read JWT_SECRET before
+    // AMACC_JWT_SECRET, but audit-service's own authMiddleware verifies
+    // exclusively against AMACC_JWT_SECRET (services/audit-service/src/http/
+    // routes.ts:57) -- the same JWT_SECRET/AMACC_JWT_SECRET split already
+    // unified in auth-service's login routes. Wherever a service's env sets
+    // both to different values (as this isolated stack's compose does),
+    // every outbox-drained audit record was signed with the wrong secret and
+    // silently rejected with 401, confirmed live via coa-service's own logs
+    // ("audit-service /log returned 401: Unauthorized", willRetry:false) and
+    // an empty audit_logs table. AMACC_JWT_SECRET must take precedence.
+    this.jwtSecret = options.jwtSecret ?? process.env['AMACC_JWT_SECRET'] ?? process.env['JWT_SECRET'];
   }
 
   async log(entry: AuditLogEntry): Promise<{ id: string; idempotent: boolean }> {
