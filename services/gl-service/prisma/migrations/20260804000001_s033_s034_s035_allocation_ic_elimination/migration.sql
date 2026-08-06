@@ -64,7 +64,10 @@ CREATE TABLE IF NOT EXISTS intercompany_pairs (
   UNIQUE(tenant_id, entity_a_id, entity_b_id)
 );
 
-CREATE TABLE IF NOT EXISTS intercompany_entries (
+-- Named intercompany_pair_entries (not intercompany_entries) to avoid colliding
+-- with the pre-existing counterparty-tenant-shaped IntercompanyEntry table
+-- created in 20260506000000_init_gl_service.
+CREATE TABLE IF NOT EXISTS intercompany_pair_entries (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id       TEXT NOT NULL,
   pair_id         UUID NOT NULL REFERENCES intercompany_pairs(id),
@@ -79,16 +82,16 @@ CREATE TABLE IF NOT EXISTS intercompany_entries (
 );
 
 CREATE INDEX idx_ic_pairs_tenant ON intercompany_pairs(tenant_id);
-CREATE INDEX idx_ic_entries_tenant ON intercompany_entries(tenant_id);
-CREATE INDEX idx_ic_entries_journal ON intercompany_entries(journal_entry_id);
-CREATE INDEX idx_ic_entries_period ON intercompany_entries(tenant_id, period_year, period_month);
+CREATE INDEX idx_ic_pair_entries_tenant ON intercompany_pair_entries(tenant_id);
+CREATE INDEX idx_ic_pair_entries_journal ON intercompany_pair_entries(journal_entry_id);
+CREATE INDEX idx_ic_pair_entries_period ON intercompany_pair_entries(tenant_id, period_year, period_month);
 
 ALTER TABLE intercompany_pairs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY ic_pairs_rls ON intercompany_pairs
   USING (tenant_id = current_setting('app.tenant_id', true));
 
-ALTER TABLE intercompany_entries ENABLE ROW LEVEL SECURITY;
-CREATE POLICY ic_entries_rls ON intercompany_entries
+ALTER TABLE intercompany_pair_entries ENABLE ROW LEVEL SECURITY;
+CREATE POLICY ic_pair_entries_rls ON intercompany_pair_entries
   USING (tenant_id = current_setting('app.tenant_id', true));
 
 -- ────────────────────────────────────────────────────────────────────────────

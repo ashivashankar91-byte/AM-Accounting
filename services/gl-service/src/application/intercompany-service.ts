@@ -75,7 +75,7 @@ export class IntercompanyService {
     periodYear: number,
     periodMonth: number,
   ): Promise<any> {
-    return this.prisma.intercompanyEntry.create({
+    return this.prisma.intercompanyPairEntry.create({
       data: {
         tenantId,
         pairId,
@@ -102,7 +102,7 @@ export class IntercompanyService {
     const results: IcNetZeroResult[] = [];
 
     for (const pair of pairs) {
-      const entries = await this.prisma.intercompanyEntry.findMany({
+      const entries = await this.prisma.intercompanyPairEntry.findMany({
         where: { tenantId, pairId: pair.id, periodYear, periodMonth },
       });
 

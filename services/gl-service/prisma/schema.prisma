@@ -830,14 +830,16 @@ model IntercompanyPair {
   enforcement           String   @default("WARN")
   createdBy             String   @map("created_by")
   createdAt             DateTime @default(now()) @map("created_at")
-  entries               IntercompanyEntry[]
+  entries               IntercompanyPairEntry[]
 
   @@unique([tenantId, entityAId, entityBId])
   @@index([tenantId])
   @@map("intercompany_pairs")
 }
 
-model IntercompanyEntry {
+// Distinct from the legacy IntercompanyEntry model above (intercompany_entries table,
+// counterparty-tenant shape) — this is the S034 pair-based net-zero tracking entry.
+model IntercompanyPairEntry {
   id                    String   @id @default(uuid())
   tenantId              String   @map("tenant_id")
   pairId                String   @map("pair_id")
@@ -854,7 +856,7 @@ model IntercompanyEntry {
   @@index([tenantId])
   @@index([journalEntryId])
   @@index([tenantId, periodYear, periodMonth])
-  @@map("intercompany_entries")
+  @@map("intercompany_pair_entries")
 }
 
 // S035 — Consolidation Elimination Runs

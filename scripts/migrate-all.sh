@@ -35,6 +35,8 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export DATABASE_URL="${MIGRATE_DATABASE_URL:-postgresql://amacc:amacc_dev@postgres:5432/amacc}"
+# Prisma engine binary download fails behind this network's TLS-intercepting proxy otherwise.
+export NODE_TLS_REJECT_UNAUTHORIZED=0
 
 # Order is not load-bearing (see header) but foundational/catalog services
 # are listed first for readability of migration output.

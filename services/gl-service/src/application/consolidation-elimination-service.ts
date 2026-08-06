@@ -108,7 +108,7 @@ export class ConsolidationEliminationService {
 
       for (const pair of pairs) {
         // Find unmatched IC entries for this period
-        const entries = await this.prisma.intercompanyEntry.findMany({
+        const entries = await this.prisma.intercompanyPairEntry.findMany({
           where: {
             tenantId,
             pairId: pair.id,
@@ -175,7 +175,7 @@ export class ConsolidationEliminationService {
         pairsProcessed++;
 
         // Mark IC entries as ELIMINATED
-        await this.prisma.intercompanyEntry.updateMany({
+        await this.prisma.intercompanyPairEntry.updateMany({
           where: {
             tenantId,
             pairId: pair.id,
