@@ -87,17 +87,17 @@ export default function BankReconciliation() {
     let adjusted = parseFloat(glBalance || '0');
 
     // Subtract outstanding checks
-    recon.outstandingChecks
+    (recon.outstandingChecks ?? [])
       .filter((c: OutstandingCheck) => !selectedCheckIds.has(c.checkId))
       .forEach((c: OutstandingCheck) => { adjusted -= c.amount; });
 
     // Add outstanding deposits
-    recon.outstandingDeposits
+    (recon.outstandingDeposits ?? [])
       .filter((d: OutstandingDeposit) => !selectedDepositIds.has(d.depositId))
       .forEach((d: OutstandingDeposit) => { adjusted += d.amount; });
 
     // Apply adjustments
-    recon.adjustments.forEach((adj: Adjustment) => {
+    (recon.adjustments ?? []).forEach((adj: Adjustment) => {
       adjusted += (adj.type === 'debit' ? adj.amount : -adj.amount);
     });
 

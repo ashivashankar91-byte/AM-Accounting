@@ -48,7 +48,7 @@ export default function SalesTaxAccrual() {
 
   const { data: liabilityReport, isLoading: reportLoading, error: reportError } = useQuery({
     queryKey: ['tax-liability-report', selectedYear, selectedMonth],
-    queryFn: () => glApi.getTaxLiabilityReport(`?year=${selectedYear}&month=${selectedMonth}`),
+    queryFn: () => glApi.getTaxLiabilityReport(`year=${selectedYear}&month=${selectedMonth}`),
     retry: false,
   });
 

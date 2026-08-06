@@ -32,7 +32,7 @@ export default function ContractorReports1099() {
 
   const { data: records, isLoading: recordsLoading, error: recordsError } = useQuery({
     queryKey: ['1099-records', selectedYear, selectedStatus],
-    queryFn: () => glApi.list1099Records(`?taxYear=${selectedYear}${selectedStatus ? `&status=${selectedStatus}` : ''}`),
+    queryFn: () => glApi.list1099Records(`taxYear=${selectedYear}${selectedStatus ? `&status=${selectedStatus}` : ''}`),
     retry: false,
   });
 
