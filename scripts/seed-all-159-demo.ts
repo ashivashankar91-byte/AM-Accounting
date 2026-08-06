@@ -27,9 +27,9 @@ async function main() {
   // ── S006: MFA Policy ──────────────────────────────────────────────────────
   if (await tableExists(pool, 'mfa_policies')) {
     await pool.query(`
-      INSERT INTO mfa_policies (id, tenant_id, enforced, grace_period_days, allowed_methods, updated_by_user_id, created_at, updated_at)
-      VALUES (gen_random_uuid(),$1,true,14,ARRAY['TOTP','SMS'],'seed-script',now(),now())
-      ON CONFLICT (tenant_id) DO UPDATE SET enforced=EXCLUDED.enforced, updated_at=now()
+      INSERT INTO mfa_policies (id, tenant_id, enforcement, totp_enabled, sms_enabled, created_at, updated_at)
+      VALUES (gen_random_uuid(),$1,'REQUIRED',true,true,now(),now())
+      ON CONFLICT (tenant_id) DO UPDATE SET enforcement=EXCLUDED.enforcement, updated_at=now()
     `, [DEMO_TENANT_ID]);
     console.log('[all-159-seed] S006: MFA policy seeded.');
   } else {
@@ -45,14 +45,14 @@ async function main() {
     if ((ex.rowCount ?? 0) === 0) {
       const templateId = randomUUID();
       await pool.query(`
-        INSERT INTO allocation_templates (id, tenant_id, name, description, basis, source_account_id, created_by_user_id, created_at, updated_at)
+        INSERT INTO allocation_templates (id, tenant_id, name, description, allocation_basis, source_account_id, created_by, created_at, updated_at)
         VALUES ($1,$2,'Demo: Overhead Distribution','Distributes shared overhead costs across departments','PERCENTAGE','OVERHEAD-POOL','seed-script',now(),now())
       `, [templateId, DEMO_TENANT_ID]);
       if (await tableExists(pool, 'allocation_template_lines')) {
-        for (const [acct, pct] of [['FIXED-OPS-DEPT','60.00'],['VARIABLE-OPS-DEPT','30.00'],['ADMIN-DEPT','10.00']]) {
+        for (const [acct, pct] of [['FIXED-OPS-DEPT','60.000000'],['VARIABLE-OPS-DEPT','30.000000'],['ADMIN-DEPT','10.000000']]) {
           await pool.query(`
-            INSERT INTO allocation_template_lines (id, tenant_id, template_id, target_account_id, percentage, created_at)
-            VALUES (gen_random_uuid(),$1,$2,$3,$4,now())
+            INSERT INTO allocation_template_lines (id, tenant_id, template_id, target_account_id, allocation_pct)
+            VALUES (gen_random_uuid(),$1,$2,$3,$4)
           `, [DEMO_TENANT_ID, templateId, acct, pct]);
         }
       }
@@ -72,8 +72,8 @@ async function main() {
     if ((icEx.rowCount ?? 0) === 0) {
       const pairId = randomUUID();
       await pool.query(`
-        INSERT INTO intercompany_pairs (id, tenant_id, entity_a_id, entity_b_id, elimination_account_id, created_by_user_id, created_at, updated_at)
-        VALUES ($1,$2,'KUNES-CHICAGO','KUNES-MADISON','IC-ELIM-ACCOUNT','seed-script',now(),now())
+        INSERT INTO intercompany_pairs (id, tenant_id, entity_a_id, entity_b_id, enforcement, created_by, created_at)
+        VALUES ($1,$2,'KUNES-CHICAGO','KUNES-MADISON','WARN','seed-script',now())
       `, [pairId, DEMO_TENANT_ID]);
       console.log('[all-159-seed] S034: IC pair seeded:', pairId);
     } else {
@@ -100,8 +100,8 @@ async function main() {
       await pool.query(`
         INSERT INTO hr_provisioning_events
           (id, tenant_id, legal_entity_id, hr_event_type, hr_user_id, hr_system,
-           source_correlation_id, accounting_action, accounting_user_id, status, created_at, updated_at)
-        VALUES (gen_random_uuid(),$1,$2,$3,$4,$5,$6,$7,$8,$9,now(),now())
+           source_correlation_id, accounting_action, accounting_user_id, status)
+        VALUES (gen_random_uuid(),$1,$2,$3,$4,$5,$6,$7,$8,$9)
       `, [DEMO_TENANT_ID, f.leid, f.evtType, f.hrUid, f.sys, f.corrId, f.action, f.authUid, f.status]);
     }
     console.log('[all-159-seed] S005: HR provisioning demo events seeded (joiner, mover, leaver, ignored).');

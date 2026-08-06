@@ -52,7 +52,11 @@ fi
 
 # Step 1: Run the certified R1 seed first (backward-compatible baseline)
 echo "► Step 1/3: Seeding certified R1 baseline..."
-bash "$SCRIPT_DIR/seed-r1-demo.sh" ${RESET:+--reset}
+if [ "$RESET" = "true" ]; then
+  echo "y" | bash "$SCRIPT_DIR/seed-r1-demo.sh" --reset
+else
+  bash "$SCRIPT_DIR/seed-r1-demo.sh"
+fi
 echo "✓ R1 baseline seeded."
 
 # Step 2: Run all-159 extended seed TypeScript script
