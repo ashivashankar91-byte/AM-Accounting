@@ -295,7 +295,7 @@ export async function floorPlanRoutes(app: FastifyInstance, prisma: PrismaClient
 
       const units = await (prisma as any).floorPlanUnit.findMany({
         where,
-        orderBy: { lenderId: 'asc', floorDate: 'asc' },
+        orderBy: [{ lenderId: 'asc' }, { floorDate: 'asc' }],
       });
 
       // Group by lender

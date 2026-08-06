@@ -2805,6 +2805,15 @@ export async function glRoutes(app: FastifyInstance) {
     return reply.status(501).send({ error: 'NOT_IMPLEMENTED', message: 'FS version management not yet available' });
   });
 
+  // NCM20 — stub endpoints (feature gated by system_config.ncm20_enabled)
+  app.get('/fs/ncm20/status', async (_request, reply) => {
+    return reply.send({ enabled: false, lastUpload: null, status: 'NOT_CONFIGURED' });
+  });
+
+  app.post('/fs/ncm20/generate', async (_request, reply) => {
+    return reply.status(501).send({ error: 'NOT_IMPLEMENTED', message: 'NCM20 upload not yet configured for this tenant' });
+  });
+
   app.get('/fs/oem-mappings', async (request, reply) => {
     const tenantId = getTenantId(request);
     const { oemCode, year } = request.query as any;
