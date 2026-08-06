@@ -2796,6 +2796,15 @@ export async function glRoutes(app: FastifyInstance) {
 
   // ── S7-02: OEM Financial Statement Mappings ────────────────────────────────
 
+  // NS-005: FS Versions — stub (table not yet provisioned; returns empty list)
+  app.get('/fs/versions', async (_request, reply) => {
+    return reply.send([]);
+  });
+
+  app.post('/fs/versions', async (_request, reply) => {
+    return reply.status(501).send({ error: 'NOT_IMPLEMENTED', message: 'FS version management not yet available' });
+  });
+
   app.get('/fs/oem-mappings', async (request, reply) => {
     const tenantId = getTenantId(request);
     const { oemCode, year } = request.query as any;
