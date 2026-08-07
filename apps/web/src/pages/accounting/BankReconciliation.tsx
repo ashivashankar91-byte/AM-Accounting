@@ -116,6 +116,14 @@ export default function BankReconciliation() {
     else setUiState(isBalanced ? 'success' : 'unbalanced');
   }, [isLoading, error, recon, isBalanced]);
 
+  // Pre-populate GL and bank balances from the loaded recon record
+  useEffect(() => {
+    if (recon) {
+      if (recon.glBalance != null) setGlBalance(Number(recon.glBalance).toFixed(2));
+      if (recon.bankBalance != null) setStatementBalance(Number(recon.bankBalance).toFixed(2));
+    }
+  }, [recon?.id]);
+
   function showToast(message: string, type: 'success' | 'error') {
     setToast({ message, type });
     setTimeout(() => setToast(null), 6000);
