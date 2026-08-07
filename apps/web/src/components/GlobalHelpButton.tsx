@@ -11,62 +11,173 @@ import SCREEN_HELP from '../data/screenHelp';
 import type { ScreenHelp } from './HelpButton';
 
 // ─── Route → Help key mapping ─────────────────────────────────────────────────
+// IMPORTANT: more-specific patterns must come before less-specific ones.
 const ROUTE_HELP_MAP: Array<{ pattern: RegExp; key: string }> = [
-  // Dashboard
+  // ── Payroll sub-reports (before /payroll catch-all) ─────────────────────
+  { pattern: /\/payroll\/reports\/workers-comp/i,        key: 'workers-comp' },
+  { pattern: /\/payroll\/reports\/employee-history/i,    key: 'employee-history' },
+  { pattern: /\/payroll\/reports\/earnings-deductions/i, key: 'earnings-deductions' },
+  { pattern: /\/payroll\/reports\/tax-summary/i,         key: 'payroll-tax-summary' },
+  { pattern: /\/payroll\/reports\/401k/i,                key: 'four-oh-one-k' },
+  { pattern: /\/payroll\/reports\/nacha/i,               key: 'nacha' },
+
+  // ── Reporting ────────────────────────────────────────────────────────────
+  { pattern: /\/reporting\/report-mate/i,  key: 'report-mate' },
+  { pattern: /\/reporting\/doc-mate/i,     key: 'doc-mate' },
+
+  // ── Service ──────────────────────────────────────────────────────────────
+  { pattern: /\/service\/admin\/technicians/i, key: 'technician-master' },
+  { pattern: /\/service\/history/i,            key: 'service-history' },
+
+  // ── Accounting / Automation (most specific first) ────────────────────────
+  { pattern: /\/accounting\/automation\/capabilities/i, key: 'automation-capabilities' },
+  { pattern: /\/accounting\/automation\/policies/i,     key: 'automation-policies' },
+  { pattern: /\/accounting\/automation\/queue/i,        key: 'automation-queue' },
+  { pattern: /\/accounting\/automation\/health/i,       key: 'automation-health' },
+  { pattern: /\/accounting\/automation\/sandbox/i,      key: 'automation-sandbox' },
+  { pattern: /\/accounting\/automation\/ingestion/i,    key: 'automation-ingestion' },
+  { pattern: /\/accounting\/automation\/lockbox/i,      key: 'automation-lockbox' },
+  { pattern: /\/accounting\/automation\/lifo/i,         key: 'lifo-engine' },
+  { pattern: /\/accounting\/automation\/chargeback/i,   key: 'chargeback' },
+  { pattern: /\/accounting\/automation\/portfolio/i,    key: 'portfolio' },
+  { pattern: /\/accounting\/automation\/sox/i,          key: 'sox-compliance' },
+
+  // ── Accounting / Reports ─────────────────────────────────────────────────
+  { pattern: /\/accounting\/reports\/doc/i,               key: 'doc-report' },
+  { pattern: /\/accounting\/reports\/packages/i,          key: 'statement-packages' },
+  { pattern: /\/accounting\/reports\/compliance/i,        key: 'compliance-pack' },
+  { pattern: /\/accounting\/reports\/kpi\/fixed-ops/i,    key: 'fixed-ops-kpi' },
+  { pattern: /\/accounting\/reports\/kpi\/variable-ops/i, key: 'variable-ops-kpi' },
+
+  // ── Accounting / Tax ─────────────────────────────────────────────────────
+  { pattern: /\/accounting\/tax\/adapter/i,        key: 'tax-adapter' },
+  { pattern: /\/accounting\/tax\/jurisdictions/i,  key: 'tax-jurisdictions' },
+  { pattern: /\/accounting\/tax\/exemptions/i,     key: 'tax-exemptions' },
+  { pattern: /\/accounting\/tax\/results/i,        key: 'tax-results' },
+  { pattern: /\/accounting\/tax\/exceptions/i,     key: 'tax-exceptions' },
+  { pattern: /\/accounting\/tax\/reconciliation/i, key: 'tax-reconciliation' },
+
+  // ── Accounting / Vehicles ────────────────────────────────────────────────
+  { pattern: /\/accounting\/vehicles\/units/i,      key: 'vehicle-units' },
+  { pattern: /\/accounting\/vehicles\/floorplan/i,  key: 'floor-plan' },
+  { pattern: /\/accounting\/vehicles\/sot/i,        key: 'sot-monitor' },
+  { pattern: /\/accounting\/vehicles\/interest/i,   key: 'floor-plan-interest' },
+
+  // ── Accounting / Deals ───────────────────────────────────────────────────
+  { pattern: /\/accounting\/deals\/postings/i, key: 'deal-postings' },
+
+  // ── Accounting / Inquiry (specific before generic) ───────────────────────
+  { pattern: /\/accounting\/inquiry\/gl/i,           key: 'gl-inquiry' },
+  { pattern: /\/accounting\/inquiry\/schedules/i,    key: 'schedule-inquiry' },
+  { pattern: /\/accounting\/inquiry\/transactions/i, key: 'transaction-inquiry' },
+  { pattern: /\/accounting\/inquiry/i,               key: 'inquiry-menu' },
+
+  // ── Accounting / Schedules ───────────────────────────────────────────────
+  { pattern: /\/accounting\/schedules\/open-items/i, key: 'schedule-open-items' },
+
+  // ── Accounting / Admin ───────────────────────────────────────────────────
+  { pattern: /\/accounting\/admin\/mfg-dcs/i,              key: 'mfg-dcs' },
+  { pattern: /\/accounting\/admin\/parts-gl-accounts/i,    key: 'parts-gl-accounts' },
+  { pattern: /\/accounting\/admin\/service-gl-accounts/i,  key: 'service-gl-accounts' },
+  { pattern: /\/accounting\/admin\/statement-metadata/i,   key: 'statement-metadata' },
+  { pattern: /\/accounting\/admin\/analysis-codes/i,       key: 'analysis-codes' },
+  { pattern: /\/accounting\/admin\/archive/i,              key: 'archive-admin' },
+  { pattern: /\/accounting\/admin\/currency/i,             key: 'currency-admin' },
+
+  // ── Accounting / EOM ─────────────────────────────────────────────────────
+  { pattern: /\/accounting\/eom\/entity-elimination/i, key: 'entity-elimination' },
+
+  // ── Accounting / AR & Bank Recon & Payroll ───────────────────────────────
+  { pattern: /\/accounting\/ar/i,         key: 'accounts-receivable' },
+  { pattern: /\/accounting\/bank-recon/i, key: 'bank-reconciliation' },
+  { pattern: /\/accounting\/payroll/i,    key: 'payroll' },
+
+  // ── Dashboard ────────────────────────────────────────────────────────────
   { pattern: /\/accounting\/dashboard|\/financial-dashboard/i, key: 'financial-dashboard' },
   { pattern: /\/dashboard$/i,                                   key: 'financial-dashboard' },
 
-  // General Ledger
-  { pattern: /\/accounting\/gl\/entry/i,     key: 'journal-entries' },
-  { pattern: /\/accounting\/gl$/i,           key: 'journal-entries' },
-  { pattern: /\/accounting\/gl\//i,          key: 'journal-entries' },
-  { pattern: /\/trial-balance/i,             key: 'trial-balance' },
-  { pattern: /\/accounting\/inquiry\/gl/i,   key: 'general-ledger' },
+  // ── Command Center ───────────────────────────────────────────────────────
+  { pattern: /\/command-center/i, key: 'command-center' },
 
-  // Financial Statements
-  { pattern: /\/financial-statements/i,      key: 'financial-statements-detail' },
-  { pattern: /\/period-close\/fs/i,          key: 'financial-statements-detail' },
+  // ── Top-level GL screens ─────────────────────────────────────────────────
+  { pattern: /\/gl\/entries/i,          key: 'journal-entries' },
+  { pattern: /\/gl\/accounts\/inquiry/i, key: 'gl-inquiry' },
+  { pattern: /\/gl$/i,                   key: 'general-ledger' },
+  { pattern: /\/gl\b/i,                  key: 'general-ledger' },
+  { pattern: /\/manual-entry/i,          key: 'journal-entries' },
+  { pattern: /\/trial-balance/i,         key: 'trial-balance' },
 
-  // Period Close / EOM
-  { pattern: /\/period-close|\/eom/i,        key: 'period-close' },
-  { pattern: /\/eom-close/i,                 key: 'period-close' },
+  // ── EOM / Period Close ───────────────────────────────────────────────────
+  { pattern: /\/eom\/close/i, key: 'period-close' },
+  { pattern: /\/eom\b/i,      key: 'period-close' },
+  { pattern: /\/eom-close/i,  key: 'period-close' },
 
-  // AP / AR
-  { pattern: /\/accounting\/ap/i,            key: 'accounts-payable-detail' },
-  { pattern: /\/accounting\/ar/i,            key: 'accounts-receivable' },
-  { pattern: /\/purchase-orders/i,           key: 'accounts-payable-detail' },
-  { pattern: /\/use-tax/i,                   key: 'accounts-payable-detail' },
+  // ── Financial Statements ─────────────────────────────────────────────────
+  { pattern: /\/financial-statements/i, key: 'financial-statements-detail' },
 
-  // Bank Reconciliation
-  { pattern: /\/bank-rec/i,                  key: 'bank-reconciliation' },
-  { pattern: /\/reconciliation/i,            key: 'bank-reconciliation' },
+  // ── AP / AR / PO / Cash Receipts / Bank Deposits ─────────────────────────
+  { pattern: /\/ap\b/i,            key: 'accounts-payable-detail' },
+  { pattern: /\/cash-receipts/i,   key: 'cash-receipts' },
+  { pattern: /\/bank-deposits/i,   key: 'bank-deposits' },
+  { pattern: /\/po\b/i,            key: 'purchase-orders' },
+  { pattern: /\/purchase-orders/i, key: 'purchase-orders' },
 
-  // Payroll
-  { pattern: /\/payroll/i,                   key: 'payroll' },
+  // ── Bank Reconciliation ───────────────────────────────────────────────────
+  { pattern: /\/bank-rec/i,       key: 'bank-reconciliation' },
+  { pattern: /\/recon\b/i,        key: 'reconciliation-recon' },
+  { pattern: /\/reconciliation/i, key: 'reconciliation-recon' },
 
-  // Chart of Accounts
-  { pattern: /\/chart-of-accounts|\/coa/i,   key: 'chart-of-accounts' },
+  // ── Payroll ───────────────────────────────────────────────────────────────
+  { pattern: /\/payroll/i, key: 'payroll' },
 
-  // Approvals
-  { pattern: /\/approvals/i,                 key: 'approvals' },
+  // ── Chart of Accounts ────────────────────────────────────────────────────
+  { pattern: /\/chart-of-accounts|\/coa\b/i, key: 'chart-of-accounts' },
 
-  // AI Agents
-  { pattern: /\/agents|\/ai-agent/i,         key: 'agents' },
+  // ── Transactions / Schedules / Vehicle Inventory ─────────────────────────
+  { pattern: /\/transactions/i,       key: 'transactions' },
+  { pattern: /\/schedules/i,          key: 'schedules' },
+  { pattern: /\/vehicle-inventory/i,  key: 'vehicle-inventory' },
 
-  // Year-end / Intercompany / Tenants
-  { pattern: /\/year-end/i,                  key: 'year-end' },
-  { pattern: /\/intercompany/i,              key: 'intercompany' },
-  { pattern: /\/tenants/i,                   key: 'tenants' },
-  { pattern: /\/reports/i,                   key: 'reports' },
-  { pattern: /\/reconciliation/i,            key: 'reconciliation' },
+  // ── Standard / Recurring Journal Entries ────────────────────────────────
+  { pattern: /\/standard-journal-entries/i, key: 'recurring-entries' },
 
-  // GL Posting
-  { pattern: /\/posting-rules/i,             key: 'general-ledger' },
-  { pattern: /\/posting-executions/i,        key: 'general-ledger' },
-  { pattern: /\/posting-recovery/i,          key: 'general-ledger' },
+  // ── Reports ──────────────────────────────────────────────────────────────
+  { pattern: /\/reports/i, key: 'reports' },
 
-  // Fallback
-  { pattern: /\/accounting/i,                key: 'dashboard' },
+  // ── Approvals ────────────────────────────────────────────────────────────
+  { pattern: /\/approvals/i, key: 'approvals' },
+
+  // ── AI Agents ────────────────────────────────────────────────────────────
+  { pattern: /\/agents\b|\/ai-agent/i, key: 'ai-agents' },
+
+  // ── Year-End / Intercompany / Tenants / Journal Sources ──────────────────
+  { pattern: /\/year-end/i,          key: 'year-end' },
+  { pattern: /\/intercompany/i,      key: 'intercompany' },
+  { pattern: /\/tenants/i,           key: 'tenants' },
+  { pattern: /\/journal-sources/i,   key: 'journal-sources' },
+  { pattern: /\/warranty/i,          key: 'warranty' },
+  { pattern: /\/allocation-templates/i, key: 'allocation-templates' },
+
+  // ── System / Settings / Setup / Utilities ───────────────────────────────
+  { pattern: /\/system-settings/i, key: 'system-settings' },
+  { pattern: /\/setup\b/i,         key: 'setup' },
+  { pattern: /\/utilities/i,       key: 'utilities' },
+  { pattern: /\/settings\b/i,      key: 'user-settings' },
+
+  // ── Onboarding / Analytics / ML / Group / Query ──────────────────────────
+  { pattern: /\/onboarding/i,       key: 'onboarding' },
+  { pattern: /\/analytics/i,        key: 'analytics' },
+  { pattern: /\/ml\b/i,             key: 'ml-dashboard' },
+  { pattern: /\/group-dashboard/i,  key: 'group-dashboard' },
+  { pattern: /\/query\b/i,          key: 'query-explorer' },
+
+  // ── GL Posting (legacy patterns) ─────────────────────────────────────────
+  { pattern: /\/posting-rules/i,      key: 'general-ledger' },
+  { pattern: /\/posting-executions/i, key: 'general-ledger' },
+  { pattern: /\/posting-recovery/i,   key: 'general-ledger' },
+
+  // ── Accounting catch-all ─────────────────────────────────────────────────
+  { pattern: /\/accounting/i, key: 'financial-dashboard' },
 ];
 
 function resolveHelpKey(pathname: string): string | null {
@@ -212,15 +323,25 @@ function HelpPanel({ help, onClose }: { help: ScreenHelp; onClose: () => void })
   );
 }
 
+// ─── Generic fallback help shown when no specific entry exists ────────────────
+const GENERIC_HELP: ScreenHelp = {
+  title: 'Page Guide',
+  overview: 'This page is part of the AutoMate Accounting system. Use it to manage dealership financial operations. For detailed help, contact your system administrator or refer to the AutoMate documentation.',
+  sections: {},
+  tips: [
+    'Press F1 or click the book icon at any time for context-sensitive help',
+    'Navigate using the sidebar on the left',
+    'All monetary values use NUMERIC(15,2) precision',
+  ],
+};
+
 // ─── Main Export ──────────────────────────────────────────────────────────────
 export default function GlobalHelpButton() {
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
 
   const helpKey = resolveHelpKey(pathname);
-  const help: ScreenHelp | null = helpKey ? (SCREEN_HELP[helpKey] ?? null) : null;
-
-  if (!help) return null;
+  const help: ScreenHelp = (helpKey ? (SCREEN_HELP[helpKey] ?? null) : null) ?? GENERIC_HELP;
 
   return (
     <>
