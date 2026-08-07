@@ -67,23 +67,23 @@ export default function AccountingCommandCenter() {
 
   // ═══ 5 dedicated command-center queries — auto-refresh every 5 minutes ═══
   const { data: liveStats, isLoading } = useQuery({
-    queryKey: ['cc-live-stats'], queryFn: commandCenterApi.getLiveStats,
+    queryKey: ['cc-live-stats', entityId], queryFn: () => commandCenterApi.getLiveStats(entityId ?? undefined),
     retry: false, refetchInterval: REFRESH_MS,
   });
   const { data: alertsData } = useQuery({
-    queryKey: ['cc-alerts'], queryFn: commandCenterApi.getAlerts,
+    queryKey: ['cc-alerts', entityId], queryFn: () => commandCenterApi.getAlerts(entityId ?? undefined),
     retry: false, refetchInterval: REFRESH_MS,
   });
   const { data: glMonitor } = useQuery({
-    queryKey: ['cc-gl-monitor'], queryFn: commandCenterApi.getGLMonitor,
+    queryKey: ['cc-gl-monitor', entityId], queryFn: () => commandCenterApi.getGLMonitor(entityId ?? undefined),
     retry: false, refetchInterval: REFRESH_MS,
   });
   const { data: kpiTrends } = useQuery({
-    queryKey: ['cc-kpi-trends'], queryFn: commandCenterApi.getKpiTrends,
+    queryKey: ['cc-kpi-trends', entityId], queryFn: () => commandCenterApi.getKpiTrends(entityId ?? undefined),
     retry: false, refetchInterval: REFRESH_MS,
   });
   const { data: charts } = useQuery({
-    queryKey: ['cc-charts'], queryFn: commandCenterApi.getCharts,
+    queryKey: ['cc-charts', entityId], queryFn: () => commandCenterApi.getCharts(entityId ?? undefined),
     retry: false, refetchInterval: REFRESH_MS,
   });
 
@@ -93,7 +93,7 @@ export default function AccountingCommandCenter() {
   // dashboard.auto_refresh_minutes (default 5 min), and is off by default on
   // the consolidated/group scope — never real-time.
   const { data: exceptionQueue } = useQuery({
-    queryKey: ['cc-exception-queue'],
+    queryKey: ['cc-exception-queue', entityId],
     queryFn: loadCommandCenterExceptions,
     retry: false,
     refetchInterval: REFRESH_MS,

@@ -143,11 +143,11 @@ export const tenantApi = {
 
 // Command Center API — 7 dedicated computed endpoints
 export const commandCenterApi = {
-  getLiveStats: () => apiFetch<any>('/api/v1/command-center/live-stats'),
-  getAlerts: () => apiFetch<any>('/api/v1/command-center/alerts'),
-  getGLMonitor: () => apiFetch<any>('/api/v1/command-center/gl-monitor'),
-  getKpiTrends: () => apiFetch<any>('/api/v1/command-center/kpi-trends'),
-  getCharts: () => apiFetch<any>('/api/v1/command-center/charts'),
+  getLiveStats: (entity?: string) => apiFetch<any>(`/api/v1/command-center/live-stats${entity ? `?entity=${encodeURIComponent(entity)}` : ''}`),
+  getAlerts: (entity?: string) => apiFetch<any>(`/api/v1/command-center/alerts${entity ? `?entity=${encodeURIComponent(entity)}` : ''}`),
+  getGLMonitor: (entity?: string) => apiFetch<any>(`/api/v1/command-center/gl-monitor${entity ? `?entity=${encodeURIComponent(entity)}` : ''}`),
+  getKpiTrends: (entity?: string) => apiFetch<any>(`/api/v1/command-center/kpi-trends${entity ? `?entity=${encodeURIComponent(entity)}` : ''}`),
+  getCharts: (entity?: string) => apiFetch<any>(`/api/v1/command-center/charts${entity ? `?entity=${encodeURIComponent(entity)}` : ''}`),
   postAction: (alertId: string, actionType: string) => apiFetch<any>('/api/v1/command-center/action', { method: 'POST', body: JSON.stringify({ alertId, actionType }) }),
   askAshley: (question: string) => apiFetch<any>('/api/v1/command-center/ashley', { method: 'POST', body: JSON.stringify({ question }) }),
 };
