@@ -1,12 +1,17 @@
 import { PrismaClient } from '.prisma/group-client';
+import { createServiceToken } from '@amacc/shared-kernel';
 import pino from 'pino';
 
 const logger = pino({ name: 'group-service' });
 const GL_SERVICE_URL = process.env['GL_SERVICE_URL'] ?? 'http://gl-service:3010';
+const JWT_SECRET = process.env['AMACC_JWT_SECRET'] ?? 'amacc-dev-secret-change-in-production';
 
 async function fetchJSON(url: string, tenantId: string): Promise<any> {
   try {
-    const resp = await fetch(url, { headers: { 'x-tenant-id': tenantId } });
+    const token = createServiceToken('group-service', JWT_SECRET);
+    const resp = await fetch(url, {
+      headers: { 'x-tenant-id': tenantId, 'Authorization': `Bearer ${token}` },
+    });
     if (!resp.ok) return null;
     return resp.json();
   } catch { return null; }

@@ -2805,6 +2805,15 @@ export async function glRoutes(app: FastifyInstance) {
     return reply.status(501).send({ error: 'NOT_IMPLEMENTED', message: 'FS version management not yet available' });
   });
 
+  // fs/archived — returns previously closed period statements
+  app.get('/fs/archived', async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { period } = request.query as any;
+    // Stub: return empty list — archived statements are seeded at period close time
+    void tenantId; void period;
+    return reply.send([]);
+  });
+
   // NCM20 — stub endpoints (feature gated by system_config.ncm20_enabled)
   app.get('/fs/ncm20/status', async (_request, reply) => {
     return reply.send({ enabled: false, lastUpload: null, status: 'NOT_CONFIGURED' });
@@ -2900,7 +2909,7 @@ export async function glRoutes(app: FastifyInstance) {
     // For range-based mappings, look up accounts in the range
     const allAccounts = await (prisma as any).gLAccount.findMany({
       where: { tenantId },
-      select: { id: true, accountCode: true },
+      select: { id: true, code: true },
     });
 
     const lines = mappings.map((m: any) => {
@@ -2909,7 +2918,7 @@ export async function glRoutes(app: FastifyInstance) {
         amount = balanceMap.get(m.glAccountId) ?? 0;
       } else if (m.glAccountRangeStart && m.glAccountRangeEnd) {
         for (const acct of allAccounts) {
-          if (acct.accountCode >= m.glAccountRangeStart && acct.accountCode <= m.glAccountRangeEnd) {
+          if (acct.code >= m.glAccountRangeStart && acct.code <= m.glAccountRangeEnd) {
             amount += balanceMap.get(acct.id) ?? 0;
           }
         }
@@ -2966,7 +2975,7 @@ export async function glRoutes(app: FastifyInstance) {
     // All period balances for this tenant
     const periodBalances = await (prisma as any).gLAccountPeriodBalance.findMany({
       where: { tenantId, periodYear, periodMonth },
-      include: { glAccount: { select: { id: true, accountCode: true, accountType: true, accountName: true, isIntercompany: true } } },
+      include: { glAccount: { select: { id: true, code: true, type: true, name: true, glGroup: true } } },
     });
 
     let totalBalance = 0;
@@ -2976,12 +2985,13 @@ export async function glRoutes(app: FastifyInstance) {
 
     for (const pb of periodBalances as any[]) {
       const bal = Number(pb.runningBalance);
-      if (pb.glAccount?.isIntercompany) {
+      const isIC = pb.glAccount?.glGroup === 'IC';
+      if (isIC) {
         icBalance += bal;
-        icAccounts.push({ accountCode: pb.glAccount.accountCode, accountName: pb.glAccount.accountName, balance: bal });
+        icAccounts.push({ accountCode: pb.glAccount.code, accountName: pb.glAccount.name, balance: bal });
       } else {
         totalBalance += bal;
-        nonIcLines.push({ accountCode: pb.glAccount?.accountCode, accountName: pb.glAccount?.accountName, balance: bal, accountType: pb.glAccount?.accountType });
+        nonIcLines.push({ accountCode: pb.glAccount?.code, accountName: pb.glAccount?.name, balance: bal, accountType: pb.glAccount?.type });
       }
     }
 

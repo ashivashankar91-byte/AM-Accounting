@@ -592,6 +592,229 @@ const SCREEN_HELP: Record<string, ScreenHelp> = {
       'Keep OEM dealer codes handy for the FS validation step',
     ],
   },
+
+  // ═══════════════════════════════════════════════════════════════
+  // FINANCIAL DASHBOARD (WF-A010)
+  // ═══════════════════════════════════════════════════════════════
+  'financial-dashboard': {
+    title: 'Financial Dashboard',
+    overview: `Think of this as your dealership's morning newspaper — one page that tells you exactly how healthy the business is right now. Every number, every chart, and every alert here answers one question: "Is the money working the way it should?" You don't need to be an accountant to read this page — if something is red, it needs attention; if it's green, you're on track.`,
+    sections: {
+      '💵 Cash on Hand': `How much actual cash is sitting in your bank accounts right now — not on paper, but real, spendable money. Example: If the card shows $366K, that's the total across all your dealership's bank accounts combined. Think of it like checking your wallet before a big purchase — this is the dealership's wallet balance.`,
+
+      '📈 Revenue MTD (Month-to-Date)': `Total money collected from ALL sales and services since the 1st of this month. This includes new car sales, used car sales, service repairs, and parts. Example: $219K means the dealership has billed out $219,000 in revenue this month. The "+0.0% vs bgt" tells you how you're tracking against your monthly target.`,
+
+      '💰 Gross Profit': `After paying for what you sold (the car you bought for $35K and sold for $50K), how much is left. This is NOT total revenue — it's revenue minus the direct cost of goods. Example: 13.2% GP% means for every $100 you sold, $13.20 is pure margin before overhead. Industry benchmark for dealerships is 12-16%.`,
+
+      '🏆 Net Income': `What's actually left after paying EVERYTHING — staff salaries, rent, utilities, advertising, insurance — all dealership operating costs. This is the real bottom line profit. Example: $13K net income means after paying all bills this month, the dealership made $13,000. This is what owners and CFOs watch most closely.`,
+
+      '🔴 AR Outstanding (Accounts Receivable)': `Money that customers OWE YOU but haven't paid yet. Like an IOU stack. Example: $17K AR Outstanding means customers owe the dealership $17,000 — maybe a fleet account that buys cars and pays on 30-day terms, or insurance companies that haven't paid a warranty claim yet. The "90+ Days" bucket in red means someone hasn't paid in over 3 months — that needs a collection call.`,
+
+      '🔵 AP Outstanding (Accounts Payable)': `Money YOU owe to vendors but haven't paid yet. Like your unpaid bills pile. Example: $9K AP Outstanding means the dealership owes $9,000 — maybe to GM for parts ordered, or to a marketing agency for last month's ads. Keeping this low means you're paying on time and maintaining good vendor relationships.`,
+
+      '📊 MTD Income Statement': `Your monthly financial report card showing three key rows: Net Revenue (total sales), Cost of Sales (what those sales cost you), and Net Income (profit). The "Budget" column is your planned target and "Var %" shows how far above or below you are. Green = beating budget, Red = below budget.`,
+
+      '🏢 Department GP%': `Compares profitability across every department — New Vehicles, Used Vehicles, Parts, Service, Body Shop, F&I. The colored bar shows actual (solid) vs target (line). Example: Service at 49.4% means Service is your most profitable department right now. Parts at -26.6% is a red flag — the parts department is losing money and needs investigation.`,
+
+      '💸 Cash Flow Forecast': `An AI-powered prediction of how much cash you'll have in 7, 30, and 90 days. Based on your current AR/AP, scheduled payroll, and revenue trends. Example: 30-Day shows -$343K means the AI predicts you'll need $343K more cash than you currently have within 30 days — potentially a floor plan payment or large AP invoice coming due. Use this to plan ahead, not be surprised.`,
+
+      '🤖 GL Health': `Your books' report card. The AI constantly monitors journal entries for problems. "Trial Balance OUT OF BALANCE" is a red alert — means debits don't equal credits somewhere, which MUST be fixed before month-end close. "2 Draft Entries" means someone started a journal entry but never finished posting it.`,
+
+      '📅 EOM Close Status': `Shows where you are in the month-end closing process. Like a checklist of 12 steps that must complete in order before the books can be "locked" for the month. Green = done, Orange = in progress, Gray = waiting.`,
+
+      '⏰ AR & AP Aging': `Buckets that show HOW LONG money has been owed or overdue. Current = normal, 30+ Days = getting late, 60+ Days = concerning, 90+ Days = urgent action needed. The rule of thumb: anything in 90+ Days needs a phone call today.`,
+    },
+    tips: [
+      'Check this page every morning — the AI refreshes it every few minutes automatically',
+      'If GL Health shows "OUT OF BALANCE" — stop everything and fix it before anything else',
+      'Department GP% below 10% for any department = that department needs a pricing or cost review',
+      'Cash Flow Forecast going negative at 30 days = talk to your CFO about a floor plan draw or line of credit',
+      'AR 90+ Days growing month-over-month = your collections process needs tightening',
+      'Net Income % below 2% of revenue = expenses are too high relative to sales volume',
+    ],
+    legacyContext: 'This dashboard replaces the daily manual process of printing 6-8 separate reports from the legacy system (Trial Balance, Aging Report, Cash Position, Income Summary, etc.) and manually compiling them into a morning brief. Everything is now live and in one place.',
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // JOURNAL ENTRIES (WF-A001)
+  // ═══════════════════════════════════════════════════════════════
+  'journal-entries': {
+    title: 'General Ledger — Journal Entries',
+    overview: `Journal entries are the DNA of your accounting system — they are the record of EVERY single financial event that happened in the dealership. Every car sold, every paycheck issued, every bill paid, every loan interest charge — all of it creates a journal entry. Think of them as receipts that your accounting system keeps forever. This page lets you see, create, and post those receipts.`,
+    sections: {
+      '📋 Entries List': `Every row is one financial transaction. Click the ▶ arrow on the left to expand it and see the detailed breakdown of which accounts were affected. Example: "New Vehicle Sales – Feb 2026" expanded shows Cash Account debited $186,200 and Vehicle Sales Revenue credited $186,200 — meaning the dealership received $186,200 in cash from car sales.`,
+
+      '💳 Debits vs Credits (The Most Important Concept)': `Every journal entry has two sides that MUST be equal — like a perfectly balanced scale. DEBIT = money flowing INTO an account (left side). CREDIT = money flowing OUT of an account (right side). Example: When you sell a $50,000 car — Debit Cash $50,000 (cash came in) + Credit Vehicle Revenue $50,000 (revenue was earned). Total Debit = Total Credit = balanced. If they don't match, the "✓ Balanced" won't appear and the entry can't be posted.`,
+
+      '🏷️ Source Column': `Where did this entry come from? MANUAL = a human accountant typed it in. CONNECTOR CDK = automatically imported from your CDK DMS system (sales, service ROs). PAYROLL = created by the payroll module. The source helps you trace any entry back to its origin in seconds.`,
+
+      '🚦 Status Column': `DRAFT = entry exists but is not final — like a saved draft email, not yet sent. POSTED = entry is final, locked, and counted in your financial reports — like a sent email. PENDING_REVIEW = AI agent is checking it before posting (takes ~30 seconds). You can only EDIT draft entries. Posted entries require a reversal to undo.`,
+
+      '🔗 Ref # (Reference Number)': `The unique ID for each entry — like a receipt number. "DEMO-SERVICE-REVENUE---FE" was auto-generated. "DEMO-OPENING-BALANCE---JA" was the opening balance loaded on Jan 1. You can search or filter by Ref # to find any specific transaction.`,
+
+      '📅 Date Column': `When the transaction occurred financially — NOT when it was entered into the system. A service repair completed on Feb 28 gets a Feb 28 date even if the accountant posts it on March 2. This date determines which month's financial statements include this entry.`,
+
+      '↩️ REVERSAL Entries': `Sometimes an entry was posted by mistake (e.g., duplicate payroll). A REVERSAL entry creates an equal and opposite entry to cancel it out. Example: "REVERSAL: Duplicate Payroll Entry PR-2026-02-W3" shows that a $24,800 payroll was accidentally posted twice, and this entry reverses the duplicate.`,
+
+      '📑 Templates': `Pre-built journal entries for recurring transactions — like a recurring bill payment or monthly depreciation. Instead of building the same entry from scratch every month, save it as a template and reuse it with one click.`,
+    },
+    tips: [
+      'Every entry must be BALANCED (Total Debit = Total Credit) before it can be posted',
+      'POSTED entries are permanent — to undo one, you must create a REVERSAL entry',
+      'CONNECTOR CDK entries are auto-posted — you don\'t need to manually post them',
+      'Check DRAFT entries weekly — anything sitting as Draft at month-end will cause problems during close',
+      'The "View Source" link on CDK entries takes you directly to the original sale or RO in the DMS',
+      'Use Templates for monthly recurring entries like rent, insurance, and depreciation',
+    ],
+    legacyScreens: ['inqglhst', 'inqtran', 'prg037'],
+    legacyContext: 'Replaces Program 37 (Journal Entry creation/posting), GL History Inquiry, and Transaction Inquiry from the legacy system. In the legacy system, creating and posting were separate screens. Here they are unified.',
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // TRIAL BALANCE
+  // ═══════════════════════════════════════════════════════════════
+  'trial-balance': {
+    title: 'Trial Balance',
+    overview: `The Trial Balance is the most fundamental health check in accounting — it lists EVERY account in your chart of accounts with its current balance, and proves that your books are mathematically correct. Think of it like a double-entry ledger check: every dollar in the system must have come FROM somewhere and gone TO somewhere. If Debit Totals ≠ Credit Totals, something is wrong and needs to be found before closing the books.`,
+    sections: {
+      '🗓️ Period Selection (2026-08)': `You're viewing account balances as of this specific month. The trial balance is a SNAPSHOT — it shows where every account stands at the END of the selected period. Change the month to see a historical snapshot of any past period.`,
+
+      '📊 Account / Name / Debit / Credit Columns': `Each row is one GL account. DEBIT balance = asset or expense accounts (things you own or spent). CREDIT balance = liability, equity, or revenue accounts (things you owe or earned). Example: Account 1010 "Operating Checking" shows $366,000 DEBIT — the dealership has $366,000 in the checking account. Account 4000 "Vehicle Sales Revenue" shows $219,000 CREDIT — the dealership earned $219,000 in revenue.`,
+
+      '⚖️ Totals Row (THE MOST IMPORTANT LINE)': `The bottom row shows Total Debits and Total Credits. They MUST be equal. If they're equal: "✓ Balanced" — your books are mathematically correct. If they're not equal: "⚠️ OUT OF BALANCE" — there's an error somewhere that MUST be fixed before month-end close. A $1 difference is just as serious as a $1M difference.`,
+
+      '🤖 AI Insight Panel': `After generating the trial balance, the AI automatically analyzes it and writes a plain-English summary of what changed from last month, any unusual movements, and what to watch. Example AI Insight: "Cash decreased 18% vs prior month ($447K → $366K), driven by $82K floor plan interest payment and $35K AP invoices paid. Recommend confirming with bank statement." This is your AI accountant summarizing the numbers for you.`,
+    },
+    tips: [
+      'Run the trial balance before starting month-end close — if it\'s out of balance, stop and find the error first',
+      'Compare this month to last month — large swings in any account are worth investigating',
+      'If AI Insight says "No insight generated" — hit Regenerate to trigger the analysis',
+      'A balanced trial balance does NOT mean the entries are correct — only that the math works. An amount could be in the wrong account but still balance.',
+      'Print or export the trial balance before closing the period — it becomes your audit reference',
+    ],
+    legacyScreens: ['prgtb', 'inqtbkey'],
+    legacyContext: 'Replaces the legacy Trial Balance program and Trial Balance Key inquiry. The legacy system required a separate print run to generate the trial balance as a report. This page is real-time and interactive.',
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // FINANCIAL STATEMENTS — ENHANCED (WF-A007)
+  // ═══════════════════════════════════════════════════════════════
+  'financial-statements-detail': {
+    title: 'Financial Statements',
+    overview: `Financial Statements are the official "report cards" of the dealership's financial performance — the documents that owners, banks, manufacturers, and auditors rely on. This page generates all of them from your live GL data. Think of these statements as the final, formatted version of everything that happened in the journal entries — organized into the standard reports that tell the full financial story of the business.`,
+    sections: {
+      '📈 Income Statement (Profit & Loss)': `The most-watched report — shows if the dealership made or lost money in a period. Structure: Revenue (what came in) MINUS Cost of Sales (what those sales cost) = Gross Profit. Then subtract Operating Expenses (rent, salaries, advertising) = Net Income. Example: Revenue $1.2M, COGS $950K, Gross Profit $250K, Operating Expenses $220K, Net Income $30K. A net income of $30K on $1.2M revenue = 2.5% net profit margin.`,
+
+      '🏛️ Balance Sheet': `A snapshot of everything the dealership OWNS vs everything it OWES at a single point in time. Assets (left) = Cash + Inventory (vehicles) + Receivables + Equipment. Liabilities (right) = Floor Plan Loans + AP + Notes Payable. Equity = Assets minus Liabilities (what the owners actually own). Rule: Assets must ALWAYS equal Liabilities + Equity. If not, something is wrong.`,
+
+      '💸 Cash Flow Statement': `Tracks ACTUAL cash movement — not sales on paper, but real money in and out. Three sections: Operating (day-to-day business cash), Investing (buying/selling equipment), Financing (loans and owner withdrawals). Critical for dealers: a dealership can show profit on the Income Statement but be cash-negative if floor plan payoffs are large.`,
+
+      '🏢 Departmental Analysis': `Breaks down the Income Statement by department — New Cars, Used Cars, Service, Parts, F&I, Body Shop. Lets you see which departments are profitable and which are dragging down results. Example: Service Department shows Revenue $450K, COGS $200K, Gross Profit $250K (55% GP%). This is the most profitable department and deserves investment.`,
+
+      '🏭 OEM Statement': `Formatted exactly as required by your manufacturer (GM, Ford, Toyota, Honda, etc.). OEMs require dealers to submit financial statements in their specific format for monthly review. This tab auto-formats your data into that exact template. Example: GM's "NCM20" format requires specific line items that map to your GL accounts — this page handles that mapping automatically.`,
+
+      '📁 Archived Statements': `Previous months' finalized and locked financial statements. Once a period is closed, its statement is archived here permanently. These are your official accounting records for audits, bank financing, and OEM reviews.`,
+
+      '⚙️ FS Version / Period / Department Filters': `FS Version = which format/template to use (V1 = standard). Period = which month to report. Department = show all departments consolidated, or drill into one department specifically. Calendar YTD = January to selected month. Fiscal YTD = based on your fiscal year start.`,
+
+      '📊 Compare To / OEM Format checkboxes': `Compare To = shows current period vs same period last year side by side — great for spotting trends. OEM Format = switches the layout to exactly match your manufacturer's required submission format.`,
+    },
+    tips: [
+      'Always run Financial Statements AFTER completing EOM Close — numbers before close may change',
+      'Compare current month to same month last year using "Compare To" — seasonality matters in auto sales',
+      'If GP%: NaN% appears — it means the revenue bucket is $0.00, likely a data seeding issue for that period',
+      'Export to Excel before sending to your manufacturer or bank — they need the spreadsheet format',
+      'Departmental Analysis is your management tool; the Consolidated tab is what you show the bank',
+      'OEM Statement rejection is almost always caused by GL accounts not mapped to OEM line items — check COA mapping',
+    ],
+    legacyScreens: ['finstmp1', 'finstmp2', 'consolgl', 'finchoic', 'menufs'],
+    legacyContext: 'Consolidates 36 legacy COBOL Financial Statement screens into one page. Previously, generating an Income Statement required FINCHOIC (format selection), FINEDT1A-6 (line editing), FINSTMP1-2 (print), and CONSOLGL (consolidation) — all separate programs run in sequence.',
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // BANK RECONCILIATION (WF-A004)
+  // ═══════════════════════════════════════════════════════════════
+  'bank-reconciliation': {
+    title: 'Bank Reconciliation',
+    overview: `Bank Reconciliation is the process of proving that your accounting books match your actual bank statement — dollar for dollar. Think of it like balancing your personal checkbook against your bank statement. Every deposit and every check that appears in your books should match exactly what the bank recorded. Discrepancies = errors that need to be found and fixed. This is typically done once a month before closing the books.`,
+    sections: {
+      '🏦 Bank Statement Balance': `The ending balance shown on your actual bank statement for the period. This is the "ground truth" — what the bank says you have. This number comes from your bank, not from your accounting system.`,
+
+      '📚 GL Book Balance': `What your accounting system says your bank balance is — based on all posted journal entries. This is what your books say you have. The goal of reconciliation is to prove these two numbers represent the same reality.`,
+
+      '⏳ Outstanding Checks': `Checks you wrote and recorded in your books, but the bank hasn't cleared yet — the payee hasn't cashed it. Example: You paid a vendor $5,000 by check on Dec 30, but they deposited it on Jan 3. Your books show -$5,000 but the bank statement doesn't yet. This is normal and expected.`,
+
+      '📨 Outstanding Deposits': `Deposits you recorded in your books but the bank hasn't credited yet. Example: You recorded a $10,000 vehicle deposit on Dec 31 but it didn't clear the bank until Jan 2. This is called a "deposit in transit."`,
+
+      '⚖️ Adjusted Balance': `After accounting for outstanding checks and deposits, the Bank Balance and Book Balance should match. Adjusted Bank Balance = Bank Statement + Deposits in Transit - Outstanding Checks. If Adjusted Bank Balance = Book Balance → ✅ Reconciled!`,
+
+      '🤖 AI Auto-Match': `The AI scans your bank statement and your GL entries and automatically matches them up — like having a meticulous accountant do the tedious matching work for you in seconds. Unmatched items are flagged for your review.`,
+    },
+    tips: [
+      'Reconcile every month without exception — skipping even one month makes the next one twice as hard',
+      'Any variance under $5 is usually a bank fee or rounding — investigate anything over $100',
+      'If a check has been outstanding for 90+ days, call the vendor — it may be lost and need to be re-issued',
+      'The AI auto-match handles 85-90% of matches — the remaining 10-15% need human judgment',
+    ],
+    legacyScreens: ['bankrec', 'bankkey'],
+    legacyContext: 'Replaces the legacy Bank Reconciliation program. The legacy system required manual matching of each line item. The AI auto-match feature is new in AMACC 2.0.',
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // ACCOUNTS PAYABLE (WF-A002)
+  // ═══════════════════════════════════════════════════════════════
+  'accounts-payable-detail': {
+    title: 'Accounts Payable',
+    overview: `Accounts Payable (AP) is your "bills to pay" system — tracking every invoice the dealership owes to vendors and ensuring they get paid correctly and on time. Think of it as your inbox for supplier invoices: they come in, get coded to the right expense accounts, get approved, and get paid. Good AP management means never paying a bill twice and never missing a discount for early payment.`,
+    sections: {
+      '📥 Vendor Invoices Tab': `Every bill the dealership has received. Each row shows: vendor name, invoice number, amount, due date, GL account it's coded to, and status (Draft/Approved/Paid). Example: "GM Parts Invoice #GM-2026-1847 — $23,400 — Due Feb 15" would appear here and be coded to Account 5100 (Parts Purchases).`,
+
+      '🔍 Duplicate Detection': `The AI automatically flags if the same invoice number from the same vendor appears twice — a common and costly error called "double-payment." Example: If someone enters GM Invoice #GM-2026-1847 twice, a red warning appears immediately.`,
+
+      '💳 Purchase Orders Tab': `Pre-authorized purchase orders created before goods arrive. When the invoice arrives, it's matched against the PO. A "3-way match" (PO + Receipt + Invoice) is the gold standard for AP control. Any invoice that doesn't match an approved PO requires extra review.`,
+
+      '📊 AP Aging Tab': `Shows how long invoices have been outstanding in buckets: Current (not yet due), 30+ Days (past due), 60+ Days (seriously overdue), 90+ Days (call the vendor today). Example: $23K in 90+ Days means the dealership owes $23,000 that is 90 days overdue — risk of supply cutoff or late fees.`,
+
+      '🧾 Use Tax Tab': `Tracks use tax obligations — a tax on items purchased out-of-state without sales tax. Example: If the dealership buys software from an out-of-state vendor and doesn't pay sales tax, it owes "use tax" to the state instead. This tab tracks those obligations so you don't miss them at tax time.`,
+    },
+    tips: [
+      'Pay invoices with early-payment discounts (2/10 net 30) first — 2% discount = 36% annual ROI',
+      'Never pay an invoice that doesn\'t have a corresponding PO or manager approval',
+      'Check the 90+ Day aging weekly — overdue payables damage vendor relationships and credit ratings',
+      'Use tax is commonly missed and can result in large state tax audits — keep this tab clean',
+      'The AI codes most invoices to the correct GL account automatically — only review the exceptions',
+    ],
+    legacyScreens: ['menuap', 'apinvkey', 'apageing'],
+    legacyContext: 'Replaces the legacy AP Menu, Invoice Key Entry, and AP Aging Report screens. Invoice approval workflow and duplicate detection are new capabilities in AMACC 2.0.',
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // PERIOD CLOSE / END OF MONTH (WF-A006)
+  // ═══════════════════════════════════════════════════════════════
+  'period-close': {
+    title: 'Period Close — End of Month',
+    overview: `Month-end close is the process of "locking" the books for a completed month — like putting a padlock on January so no one can accidentally change January's numbers in February. It's a multi-step checklist that ensures all transactions are recorded, all accounts reconcile, and the financial statements are accurate before the period is permanently sealed. The AI handles most of the steps automatically, but a few require your review and approval.`,
+    sections: {
+      '📋 Close Pipeline Steps': `12 sequential steps that must complete in order: (1) Verify trial balance is balanced, (2) Review all draft entries, (3) Post pending transactions, (4) Run depreciation, (5) Accrue unpaid expenses, (6) Reconcile bank accounts, (7) Reconcile AR/AP aging, (8) Generate financial statements preview, (9) Controller review & approval, (10) Lock the period, (11) Archive statements, (12) Open next period. Each step must complete before the next can start.`,
+
+      '🤖 AI-Automated Steps': `The AI EOM Orchestration Agent handles steps 1, 3, 4, 5, 7, 11, and 12 automatically — you don't need to do anything for these. It will tell you if it finds a problem that needs human judgment.`,
+
+      '👤 Human-Required Steps': `Steps 2, 6, 8, 9, and 10 require a human controller to review and approve. Step 9 (Controller Approval) is the most important — the controller signs off that they've reviewed all financials and the numbers are correct before the period is locked.`,
+
+      '⏰ Close Status Indicators': `Green check = complete. Blue spinner = AI is working on it right now. Red X = blocked, needs attention. Gray = waiting for earlier steps. The timeline shows how long each step took.`,
+
+      '⚠️ Destructive Steps (Steps 065+)': `Once step 065 (Period Lock) is executed, it CANNOT be reversed without special IT intervention. This is by design — a closed period should never be changed. Make absolutely sure all reviews are done before approving the lock step.`,
+    },
+    tips: [
+      'Start the close process no later than the 3rd of the following month',
+      'The most common blocker: draft journal entries not posted. Run a "Draft Entries Report" before starting',
+      'Bank reconciliation (Step 6) usually takes the most human time — gather all bank statements beforehand',
+      'Never approve the Period Lock (Step 10) under pressure — if you\'re not sure, ask your CFO first',
+      'If the AI gets stuck on any step, check the EOM Dashboard for the specific error message',
+    ],
+    legacyScreens: ['purge13', 'menum', 'prgeom'],
+    legacyContext: 'Replaces COBOL EOM PURGE Program 13 and the End-of-Month menu. The 12-step pipeline is the same sequence as the legacy system but now with AI automation for most steps and a visual progress tracker.',
+  },
 };
 
 export default SCREEN_HELP;

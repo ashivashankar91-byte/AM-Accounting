@@ -77,6 +77,23 @@ export function fsRoutes(svc: FSService) {
     if (!JWT_SECRET) throw new Error('AMACC_JWT_SECRET env var is required');
     app.addHook('preHandler', authMiddleware(JWT_SECRET));
 
+    // ── Stub endpoints expected by frontend ────────────────────────────────
+    app.get('/versions', async (_request, reply) => {
+      return reply.send([]);
+    });
+
+    app.post('/versions', async (_request, reply) => {
+      return reply.status(501).send({ error: 'NOT_IMPLEMENTED', message: 'FS version management not yet available' });
+    });
+
+    app.get('/archived', async (_request, reply) => {
+      return reply.send([]);
+    });
+
+    app.post('/oem-statement/generate', async (_request, reply) => {
+      return reply.status(501).send({ error: 'NOT_IMPLEMENTED', message: 'Use POST /statements/generate instead' });
+    });
+
     // ── OEM Profile Management ─────────────────────────────────────────────
 
     app.post('/profiles', async (request, reply) => {

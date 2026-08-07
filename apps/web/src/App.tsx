@@ -44,6 +44,7 @@ import SystemSettings from './pages/SystemSettings';
 import AccountingCommandCenter from './pages/AccountingCommandCenter';
 import FinancialStatements from './pages/FinancialStatements';
 import T1Sidebar from './components/T1Sidebar';
+import GlobalHelpButton from './components/GlobalHelpButton';
 import Settings from './pages/Settings';
 import QueryExplorer from './pages/QueryExplorer';
 import MobileApprovals from './pages/MobileApprovals';
@@ -1198,6 +1199,8 @@ export default function App() {
 
         {/* T1 Copilot — persistent on every authenticated page; hidden pre-login */}
         {!isLoginRoute && <T1Sidebar />}
+        {/* Global Help Button — floating book icon on every authenticated page */}
+        {!isLoginRoute && <GlobalHelpButton />}
       </div>
     </ErrorBoundary>
   );
