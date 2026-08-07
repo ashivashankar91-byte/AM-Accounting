@@ -1086,15 +1086,6 @@ export default function AccountsReceivable() {
         )}
       </div>
 
-      {/* Help Text */}
-      <div className="bg-brand-light border border-brand-border rounded-lg p-4 text-sm text-blue-900">
-        <p className="font-medium mb-1">Keyboard Shortcuts (Manual Entry tab):</p>
-        <ul className="list-disc list-inside space-y-0.5 text-xs">
-          <li>F7: Auto-apply receipt to oldest-first invoices</li>
-          <li>F8: Post cash receipt (duplicate prevention enforced)</li>
-        </ul>
-      </div>
-
       {/* S4-08: Preferences Modal */}
       {showPrefs && (
         <CashReceiptPreferencesModal

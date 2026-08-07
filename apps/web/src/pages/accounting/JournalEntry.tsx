@@ -661,16 +661,6 @@ export default function JournalEntry() {
         </div>
       </div>
 
-      {/* Help Text */}
-      <div className="bg-brand-light border border-brand-border rounded-lg p-4 text-sm text-blue-900">
-        <p className="font-medium mb-1">Keyboard Shortcuts:</p>
-        <ul className="list-disc list-inside space-y-0.5 text-xs">
-          <li>F8: Post entry (when balanced)</li>
-          <li>Ctrl+S: Save as draft</li>
-          <li>Ctrl+D: Duplicate last line</li>
-        </ul>
-      </div>
-
       {/* Journal Template Selector popup */}
       {showTemplateSelector && (
         <JournalTemplateSelector
