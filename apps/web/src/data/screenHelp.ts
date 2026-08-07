@@ -642,7 +642,7 @@ const SCREEN_HELP: Record<string, ScreenHelp> = {
     title: 'General Ledger — Journal Entries',
     overview: `Journal entries are the DNA of your accounting system — they are the record of EVERY single financial event that happened in the dealership. Every car sold, every paycheck issued, every bill paid, every loan interest charge — all of it creates a journal entry. Think of them as receipts that your accounting system keeps forever. This page lets you see, create, and post those receipts.`,
     sections: {
-      '📋 Entries List': `Every row is one financial transaction. Click the ▶ arrow on the left to expand it and see the detailed breakdown of which accounts were affected. Example: "New Vehicle Sales – Feb 2026" expanded shows Cash Account debited $186,200 and Vehicle Sales Revenue credited $186,200 — meaning the dealership received $186,200 in cash from car sales.`,
+      '📋 Entries List': `Every row is one financial transaction. Click the row to open it and see the detailed breakdown of which accounts were affected. Example: "New Vehicle Sales – Feb 2026" shows Cash Account debited $186,200 and Vehicle Sales Revenue credited $186,200 — meaning the dealership received $186,200 in cash from car sales.`,
 
       '💳 Debits vs Credits (The Most Important Concept)': `Every journal entry has two sides that MUST be equal — like a perfectly balanced scale. DEBIT = money flowing INTO an account (left side). CREDIT = money flowing OUT of an account (right side). Example: When you sell a $50,000 car — Debit Cash $50,000 (cash came in) + Credit Vehicle Revenue $50,000 (revenue was earned). Total Debit = Total Credit = balanced. If they don't match, the "✓ Balanced" won't appear and the entry can't be posted.`,
 
