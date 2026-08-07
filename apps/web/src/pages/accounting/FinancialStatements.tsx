@@ -163,10 +163,47 @@ export default function FinancialStatements() {
   const handleExport = async () => {
     setUiState('exporting');
     try {
-      const filename = `financial-statements-${selectedPeriod}.xlsx`;
-      console.log('Export:', filename);
-      // In production: call glApi.exportFinancialStatements()
-      setTimeout(() => setUiState('success'), 1000);
+      const rows: string[][] = [
+        [`Financial Statements — ${selectedPeriod}`, '', ''],
+        ['', '', ''],
+      ];
+
+      if (incomeData) {
+        rows.push(['INCOME STATEMENT', '', '']);
+        rows.push(['Account', 'Code', 'Amount (USD)']);
+        incomeData.revenue?.accounts?.forEach((a: GLAccount) => rows.push([a.name, a.code, String(a.balance ?? a.amount ?? 0)]));
+        rows.push(['Total Revenue', '', String(incomeData.revenue?.total ?? 0)]);
+        rows.push(['', '', '']);
+        incomeData.costOfSales?.accounts?.forEach((a: GLAccount) => rows.push([a.name, a.code, String(a.balance ?? a.amount ?? 0)]));
+        rows.push(['Total Cost of Sales', '', String(incomeData.costOfSales?.total ?? 0)]);
+        rows.push(['Gross Profit', '', String(incomeData.grossProfit ?? 0)]);
+        rows.push(['', '', '']);
+        incomeData.expenses?.accounts?.forEach((a: GLAccount) => rows.push([a.name, a.code, String(a.balance ?? a.amount ?? 0)]));
+        rows.push(['Total Expenses', '', String(incomeData.expenses?.total ?? 0)]);
+        rows.push(['Net Income', '', String(incomeData.netIncome ?? 0)]);
+        rows.push(['', '', '']);
+      }
+
+      if (balanceSheetData) {
+        rows.push(['BALANCE SHEET', '', '']);
+        rows.push(['Account', 'Code', 'Amount (USD)']);
+        balanceSheetData.assets?.accounts?.forEach((a: GLAccount) => rows.push([a.name, a.code, String(a.balance ?? a.amount ?? 0)]));
+        rows.push(['Total Assets', '', String(balanceSheetData.assets?.total ?? 0)]);
+        rows.push(['', '', '']);
+        balanceSheetData.liabilities?.accounts?.forEach((a: GLAccount) => rows.push([a.name, a.code, String(a.balance ?? a.amount ?? 0)]));
+        rows.push(['Total Liabilities', '', String(balanceSheetData.liabilities?.total ?? 0)]);
+        rows.push(['', '', '']);
+        balanceSheetData.equity?.accounts?.forEach((a: GLAccount) => rows.push([a.name, a.code, String(a.balance ?? a.amount ?? 0)]));
+        rows.push(['Total Equity', '', String(balanceSheetData.equity?.total ?? 0)]);
+      }
+
+      const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `financial-statements-${selectedPeriod}.csv`; a.click();
+      URL.revokeObjectURL(url);
+      setTimeout(() => setUiState('success'), 500);
     } catch {
       setUiState('error');
     }
